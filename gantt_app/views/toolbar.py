@@ -97,8 +97,9 @@ class DropdownButton(ctk.CTkButton):
                 command=lambda cmd=item['command']: self._on_menu_select(cmd),
                 width=200,
                 height=35,
-                fg_color="#3b3b3b",
-                hover_color="#4a4a4a",
+                fg_color="#006400",
+                hover_color="#008000",
+                text_color="white",
                 anchor="w",
                 corner_radius=0,
                 padding_x=15
@@ -106,8 +107,8 @@ class DropdownButton(ctk.CTkButton):
             btn.pack(fill=tk.X, pady=(5 if i == 0 else 0, 5 if i == len(self.menu_items) - 1 else 0))
             
             # Bind mouse enter/leave for better UX
-            btn.bind("<Enter>", lambda e, b=btn: b.configure(fg_color="#4a4a4a"))
-            btn.bind("<Leave>", lambda e, b=btn: b.configure(fg_color="#3b3b3b"))
+            btn.bind("<Enter>", lambda e, b=btn: b.configure(fg_color="#008000"))
+            btn.bind("<Leave>", lambda e, b=btn: b.configure(fg_color="#006400"))
         
         # Handle click outside to close menu
         self.menu_window.bind("<Button-1>", self._on_click_outside)
@@ -201,8 +202,9 @@ class Toolbar(ctk.CTkFrame):
             text="Create", 
             menu_items=create_menu_items,
             width=100,
-            fg_color="#2ecc71",
-            hover_color="#27ae60"
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         create_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
@@ -223,15 +225,19 @@ class Toolbar(ctk.CTkFrame):
             text="Project",
             menu_items=project_menu_items,
             width=100,
-            fg_color="#f39c12",
-            hover_color="#d35400"
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         project_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
         # Project Info button
         project_info_btn = ctk.CTkButton(
             project_frame, text="Project Info",
-            command=self.edit_project_info, width=100
+            command=self.edit_project_info, width=100,
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         project_info_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
@@ -255,8 +261,9 @@ class Toolbar(ctk.CTkFrame):
             text="Import",
             menu_items=import_menu_items,
             width=100,
-            fg_color="#3498db",
-            hover_color="#2980b9"
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         import_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
@@ -273,8 +280,9 @@ class Toolbar(ctk.CTkFrame):
             text="Export",
             menu_items=export_menu_items,
             width=100,
-            fg_color="#9b59b6",
-            hover_color="#8e44ad"
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         export_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
@@ -287,7 +295,9 @@ class Toolbar(ctk.CTkFrame):
         self.undo_btn = ctk.CTkButton(
             undo_frame, text="Undo",
             command=self.undo, width=80,
-            fg_color="#3498db", hover_color="#2980b9"
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         self.undo_btn.pack(side=tk.LEFT, padx=2, pady=5)
         
@@ -295,7 +305,9 @@ class Toolbar(ctk.CTkFrame):
         self.redo_btn = ctk.CTkButton(
             undo_frame, text="Redo",
             command=self.redo, width=80,
-            fg_color="#2ecc71", hover_color="#27ae60"
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         self.redo_btn.pack(side=tk.LEFT, padx=2, pady=5)
         
@@ -310,14 +322,20 @@ class Toolbar(ctk.CTkFrame):
         # Theme toggle
         self.theme_toggle = ctk.CTkButton(
             theme_frame, text="Toggle Theme",
-            command=self.toggle_theme, width=100
+            command=self.toggle_theme, width=100,
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
         )
         self.theme_toggle.pack(side=tk.LEFT, padx=5, pady=5)
 
         # Log viewer
         self.log_button = ctk.CTkButton(
             theme_frame, text="Log",
-            command=self.show_log, width=70
+            command=self.show_log, width=70,
+            fg_color="#CC9900",
+            hover_color="#AA7700",
+            text_color="white"
         )
         self.log_button.pack(side=tk.LEFT, padx=5, pady=5)
 
