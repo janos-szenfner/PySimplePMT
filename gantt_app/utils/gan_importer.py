@@ -520,7 +520,10 @@ class GANImporter:
             calendar = GanttProjectCalendar.from_element(root.find('calendars'))
             tasks = self.parse_tasks(root, calendar)
 
-            return Project(name=project_name, tasks=tasks)
+            project = Project(name=project_name, tasks=tasks)
+            logger.info("Imported %d task(s) from GAN file %s",
+                        len(project.tasks), filepath)
+            return project
 
         except ET.ParseError as e:
             logger.exception(f"Error parsing GAN file: {e}")

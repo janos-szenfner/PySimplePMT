@@ -24,6 +24,18 @@ from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
 
+#: Toolbar palette. A single standard blue with white text, rather than the
+#: pure #0000FF buttons and dark green menu rows used previously - saturated
+#: primaries read as unfinished and gave poor contrast against the dark menu
+#: background.
+ACCENT = "#1f6aa5"          # buttons and menu rows
+ACCENT_HOVER = "#17537f"    # hover / pressed
+ACCENT_TEXT = "#ffffff"
+MENU_BG = "#1f2937"         # menu panel behind the rows
+MENU_BORDER = "#3b4759"
+LOG_ACCENT = "#b8860b"      # the Log button stays distinct
+LOG_ACCENT_HOVER = "#966d09"
+
 
 class DropdownButton(ctk.CTkButton):
     """Custom dropdown button that shows a menu when clicked."""
@@ -121,8 +133,8 @@ class DropdownButton(ctk.CTkButton):
         )
 
         menu_frame = ctk.CTkFrame(
-            self.menu_window, fg_color="#2b2b2b",
-            corner_radius=0, border_width=1, border_color="#444444"
+            self.menu_window, fg_color=MENU_BG,
+            corner_radius=0, border_width=1, border_color=MENU_BORDER
         )
         menu_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -132,9 +144,9 @@ class DropdownButton(ctk.CTkButton):
                 text=item['text'],
                 command=lambda cmd=item.get('command'): self._on_menu_select(cmd),
                 height=self.ITEM_HEIGHT - 4,
-                fg_color="#006400",
-                hover_color="#008000",
-                text_color="white",
+                fg_color=ACCENT,
+                hover_color=ACCENT_HOVER,
+                text_color=ACCENT_TEXT,
                 anchor="w",
                 corner_radius=0
             )
@@ -269,8 +281,8 @@ class Toolbar(ctk.CTkFrame):
             text="Create", 
             menu_items=create_menu_items,
             width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
             text_color="white"
         )
         create_btn.pack(side=tk.LEFT, padx=5, pady=5)
@@ -291,8 +303,8 @@ class Toolbar(ctk.CTkFrame):
             text="Edit",
             menu_items=edit_menu_items,
             width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
             text_color="white"
         )
         edit_btn.pack(side=tk.LEFT, padx=5, pady=5)
@@ -314,8 +326,8 @@ class Toolbar(ctk.CTkFrame):
             text="Project",
             menu_items=project_menu_items,
             width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
             text_color="white"
         )
         project_btn.pack(side=tk.LEFT, padx=5, pady=5)
@@ -337,8 +349,8 @@ class Toolbar(ctk.CTkFrame):
             text="View",
             menu_items=view_menu_items,
             width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
             text_color="white"
         )
         view_btn.pack(side=tk.LEFT, padx=5, pady=5)
@@ -363,8 +375,8 @@ class Toolbar(ctk.CTkFrame):
             text="Import",
             menu_items=import_menu_items,
             width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
             text_color="white"
         )
         import_btn.pack(side=tk.LEFT, padx=5, pady=5)
@@ -372,6 +384,7 @@ class Toolbar(ctk.CTkFrame):
         # Export dropdown button
         export_menu_items = [
             {"text": "Mermaid...", "command": self.export_mermaid},
+            {"text": "HTML...", "command": self.export_html},
             {"text": "PNG...", "command": self.export_png},
             {"text": "PDF...", "command": self.export_pdf},
             {"text": "XLSX...", "command": self.export_xlsx}
@@ -382,8 +395,8 @@ class Toolbar(ctk.CTkFrame):
             text="Export",
             menu_items=export_menu_items,
             width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
             text_color="white"
         )
         export_btn.pack(side=tk.LEFT, padx=5, pady=5)
@@ -397,8 +410,8 @@ class Toolbar(ctk.CTkFrame):
         self.log_button = ctk.CTkButton(
             theme_frame, text="Log",
             command=self.show_log, width=70,
-            fg_color="#CC9900",
-            hover_color="#AA7700",
+            fg_color=LOG_ACCENT,
+            hover_color=LOG_ACCENT_HOVER,
             text_color="white"
         )
         self.log_button.pack(side=tk.LEFT, padx=5, pady=5)
@@ -434,6 +447,9 @@ class Toolbar(ctk.CTkFrame):
         if self.undo_redo_manager:
             from gantt_app.utils.undoredo import create_add_task_command
             command = create_add_task_command(self.project, task)
+            logger.info("Created %s %s %r starting %s",
+                        "milestone" if task.is_milestone else task.task_type.lower(),
+                        task.id, task.name, task.start_date.date())
             if self.undo_redo_manager.execute(command):
                 self.update_undo_redo_buttons()
                 if self.on_project_changed:
@@ -658,6 +674,7 @@ class Toolbar(ctk.CTkFrame):
             return
         
         # Save project
+        logger.info("Saving project %r to %s", self.project.name, file_path)
         if save_project(self.project, file_path):
             messagebox.showinfo("Success", "Project saved successfully!")
         else:
@@ -675,11 +692,13 @@ class Toolbar(ctk.CTkFrame):
             return
         
         # Load project
+        logger.info("Loading project from %s", file_path)
         project = load_project(file_path)
         if project:
             # Replace current project
             self.project.name = project.name
             project.renumber_task_ids()
+            logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -733,6 +752,7 @@ class Toolbar(ctk.CTkFrame):
             # Replace current project
             self.project.name = project.name
             project.renumber_task_ids()
+            logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -766,6 +786,7 @@ class Toolbar(ctk.CTkFrame):
             # Replace current project
             self.project.name = project.name
             project.renumber_task_ids()
+            logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -804,6 +825,7 @@ class Toolbar(ctk.CTkFrame):
             # Replace current project
             self.project.name = project.name
             project.renumber_task_ids()
+            logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -837,6 +859,7 @@ class Toolbar(ctk.CTkFrame):
             # Replace current project
             self.project.name = project.name
             project.renumber_task_ids()
+            logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -892,11 +915,11 @@ class Toolbar(ctk.CTkFrame):
         if not file_path:
             return
         
-        # Export Gantt chart to PNG
+        logger.info("Exporting the Gantt chart to PNG: %s", file_path)
         if self.gantt_chart.export_to_png(file_path):
             messagebox.showinfo("Success", "Gantt chart exported to PNG successfully!")
         else:
-            messagebox.showerror("Error", "Failed to export Gantt chart to PNG")
+            self._report_static_export_failure("PNG")
     
     def export_pdf(self):
         """Export the Gantt chart to a PDF file."""
@@ -914,11 +937,72 @@ class Toolbar(ctk.CTkFrame):
         if not file_path:
             return
         
-        # Export Gantt chart to PDF
+        logger.info("Exporting the Gantt chart to PDF: %s", file_path)
         if self.gantt_chart.export_to_pdf(file_path):
             messagebox.showinfo("Success", "Gantt chart exported to PDF successfully!")
         else:
-            messagebox.showerror("Error", "Failed to export Gantt chart to PDF")
+            self._report_static_export_failure("PDF")
+
+    def _report_static_export_failure(self, image_format: str):
+        """
+        Explain why a PNG or PDF export did not produce a file.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Kaleido rasterises the Plotly figure by driving a Chrome or Chromium
+        browser. Missing that browser is by far the most likely cause, and a
+        bare "export failed" leaves the user with nowhere to go, so the
+        message names the fix and points at HTML export as the alternative.
+        """
+        from gantt_app.utils.image_export import (
+            static_export_available, NO_BROWSER_MESSAGE
+        )
+
+        if not static_export_available():
+            logger.warning("%s export unavailable: no browser for Kaleido",
+                           image_format)
+            messagebox.showwarning(
+                f"{image_format} Export Unavailable", NO_BROWSER_MESSAGE
+            )
+            return
+
+        messagebox.showerror(
+            "Error",
+            f"Failed to export the Gantt chart to {image_format}.\n\n"
+            "See the Log window for details."
+        )
+
+    def export_html(self):
+        """Export the Gantt chart to a standalone interactive HTML file."""
+        if self.gantt_chart is None:
+            messagebox.showerror("Error", "Gantt chart not available for export")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".html",
+            filetypes=[("HTML Files", "*.html"), ("All Files", "*.*")],
+            title="Export Gantt Chart to HTML"
+        )
+
+        if not file_path:
+            return
+
+        from gantt_app.utils.image_export import export_gantt_to_html
+
+        logger.info("Exporting the Gantt chart to HTML: %s", file_path)
+        if export_gantt_to_html(self.project, file_path,
+                                settings=self.gantt_chart._figure_settings()):
+            messagebox.showinfo(
+                "Success",
+                "Gantt chart exported to HTML.\n\n"
+                "The file is self-contained and stays interactive offline."
+            )
+        else:
+            messagebox.showerror(
+                "Error",
+                "Failed to export the Gantt chart to HTML.\n\n"
+                "See the Log window for details."
+            )
     
     def export_xlsx(self):
         """Export the project to an Excel XLSX file."""
@@ -964,6 +1048,7 @@ class Toolbar(ctk.CTkFrame):
         """Undo the last action."""
         if self.undo_redo_manager and self.undo_redo_manager.can_undo():
             if self.undo_redo_manager.undo():
+                logger.info("Undo")
                 self.update_undo_redo_buttons()
                 if self.on_project_changed:
                     self.on_project_changed()
@@ -972,6 +1057,7 @@ class Toolbar(ctk.CTkFrame):
         """Redo the last undone action."""
         if self.undo_redo_manager and self.undo_redo_manager.can_redo():
             if self.undo_redo_manager.redo():
+                logger.info("Redo")
                 self.update_undo_redo_buttons()
                 if self.on_project_changed:
                     self.on_project_changed()
@@ -981,6 +1067,7 @@ class Toolbar(ctk.CTkFrame):
         current_theme = ctk.get_appearance_mode()
         new_theme = "dark" if current_theme == "light" else "light"
         ctk.set_appearance_mode(new_theme)
+        logger.info("Switched appearance to %s mode", new_theme)
     
     def open_gantt_chart_settings(self):
         """Open the Gantt chart settings dialog."""

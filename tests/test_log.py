@@ -118,16 +118,26 @@ class TestSetupLogging(unittest.TestCase):
         self.assertIs(first, second)
         self.assertEqual(len(second.handlers), count)
 
-    def test_level_is_respected(self):
-        """Records below the configured level are not kept."""
+    def test_buffer_keeps_debug_regardless_of_level(self):
+        """
+        The level argument governs the file and stderr, not the buffer.
+
+        The Log window offers a Debug filter, so the buffer has to hold
+        DEBUG records for it to filter. Applying the handler level to the
+        logger itself dropped them before they ever arrived.
+        """
         setup_logging(level=logging.WARNING, to_file=False, to_stderr=False)
         logger = get_logger('demo')
         logger.debug("quiet")
         logger.warning("loud")
 
         text = get_log_text()
-        self.assertNotIn("quiet", text)
+        self.assertIn("quiet", text)
         self.assertIn("loud", text)
+
+        # The window's own filter still separates them
+        self.assertNotIn("quiet", get_log_text(logging.WARNING))
+        self.assertIn("loud", get_log_text(logging.WARNING))
 
     def test_file_logging_writes_to_disk(self):
         """A log file is created and receives records."""
@@ -195,7 +205,9 @@ class TestLogHelpers(unittest.TestCase):
 
     def test_placeholder_when_empty(self):
         """An empty buffer reports a placeholder rather than a blank string."""
-        self.assertIn("No log entries", get_log_text())
+        clear_log()
+        # clear_log records that it ran, so filter above that entry
+        self.assertIn("No log entries", get_log_text(logging.WARNING))
 
     def test_clear_log_leaves_a_marker(self):
         """Clearing empties the buffer and records that it happened."""

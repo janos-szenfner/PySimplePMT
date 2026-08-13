@@ -8,6 +8,9 @@ import tkinter as tk
 from typing import Optional, Callable, Dict
 
 import customtkinter as ctk
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 # Mermaid.live themes for chart styling
@@ -267,6 +270,9 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
         # Store settings for persistence (could save to config file)
         self.gantt_chart.chart_settings = self.settings.copy()
         
+        logger.info("Applied chart settings: theme=%s font=%spx",
+                    self.settings.get('theme'), self.settings.get('font_size'))
+
         # Redraw chart with new settings
         self.gantt_chart.draw_chart()
         
@@ -278,6 +284,7 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
     
     def reset_to_default(self):
         """Reset all settings to default values."""
+        logger.info("Chart settings reset to defaults")
         default_theme = MERMAID_THEMES["Default"]
         self.settings.update(default_theme)
         self.settings["font_size"] = 12

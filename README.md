@@ -51,8 +51,8 @@ gantt_app/
 │   ├── mermaid_exporter.py # Mermaid (.mmd) file export
 │   ├── xlsx_importer.py    # Excel XLSX project plan import
 │   ├── log.py              # Application logging (file, memory, stderr)
-│   ├── pdf_exporter.py     # PDF export for Gantt charts
-│   ├── png_exporter.py     # PNG export for Gantt charts
+│   ├── chart_figure.py     # Shared Plotly figure builder
+│   ├── image_export.py     # PNG, PDF and HTML export
 │   └── xlsx_exporter.py     # Excel XLSX export for tasks data
 │
 └── assets/                # For icons, themes, etc.
@@ -162,13 +162,13 @@ that delegates here, so the two cannot drift apart.
 
 ### PNG Exporter (`utils/png_exporter.py`)
 - **High-Quality Export**: Creates PNG images with configurable DPI (default 300)
-- **Matplotlib Integration**: Uses matplotlib's built-in PNG export
+- **Plotly + Kaleido**: The exported image is the same figure shown on screen
 - **Automatic Scaling**: Properly scales chart elements for image output
 - **Directory Creation**: Automatically creates parent directories
 
 ### PDF Exporter (`utils/pdf_exporter.py`)
 - **Vector Export**: Creates PDF documents with crisp, scalable graphics
-- **Matplotlib Integration**: Uses matplotlib's built-in PDF export
+- **Plotly + Kaleido**: Vector PDF from the same figure shown on screen
 - **Consistent Output**: Produces same visual output as PNG export
 - **Directory Creation**: Automatically creates parent directories
 
@@ -231,7 +231,7 @@ Print the active path with `pysimplepmt --log-file`.
 
 ### Required Dependencies
 ```bash
-pip install customtkinter plotly tkinterweb matplotlib numpy openpyxl
+pip install customtkinter plotly tkinterweb kaleido openpyxl
 ```
 
 Or install everything from the requirements file:
@@ -535,7 +535,7 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 
 ### 1. Matplotlib Integration
 - Used `FigureCanvasTkAgg` for embedding in Tkinter
-- Matplotlib dates handled via `matplotlib.dates`
+
 - Custom date formatting for better readability
 
 ### 2. Drag-and-Drop Implementation

@@ -18,8 +18,8 @@ with unstyled widgets. tkinterdnd2 is handled the same way, and is treated as
 optional because the task list falls back to plain Tkinter bindings when it is
 absent - a missing optional package should not fail the build.
 
-plotly and tkinterweb render the interactive Gantt chart in the main window;
-matplotlib is still required for static PNG and PDF export.
+plotly draws every chart; tkinterweb embeds it in the window and Kaleido
+rasterises it for PNG and PDF export. matplotlib is no longer used.
 """
 
 import importlib.util
@@ -79,19 +79,17 @@ bundle('tkinterweb')
 bundle('tkinterweb_tkhtml')
 bundle('tkinterdnd2', optional=True)
 
-# matplotlib renders the static PNG and PDF exports. It is reached through
-# gantt_app/utils/__init__.py, which imports png_exporter and pdf_exporter
-# unconditionally, so the application will not even start without it - its
-# data files (fonts, style sheets) have to be collected alongside plotly's.
-datas += collect_data_files('matplotlib')
+# Kaleido turns a Plotly figure into PNG or PDF. It ships data files of its
+# own and is imported lazily by plotly, so it needs collecting explicitly.
+bundle('kaleido', optional=True)
 
 hiddenimports += [
     'plotly.graph_objects',
+    'plotly.io',
     'plotly.offline',
     'tkinterweb',
     'tkinterweb_tkhtml',
-    'matplotlib.backends.backend_agg',
-    'matplotlib.backends.backend_pdf',
+    'kaleido',
     'openpyxl',
     'openpyxl.workbook',
     'PIL._tkinter_finder',
@@ -108,7 +106,7 @@ excludes = [
     'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'wx',
     'IPython', 'jupyter', 'notebook', 'pytest', 'sphinx',
     'pandas', 'scipy', 'setuptools._distutils',
-    'matplotlib.tests', 'numpy.tests',
+    'matplotlib', 'numpy.tests',
 ]
 
 

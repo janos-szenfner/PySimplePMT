@@ -785,7 +785,10 @@ class XLSXImporter:
 
             project_name = (self._project_name_from_labels(workbook)
                             or self._extract_project_name(sheet, rows, header_index))
-            return Project(name=project_name, tasks=tasks)
+            project = Project(name=project_name, tasks=tasks)
+            logger.info("Imported %d task(s) from XLSX file %s",
+                        len(project.tasks), filepath)
+            return project
 
         except Exception as e:
             logger.exception(f"Error importing XLSX file: {e}")

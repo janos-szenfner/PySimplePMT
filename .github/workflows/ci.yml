@@ -17,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.11', '3.12']
+        # Python 3.9 reached end of life in October 2025 and caps
+        # pillow at 11.x, so it is no longer supported.
+        python-version: ['3.11', '3.12', '3.13']
 
     steps:
       - name: Check out the repository
@@ -34,7 +36,7 @@ jobs:
       - name: Install system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-tk xvfb
+          sudo apt-get install -y --no-install-recommends python3-tk xvfb chromium-browser
 
       - name: Install dependencies
         run: |

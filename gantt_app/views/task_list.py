@@ -14,6 +14,9 @@ import customtkinter as ctk
 
 from gantt_app.models import Task, Project
 from gantt_app.utils.undoredo import ProjectStateTracker
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 # Try to import tkinterdnd2 for enhanced drag and drop
 try:
@@ -726,7 +729,73 @@ class DragDropTaskList(ctk.CTkFrame):
     Task list with drag-and-drop functionality for setting dependencies.
     Uses tkinterdnd2 for enhanced drag and drop when available.
     """
-    
+
+    #: Light grey grid palette for the task table.
+    GRID_LINE = '#d0d0d0'        # cell separators
+    GRID_ROW_BASE = '#ffffff'    # even rows
+    GRID_ROW_ALT = '#f4f4f4'     # odd rows, giving the banded grid look
+    GRID_HEADING_BG = '#e4e4e4'
+    GRID_TEXT = '#1a1a1a'
+    GRID_SELECT_BG = '#cfe2f3'
+    GRID_ROW_HEIGHT = 26
+
+    def _apply_grid_style(self):
+        """
+        Give the task table a light grey grid.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        ttk.Treeview has no border option, so the grid is drawn by the theme:
+        the 'clam' theme is the only stock one that honours bordercolor and
+        relief on Treeview cells, and alternating row tags supply the
+        horizontal banding. Both are needed - borders alone look flat, and
+        banding alone gives no column separation.
+
+        The style is namespaced under 'Gantt.Treeview' so it cannot disturb
+        any other ttk widget in the application.
+        """
+        style = ttk.Style()
+
+        try:
+            style.theme_use('clam')
+        except tk.TclError:
+            # Fall back to whatever theme is active; banding still applies
+            logger.debug("The 'clam' ttk theme is unavailable; grid lines may "
+                         "not render on this platform")
+
+        style.configure(
+            'Gantt.Treeview',
+            background=self.GRID_ROW_BASE,
+            fieldbackground=self.GRID_ROW_BASE,
+            foreground=self.GRID_TEXT,
+            rowheight=self.GRID_ROW_HEIGHT,
+            borderwidth=1,
+            relief='solid',
+            bordercolor=self.GRID_LINE,
+            lightcolor=self.GRID_LINE,
+            darkcolor=self.GRID_LINE
+        )
+        style.configure(
+            'Gantt.Treeview.Heading',
+            background=self.GRID_HEADING_BG,
+            foreground=self.GRID_TEXT,
+            relief='raised',
+            borderwidth=1,
+            bordercolor=self.GRID_LINE
+        )
+        style.map(
+            'Gantt.Treeview',
+            background=[('selected', self.GRID_SELECT_BG)],
+            foreground=[('selected', self.GRID_TEXT)]
+        )
+        style.map(
+            'Gantt.Treeview.Heading',
+            background=[('active', self.GRID_LINE)]
+        )
+
+        self.tree.configure(style='Gantt.Treeview')
+
+
     def __init__(self, master, project: Project, 
                  on_task_select: Callable[[Task], None] = None,
                  on_task_edit: Callable[[Task], None] = None,
@@ -820,9 +889,15 @@ class DragDropTaskList(ctk.CTkFrame):
         
         # Store reference to tree_frame for DnD
         self.tree_frame = tree_frame
-        
+
+        self._apply_grid_style()
+
         # Configure tags for subtask styling
         self.tree.tag_configure('subtask', foreground='#7f8c8d')
+
+        # Alternating row shading, which is what makes the rows read as a grid
+        self.tree.tag_configure('oddrow', background=self.GRID_ROW_ALT)
+        self.tree.tag_configure('evenrow', background=self.GRID_ROW_BASE)
         
         # Bind events
         self.tree.bind('<Double-1>', self.on_double_click)
@@ -1143,6 +1218,9 @@ class DragDropTaskList(ctk.CTkFrame):
         parent tasks. It uses the treeview's parent-child relationships to
         create the visual hierarchy.
         """
+        # Restart the row banding for each repopulation
+        self._row_counter = 0
+
         # Map task IDs to tree items for parent-child relationships
         tree_items = {}
         
@@ -1241,10 +1319,17 @@ class DragDropTaskList(ctk.CTkFrame):
                                      milestone_str
                                  ))
         
-        # Apply tag for subtask styling
+        # Alternating background, counted over rows actually drawn so the
+        # banding stays continuous through nested sub-tasks
+        self._row_counter = getattr(self, '_row_counter', 0)
+        band = 'oddrow' if self._row_counter % 2 else 'evenrow'
+        self._row_counter += 1
+
+        tags = [band]
         if task.task_type == 'Sub-Task':
-            self.tree.item(item_id, tags=('subtask',))
-        
+            tags.append('subtask')
+        self.tree.item(item_id, tags=tuple(tags))
+
         return item_id
     
     def add_task(self, task: Task):

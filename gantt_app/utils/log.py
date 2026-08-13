@@ -155,7 +155,9 @@ def setup_logging(level: int = logging.INFO,
     PARAMETERS:
     -----------
     level : int, optional
-        Minimum level to record (default logging.INFO).
+        Minimum level written to the log file and stderr (default INFO). The
+        in-memory buffer behind the Log window always keeps DEBUG and above,
+        so the window's level filter has something to filter.
     to_file : bool, optional
         Whether to write a rotating log file (default True).
     to_stderr : bool, optional
@@ -175,7 +177,11 @@ def setup_logging(level: int = logging.INFO,
             logger.setLevel(level)
             return logger
 
-        logger.setLevel(level)
+        # The logger itself passes everything through and each handler
+        # filters. Without this the logger dropped DEBUG records before they
+        # reached the buffer, so the Log window's Debug filter had nothing to
+        # show no matter what the application did.
+        logger.setLevel(logging.DEBUG)
         # Records are handled here, not by the root logger
         logger.propagate = False
 
@@ -189,6 +195,7 @@ def setup_logging(level: int = logging.INFO,
         if to_stderr and sys.stderr is not None:
             stream_handler = logging.StreamHandler(sys.stderr)
             stream_handler.setFormatter(formatter)
+            stream_handler.setLevel(level)
             logger.addHandler(stream_handler)
 
         if to_file:
@@ -202,6 +209,7 @@ def setup_logging(level: int = logging.INFO,
                     encoding='utf-8'
                 )
                 file_handler.setFormatter(formatter)
+                file_handler.setLevel(level)
                 logger.addHandler(file_handler)
                 _log_file_path = path
             except Exception as e:

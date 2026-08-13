@@ -45,14 +45,24 @@ sudo apt remove pysimplepmt
 
 - The CPython interpreter and standard library
 - The Tcl/Tk runtime behind Tkinter
-- customtkinter, plotly, tkinterweb, matplotlib, numpy, openpyxl, tkinterdnd2
-  and their transitive dependencies — every package pinned in
-  `requirements.txt`
+- customtkinter, plotly, tkinterweb, kaleido, openpyxl, tkinterdnd2 and their
+  transitive dependencies — every package pinned in `requirements.txt`
 
-Plotly and tkinterweb render the interactive chart in the window; matplotlib
-is still required, both for PNG/PDF export and because
-`gantt_app/utils/__init__.py` imports the exporters unconditionally, so the
-app will not start without it.
+Plotly draws every chart, tkinterweb embeds it in the window, and Kaleido
+rasterises it for PNG and PDF. matplotlib and numpy were removed entirely.
+
+**Static image export needs a browser.** Kaleido renders a figure by driving
+Chrome or Chromium, which is far too large to bundle, so the package declares
+it as a recommendation rather than shipping it:
+
+```
+Recommends: chromium | chromium-browser | google-chrome-stable
+```
+
+`apt` installs recommendations by default, so a normal `apt install ./*.deb`
+pulls one in. Without a browser the app still runs and every other feature
+works; PNG and PDF export reports what to install, and HTML export needs no
+browser at all.
 
 **Not bundled** — base system libraries that ship with any Ubuntu desktop and
 that Tk links against. These are declared in the package's `Depends:` field so

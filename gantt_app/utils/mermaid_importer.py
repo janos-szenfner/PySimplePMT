@@ -499,7 +499,11 @@ class MermaidImporter:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            return self._parse_mermaid_content(content)
+            project = self._parse_mermaid_content(content)
+            if project is not None:
+                logger.info("Imported %d task(s) from Mermaid file %s",
+                            len(project.tasks), filepath)
+            return project
             
         except Exception as e:
             logger.exception(f"Error importing Mermaid file: {e}")
