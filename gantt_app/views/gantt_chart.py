@@ -425,6 +425,13 @@ class GanttChart(ctk.CTkFrame):
         sorted_tasks = sorted(self.project.tasks, key=lambda t: t.start_date)
         task_names = [t.name[:20] + ('...' if len(t.name) > 20 else '') for t in sorted_tasks]
         self.ax.set_yticklabels(task_names)
+
+        # Bars are placed at increasing y for later tasks, and matplotlib's y
+        # axis grows upward, which would put the earliest task at the bottom.
+        # Invert so the chart reads top to bottom in the same order as the
+        # task list, which is what a Gantt chart is expected to do.
+        if not self.ax.yaxis_inverted():
+            self.ax.invert_yaxis()
     
     def update_chart(self):
         """Update the chart with current project data."""

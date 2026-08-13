@@ -141,6 +141,11 @@ class GanttApp(ctk.CTk):
         self.project.add_task(milestone)
         self.project.add_task(task4)
         self.project.add_task(task5)
+
+        # The factories generate UUIDs, which read as noise in the ID column.
+        # Renumbering here gives the sample project the same 001, 002, ...
+        # sequence that new tasks and imported plans use.
+        self.project.renumber_task_ids()
     
     def _create_ui(self):
         """Create the user interface."""
@@ -254,18 +259,61 @@ class GanttApp(ctk.CTk):
             self.status_bar.configure(text=f"Project: {self.project.name} | No tasks")
     
     def on_close(self):
-        """Handle application close."""
-        # Check for unsaved changes
-        if self.project.tasks:
-            result = ctk.messagebox.askyesnocancel(
-                "Exit", "Do you want to save your project before exiting?"
-            )
-            if result:  # Yes, save
-                self._save_on_exit()
-            elif result is None:  # Cancel
-                return
-        
-        self.destroy()
+        """
+        Handle application close.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Everything before the final teardown is best effort. This runs from
+        the window manager's close button, and anything that raises here
+        leaves the user with a window they cannot shut: an earlier version
+        called ctk.messagebox, which does not exist, so the AttributeError
+        escaped and destroy() was never reached.
+
+        Teardown also closes any remaining Toplevel windows. A stray popup
+        keeps the Tk main loop alive, so the process would linger after the
+        main window disappeared.
+        """
+        try:
+            if self.project.tasks:
+                result = messagebox.askyesnocancel(
+                    "Exit", "Do you want to save your project before exiting?"
+                )
+                if result is None:  # Cancel - stay open
+                    return
+                if result:  # Yes, save
+                    self._save_on_exit()
+        except Exception:
+            logger.exception("Error while preparing to exit; closing anyway")
+
+        self._shutdown()
+
+    def _shutdown(self):
+        """Destroy every window and stop the main loop."""
+        try:
+            from gantt_app.views.toolbar import DropdownButton
+            DropdownButton.close_open_menu()
+        except Exception:
+            logger.exception("Could not close an open dropdown menu")
+
+        # Any surviving Toplevel keeps the main loop running
+        for child in list(self.winfo_children()):
+            if isinstance(child, tk.Toplevel):
+                try:
+                    child.destroy()
+                except tk.TclError:
+                    pass
+
+        logger.info("Application closing")
+
+        try:
+            self.quit()
+        except tk.TclError:
+            pass
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
     
     def _save_on_exit(self):
         """Save project when exiting."""

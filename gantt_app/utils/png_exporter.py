@@ -437,6 +437,10 @@ def _add_labels_to_axes(ax, project: Project):
     task_names = [t.name[:20] + ('...' if len(t.name) > 20 else '') for t in sorted_tasks]
     ax.set_yticklabels(task_names)
 
+    # Earliest task at the top, matching the task list and the on-screen chart
+    if not ax.yaxis_inverted():
+        ax.invert_yaxis()
+
 
 def export_gantt_to_png(project: Project, filepath: str, 
                        width: float = 10, height: float = 6, 

@@ -59,93 +59,157 @@ class DropdownButton(ctk.CTkButton):
         
         self.menu_items = menu_items
         self.menu_window = None
+        self._dismiss_binding = None
     
+    #: The dropdown currently showing its menu, if any. Only one opens at a
+    #: time, so clicking a second button dismisses the first.
+    _open_menu_owner = None
+
+    ITEM_HEIGHT = 34
+    MENU_WIDTH = 220
+    MENU_PADDING = 8
+
     def _show_menu(self):
-        """Show the dropdown menu."""
-        # Close existing menu if any
-        if self.menu_window and self.menu_window.winfo_exists():
-            self.menu_window.destroy()
-        
-        # Create a popup menu window
+        """
+        Show the dropdown menu, or close it if it is already open.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The whole build runs inside a try/except that tears the popup down on
+        failure. An earlier version passed an unsupported argument to
+        CTkButton; the exception escaped part-way through, leaving an empty,
+        undecorated, always-on-top window with no bindings and no way to
+        dismiss it. Every click on a menu button added another one.
+        """
+        # A second click on the same button closes the menu
+        if self.menu_window is not None and self._menu_is_alive():
+            self.close_menu()
+            return
+
+        DropdownButton.close_open_menu()
+
+        try:
+            self._build_menu()
+        except Exception:
+            logger.exception("Could not build the %r menu", self.cget("text"))
+            self.close_menu()
+
+    def _menu_is_alive(self) -> bool:
+        """Check whether the popup window still exists."""
+        try:
+            return bool(self.menu_window and self.menu_window.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _build_menu(self):
+        """Create and populate the popup window."""
         self.menu_window = ctk.CTkToplevel(self.master)
+        DropdownButton._open_menu_owner = self
+
         self.menu_window.title("")
-        self.menu_window.geometry("200x50")  # Will be adjusted based on content
-        
-        # Remove window decorations
         self.menu_window.overrideredirect(True)
         self.menu_window.attributes("-topmost", True)
-        
-        # Position the menu below the button
+
+        # Position directly below the button
         button_x = self.winfo_rootx()
         button_y = self.winfo_rooty()
-        button_width = self.winfo_width()
         button_height = self.winfo_height()
-        
-        self.menu_window.geometry(f"220x{min(len(self.menu_items) * 40 + 10, 400)}")
-        self.menu_window.geometry(f"+{button_x}+{button_y + button_height}")
-        
-        # Create menu frame
-        menu_frame = ctk.CTkFrame(self.menu_window, fg_color="#2b2b2b", 
-                                  corner_radius=0, border_width=1, border_color="#444444")
+
+        height = len(self.menu_items) * self.ITEM_HEIGHT + self.MENU_PADDING * 2
+        self.menu_window.geometry(
+            f"{self.MENU_WIDTH}x{height}+{button_x}+{button_y + button_height}"
+        )
+
+        menu_frame = ctk.CTkFrame(
+            self.menu_window, fg_color="#2b2b2b",
+            corner_radius=0, border_width=1, border_color="#444444"
+        )
         menu_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Add menu items
-        for i, item in enumerate(self.menu_items):
+
+        for item in self.menu_items:
             btn = ctk.CTkButton(
-                menu_frame, 
+                menu_frame,
                 text=item['text'],
-                command=lambda cmd=item['command']: self._on_menu_select(cmd),
-                width=200,
-                height=35,
+                command=lambda cmd=item.get('command'): self._on_menu_select(cmd),
+                height=self.ITEM_HEIGHT - 4,
                 fg_color="#006400",
                 hover_color="#008000",
                 text_color="white",
                 anchor="w",
-                corner_radius=0,
-                padding_x=15
+                corner_radius=0
             )
-            btn.pack(fill=tk.X, pady=(5 if i == 0 else 0, 5 if i == len(self.menu_items) - 1 else 0))
-            
-            # Bind mouse enter/leave for better UX
-            btn.bind("<Enter>", lambda e, b=btn: b.configure(fg_color="#008000"))
-            btn.bind("<Leave>", lambda e, b=btn: b.configure(fg_color="#006400"))
-        
-        # Handle click outside to close menu
-        self.menu_window.bind("<Button-1>", self._on_click_outside)
-        self.menu_window.bind("<FocusOut>", self._on_focus_out)
-        
-        # Make it transient to the main window
-        self.menu_window.transient(self.master)
-        self.menu_window.grab_set()
-    
+            btn.pack(fill=tk.X, padx=self.MENU_PADDING, pady=2)
+
+        # Dismiss on Escape, on losing focus, or on a click anywhere else
+        self.menu_window.bind("<Escape>", lambda _e: self.close_menu())
+        self.menu_window.bind("<FocusOut>", lambda _e: self.close_menu())
+
+        toplevel = self.winfo_toplevel()
+        self._dismiss_binding = toplevel.bind(
+            "<Button-1>", self._on_click_elsewhere, add="+"
+        )
+
+        self.menu_window.focus_set()
+
+    def _on_click_elsewhere(self, event):
+        """Close the menu when the click lands outside it."""
+        if not self._menu_is_alive():
+            return
+
+        # A click on this button is handled by _show_menu's toggle
+        if event.widget is self:
+            return
+
+        self.close_menu()
+
+    def close_menu(self):
+        """
+        Dismiss the menu and release everything it registered.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Safe to call when no menu is open, and never raises: it runs from
+        window teardown, where a half-destroyed widget tree is normal.
+        """
+        binding = getattr(self, '_dismiss_binding', None)
+        if binding is not None:
+            try:
+                self.winfo_toplevel().unbind("<Button-1>", binding)
+            except tk.TclError:
+                pass
+            self._dismiss_binding = None
+
+        if self.menu_window is not None:
+            try:
+                self.menu_window.destroy()
+            except tk.TclError:
+                pass
+            self.menu_window = None
+
+        if DropdownButton._open_menu_owner is self:
+            DropdownButton._open_menu_owner = None
+
+    @classmethod
+    def close_open_menu(cls):
+        """Close whichever dropdown is currently showing a menu."""
+        owner = cls._open_menu_owner
+        if owner is not None:
+            owner.close_menu()
+
     def _on_menu_select(self, command):
         """Handle menu item selection."""
-        if self.menu_window:
-            self.menu_window.destroy()
-            self.menu_window = None
-        
+        self.close_menu()
+
         if command:
-            command()
-    
-    def _on_click_outside(self, event):
-        """Close menu if clicked outside."""
-        # Check if click is inside the menu
-        if self.menu_window:
-            menu_x = self.menu_window.winfo_rootx()
-            menu_y = self.menu_window.winfo_rooty()
-            menu_width = self.menu_window.winfo_width()
-            menu_height = self.menu_window.winfo_height()
-            
-            if (event.x_root < menu_x or event.x_root >= menu_x + menu_width or
-                event.y_root < menu_y or event.y_root >= menu_y + menu_height):
-                self.menu_window.destroy()
-                self.menu_window = None
-    
-    def _on_focus_out(self, event):
-        """Close menu when focus is lost."""
-        if self.menu_window:
-            self.menu_window.destroy()
-            self.menu_window = None
+            try:
+                command()
+            except Exception:
+                logger.exception("Menu action failed")
+                messagebox.showerror(
+                    "Action Failed",
+                    "That action could not be completed. "
+                    "See the Log window for details."
+                )
 
 
 class Toolbar(ctk.CTkFrame):
@@ -378,7 +442,8 @@ class Toolbar(ctk.CTkFrame):
         task = Task.create_task(
             name=task_name,
             start_date=default_start,
-            end_date=default_end
+            end_date=default_end,
+            task_id=self.project.next_task_id()
         )
         
         # Use undo/redo if available
@@ -423,7 +488,8 @@ class Toolbar(ctk.CTkFrame):
         # Create and add milestone
         milestone = Task.create_milestone(
             name=milestone_name,
-            date=milestone_date
+            date=milestone_date,
+            task_id=self.project.next_task_id()
         )
         
         # Use undo/redo if available
@@ -482,7 +548,8 @@ class Toolbar(ctk.CTkFrame):
         subtask = Task.create_subtask(
             name=subtask_name,
             parent_task=parent_task,
-            end_date=subtask_end
+            end_date=subtask_end,
+            task_id=self.project.next_task_id()
         )
         
         # Use undo/redo if available
@@ -688,6 +755,7 @@ class Toolbar(ctk.CTkFrame):
         if project:
             # Replace current project
             self.project.name = project.name
+            project.renumber_task_ids()
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -740,6 +808,7 @@ class Toolbar(ctk.CTkFrame):
         if project:
             # Replace current project
             self.project.name = project.name
+            project.renumber_task_ids()
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -772,6 +841,7 @@ class Toolbar(ctk.CTkFrame):
         if project:
             # Replace current project
             self.project.name = project.name
+            project.renumber_task_ids()
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -809,6 +879,7 @@ class Toolbar(ctk.CTkFrame):
         if project:
             # Replace current project
             self.project.name = project.name
+            project.renumber_task_ids()
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
@@ -841,6 +912,7 @@ class Toolbar(ctk.CTkFrame):
         if project:
             # Replace current project
             self.project.name = project.name
+            project.renumber_task_ids()
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date

@@ -58,10 +58,20 @@ class Task:
     @classmethod
     def create_task(cls, name: str, start_date: datetime, end_date: datetime, 
                    color: str = "#1f6aa5", progress: int = 0, 
-                   dependencies: List[str] = None) -> 'Task':
-        """Create a new regular task."""
+                   dependencies: List[str] = None,
+                   task_id: str = None) -> 'Task':
+        """
+        Create a new regular task.
+
+        PARAMETERS:
+        -----------
+        task_id : str, optional
+            Identifier to use. Pass Project.next_task_id() for sequential
+            numbering; omitted, a UUID is generated so callers that do not
+            have a project to hand still get a unique ID.
+        """
         return cls(
-            id=str(uuid.uuid4()),
+            id=task_id or str(uuid.uuid4()),
             name=name,
             start_date=start_date,
             end_date=end_date,
@@ -74,10 +84,18 @@ class Task:
     @classmethod
     def create_milestone(cls, name: str, date: datetime, 
                         color: str = "#e74c3c", 
-                        dependencies: List[str] = None) -> 'Task':
-        """Create a new milestone (single-date marker)."""
+                        dependencies: List[str] = None,
+                        task_id: str = None) -> 'Task':
+        """
+        Create a new milestone (single-date marker).
+
+        PARAMETERS:
+        -----------
+        task_id : str, optional
+            Identifier to use; see create_task.
+        """
         return cls(
-            id=str(uuid.uuid4()),
+            id=task_id or str(uuid.uuid4()),
             name=name,
             start_date=date,
             end_date=None,
@@ -92,12 +110,13 @@ class Task:
     @classmethod
     def create_subtask(cls, name: str, parent_task: 'Task', 
                       end_date: Optional[datetime] = None,
-                      color: str = "#9b59b6", 
-                      progress: int = 0, 
-                      dependencies: List[str] = None) -> 'Task':
+                      color: str = "#9b59b6",
+                      progress: int = 0,
+                      dependencies: List[str] = None,
+                      task_id: str = None) -> 'Task':
         """
         Create a new subtask under a parent task.
-        
+
         PARAMETERS:
         -----------
         name : str
@@ -112,7 +131,9 @@ class Task:
             Initial progress percentage (default: 0)
         dependencies : List[str], optional
             List of task IDs this subtask depends on
-        
+        task_id : str, optional
+            Identifier to use; see create_task.
+
         RETURNS:
         --------
         Task
@@ -135,7 +156,7 @@ class Task:
                 subtask_end = parent_start  # Will be 1 day by default
         
         return cls(
-            id=str(uuid.uuid4()),
+            id=task_id or str(uuid.uuid4()),
             name=name,
             start_date=parent_start,
             end_date=subtask_end,
@@ -276,6 +297,82 @@ class Project:
         if end_dates:
             self.end_date = max(end_dates)
     
+    #: Width of a generated task ID, so numbering reads 001, 002, ...
+    ID_WIDTH = 3
+
+    def next_task_id(self) -> str:
+        """
+        Get the next free sequential task ID.
+
+        RETURNS:
+        --------
+        str
+            A zero-padded number such as '001', one higher than the largest
+            number already in use.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Numbering continues past whatever a project already contains, so a
+        task added to an imported plan cannot collide with an ID that came
+        from the file. Non-numeric IDs are ignored when finding the maximum
+        but still checked for collisions.
+        """
+        existing = {task.id for task in self.tasks}
+
+        highest = 0
+        for task_id in existing:
+            try:
+                highest = max(highest, int(str(task_id).strip()))
+            except (TypeError, ValueError):
+                continue
+
+        candidate_number = highest + 1
+        candidate = str(candidate_number).zfill(self.ID_WIDTH)
+        while candidate in existing:
+            candidate_number += 1
+            candidate = str(candidate_number).zfill(self.ID_WIDTH)
+
+        return candidate
+
+    def renumber_task_ids(self) -> dict:
+        """
+        Renumber every task sequentially from 001, preserving all references.
+
+        RETURNS:
+        --------
+        dict
+            Mapping of old task ID to new task ID.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Imported files carry whatever identifiers their format used - UUIDs,
+        GanttProject integers, Mermaid labels like 'a1'. Those are meaningless
+        to a reader of the task list, so an import renumbers into the same
+        simple sequence used for tasks created in the app.
+
+        Dependencies and parent_task_id are remapped in the same pass. Doing
+        this in two steps - assigning new IDs, then rewriting references
+        through the mapping - is what keeps a task from being re-pointed at a
+        number that now belongs to a different task.
+        """
+        mapping = {}
+        for index, task in enumerate(self.tasks, start=1):
+            mapping[task.id] = str(index).zfill(self.ID_WIDTH)
+
+        for task in self.tasks:
+            task.id = mapping[task.id]
+            task.dependencies = [
+                mapping[dep_id] for dep_id in task.dependencies
+                if dep_id in mapping
+            ]
+            if task.parent_task_id is not None:
+                task.parent_task_id = mapping.get(task.parent_task_id)
+                if task.parent_task_id is None:
+                    # Parent was not in this project; treat as a root task
+                    task.task_type = "Task"
+
+        return mapping
+
     def add_task(self, task: Task):
         """Add a task to the project and update dates."""
         self.tasks.append(task)

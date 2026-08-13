@@ -905,7 +905,7 @@ class DragDropTaskList(ctk.CTkFrame):
                                  iid=task.id,
                                  text=task.id,
                                  values=(
-                                     task.id[:8],  # Short ID for display
+                                     task.id,  # IDs are short sequential numbers
                                      display_name,
                                      type_str,
                                      duration_str,
