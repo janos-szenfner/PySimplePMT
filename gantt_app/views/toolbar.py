@@ -7,7 +7,7 @@ Contains action buttons for managing the project.
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
 from datetime import datetime, timedelta
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Dict
 
 import customtkinter as ctk
 
@@ -18,10 +18,133 @@ from gantt_app.utils.mpp_importer import import_mpp_file
 from gantt_app.utils.mermaid_importer import import_mermaid_file
 from gantt_app.utils.xlsx_importer import import_xlsx_file
 from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
+from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
+
+
+class DropdownButton(ctk.CTkButton):
+    """Custom dropdown button that shows a menu when clicked."""
+    
+    def __init__(self, master, text: str, menu_items: List[Dict], 
+                 width: int = 100, fg_color: str = None, hover_color: str = None,
+                 **kwargs):
+        """
+        Create a dropdown button.
+        
+        PARAMETERS:
+        -----------
+        master : widget
+            Parent widget
+        text : str
+            Button text
+        menu_items : List[Dict]
+            List of menu item dictionaries with 'text' and 'command' keys
+        width : int
+            Button width
+        fg_color : str
+            Button foreground color
+        hover_color : str
+            Button hover color
+        **kwargs : dict
+            Additional keyword arguments for CTkButton
+        """
+        # Set the command before calling super().__init__
+        kwargs['command'] = self._show_menu
+        
+        super().__init__(master, text=text, width=width, 
+                        fg_color=fg_color, hover_color=hover_color, **kwargs)
+        
+        self.menu_items = menu_items
+        self.menu_window = None
+    
+    def _show_menu(self):
+        """Show the dropdown menu."""
+        # Close existing menu if any
+        if self.menu_window and self.menu_window.winfo_exists():
+            self.menu_window.destroy()
+        
+        # Create a popup menu window
+        self.menu_window = ctk.CTkToplevel(self.master)
+        self.menu_window.title("")
+        self.menu_window.geometry("200x50")  # Will be adjusted based on content
+        
+        # Remove window decorations
+        self.menu_window.overrideredirect(True)
+        self.menu_window.attributes("-topmost", True)
+        
+        # Position the menu below the button
+        button_x = self.winfo_rootx()
+        button_y = self.winfo_rooty()
+        button_width = self.winfo_width()
+        button_height = self.winfo_height()
+        
+        self.menu_window.geometry(f"220x{min(len(self.menu_items) * 40 + 10, 400)}")
+        self.menu_window.geometry(f"+{button_x}+{button_y + button_height}")
+        
+        # Create menu frame
+        menu_frame = ctk.CTkFrame(self.menu_window, fg_color="#2b2b2b", 
+                                  corner_radius=0, border_width=1, border_color="#444444")
+        menu_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Add menu items
+        for i, item in enumerate(self.menu_items):
+            btn = ctk.CTkButton(
+                menu_frame, 
+                text=item['text'],
+                command=lambda cmd=item['command']: self._on_menu_select(cmd),
+                width=200,
+                height=35,
+                fg_color="#3b3b3b",
+                hover_color="#4a4a4a",
+                anchor="w",
+                corner_radius=0,
+                padding_x=15
+            )
+            btn.pack(fill=tk.X, pady=(5 if i == 0 else 0, 5 if i == len(self.menu_items) - 1 else 0))
+            
+            # Bind mouse enter/leave for better UX
+            btn.bind("<Enter>", lambda e, b=btn: b.configure(fg_color="#4a4a4a"))
+            btn.bind("<Leave>", lambda e, b=btn: b.configure(fg_color="#3b3b3b"))
+        
+        # Handle click outside to close menu
+        self.menu_window.bind("<Button-1>", self._on_click_outside)
+        self.menu_window.bind("<FocusOut>", self._on_focus_out)
+        
+        # Make it transient to the main window
+        self.menu_window.transient(self.master)
+        self.menu_window.grab_set()
+    
+    def _on_menu_select(self, command):
+        """Handle menu item selection."""
+        if self.menu_window:
+            self.menu_window.destroy()
+            self.menu_window = None
+        
+        if command:
+            command()
+    
+    def _on_click_outside(self, event):
+        """Close menu if clicked outside."""
+        # Check if click is inside the menu
+        if self.menu_window:
+            menu_x = self.menu_window.winfo_rootx()
+            menu_y = self.menu_window.winfo_rooty()
+            menu_width = self.menu_window.winfo_width()
+            menu_height = self.menu_window.winfo_height()
+            
+            if (event.x_root < menu_x or event.x_root >= menu_x + menu_width or
+                event.y_root < menu_y or event.y_root >= menu_y + menu_height):
+                self.menu_window.destroy()
+                self.menu_window = None
+    
+    def _on_focus_out(self, event):
+        """Close menu when focus is lost."""
+        if self.menu_window:
+            self.menu_window.destroy()
+            self.menu_window = None
 
 
 class Toolbar(ctk.CTkFrame):
@@ -49,47 +172,61 @@ class Toolbar(ctk.CTkFrame):
         # Undo/Redo buttons
         self._create_undo_redo_buttons()
         
-        # Project buttons
+        # Create dropdown button
+        self._create_create_buttons()
+        
+        # Project dropdown button
         self._create_project_buttons()
         
-        # File buttons
-        self._create_file_buttons()
-        
-        # Import buttons
-        self._create_import_buttons()
-        
-        # Export buttons
-        self._create_export_buttons()
+        # Import/Export buttons (now with dropdowns)
+        self._create_import_export_buttons()
         
         # Theme toggle
         self._create_theme_toggle()
     
+    def _create_create_buttons(self):
+        """Create the Create dropdown button for task creation."""
+        create_frame = ctk.CTkFrame(self)
+        create_frame.pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # Create dropdown button for Task, Sub-Task, Milestone
+        create_menu_items = [
+            {"text": "Task...", "command": self.add_task},
+            {"text": "Sub-Task...", "command": self.add_subtask},
+            {"text": "Milestone...", "command": self.add_milestone}
+        ]
+        
+        create_btn = DropdownButton(
+            create_frame, 
+            text="Create", 
+            menu_items=create_menu_items,
+            width=100,
+            fg_color="#2ecc71",
+            hover_color="#27ae60"
+        )
+        create_btn.pack(side=tk.LEFT, padx=5, pady=5)
+    
     def _create_project_buttons(self):
-        """Create buttons for project management."""
+        """Create dropdown button for project file operations."""
         project_frame = ctk.CTkFrame(self)
         project_frame.pack(side=tk.LEFT, padx=5, pady=5)
         
-        # Add Task button
-        add_task_btn = ctk.CTkButton(
-            project_frame, text="Add Task",
-            command=self.add_task, width=100
-        )
-        add_task_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        # Project dropdown button for New, Load, Save
+        project_menu_items = [
+            {"text": "New Project...", "command": self.new_project},
+            {"text": "Load Project...", "command": self.load_project},
+            {"text": "Save Project...", "command": self.save_project}
+        ]
         
-        # Add Sub-Task button
-        add_subtask_btn = ctk.CTkButton(
-            project_frame, text="Add Sub-Task",
-            command=self.add_subtask, width=100,
-            fg_color="#9b59b6", hover_color="#8e44ad"
+        project_btn = DropdownButton(
+            project_frame,
+            text="Project",
+            menu_items=project_menu_items,
+            width=100,
+            fg_color="#f39c12",
+            hover_color="#d35400"
         )
-        add_subtask_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Add Milestone button
-        add_milestone_btn = ctk.CTkButton(
-            project_frame, text="Add Milestone",
-            command=self.add_milestone, width=100
-        )
-        add_milestone_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        project_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
         # Project Info button
         project_info_btn = ctk.CTkButton(
@@ -98,90 +235,48 @@ class Toolbar(ctk.CTkFrame):
         )
         project_info_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
-    def _create_file_buttons(self):
-        """Create buttons for file operations."""
-        file_frame = ctk.CTkFrame(self)
-        file_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Save Project button
-        save_btn = ctk.CTkButton(
-            file_frame, text="Save Project",
-            command=self.save_project, width=100
-        )
-        save_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Load Project button
-        load_btn = ctk.CTkButton(
-            file_frame, text="Load Project",
-            command=self.load_project, width=100
-        )
-        load_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # New Project button
-        new_btn = ctk.CTkButton(
-            file_frame, text="New Project",
-            command=self.new_project, width=100, fg_color="#3498db"
-        )
-        new_btn.pack(side=tk.LEFT, padx=5, pady=5)
+
     
-    def _create_import_buttons(self):
-        """Create buttons for importing files."""
+    def _create_import_export_buttons(self):
+        """Create dropdown buttons for importing and exporting files."""
         import_frame = ctk.CTkFrame(self)
         import_frame.pack(side=tk.LEFT, padx=5, pady=5)
         
-        # Import GAN button
-        import_gan_btn = ctk.CTkButton(
-            import_frame, text="Import GAN",
-            command=self.import_gan, width=100
-        )
-        import_gan_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        # Import dropdown button
+        import_menu_items = [
+            {"text": "MPP...", "command": self.import_mpp},
+            {"text": "GAN...", "command": self.import_gan},
+            {"text": "Mermaid...", "command": self.import_mermaid},
+            {"text": "XLSX...", "command": self.import_xlsx}
+        ]
         
-        # Import MPP button
-        import_mpp_btn = ctk.CTkButton(
-            import_frame, text="Import MPP",
-            command=self.import_mpp, width=100
+        import_btn = DropdownButton(
+            import_frame,
+            text="Import",
+            menu_items=import_menu_items,
+            width=100,
+            fg_color="#3498db",
+            hover_color="#2980b9"
         )
-        import_mpp_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        import_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
-        # Import Mermaid button
-        import_mermaid_btn = ctk.CTkButton(
-            import_frame, text="Import Mermaid",
-            command=self.import_mermaid, width=100
-        )
-        import_mermaid_btn.pack(side=tk.LEFT, padx=5, pady=5)
-
-        # Import XLSX button
-        import_xlsx_btn = ctk.CTkButton(
-            import_frame, text="Import XLSX",
-            command=self.import_xlsx, width=100
-        )
-        import_xlsx_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        # Export dropdown button
+        export_menu_items = [
+            {"text": "Mermaid...", "command": self.export_mermaid},
+            {"text": "PNG...", "command": self.export_png},
+            {"text": "PDF...", "command": self.export_pdf},
+            {"text": "XLSX...", "command": self.export_xlsx}
+        ]
         
-    def _create_export_buttons(self):
-        """Create buttons for exporting files."""
-        export_frame = ctk.CTkFrame(self)
-        export_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Export Mermaid button
-        export_mermaid_btn = ctk.CTkButton(
-            export_frame, text="Export Mermaid",
-            command=self.export_mermaid, width=100
+        export_btn = DropdownButton(
+            import_frame,
+            text="Export",
+            menu_items=export_menu_items,
+            width=100,
+            fg_color="#9b59b6",
+            hover_color="#8e44ad"
         )
-        export_mermaid_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Export PNG button
-        export_png_btn = ctk.CTkButton(
-            export_frame, text="Export PNG",
-            command=self.export_png, width=100
-        )
-        export_png_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Export PDF button
-        export_pdf_btn = ctk.CTkButton(
-            export_frame, text="Export PDF",
-            command=self.export_pdf, width=100
-        )
-        export_pdf_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        export_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
     def _create_undo_redo_buttons(self):
         """Create undo and redo buttons."""
@@ -811,6 +906,28 @@ class Toolbar(ctk.CTkFrame):
             messagebox.showinfo("Success", "Gantt chart exported to PDF successfully!")
         else:
             messagebox.showerror("Error", "Failed to export Gantt chart to PDF")
+    
+    def export_xlsx(self):
+        """Export the project to an Excel XLSX file."""
+        # Ask for file path
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files", "*.xlsx"), ("All Files", "*.*")],
+            title="Export Project to XLSX"
+        )
+        
+        if not file_path:
+            return
+        
+        # Export project to XLSX
+        if export_project_to_xlsx(self.project, file_path):
+            messagebox.showinfo("Success", "Project exported to XLSX successfully!")
+        else:
+            messagebox.showerror(
+                "Error",
+                "Failed to export project to XLSX.\n\n"
+                "Check that openpyxl is installed."
+            )
     
     def set_gantt_chart(self, gantt_chart):
         """Set the Gantt chart reference for export functionality."""
