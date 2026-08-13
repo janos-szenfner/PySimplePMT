@@ -187,14 +187,16 @@ class EditTaskDialog(ctk.CTkToplevel):
         Hard link pins it; a Rubber link only moves it when the current date
         would start too early.
         """
-        if not hasattr(self, 'start_date_entry'):
+        editor = getattr(self, 'dependency_editor', None)
+        if editor is None or not hasattr(self, 'start_date_entry'):
+            # Called while the dialog is still being built
             return
         try:
             current = datetime.strptime(self.start_date_entry.get(), '%Y-%m-%d')
         except (ValueError, tk.TclError):
             return
 
-        required = self.dependency_editor.required_start_date(current)
+        required = editor.required_start_date(current)
         if required is None or required == current:
             return
 
@@ -580,14 +582,16 @@ class CreateTaskDialog(ctk.CTkToplevel):
         new task lands where its links require without the user working the
         date out.
         """
-        if not hasattr(self, 'start_date_entry'):
+        editor = getattr(self, 'dependency_editor', None)
+        if editor is None or not hasattr(self, 'start_date_entry'):
+            # Called while the dialog is still being built
             return
         try:
             current = datetime.strptime(self.start_date_entry.get(), '%Y-%m-%d')
         except (ValueError, tk.TclError):
             return
 
-        required = self.dependency_editor.required_start_date(current)
+        required = editor.required_start_date(current)
         if required is None or required == current:
             return
 

@@ -82,7 +82,10 @@ class DependencyEditor(ctk.CTkFrame):
         ]
 
         self._build_ui()
-        self.refresh()
+        # Do not notify on the initial draw: the dialog is still being
+        # constructed, so the attribute holding this editor is not assigned
+        # yet, and opening a dialog must not reschedule the task by itself.
+        self.refresh(notify=False)
 
     # ------------------------------------------------------------------
     # Construction
@@ -202,8 +205,17 @@ class DependencyEditor(ctk.CTkFrame):
         """Format a task for the chooser."""
         return f"{task.id} - {task.name}"
 
-    def refresh(self):
-        """Redraw the grid and the list of candidates."""
+    def refresh(self, notify: bool = True):
+        """
+        Redraw the grid and the list of candidates.
+
+        PARAMETERS:
+        -----------
+        notify : bool
+            Whether to tell the dialog the links changed. False during
+            construction, when there is nothing to react to yet and the
+            dialog is not finished building.
+        """
         for item in self.tree.get_children():
             self.tree.delete(item)
 
@@ -230,7 +242,7 @@ class DependencyEditor(ctk.CTkFrame):
                                           state=tk.DISABLED)
             self.candidate_var.set("(none available)")
 
-        if self.on_changed:
+        if notify and self.on_changed:
             self.on_changed()
 
     # ------------------------------------------------------------------
