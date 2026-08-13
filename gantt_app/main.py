@@ -171,25 +171,36 @@ class GanttApp(ctk.CTk):
         content_frame.grid(row=1, column=0, sticky=tk.NSEW, padx=10, pady=10)
         
         content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_columnconfigure(1, weight=2)
         content_frame.grid_rowconfigure(0, weight=1)
-        
+
+        # A paned window rather than two grid columns, so the divider between
+        # the task list and the chart can be dragged to give either side more
+        # room. ttk provides the sash; CTk has no equivalent widget.
+        self._configure_sash_style()
+        self.content_panes = ttk.PanedWindow(
+            content_frame, orient=tk.HORIZONTAL, style='Gantt.TPanedwindow'
+        )
+        self.content_panes.grid(row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+
         # Create task list
         self.task_list = DragDropTaskList(
-            content_frame, self.project,
+            self.content_panes, self.project,
             on_task_select=self.on_task_select,
             on_task_edit=self.edit_task,
             on_project_changed=self.update_all,
             project_tracker=self.project_tracker
         )
-        self.task_list.grid(row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
-        
+        self.content_panes.add(self.task_list, weight=2)
+
         # Create Gantt chart
         self.gantt_chart = GanttChart(
-            content_frame, self.project,
+            self.content_panes, self.project,
             width=12, height=8
         )
-        self.gantt_chart.grid(row=0, column=1, sticky=tk.NSEW, padx=5, pady=5)
+        self.content_panes.add(self.gantt_chart, weight=3)
+
+        # Place the divider once the window has its real size
+        self.after(120, self._set_initial_sash)
         
         # Set Gantt chart reference in toolbar for export functionality
         self.toolbar.set_gantt_chart(self.gantt_chart)
@@ -201,6 +212,37 @@ class GanttApp(ctk.CTk):
         )
         self.status_bar.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
     
+    def _configure_sash_style(self):
+        """
+        Give the divider a visible grip in the application's grey palette.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The default sash is a couple of pixels wide and easy to miss. The
+        'clam' theme, which the task list already selects for its grid lines,
+        honours sash thickness and colour.
+        """
+        style = ttk.Style()
+        try:
+            style.configure('Gantt.TPanedwindow', background='#d0d0d0')
+            style.configure('Gantt.Sash', sashthickness=7, gripcount=0,
+                            background='#d0d0d0', bordercolor='#b0b0b0',
+                            lightcolor='#e8e8e8', darkcolor='#b0b0b0')
+        except tk.TclError:
+            logger.debug("Could not style the pane divider on this platform")
+
+    def _set_initial_sash(self):
+        """Put the divider at a sensible starting position."""
+        try:
+            if not self.content_panes.winfo_exists():
+                return
+            width = self.content_panes.winfo_width()
+            if width > 200:
+                # Roughly 40 percent for the task list, the rest for the chart
+                self.content_panes.sashpos(0, int(width * 0.4))
+        except tk.TclError:
+            pass
+
     def on_task_select(self, task: Task):
         """Handle task selection in the task list."""
         # Update status bar
@@ -360,7 +402,7 @@ class GanttApp(ctk.CTk):
 
 # Import tkinter modules
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox
 from datetime import timedelta
 
 

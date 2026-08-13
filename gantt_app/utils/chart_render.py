@@ -85,6 +85,50 @@ def _tick_step(days: int) -> int:
     return max(1, days // 12)
 
 
+#: Horizontal space each day should get before the chart starts scrolling.
+MIN_PIXELS_PER_DAY = 6
+
+#: Upper bound on the rendered width, so a multi-year plan cannot produce an
+#: image large enough to exhaust memory.
+MAX_WIDTH = 6000
+
+
+def preferred_width(project: Project, available: int = 0) -> int:
+    """
+    Choose how wide to draw the chart.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project being drawn.
+    available : int
+        Width of the space the chart is displayed in, in pixels.
+
+    RETURNS:
+    --------
+    int
+        The width to render at: at least the available space, and enough for
+        every day to get a few pixels so a long plan stays readable.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Fitting a multi-month plan into a narrow pane squeezed the bars down to
+    slivers. Rendering wider than the viewport and letting the canvas scroll
+    keeps the bars legible, which is the point of scrolling sideways at all.
+    """
+    width = max(int(available), MIN_WIDTH)
+
+    if project.tasks:
+        low, high = calculate_date_range(
+            sorted(project.tasks, key=lambda t: t.start_date)
+        )
+        days = max((high - low).days, 1)
+        needed = MARGIN_LEFT + MARGIN_RIGHT + days * MIN_PIXELS_PER_DAY
+        width = max(width, needed)
+
+    return min(width, MAX_WIDTH)
+
+
 def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400) -> ChartLayout:
     """

@@ -326,3 +326,67 @@ class TestChartRenderer(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestPreferredWidth(unittest.TestCase):
+    """
+    Tests for the width the chart is drawn at.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The chart is drawn wider than its pane when a plan is long, so the canvas
+    scrolls sideways instead of squeezing every bar into the visible space.
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from gantt_app.utils.chart_render import preferred_width, MAX_WIDTH
+        self.preferred_width = preferred_width
+        self.max_width = MAX_WIDTH
+
+    def _project_spanning(self, days):
+        """Build a project covering a number of days."""
+        project = Project(name=f"{days} days")
+        start = datetime(2024, 1, 1)
+        project.add_task(Task.create_task(
+            "Long", start, start + timedelta(days=days),
+            task_id=project.next_task_id()
+        ))
+        return project
+
+    def test_uses_the_available_space_when_it_is_enough(self):
+        """A short plan simply fills the pane."""
+        self.assertEqual(self.preferred_width(self._project_spanning(10), 1400),
+                         1400)
+
+    def test_never_narrower_than_the_minimum(self):
+        """A cramped pane still gets a legible chart."""
+        from gantt_app.utils.chart_render import MIN_WIDTH
+
+        self.assertGreaterEqual(
+            self.preferred_width(self._project_spanning(10), 200), MIN_WIDTH
+        )
+
+    def test_a_long_plan_is_drawn_wider_than_the_pane(self):
+        """A long plan overflows the pane so it can be scrolled."""
+        width = self.preferred_width(self._project_spanning(600), 800)
+
+        self.assertGreater(width, 800)
+
+    def test_width_is_capped(self):
+        """A multi-year plan cannot produce an unbounded image."""
+        width = self.preferred_width(self._project_spanning(5000), 800)
+
+        self.assertLessEqual(width, self.max_width)
+
+    def test_empty_project_uses_available_space(self):
+        """With no tasks there is no span to accommodate."""
+        self.assertEqual(self.preferred_width(Project(name="Empty"), 1400), 1400)
+
+    def test_rendering_at_the_preferred_width_matches(self):
+        """The rendered image is the width that was asked for."""
+        project = self._project_spanning(600)
+        width = self.preferred_width(project, 800)
+        image = render_image(project, width=width, scale=1.0)
+
+        self.assertEqual(image.size[0], width)

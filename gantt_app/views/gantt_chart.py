@@ -23,7 +23,7 @@ import plotly.graph_objects as go
 
 from gantt_app.models import Project
 from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
-from gantt_app.utils.chart_render import render_image
+from gantt_app.utils.chart_render import render_image, preferred_width
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -74,6 +74,7 @@ class GanttChart(ctk.CTkFrame):
 
         self._image_label = None
         self._chart_image = None
+        self._canvas = None
         self._last_render_width = 0
         self._resize_job = None
 
@@ -129,11 +130,15 @@ class GanttChart(ctk.CTkFrame):
         window shows and what a user exports are now identical. The
         interactive Plotly version is still available through Export > HTML.
         """
-        width = self.chart_frame.winfo_width()
-        if width < 100:
+        available = self.chart_frame.winfo_width()
+        if available < 100:
             # Called before the frame has been sized; use a sensible default
-            width = max(int(self.width) * 100, DEFAULT_WIDTH)
-        self._last_render_width = width
+            available = max(int(self.width) * 100, DEFAULT_WIDTH)
+        self._last_render_width = available
+
+        # Draw wide enough that a long plan stays readable and scrolls,
+        # rather than squeezing every bar into the visible pane
+        width = preferred_width(self.project, available)
 
         try:
             image = render_image(
@@ -175,9 +180,19 @@ class GanttChart(ctk.CTkFrame):
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
         self._image_label = None
+        self._canvas = None
 
     def _show_image(self, image):
-        """Display a rendered chart image, scrollable when it is tall."""
+        """
+        Display a rendered chart image, scrollable in both directions.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The chart has a minimum width, so narrowing the pane makes it wider
+        than the space available rather than squashing it. A horizontal
+        scrollbar is what lets the far end of a long plan be reached, in the
+        same way the task list scrolls sideways past its columns.
+        """
         self._clear_frame()
 
         # CTkImage keeps its own reference; holding it here stops the
@@ -185,21 +200,73 @@ class GanttChart(ctk.CTkFrame):
         self._chart_image = ctk.CTkImage(light_image=image, dark_image=image,
                                          size=image.size)
 
-        canvas = tk.Canvas(self.chart_frame, highlightthickness=0,
-                           background=self._figure_settings().get('bg_color',
-                                                                  '#ffffff'))
-        scrollbar = ttk.Scrollbar(self.chart_frame, orient=tk.VERTICAL,
-                                  command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
+        container = tk.Frame(self.chart_frame)
+        container.pack(fill=tk.BOTH, expand=True)
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
 
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(
+            container, highlightthickness=0,
+            background=self._figure_settings().get('bg_color', '#ffffff')
+        )
+        vertical = ttk.Scrollbar(container, orient=tk.VERTICAL,
+                                 command=canvas.yview)
+        horizontal = ttk.Scrollbar(container, orient=tk.HORIZONTAL,
+                                   command=canvas.xview)
+        canvas.configure(yscrollcommand=vertical.set,
+                         xscrollcommand=horizontal.set)
+
+        canvas.grid(row=0, column=0, sticky=tk.NSEW)
+        vertical.grid(row=0, column=1, sticky=tk.NS)
+        horizontal.grid(row=1, column=0, sticky=tk.EW)
 
         holder = ctk.CTkLabel(canvas, image=self._chart_image, text="")
         canvas.create_window(0, 0, anchor=tk.NW, window=holder)
         canvas.configure(scrollregion=(0, 0, image.size[0], image.size[1]))
 
+        self._bind_scrolling(canvas)
+
+        self._canvas = canvas
         self._image_label = holder
+
+    def _bind_scrolling(self, canvas):
+        """
+        Let the wheel and trackpad scroll the chart.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Wheel events differ by platform: Windows and macOS deliver
+        <MouseWheel> with a delta, X11 sends Button-4 and Button-5. Shift
+        with the wheel scrolls sideways, which is the usual convention and
+        saves reaching for the scrollbar on a wide plan.
+        """
+        def on_wheel(event):
+            """Scroll vertically, or horizontally when Shift is held."""
+            if event.delta:
+                steps = -1 if event.delta > 0 else 1
+                # macOS reports small deltas; Windows reports multiples of 120
+                if abs(event.delta) >= 120:
+                    steps = int(-event.delta / 120)
+            else:
+                steps = -1 if event.num == 4 else 1
+
+            if event.state & 0x0001:  # Shift
+                canvas.xview_scroll(steps, 'units')
+            else:
+                canvas.yview_scroll(steps, 'units')
+
+        def on_horizontal_wheel(event):
+            """Trackpad sideways scrolling."""
+            steps = -1 if getattr(event, 'delta', 0) > 0 else 1
+            canvas.xview_scroll(steps, 'units')
+
+        for widget in (canvas, self.chart_frame):
+            widget.bind('<MouseWheel>', on_wheel, add='+')
+            widget.bind('<Shift-MouseWheel>', on_wheel, add='+')
+            widget.bind('<Button-4>', on_wheel, add='+')
+            widget.bind('<Button-5>', on_wheel, add='+')
+            widget.bind('<Shift-Button-4>', on_horizontal_wheel, add='+')
+            widget.bind('<Shift-Button-5>', on_horizontal_wheel, add='+')
 
     def _show_message(self, message: str, colour: str = "gray"):
         """Display a message in place of the chart."""
