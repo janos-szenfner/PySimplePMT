@@ -170,9 +170,6 @@ class Toolbar(ctk.CTkFrame):
     
     def _create_ui(self):
         """Create the toolbar user interface."""
-        # Undo/Redo buttons
-        self._create_undo_redo_buttons()
-        
         # Create dropdown button
         self._create_create_buttons()
         
@@ -182,8 +179,14 @@ class Toolbar(ctk.CTkFrame):
         # Import/Export buttons (now with dropdowns)
         self._create_import_export_buttons()
         
-        # Theme toggle
-        self._create_theme_toggle()
+        # Edit dropdown button
+        self._create_edit_buttons()
+        
+        # View dropdown button
+        self._create_view_buttons()
+        
+        # Theme toggle and Log buttons
+        self._create_theme_log_buttons()
     
     def _create_create_buttons(self):
         """Create the Create dropdown button for task creation."""
@@ -208,6 +211,28 @@ class Toolbar(ctk.CTkFrame):
         )
         create_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
+    def _create_edit_buttons(self):
+        """Create the Edit dropdown button for undo/redo operations."""
+        edit_frame = ctk.CTkFrame(self)
+        edit_frame.pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # Edit dropdown button for Undo, Redo
+        edit_menu_items = [
+            {"text": "Undo", "command": self.undo},
+            {"text": "Redo", "command": self.redo}
+        ]
+        
+        edit_btn = DropdownButton(
+            edit_frame,
+            text="Edit",
+            menu_items=edit_menu_items,
+            width=100,
+            fg_color="#0000FF",
+            hover_color="#0000CC",
+            text_color="white"
+        )
+        edit_btn.pack(side=tk.LEFT, padx=5, pady=5)
+    
     def _create_project_buttons(self):
         """Create dropdown button for project file operations."""
         project_frame = ctk.CTkFrame(self)
@@ -230,16 +255,28 @@ class Toolbar(ctk.CTkFrame):
             text_color="white"
         )
         project_btn.pack(side=tk.LEFT, padx=5, pady=5)
+    
+    def _create_view_buttons(self):
+        """Create the View dropdown button for Project Info and Toggle Theme."""
+        view_frame = ctk.CTkFrame(self)
+        view_frame.pack(side=tk.LEFT, padx=5, pady=5)
         
-        # Project Info button
-        project_info_btn = ctk.CTkButton(
-            project_frame, text="Project Info",
-            command=self.edit_project_info, width=100,
+        # View dropdown button for Project Info, Toggle Theme
+        view_menu_items = [
+            {"text": "Project Info", "command": self.edit_project_info},
+            {"text": "Toggle Theme", "command": self.toggle_theme}
+        ]
+        
+        view_btn = DropdownButton(
+            view_frame,
+            text="View",
+            menu_items=view_menu_items,
+            width=100,
             fg_color="#0000FF",
             hover_color="#0000CC",
             text_color="white"
         )
-        project_info_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        view_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
 
     
@@ -286,48 +323,10 @@ class Toolbar(ctk.CTkFrame):
         )
         export_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
-    def _create_undo_redo_buttons(self):
-        """Create undo and redo buttons."""
-        undo_frame = ctk.CTkFrame(self)
-        undo_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Undo button
-        self.undo_btn = ctk.CTkButton(
-            undo_frame, text="Undo",
-            command=self.undo, width=80,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
-            text_color="white"
-        )
-        self.undo_btn.pack(side=tk.LEFT, padx=2, pady=5)
-        
-        # Redo button
-        self.redo_btn = ctk.CTkButton(
-            undo_frame, text="Redo",
-            command=self.redo, width=80,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
-            text_color="white"
-        )
-        self.redo_btn.pack(side=tk.LEFT, padx=2, pady=5)
-        
-        # Update button states
-        self.update_undo_redo_buttons()
-    
-    def _create_theme_toggle(self):
-        """Create the theme toggle and log buttons."""
+    def _create_theme_log_buttons(self):
+        """Create the log button."""
         theme_frame = ctk.CTkFrame(self)
         theme_frame.pack(side=tk.RIGHT, padx=5, pady=5)
-
-        # Theme toggle
-        self.theme_toggle = ctk.CTkButton(
-            theme_frame, text="Toggle Theme",
-            command=self.toggle_theme, width=100,
-            fg_color="#0000FF",
-            hover_color="#0000CC",
-            text_color="white"
-        )
-        self.theme_toggle.pack(side=tk.LEFT, padx=5, pady=5)
 
         # Log viewer
         self.log_button = ctk.CTkButton(
@@ -959,8 +958,11 @@ class Toolbar(ctk.CTkFrame):
     def update_undo_redo_buttons(self):
         """Update the state of undo and redo buttons."""
         if self.undo_redo_manager:
-            self.undo_btn.configure(state=tk.NORMAL if self.undo_redo_manager.can_undo() else tk.DISABLED)
-            self.redo_btn.configure(state=tk.NORMAL if self.undo_redo_manager.can_redo() else tk.DISABLED)
+            # Update button states if they exist (they may be in dropdown menus now)
+            if hasattr(self, 'undo_btn') and self.undo_btn:
+                self.undo_btn.configure(state=tk.NORMAL if self.undo_redo_manager.can_undo() else tk.DISABLED)
+            if hasattr(self, 'redo_btn') and self.redo_btn:
+                self.redo_btn.configure(state=tk.NORMAL if self.undo_redo_manager.can_redo() else tk.DISABLED)
     
     def undo(self):
         """Undo the last action."""
