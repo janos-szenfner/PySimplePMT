@@ -6,7 +6,7 @@ Uses tkinterdnd2 for drag-and-drop functionality with ttk.Treeview.
 
 import tkinter as tk
 from tkinter import ttk
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Callable, List, Dict, Any
 import copy
 
@@ -63,6 +63,9 @@ class EditTaskDialog(ctk.CTkToplevel):
         main_frame = ctk.CTkScrollableFrame(self)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
+        # Configure grid columns
+        main_frame.columnconfigure(1, weight=1)
+        
         # Name
         ctk.CTkLabel(main_frame, text="Task Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.name_entry = ctk.CTkEntry(main_frame)
@@ -101,18 +104,18 @@ class EditTaskDialog(ctk.CTkToplevel):
         # Start Date
         ctk.CTkLabel(main_frame, text="Start Date:").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.start_date_entry = ctk.CTkEntry(main_frame)
-        self.start_date_entry.grid(row=2, column=1, sticky=tk.EW, pady=5)
+        self.start_date_entry.grid(row=5, column=1, sticky=tk.EW, pady=5)
         self.start_date_entry.insert(0, self.task.start_date.strftime('%Y-%m-%d'))
         
-        # End Date (not shown for milestones)
-        if not self.task.is_milestone:
-            ctk.CTkLabel(main_frame, text="End Date:").grid(row=3, column=0, sticky=tk.W, pady=5)
-            self.end_date_entry = ctk.CTkEntry(main_frame)
-            self.end_date_entry.grid(row=3, column=1, sticky=tk.EW, pady=5)
-            if self.task.end_date:
-                self.end_date_entry.insert(0, self.task.end_date.strftime('%Y-%m-%d'))
-        else:
-            self.end_date_entry = None
+        # End Date
+        ctk.CTkLabel(main_frame, text="End Date:").grid(row=6, column=0, sticky=tk.W, pady=5)
+        self.end_date_entry = ctk.CTkEntry(main_frame)
+        self.end_date_entry.grid(row=6, column=1, sticky=tk.EW, pady=5)
+        if self.task.end_date:
+            self.end_date_entry.insert(0, self.task.end_date.strftime('%Y-%m-%d'))
+        # Disable end date for milestones
+        if self.task.is_milestone:
+            self.end_date_entry.configure(state=tk.DISABLED)
         
         # Is Milestone
         self.is_milestone_var = ctk.BooleanVar(value=self.task.is_milestone)
@@ -120,33 +123,33 @@ class EditTaskDialog(ctk.CTkToplevel):
             main_frame, text="Is Milestone", 
             variable=self.is_milestone_var, command=self.toggle_milestone
         )
-        self.milestone_check.grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=5)
+        self.milestone_check.grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
         
         # Progress
-        ctk.CTkLabel(main_frame, text="Progress (%):").grid(row=7, column=0, sticky=tk.W, pady=5)
+        ctk.CTkLabel(main_frame, text="Progress (%):").grid(row=8, column=0, sticky=tk.W, pady=5)
         self.progress_slider = ctk.CTkSlider(main_frame, from_=0, to=100)
-        self.progress_slider.grid(row=7, column=1, sticky=tk.EW, pady=5)
+        self.progress_slider.grid(row=8, column=1, sticky=tk.EW, pady=5)
         self.progress_slider.set(self.task.progress)
         
         self.progress_label = ctk.CTkLabel(main_frame, text=f"{self.task.progress}%")
-        self.progress_label.grid(row=7, column=2, padx=10, pady=5)
+        self.progress_label.grid(row=8, column=2, padx=10, pady=5)
         
         self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
         self.progress_slider.bind("<ButtonRelease-1>", self.update_progress_label)
         
         # Color
-        ctk.CTkLabel(main_frame, text="Color:").grid(row=8, column=0, sticky=tk.W, pady=5)
+        ctk.CTkLabel(main_frame, text="Color:").grid(row=9, column=0, sticky=tk.W, pady=5)
         self.color_entry = ctk.CTkEntry(main_frame)
-        self.color_entry.grid(row=8, column=1, sticky=tk.EW, pady=5)
+        self.color_entry.grid(row=9, column=1, sticky=tk.EW, pady=5)
         self.color_entry.insert(0, self.task.color)
         
         # Dependencies
-        ctk.CTkLabel(main_frame, text="Dependencies:").grid(row=9, column=0, sticky=tk.W, pady=5)
+        ctk.CTkLabel(main_frame, text="Dependencies:").grid(row=10, column=0, sticky=tk.W, pady=5)
         
         # Available tasks for dependencies
         self.dep_vars = []
         self.dep_frame = ctk.CTkScrollableFrame(main_frame)
-        self.dep_frame.grid(row=10, column=0, columnspan=2, sticky=tk.EW, pady=5)
+        self.dep_frame.grid(row=11, column=0, columnspan=2, sticky=tk.EW, pady=5)
         self.dep_frame.configure(height=150)
         
         # Filter out current task and its descendants from available dependencies
@@ -221,7 +224,7 @@ class EditTaskDialog(ctk.CTkToplevel):
                 self.dep_frame, 
                 text="Check multiple boxes to select tasks and subtasks as dependencies",
                 text_color="#7f8c8d",
-                font=ctk.CTkFont(size=10, style="italic")
+                font=ctk.CTkFont(size=10, slant="italic")
             )
             note_label.pack(fill=tk.X, padx=5, pady=(5, 0), anchor=tk.W)
         
@@ -232,28 +235,19 @@ class EditTaskDialog(ctk.CTkToplevel):
         ctk.CTkButton(button_frame, text="Save", command=self.save).pack(side=tk.RIGHT, padx=5)
         ctk.CTkButton(button_frame, text="Delete", fg_color="#e74c3c", hover_color="#c0392b", command=self.delete).pack(side=tk.RIGHT, padx=5)
         ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
-        
-        # Configure grid
-        main_frame.columnconfigure(1, weight=1)
     
     def toggle_milestone(self):
         """Toggle milestone mode."""
         is_milestone = self.is_milestone_var.get()
         
         if is_milestone:
+            # Disable end date for milestones
             if self.end_date_entry:
-                self.end_date_entry.grid_forget()
-                ctk.CTkLabel(self.dep_frame.master, text="End Date:").grid_forget()
+                self.end_date_entry.configure(state=tk.DISABLED)
         else:
-            if self.end_date_entry is None:
-                # End date should be after duration, start date, etc.
-                # Find the correct row - it should be after start date
-                ctk.CTkLabel(self.dep_frame.master, text="End Date:").grid(row=6, column=0, sticky=tk.W, pady=5)
-                self.end_date_entry = ctk.CTkEntry(self.dep_frame.master)
-                self.end_date_entry.grid(row=6, column=1, sticky=tk.EW, pady=5)
-            else:
-                ctk.CTkLabel(self.dep_frame.master, text="End Date:").grid(row=6, column=0, sticky=tk.W, pady=5)
-                self.end_date_entry.grid(row=6, column=1, sticky=tk.EW, pady=5)
+            # Enable end date for regular tasks
+            if self.end_date_entry:
+                self.end_date_entry.configure(state=tk.NORMAL)
     
     def update_progress_label(self, event=None):
         """Update progress label when slider moves."""
@@ -373,6 +367,337 @@ class EditTaskDialog(ctk.CTkToplevel):
             return True
         
         # Check if task_id is a direct or indirect subtask of potential_ancestor_id
+        current_id = task_id
+        while current_id:
+            parent_task = project.get_task_by_id(current_id)
+            if not parent_task or not parent_task.parent_task_id:
+                break
+            current_id = parent_task.parent_task_id
+            if current_id == potential_ancestor_id:
+                return True
+        
+        return False
+    
+    def center_window(self):
+        """Center the window on the screen."""
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+
+class CreateTaskDialog(ctk.CTkToplevel):
+    """
+    Dialog for creating a new task, sub-task, or milestone with all fields visible at once.
+    """
+    
+    def __init__(self, master, project: Project,
+                 task_type: str = "Task", parent_task: Task = None,
+                 on_save: Callable[[Task], None] = None,
+                 project_tracker: ProjectStateTracker = None):
+        super().__init__(master)
+        
+        self.project = project
+        self.task_type = task_type
+        self.parent_task = parent_task
+        self.on_save = on_save
+        self.project_tracker = project_tracker
+        
+        # Determine if creating a milestone
+        self.is_milestone = (task_type == "Milestone")
+        
+        # Set window title based on type
+        if self.is_milestone:
+            self.title("Create New Milestone")
+        elif task_type == "Sub-Task":
+            self.title("Create New Sub-Task")
+        else:
+            self.title("Create New Task")
+        
+        self.geometry("500x700")
+        self.transient(master)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+        
+        # Create form
+        self._create_form()
+        
+        # Center window
+        self.center_window()
+    
+    def _create_form(self):
+        """Create the task creation form widgets."""
+        # Main frame
+        main_frame = ctk.CTkScrollableFrame(self)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Configure grid columns
+        main_frame.columnconfigure(1, weight=1)
+        
+        # Task Name
+        ctk.CTkLabel(main_frame, text="Task Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.name_entry = ctk.CTkEntry(main_frame)
+        self.name_entry.grid(row=0, column=1, sticky=tk.EW, pady=5)
+        
+        # Task Type (only for non-milestone)
+        if not self.is_milestone:
+            ctk.CTkLabel(main_frame, text="Type:").grid(row=1, column=0, sticky=tk.W, pady=5)
+            self.task_type_var = ctk.StringVar(value=self.task_type)
+            self.task_type_menu = ctk.CTkOptionMenu(
+                main_frame, variable=self.task_type_var,
+                values=["Task", "Sub-Task"],
+                state=tk.DISABLED if self.parent_task else tk.NORMAL
+            )
+            self.task_type_menu.grid(row=1, column=1, sticky=tk.EW, pady=5)
+        
+        # Parent Task (for subtasks)
+        if self.parent_task:
+            ctk.CTkLabel(main_frame, text="Parent Task:").grid(row=2, column=0, sticky=tk.W, pady=5)
+            self.parent_label = ctk.CTkLabel(main_frame, text=self.parent_task.name)
+            self.parent_label.grid(row=2, column=1, sticky=tk.W, pady=5)
+        elif self.task_type == "Sub-Task":
+            # Need to select parent
+            ctk.CTkLabel(main_frame, text="Parent Task:").grid(row=2, column=0, sticky=tk.W, pady=5)
+            parent_names = [t.name for t in self.project.get_root_tasks()]
+            if parent_names:
+                self.parent_var = ctk.StringVar()
+                self.parent_menu = ctk.CTkOptionMenu(
+                    main_frame, variable=self.parent_var,
+                    values=parent_names
+                )
+                self.parent_menu.grid(row=2, column=1, sticky=tk.EW, pady=5)
+            else:
+                self.parent_label = ctk.CTkLabel(main_frame, text="No parent tasks available")
+                self.parent_label.grid(row=2, column=1, sticky=tk.W, pady=5)
+        
+        # Start Date
+        row_offset = 3 if self.parent_task or self.task_type == "Sub-Task" or not self.is_milestone else 2
+        if self.parent_task and not self.is_milestone:
+            # For subtasks, default to parent's start date
+            start_date_str = self.parent_task.start_date.strftime('%Y-%m-%d')
+        else:
+            start_date_str = datetime.now().strftime('%Y-%m-%d')
+        
+        ctk.CTkLabel(main_frame, text="Start Date:").grid(row=row_offset, column=0, sticky=tk.W, pady=5)
+        self.start_date_entry = ctk.CTkEntry(main_frame)
+        self.start_date_entry.grid(row=row_offset, column=1, sticky=tk.EW, pady=5)
+        self.start_date_entry.insert(0, start_date_str)
+        
+        # End Date (not for milestones)
+        if not self.is_milestone:
+            ctk.CTkLabel(main_frame, text="End Date:").grid(row=row_offset+1, column=0, sticky=tk.W, pady=5)
+            self.end_date_entry = ctk.CTkEntry(main_frame)
+            self.end_date_entry.grid(row=row_offset+1, column=1, sticky=tk.EW, pady=5)
+            # Default end date: start + 7 days for tasks, start + 1 day for subtasks
+            if self.parent_task:
+                default_end = self.parent_task.start_date + timedelta(days=1)
+            else:
+                default_end = datetime.now() + timedelta(days=7)
+            self.end_date_entry.insert(0, default_end.strftime('%Y-%m-%d'))
+        else:
+            self.end_date_entry = None
+        
+        # Is Milestone checkbox
+        ctk.CTkLabel(main_frame, text="Is Milestone:").grid(row=row_offset+2, column=0, sticky=tk.W, pady=5)
+        self.is_milestone_var = ctk.BooleanVar(value=self.is_milestone)
+        self.milestone_check = ctk.CTkCheckBox(
+            main_frame, text="",
+            variable=self.is_milestone_var, command=self.toggle_milestone
+        )
+        self.milestone_check.grid(row=row_offset+2, column=1, sticky=tk.W, pady=5)
+        
+        # Progress
+        ctk.CTkLabel(main_frame, text="Progress (%):").grid(row=row_offset+3, column=0, sticky=tk.W, pady=5)
+        self.progress_slider = ctk.CTkSlider(main_frame, from_=0, to=100)
+        self.progress_slider.grid(row=row_offset+3, column=1, sticky=tk.EW, pady=5)
+        self.progress_slider.set(0)
+        
+        self.progress_label = ctk.CTkLabel(main_frame, text="0%")
+        self.progress_label.grid(row=row_offset+3, column=2, padx=10, pady=5)
+        
+        self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
+        self.progress_slider.bind("<ButtonRelease-1>", self.update_progress_label)
+        
+        # Color
+        ctk.CTkLabel(main_frame, text="Color:").grid(row=row_offset+4, column=0, sticky=tk.W, pady=5)
+        self.color_entry = ctk.CTkEntry(main_frame)
+        self.color_entry.grid(row=row_offset+4, column=1, sticky=tk.EW, pady=5)
+        
+        # Default colors based on type
+        if self.is_milestone:
+            self.color_entry.insert(0, "#e74c3c")
+        elif self.task_type == "Sub-Task":
+            self.color_entry.insert(0, "#9b59b6")
+        else:
+            self.color_entry.insert(0, "#3498db")
+        
+        # Dependencies
+        ctk.CTkLabel(main_frame, text="Dependencies:").grid(row=row_offset+5, column=0, sticky=tk.W, pady=5)
+        
+        # Available tasks for dependencies
+        self.dep_vars = []
+        self.dep_frame = ctk.CTkScrollableFrame(main_frame)
+        self.dep_frame.grid(row=row_offset+6, column=0, columnspan=2, sticky=tk.EW, pady=5)
+        self.dep_frame.configure(height=150)
+        
+        # Get available tasks (exclude self if editing, but for new task just show all)
+        available_tasks = []
+        for t in self.project.tasks:
+            # Check if this task is a descendant of the parent (for subtasks)
+            if self.parent_task:
+                if not self._is_descendant(t.id, self.parent_task.id, self.project):
+                    available_tasks.append(t)
+            else:
+                available_tasks.append(t)
+        
+        # Sort tasks by start date for consistent display
+        available_tasks.sort(key=lambda t: t.start_date)
+        
+        # Create checkboxes for each available task
+        if available_tasks:
+            for task in available_tasks:
+                var = ctk.BooleanVar(value=False)
+                self.dep_vars.append((task.id, var))
+                
+                check = ctk.CTkCheckBox(
+                    self.dep_frame,
+                    text=f"{task.name} ({task.start_date.strftime('%Y-%m-%d')})",
+                    variable=var
+                )
+                check.pack(fill=tk.X, padx=5, pady=2, anchor=tk.W)
+        
+        # Note about dependencies
+        if available_tasks:
+            note_label = ctk.CTkLabel(
+                self.dep_frame,
+                text="Check multiple boxes to select dependencies",
+                text_color="#7f8c8d",
+                font=ctk.CTkFont(size=10, slant="italic")
+            )
+            note_label.pack(fill=tk.X, padx=5, pady=(5, 0), anchor=tk.W)
+        
+        # Buttons
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        ctk.CTkButton(button_frame, text="Save", command=self.save).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+    
+    def toggle_milestone(self):
+        """Toggle milestone mode."""
+        is_milestone = self.is_milestone_var.get()
+        
+        if is_milestone:
+            # Disable end date for milestones
+            if self.end_date_entry:
+                self.end_date_entry.configure(state=tk.DISABLED)
+        else:
+            # Enable end date for regular tasks
+            if self.end_date_entry:
+                self.end_date_entry.configure(state=tk.NORMAL)
+    
+    def update_progress_label(self, event=None):
+        """Update progress label when slider moves."""
+        value = int(self.progress_slider.get())
+        self.progress_label.configure(text=f"{value}%")
+    
+    def save(self):
+        """Save the new task."""
+        try:
+            # Determine final task type
+            if self.is_milestone_var.get():
+                final_task_type = "Task"  # Milestones are type "Task" with is_milestone=True
+                is_milestone = True
+            else:
+                final_task_type = self.task_type_var.get() if not self.is_milestone else self.task_type
+                is_milestone = False
+            
+            # Get name
+            name = self.name_entry.get()
+            if not name:
+                raise ValueError("Task name cannot be empty")
+            
+            # Parse start date
+            start_date_str = self.start_date_entry.get()
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            
+            # Get end date if not milestone
+            end_date = None
+            if not is_milestone and self.end_date_entry:
+                end_date_str = self.end_date_entry.get()
+                if end_date_str:
+                    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            
+            # Get progress
+            progress = int(self.progress_slider.get())
+            
+            # Get color
+            color = self.color_entry.get()
+            
+            # Get dependencies
+            dependencies = [task_id for task_id, var in self.dep_vars if var.get()]
+            
+            # Determine parent task ID
+            parent_task_id = None
+            if self.parent_task:
+                parent_task_id = self.parent_task.id
+            elif hasattr(self, 'parent_var') and self.parent_var.get():
+                # Find parent task by name
+                parent_name = self.parent_var.get()
+                parent = self.project.get_task_by_id(parent_name)
+                if parent:
+                    parent_task_id = parent.id
+                else:
+                    # Try to find by name
+                    for t in self.project.tasks:
+                        if t.name == parent_name:
+                            parent_task_id = t.id
+                            break
+            
+            # Update task type if parent is set
+            if parent_task_id and final_task_type != "Sub-Task":
+                final_task_type = "Sub-Task"
+            
+            # Create the task
+            task = Task(
+                id=self.project.next_task_id(),
+                name=name,
+                start_date=start_date,
+                end_date=end_date,
+                progress=progress,
+                dependencies=dependencies,
+                color=color,
+                is_milestone=is_milestone,
+                task_type=final_task_type,
+                parent_task_id=parent_task_id
+            )
+            
+            # Validate
+            task.__post_init__()
+            
+            # Call save callback
+            if self.on_save:
+                self.on_save(task)
+            
+            self.destroy()
+            
+        except ValueError as e:
+            # Show error
+            ctk.CTkLabel(self, text=f"Error: {e}", text_color="red").pack(pady=10)
+    
+    def cancel(self):
+        """Cancel task creation."""
+        self.destroy()
+    
+    def _is_descendant(self, task_id: str, potential_ancestor_id: str, project: Project) -> bool:
+        """Check if a task is a descendant of another task."""
+        if task_id == potential_ancestor_id:
+            return True
+        
         current_id = task_id
         while current_id:
             parent_task = project.get_task_by_id(current_id)

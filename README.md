@@ -13,7 +13,7 @@ This is a complete implementation of a project management tool with:
 
 ## Features
 
-- **Static Gantt Chart Visualization**: Visual representation of tasks and milestones with dependency arrows
+- **Interactive Gantt Chart Visualization**: Visual representation of tasks and milestones with dependency arrows, using Plotly for zoom, pan, and hover tooltips
 - **Drag-and-Drop Task List**: Reorder tasks and set dependencies by dragging
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
@@ -68,27 +68,33 @@ gantt_app/
 
 ### Task List View (`views/task_list.py`)
 - **Drag-and-Drop**: Full tkinterdnd2 integration with enhanced drag-and-drop for setting dependencies, graceful fallback to basic implementation
-- **EditTaskDialog**: Comprehensive task editing interface
+- **EditTaskDialog**: Comprehensive task editing interface with all fields visible
+- **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone
 - **Hierarchical Display**: Sub-tasks are visually indented under their parent tasks with tree structure
 - **Features**:
   - Double-click to edit tasks
+  - Create tasks with all fields visible at once (no more one-by-one input)
   - Circular dependency prevention (including parent-child relationships)
   - Milestone toggle with automatic end_date handling
   - Progress slider with percentage display
-  - Dependency management via checkboxes (select multiple tasks and subtasks)
+  - Dependency management via checkboxes (select multiple tasks and subtasks for all task types including milestones)
   - Task Type selection (Task or Sub-Task)
   - Parent Task display for sub-tasks
   - Duration calculation display
 
 ### Gantt Chart View (`views/gantt_chart.py`)
+- **Interactive Visualization**: Built with Plotly for rich interactivity
 - **Task Bars**: Horizontal bars colored by task.color
 - **Milestone Diamonds**: Special diamond shapes for milestones
-- **Dependency Arrows**: Red arrows connecting dependent tasks
+- **Dependency Lines**: Red dotted lines connecting dependent tasks
 - **Critical Path**: Highlighted in orange
-- **Labels**: Task names, progress percentages
-- **Date Formatting**: Proper date display and scaling
+- **Hover Tooltips**: Detailed information on hover (name, dates, duration, progress, dependencies)
+- **Zoom & Pan**: Built-in Plotly interactivity
+- **Labels**: Task names displayed next to milestones
+- **Date Formatting**: Proper date display with tick formatting
 - **Empty State**: Helpful message when no tasks exist
+- **Dynamic Sizing**: Chart height adjusts based on number of tasks
 
 ### Toolbar (`views/toolbar.py`)
 The toolbar has been redesigned with dropdown menus for better organization:
@@ -223,7 +229,7 @@ Print the active path with `pysimplepmt --log-file`.
 
 ### Required Dependencies
 ```bash
-pip install customtkinter matplotlib numpy openpyxl
+pip install customtkinter plotly tkinterweb numpy openpyxl
 ```
 
 Or install everything from the requirements file:

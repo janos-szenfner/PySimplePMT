@@ -1,65 +1,36 @@
 """
-Static Gantt chart visualization for the Gantt Project Management Tool.
+Interactive Gantt chart visualization using Plotly for the Gantt Project Management Tool.
 
-Uses Matplotlib for rendering and FigureCanvasTkAgg for embedding in Tkinter.
+Uses Plotly for rendering with interactive features (zoom, pan, hover tooltips).
 
 WHY THIS MODULE EXISTS:
 ======================
 This module provides the visual Gantt chart display for the application.
-It was designed with the following principles:
 
-1. **Separation of Visualization and Export**: 
-   - This module focuses solely on displaying the Gantt chart in the GUI
-   - Export functionality (PNG, PDF, Mermaid) has been moved to separate
-     modules in the utils/ directory
-   - This makes the code more modular and easier to maintain
-
-2. **Reusability of Drawing Logic**:
-   - The core chart drawing logic is defined here
-   - Export modules have their own copies of the drawing functions to ensure
-     they work independently without the GUI
-
-3. **Matplotlib Integration**:
-   - Uses matplotlib's date handling capabilities for proper date formatting
-   - Creates interactive charts that can be embedded in Tkinter
+1. **Interactive Visualization**: 
+   - Uses Plotly for interactive charts with zoom, pan, and hover capabilities
+   - Provides better user experience with built-in interactivity
    - Supports dynamic updates when project data changes
 
-RELATIONSHIP WITH EXPORT MODULES:
-=================================
-The export functionality has been separated into:
-- gantt_app/utils/png_exporter.py - PNG export
-- gantt_app/utils/pdf_exporter.py - PDF export  
-- gantt_app/utils/mermaid_exporter.py - Mermaid format export
-
-This separation allows:
-- Each export format to be developed and tested independently
-- The GUI visualization to be optimized without affecting export
-- Users to use export functionality without the GUI
+2. **Reusability**:
+   - The core chart drawing logic can be reused for export if needed
 """
 
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple, Any
-import math
 
 import customtkinter as ctk
-import matplotlib
-matplotlib.use("TkAgg")  # Use Tkinter backend for GUI display
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.patches import Polygon, Rectangle, Arrow
-import numpy as np
+import plotly.graph_objects as go
 
 from gantt_app.models import Task, Project
 
 
 class GanttChart(ctk.CTkFrame):
     """
-    Static Gantt chart visualization with tasks as bars and milestones as diamonds.
-    Shows dependencies as red arrows between tasks.
+    Interactive Gantt chart visualization with tasks as bars and milestones as diamonds.
+    Shows dependencies as lines between tasks.
     
     This class is responsible for:
     - Creating and displaying the Gantt chart in the GUI
@@ -68,7 +39,7 @@ class GanttChart(ctk.CTkFrame):
     """
     
     def __init__(self, master, project: Project, 
-                 width: int = 8, height: int = 6, dpi: int = 100):
+                 width: int = 12, height: int = 8, dpi: int = 100):
         super().__init__(master)
         
         self.master = master
@@ -82,18 +53,30 @@ class GanttChart(ctk.CTkFrame):
         self.milestone_color = '#e74c3c'
         self.dependency_color = '#e74c3c'
         self.critical_path_color = '#f39c12'
-        self.grid_color = '#ecf0f1'
         
-        # Create figure for display
-        self.figure = Figure(figsize=(width, height), dpi=dpi)
-        self.ax = self.figure.add_subplot(111)
+        # Chart settings (can be customized via GanttChartSettingsDialog)
+        self.chart_settings = {
+            "font_size": 12,
+            "bg_color": "#ffffff",
+            "text_color": "#000000",
+            "grid_color": "#ecf0f1"
+        }
         
-        # Create canvas for Tkinter
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self)
-        self.canvas.draw()
+        # Create figure
+        self.figure = go.Figure()
         
-        # Layout
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # Try to import tkinterweb for embedding
+        self.has_tkinterweb = False
+        self.browser = None
+        try:
+            import tkinterweb
+            self.has_tkinterweb = True
+        except ImportError:
+            print("tkinterweb not available, using fallback display")
+        
+        # Create a frame to hold the chart
+        self.chart_frame = ctk.CTkFrame(self)
+        self.chart_frame.pack(fill=tk.BOTH, expand=True)
         
         # Draw initial chart
         self.draw_chart()
@@ -104,43 +87,40 @@ class GanttChart(ctk.CTkFrame):
     def on_resize(self, event):
         """Handle window resize by redrawing the chart."""
         self.draw_chart()
-        self.canvas.draw()
     
     def draw_chart(self):
-        """Draw the complete Gantt chart."""
-        self.ax.clear()
+        """Draw the complete Gantt chart using Plotly."""
+        self.figure = go.Figure()
         
         if not self.project.tasks:
             self._draw_empty_chart()
+            self._render_chart()
             return
         
         # Sort tasks by start date
         tasks = sorted(self.project.tasks, key=lambda t: t.start_date)
         
-        # Calculate chart dimensions and scaling
+        # Calculate chart dimensions
         min_date, max_date, num_tasks = self._calculate_dates(tasks)
         
-        # Set up axes
-        self._setup_axes(min_date, max_date, num_tasks)
-        
-        # Draw tasks
+        # Add tasks as bars
         self._draw_tasks(tasks)
         
-        # Draw milestones
+        # Add milestones as markers
         milestones = [t for t in tasks if t.is_milestone]
-        self._draw_milestones(milestones)
+        self._draw_milestones(milestones, tasks)
         
-        # Draw dependencies
+        # Add dependencies as lines
         self._draw_dependencies(tasks)
         
-        # Draw critical path (optional)
+        # Add critical path highlighting
         self._draw_critical_path(tasks)
         
-        # Add labels and title
-        self._add_labels()
+        # Update layout
+        self._update_layout(min_date, max_date, tasks)
         
-        # Redraw canvas
-        self.canvas.draw()
+        # Render the chart
+        self._render_chart()
     
     def _calculate_dates(self, tasks: List[Task]) -> Tuple[datetime, datetime, int]:
         """Calculate min/max dates and task count for scaling."""
@@ -164,126 +144,92 @@ class GanttChart(ctk.CTkFrame):
         
         return min_date, max_date, len(tasks)
     
-    def _setup_axes(self, min_date: datetime, max_date: datetime, num_tasks: int):
-        """Set up axes with proper scaling and formatting."""
-        # Set date formatter
-        self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        self.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        
-        # Set date limits
-        self.ax.set_xlim(min_date, max_date)
-        
-        # Set y-axis limits and labels
-        self.ax.set_ylim(-1, num_tasks)
-        self.ax.set_yticks(range(num_tasks))
-        
-        # Rotate date labels for better readability
-        plt.setp(self.ax.get_xticklabels(), rotation=45, ha='right')
-        
-        # Grid
-        self.ax.grid(True, which='both', linestyle='-', linewidth=0.5, color=self.grid_color)
-        self.ax.set_axisbelow(True)
-        
-        # Remove spines for cleaner look
-        for spine in self.ax.spines.values():
-            spine.set_visible(False)
-    
     def _draw_tasks(self, tasks: List[Task]):
         """Draw regular tasks as horizontal bars."""
         sorted_tasks = sorted(tasks, key=lambda t: t.start_date)
         
-        patches = []
-        task_labels = []
-        progress_labels = []
+        # Get custom settings
+        settings = getattr(self, 'chart_settings', {})
         
         for i, task in enumerate(sorted_tasks):
             if task.is_milestone:
                 continue  # Skip milestones, they're drawn separately
             
-            # Calculate bar position and dimensions
+            # Calculate duration
             start_date = task.start_date
             end_date = task.end_date or task.start_date
             
-            y_pos = i
-            height = 0.6
+            duration_days = (end_date - start_date).days + 1 if end_date >= start_date else 1
             
-            # Convert dates to numeric values for matplotlib
-            start_x_num = mdates.date2num(start_date)
-            end_x_num = mdates.date2num(end_date)
-            width_days = end_x_num - start_x_num if end_x_num > start_x_num else 1
+            # Create hover text with rich information
+            deps = [self.project.get_task_by_id(d).name if self.project.get_task_by_id(d) else d for d in task.dependencies]
+            dep_str = ", ".join(deps) if deps else "None"
             
-            rect = Rectangle(
-                (start_x_num, y_pos - height/2),
-                width_days,
-                height,
-                facecolor=task.color,
-                edgecolor='black',
-                linewidth=1
+            hover_text = (
+                f"<b>{task.name}</b><br>"
+                f"Start: {start_date.strftime('%Y-%m-%d')}<br>"
+                f"End: {end_date.strftime('%Y-%m-%d')}<br>"
+                f"Duration: {duration_days} days<br>"
+                f"Progress: {task.progress}%<br>"
+                f"Type: {task.task_type}<br>"
+                f"Dependencies: {dep_str}"
             )
-            patches.append(rect)
             
-            # Add task name label
-            label_x = start_date + timedelta(days=2)
-            task_labels.append((label_x, y_pos, task.name))
-            
-            # Add progress label if > 0
-            if task.progress > 0:
-                progress_text = f"{task.progress}%"
-                progress_seconds = (end_date - start_date).total_seconds() * (task.progress / 100)
-                progress_x = start_date + timedelta(seconds=progress_seconds)
-                progress_labels.append((progress_x, y_pos, progress_text))
-        
-        # Add patches to axes
-        for patch in patches:
-            self.ax.add_patch(patch)
-        
-        # Add labels
-        for x, y, text in task_labels:
-            self.ax.text(x, y, text, va='center', ha='left', fontsize=8, 
-                         bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
-        
-        for x, y, text in progress_labels:
-            self.ax.text(x, y, text, va='center', ha='center', fontsize=8, 
-                         color='white', fontweight='bold')
+            # Add bar for this task
+            self.figure.add_trace(go.Bar(
+                x=[start_date],
+                y=[i],
+                width=[duration_days],
+                orientation='h',
+                name=task.name,
+                marker=dict(color=task.color, line=dict(color='black', width=1)),
+                hovertemplate=hover_text + '<extra></extra>',
+                showlegend=False,
+                opacity=0.8
+            ))
     
-    def _draw_milestones(self, milestones: List[Task]):
-        """Draw milestones as diamonds."""
+    def _draw_milestones(self, milestones: List[Task], all_tasks: List[Task]):
+        """Draw milestones as diamond markers."""
         sorted_milestones = sorted(milestones, key=lambda t: t.start_date)
         
         # Find position of each milestone in the task list
-        all_tasks = sorted(self.project.tasks, key=lambda t: t.start_date)
+        x_values = []
+        y_values = []
+        text_values = []
+        color_values = []
         
         for milestone in sorted_milestones:
             try:
-                # Find index in task list
                 index = all_tasks.index(milestone)
             except ValueError:
                 continue
             
-            x = milestone.start_date
-            y = index
-            x_num = mdates.date2num(x)
-            
-            # Create diamond shape
-            diamond = Polygon([
-                (x_num, y - 0.3),    # Top
-                (x_num + 0.3, y),   # Right
-                (x_num, y + 0.3),    # Bottom
-                (x_num - 0.3, y)    # Left
-            ], facecolor=milestone.color, edgecolor='black', linewidth=1)
-            
-            self.ax.add_patch(diamond)
-            
-            # Add milestone name label
-            label_x = x + timedelta(days=2)
-            self.ax.text(label_x, y, milestone.name, va='center', ha='left', 
-                         fontsize=8, bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
-            
-            # Add milestone marker (diamond symbol)
-            self.ax.text(x, y, '\u2666', va='center', ha='center', fontsize=12, color='white')
+            x_values.append(milestone.start_date)
+            y_values.append(index)
+            text_values.append(milestone.name)
+            color_values.append(milestone.color)
+        
+        # Add milestone markers
+        if x_values:
+            self.figure.add_trace(go.Scatter(
+                x=x_values,
+                y=y_values,
+                mode='markers+text',
+                marker=dict(
+                    symbol='diamond',
+                    size=22,
+                    color=color_values,
+                    line=dict(width=2, color='black')
+                ),
+                text=text_values,
+                textposition='middle right',
+                textfont=dict(size=11, color='black'),
+                hovertemplate='<b>%{text}</b><br>Date: %{x|%Y-%m-%d}<extra></extra>',
+                showlegend=False
+            ))
     
     def _draw_dependencies(self, tasks: List[Task]):
-        """Draw dependency arrows between tasks."""
+        """Draw dependency lines between tasks."""
         for task in tasks:
             for dep_id in task.dependencies:
                 dep_task = self.project.get_task_by_id(dep_id)
@@ -299,7 +245,7 @@ class GanttChart(ctk.CTkFrame):
                 except ValueError:
                     continue
                 
-                # Start and end dates for dependency
+                # Get dates for dependency
                 if dep_task.is_milestone:
                     dep_x = dep_task.start_date
                     dep_y = dep_index
@@ -314,33 +260,16 @@ class GanttChart(ctk.CTkFrame):
                     task_x = task.start_date
                     task_y = task_index
                 
-                # Draw arrow from dependency to task
-                self._draw_arrow(dep_x, dep_y, task_x, task_y)
-    
-    def _draw_arrow(self, x1: datetime, y1: float, x2: datetime, y2: float):
-        """Draw an arrow from (x1, y1) to (x2, y2)."""
-        # Convert dates to numeric values for matplotlib
-        x1_num = mdates.date2num(x1)
-        x2_num = mdates.date2num(x2)
-        
-        # Adjust y positions for better visibility
-        y1_adj = y1 + 0.3
-        y2_adj = y2 - 0.3
-        
-        # Draw arrow line
-        arrow = Arrow(x1_num, y1_adj, x2_num - x1_num, y2_adj - y1_adj,
-                      width=0.1, facecolor=self.dependency_color, edgecolor=self.dependency_color,
-                      linestyle='-', alpha=0.8)
-        self.ax.add_patch(arrow)
-        
-        # Add arrowhead for better visual cue
-        arrowhead_x = x2_num - 0.1
-        arrowhead_y = y2_adj - 0.1 * ((y2_adj - y1_adj) / max(abs(y2_adj - y1_adj), 1))
-        
-        arrowhead = Arrow(arrowhead_x, arrowhead_y,
-                        (x2_num - x1_num) * 0.1, (y2_adj - y1_adj) * 0.1,
-                        width=0.3, facecolor=self.dependency_color, edgecolor=self.dependency_color)
-        self.ax.add_patch(arrowhead)
+                # Add dependency line
+                self.figure.add_trace(go.Scatter(
+                    x=[dep_x, task_x],
+                    y=[dep_y, task_y],
+                    mode='lines',
+                    line=dict(color=self.dependency_color, width=2, dash='dot'),
+                    hoverinfo='skip',
+                    showlegend=False,
+                    opacity=0.7
+                ))
     
     def _draw_critical_path(self, tasks: List[Task]):
         """Draw the critical path in a different color."""
@@ -357,20 +286,24 @@ class GanttChart(ctk.CTkFrame):
                         continue
                     
                     # Highlight milestone
-                    x = task.start_date
-                    y = index
-                    x_num = mdates.date2num(x)
-                    diamond = Polygon([
-                        (x_num, y - 0.3),
-                        (x_num + 0.3, y),
-                        (x_num, y + 0.3),
-                        (x_num - 0.3, y)
-                    ], facecolor=self.critical_path_color, edgecolor='black', linewidth=2)
-                    self.ax.add_patch(diamond)
+                    self.figure.add_trace(go.Scatter(
+                        x=[task.start_date],
+                        y=[index],
+                        mode='markers',
+                        marker=dict(
+                            symbol='diamond',
+                            size=26,
+                            color=self.critical_path_color,
+                            line=dict(width=3, color='black')
+                        ),
+                        hoverinfo='skip',
+                        showlegend=False
+                    ))
                 else:
                     # Highlight task bar
                     start_date = task.start_date
                     end_date = task.end_date or task.start_date
+                    duration_days = (end_date - start_date).days + 1 if end_date >= start_date else 1
                     
                     all_tasks = sorted(tasks, key=lambda t: t.start_date)
                     try:
@@ -378,60 +311,135 @@ class GanttChart(ctk.CTkFrame):
                     except ValueError:
                         continue
                     
-                    y_pos = index
-                    height = 0.6
-                    
-                    # Convert dates to numeric values
-                    start_x_num = mdates.date2num(start_date)
-                    end_x_num = mdates.date2num(end_date)
-                    width_days = end_x_num - start_x_num if end_x_num > start_x_num else 1
-                    
-                    rect = Rectangle(
-                        (start_x_num, y_pos - height/2),
-                        width_days,
-                        height,
-                        facecolor=self.critical_path_color,
-                        edgecolor='black',
-                        linewidth=2,
-                        alpha=0.8
-                    )
-                    self.ax.add_patch(rect)
+                    self.figure.add_trace(go.Bar(
+                        x=[start_date],
+                        y=[index],
+                        width=[duration_days],
+                        orientation='h',
+                        marker=dict(color=self.critical_path_color, line=dict(width=2, color='black'), opacity=0.8),
+                        hoverinfo='skip',
+                        showlegend=False
+                    ))
+    
+    def _update_layout(self, min_date: datetime, max_date: datetime, tasks: List[Task]):
+        """Update the chart layout."""
+        sorted_tasks = sorted(tasks, key=lambda t: t.start_date)
+        task_names = [t.name[:30] + ('...' if len(t.name) > 30 else '') for t in sorted_tasks]
+        
+        project_name = getattr(self.project, 'name', '') or 'New Project'
+        
+        # Get custom settings
+        settings = getattr(self, 'chart_settings', {})
+        font_size = settings.get('font_size', 12)
+        bg_color = settings.get('bg_color', '#ffffff')
+        text_color = settings.get('text_color', '#000000')
+        grid_color = settings.get('grid_color', '#ecf0f1')
+        
+        # Calculate height based on number of tasks
+        height = max(600, len(sorted_tasks) * 40 + 100)
+        
+        self.figure.update_layout(
+            title=dict(
+                text=f"Gantt Chart: {project_name}",
+                font=dict(size=18, family="Arial, sans-serif", color=text_color)
+            ),
+            xaxis_title="Date",
+            yaxis_title="Tasks",
+            yaxis=dict(
+                tickmode='array',
+                tickvals=list(range(len(sorted_tasks))),
+                ticktext=task_names,
+                tickfont=dict(size=font_size, family="Arial, sans-serif", color=text_color),
+                title=dict(font=dict(size=14, color=text_color)),
+                tickangle=0
+            ),
+            xaxis=dict(
+                tickfont=dict(size=font_size, family="Arial, sans-serif", color=text_color),
+                title=dict(font=dict(size=14, color=text_color)),
+                tickformat='%Y-%m-%d',
+                gridcolor=grid_color,
+                showgrid=True
+            ),
+            height=height,
+            width=1200,
+            showlegend=False,
+            plot_bgcolor=bg_color,
+            paper_bgcolor=bg_color,
+            margin=dict(l=180, r=50, t=80, b=80),
+            hovermode='closest',
+            # Invert y-axis so earliest task is at top
+            yaxis_autorange='reversed',
+            font=dict(size=font_size, family="Arial, sans-serif", color=text_color)
+        )
+        
+        # Set date range
+        self.figure.update_xaxes(range=[min_date - timedelta(days=1), max_date + timedelta(days=1)])
+        self.figure.update_yaxes(gridcolor=grid_color, showgrid=True)
     
     def _draw_empty_chart(self):
         """Draw an empty chart with instructions."""
-        self.ax.clear()
-        self.ax.set_xlim(datetime.now(), datetime.now() + timedelta(days=30))
-        self.ax.set_ylim(0, 1)
+        self.figure = go.Figure()
         
-        self.ax.text(0.5, 0.5, "No tasks to display\nAdd tasks to see the Gantt chart",
-                     ha='center', va='center', transform=self.ax.transAxes,
-                     fontsize=14, color='#7f8c8d')
-        
-        # Remove spines
-        for spine in self.ax.spines.values():
-            spine.set_visible(False)
+        self.figure.update_layout(
+            title=dict(
+                text="No tasks to display",
+                font=dict(size=18, color='#7f8c8d')
+            ),
+            xaxis_title="Date",
+            yaxis_title="Tasks",
+            height=600,
+            width=1200,
+            showlegend=False,
+            paper_bgcolor='white',
+            margin=dict(l=50, r=50, t=80, b=50),
+            annotations=[dict(
+                text="Add tasks to see the Gantt chart",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5,
+                showarrow=False,
+                font=dict(size=16, color='#7f8c8d', family="Arial, sans-serif")
+            )]
+        )
     
-    def _add_labels(self):
-        """Add labels and title to the chart."""
-        if hasattr(self.project, 'name') and self.project.name:
-            self.ax.set_title(f"Gantt Chart: {self.project.name}", 
-                             fontdict={'fontsize': 14, 'fontweight': 'bold'}, pad=20)
-        else:
-            self.ax.set_title("Gantt Chart", fontdict={'fontsize': 14, 'fontweight': 'bold'}, pad=20)
+    def _render_chart(self):
+        """Render the Plotly chart in the Tkinter frame."""
+        # Clear existing widgets in chart_frame
+        for widget in self.chart_frame.winfo_children():
+            widget.destroy()
         
-        self.ax.set_ylabel("Tasks", fontdict={'fontsize': 10})
-        
-        # Set task names on y-axis
-        sorted_tasks = sorted(self.project.tasks, key=lambda t: t.start_date)
-        task_names = [t.name[:20] + ('...' if len(t.name) > 20 else '') for t in sorted_tasks]
-        self.ax.set_yticklabels(task_names)
-
-        # Bars are placed at increasing y for later tasks, and matplotlib's y
-        # axis grows upward, which would put the earliest task at the bottom.
-        # Invert so the chart reads top to bottom in the same order as the
-        # task list, which is what a Gantt chart is expected to do.
-        if not self.ax.yaxis_inverted():
-            self.ax.invert_yaxis()
+        try:
+            # Use tkinterweb if available
+            if self.has_tkinterweb:
+                import tkinterweb
+                
+                # Create HTML content
+                html_content = self.figure.to_html(include_plotlyjs='cdn', full_html=False)
+                
+                # Create tkinterweb frame
+                self.browser = tkinterweb.HtmlFrame(self.chart_frame)
+                self.browser.load_html(html_content)
+                self.browser.pack(fill=tk.BOTH, expand=True)
+                
+            else:
+                # Fallback: Create a label with instructions
+                fallback_label = ctk.CTkLabel(
+                    self.chart_frame,
+                    text="Plotly chart requires tkinterweb for embedding.\nInstall with: pip install tkinterweb",
+                    text_color="gray"
+                )
+                fallback_label.pack(pady=40)
+                
+        except Exception as e:
+            # Show error
+            error_label = ctk.CTkLabel(
+                self.chart_frame,
+                text=f"Error rendering chart: {e}",
+                text_color="red"
+            )
+            error_label.pack(pady=20)
+            print(f"Error rendering Plotly chart: {e}")
+            import traceback
+            traceback.print_exc()
     
     def update_chart(self):
         """Update the chart with current project data."""
@@ -444,40 +452,6 @@ class GanttChart(ctk.CTkFrame):
     
     def clear_chart(self):
         """Clear the chart."""
-        self.ax.clear()
+        self.figure = go.Figure()
         self._draw_empty_chart()
-        self.canvas.draw()
-    
-    # Convenience methods for export (delegates to the new exporter modules)
-    def export_to_png(self, filepath: str, dpi: int = 300) -> bool:
-        """
-        Export the Gantt chart to PNG file.
-        
-        This is a convenience method that delegates to the png_exporter module.
-        
-        Args:
-            filepath: Path to save the PNG file
-            dpi: Dots per inch for the output image
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        from gantt_app.utils.png_exporter import export_gantt_to_png
-        return export_gantt_to_png(self.project, filepath, 
-                                  width=self.width, height=self.height, dpi=dpi)
-    
-    def export_to_pdf(self, filepath: str) -> bool:
-        """
-        Export the Gantt chart to PDF file.
-        
-        This is a convenience method that delegates to the pdf_exporter module.
-        
-        Args:
-            filepath: Path to save the PDF file
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        from gantt_app.utils.pdf_exporter import export_gantt_to_pdf
-        return export_gantt_to_pdf(self.project, filepath,
-                                  width=self.width, height=self.height, dpi=self.dpi)
+        self._render_chart()

@@ -182,7 +182,7 @@ class GanttApp(ctk.CTk):
         # Create Gantt chart
         self.gantt_chart = GanttChart(
             content_frame, self.project,
-            width=10, height=6, dpi=100
+            width=12, height=8
         )
         self.gantt_chart.grid(row=0, column=1, sticky=tk.NSEW, padx=5, pady=5)
         

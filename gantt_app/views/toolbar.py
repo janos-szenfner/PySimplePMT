@@ -321,14 +321,15 @@ class Toolbar(ctk.CTkFrame):
         project_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
     def _create_view_buttons(self):
-        """Create the View dropdown button for Project Info and Toggle Theme."""
+        """Create the View dropdown button for Project Info, Toggle Theme, and Gantt Chart settings."""
         view_frame = ctk.CTkFrame(self)
         view_frame.pack(side=tk.LEFT, padx=5, pady=5)
         
-        # View dropdown button for Project Info, Toggle Theme
+        # View dropdown button for Project Info, Toggle Theme, Gantt Chart settings
         view_menu_items = [
             {"text": "Project Info", "command": self.edit_project_info},
-            {"text": "Toggle Theme", "command": self.toggle_theme}
+            {"text": "Toggle Theme", "command": self.toggle_theme},
+            {"text": "Gantt Chart Settings", "command": self.open_gantt_chart_settings}
         ]
         
         view_btn = DropdownButton(
@@ -417,35 +418,18 @@ class Toolbar(ctk.CTkFrame):
 
     def add_task(self):
         """Add a new task to the project with undo support."""
-        # Create a default task
-        default_start = datetime.now()
-        duration_days = simpledialog.askinteger(
-            "Task Duration", "Enter duration in days:", parent=self.master, minvalue=1, maxvalue=365, initialvalue=7
+        from gantt_app.views.task_list import CreateTaskDialog
+        
+        # Open create task dialog
+        dialog = CreateTaskDialog(
+            self.master, self.project,
+            task_type="Task",
+            on_save=self._save_new_task
         )
-        
-        if duration_days is None:  # User cancelled
-            return
-        
-        # Durations are inclusive: a 1 day task starts and ends on the same
-        # day, matching Task.duration_days and every importer
-        default_end = default_start + timedelta(days=duration_days - 1)
-        
-        # Get task name
-        task_name = simpledialog.askstring(
-            "New Task", "Enter task name:", parent=self.master
-        )
-        
-        if not task_name:
-            return
-        
-        # Create and add task
-        task = Task.create_task(
-            name=task_name,
-            start_date=default_start,
-            end_date=default_end,
-            task_id=self.project.next_task_id()
-        )
-        
+        dialog.wait_window()
+    
+    def _save_new_task(self, task: Task):
+        """Handle saving a newly created task with undo support."""
         # Use undo/redo if available
         if self.undo_redo_manager:
             from gantt_app.utils.undoredo import create_add_task_command
@@ -462,53 +446,20 @@ class Toolbar(ctk.CTkFrame):
     
     def add_milestone(self):
         """Add a new milestone to the project with undo support."""
-        # Get milestone name
-        milestone_name = simpledialog.askstring(
-            "New Milestone", "Enter milestone name:", parent=self.master
+        from gantt_app.views.task_list import CreateTaskDialog
+        
+        # Open create milestone dialog
+        dialog = CreateTaskDialog(
+            self.master, self.project,
+            task_type="Milestone",
+            on_save=self._save_new_task
         )
-        
-        if not milestone_name:
-            return
-        
-        # Get milestone date
-        date_str = simpledialog.askstring(
-            "Milestone Date", "Enter date (YYYY-MM-DD):", 
-            parent=self.master, initialvalue=datetime.now().strftime('%Y-%m-%d')
-        )
-        
-        if not date_str:
-            return
-        
-        try:
-            milestone_date = datetime.strptime(date_str, '%Y-%m-%d')
-        except ValueError:
-            messagebox.showerror("Invalid Date", "Please use YYYY-MM-DD format")
-            return
-        
-        # Create and add milestone
-        milestone = Task.create_milestone(
-            name=milestone_name,
-            date=milestone_date,
-            task_id=self.project.next_task_id()
-        )
-        
-        # Use undo/redo if available
-        if self.undo_redo_manager:
-            from gantt_app.utils.undoredo import create_add_task_command
-            command = create_add_task_command(self.project, milestone)
-            if self.undo_redo_manager.execute(command):
-                self.update_undo_redo_buttons()
-                if self.on_project_changed:
-                    self.on_project_changed()
-        else:
-            # Fallback to direct addition
-            self.project.add_task(milestone)
-            if self.on_project_changed:
-                self.on_project_changed()
+        dialog.wait_window()
     
     def add_subtask(self):
         """Add a new subtask to the project with undo support."""
         from gantt_app.models import Task
+        from gantt_app.views.task_list import CreateTaskDialog
         
         # Any task can be a parent, including an existing sub-task, so that
         # hierarchies deeper than two levels can be built
@@ -516,55 +467,28 @@ class Toolbar(ctk.CTkFrame):
         if not candidate_parents:
             messagebox.showwarning("No Parent Task", "You need at least one task to create a subtask.")
             return
-
-        # Get subtask name
-        subtask_name = simpledialog.askstring(
-            "New Sub-Task", "Enter subtask name:", parent=self.master
-        )
-
-        if not subtask_name:
-            return
-
-        # Let user select parent task
-        parent_task = self._select_parent_task(candidate_parents)
-        if not parent_task:
-            return
         
-        # Get duration in days
-        duration_days = simpledialog.askinteger(
-            "Sub-Task Duration", "Enter duration in days:", 
-            parent=self.master, minvalue=1, maxvalue=365, initialvalue=1
-        )
-        
-        if duration_days is None:  # User cancelled
-            return
-        
-        # Calculate end date based on parent start date
-        parent_start = parent_task.start_date
-        # Inclusive duration, as in add_task
-        subtask_end = parent_start + timedelta(days=duration_days - 1)
-        
-        # Create subtask
-        subtask = Task.create_subtask(
-            name=subtask_name,
-            parent_task=parent_task,
-            end_date=subtask_end,
-            task_id=self.project.next_task_id()
-        )
-        
-        # Use undo/redo if available
-        if self.undo_redo_manager:
-            from gantt_app.utils.undoredo import create_add_task_command
-            command = create_add_task_command(self.project, subtask)
-            if self.undo_redo_manager.execute(command):
-                self.update_undo_redo_buttons()
-                if self.on_project_changed:
-                    self.on_project_changed()
+        # If only one parent, use it directly
+        if len(candidate_parents) == 1:
+            parent_task = candidate_parents[0]
+            dialog = CreateTaskDialog(
+                self.master, self.project,
+                task_type="Sub-Task",
+                parent_task=parent_task,
+                on_save=self._save_new_task
+            )
+            dialog.wait_window()
         else:
-            # Fallback to direct addition
-            self.project.add_task(subtask)
-            if self.on_project_changed:
-                self.on_project_changed()
+            # Let user select parent first, then open full dialog
+            parent_task = self._select_parent_task(candidate_parents)
+            if parent_task:
+                dialog = CreateTaskDialog(
+                    self.master, self.project,
+                    task_type="Sub-Task",
+                    parent_task=parent_task,
+                    on_save=self._save_new_task
+                )
+                dialog.wait_window()
     
     def _candidate_parent_tasks(self) -> List[Task]:
         """
@@ -1057,6 +981,35 @@ class Toolbar(ctk.CTkFrame):
         current_theme = ctk.get_appearance_mode()
         new_theme = "dark" if current_theme == "light" else "light"
         ctk.set_appearance_mode(new_theme)
+    
+    def open_gantt_chart_settings(self):
+        """Open the Gantt chart settings dialog."""
+        if self.gantt_chart:
+            from gantt_app.views.ganttsettingsw import GanttChartSettingsDialog
+            
+            try:
+                dialog = GanttChartSettingsDialog(
+                    self.master, 
+                    self.gantt_chart,
+                    on_settings_changed=self._on_gantt_settings_changed
+                )
+                dialog.wait_window()
+            except Exception as e:
+                logger.exception("Could not open Gantt chart settings")
+                messagebox.showerror(
+                    "Settings Error",
+                    f"Could not open Gantt chart settings:\n{e}"
+                )
+        else:
+            messagebox.showerror(
+                "Error",
+                "Gantt chart is not available. Cannot open settings."
+            )
+    
+    def _on_gantt_settings_changed(self, settings: Dict):
+        """Handle Gantt chart settings changes."""
+        logger.debug("Gantt chart settings changed: %s", settings)
+        # The chart will be redrawn automatically by the settings dialog
     
     def set_project(self, project: Project):
         """Set a new project for the toolbar."""

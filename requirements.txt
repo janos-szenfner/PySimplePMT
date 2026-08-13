@@ -10,9 +10,10 @@
 # --- Direct dependencies -------------------------------------------------
 
 customtkinter>=5.2.0,<7.0.0     # UI toolkit
-matplotlib>=3.5.0,<4.0.0        # Gantt chart rendering, PNG and PDF export
-numpy>=1.21.0,<3.0.0            # Required by matplotlib
+plotly>=5.0.0,<7.0.0           # Interactive Gantt chart rendering
+numpy>=1.21.0,<3.0.0            # Required by plotly
 openpyxl>=3.0.0,<4.0.0          # XLSX import and export
+tkinterweb>=4.0.0,<5.0.0       # Required for embedding Plotly charts in Tkinter
 
 # Enhanced drag-and-drop. The task list falls back to plain Tkinter bindings
 # when this is missing, but the packaged build ships with it.
@@ -23,16 +24,13 @@ tkinterdnd2>=0.3.0,<0.5.0
 # than whatever the resolver happens to choose on build day.
 
 darkdetect>=0.7.0,<1.0.0        # customtkinter: system theme detection
-packaging>=20.0                 # customtkinter, matplotlib
-pillow>=8.0.0,<13.0.0           # matplotlib: image handling
-contourpy>=1.0.1,<2.0.0         # matplotlib
-cycler>=0.10,<1.0.0             # matplotlib
-fonttools>=4.22.0,<5.0.0        # matplotlib
-kiwisolver>=1.3.1,<2.0.0        # matplotlib
-pyparsing>=2.3.1,<4.0.0         # matplotlib
-python-dateutil>=2.7,<3.0.0     # matplotlib
+packaging>=20.0                 # customtkinter, plotly
+python-dateutil>=2.7,<3.0.0     # plotly: date handling
+pytz>=2020.1                    # plotly: timezone support (optional)
 six>=1.5                        # python-dateutil
 et-xmlfile>=1.1.0,<3.0.0        # openpyxl
+pandoc>=2.0.0                   # plotly: HTML conversion (optional)
+pygments>=2.4.0                 # plotly: syntax highlighting (optional)
 
 # --- Deliberately NOT bundled --------------------------------------------
 #

@@ -45,7 +45,7 @@ sudo apt remove pysimplepmt
 
 - The CPython interpreter and standard library
 - The Tcl/Tk runtime behind Tkinter
-- customtkinter, matplotlib, numpy, openpyxl, tkinterdnd2 and their
+- customtkinter, plotly, tkinterweb, numpy, openpyxl, tkinterdnd2 and their
   transitive dependencies — every package pinned in `requirements.txt`
 
 **Not bundled** — base system libraries that ship with any Ubuntu desktop and

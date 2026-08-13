@@ -17,6 +17,8 @@ importable modules, so they have to be collected explicitly or the app starts
 with unstyled widgets. tkinterdnd2 is handled the same way, and is treated as
 optional because the task list falls back to plain Tkinter bindings when it is
 absent - a missing optional package should not fail the build.
+
+plotly and tkinterweb are now used for the interactive Gantt chart visualization.
 """
 
 import importlib.util
@@ -73,14 +75,18 @@ def bundle(package_name, optional=False):
 bundle('customtkinter')
 bundle('tkinterdnd2', optional=True)
 
-# matplotlib's own PyInstaller hook covers its modules; its data files
-# (fonts, style sheets) still need collecting
-datas += collect_data_files('matplotlib')
+# plotly's data files (JSON schemas, etc.) still need collecting
+datas += collect_data_files('plotly')
+
+# tkinterweb HTML rendering support
+datas += collect_data_files('tkinterweb')
+datas += collect_data_files('tkinterweb_tkhtml')
 
 hiddenimports += [
-    'matplotlib.backends.backend_tkagg',
-    'matplotlib.backends.backend_agg',
-    'matplotlib.backends.backend_pdf',
+    'plotly.graph_objects',
+    'plotly.offline',
+    'tkinterweb',
+    'tkinterweb_tkhtml',
     'openpyxl',
     'openpyxl.workbook',
     'PIL._tkinter_finder',
