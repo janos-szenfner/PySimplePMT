@@ -156,7 +156,7 @@ Architecture: ${ARCH}
 Maintainer: ${MAINTAINER}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6, libx11-6, libxext6, libxrender1, libfontconfig1, libfreetype6
-Recommends: xdg-utils, chromium | chromium-browser | google-chrome-stable
+Recommends: xdg-utils, fonts-dejavu-core
 Description: Gantt chart project management tool
  PySimplePMT is a desktop project management application with Gantt chart
  visualisation, drag-and-drop task management and sub-task hierarchies.
@@ -168,10 +168,8 @@ Description: Gantt chart project management tool
  and every third-party library are bundled, so no Python installation or pip
  package is required on the target system.
  .
- Exporting the chart to PNG or PDF additionally needs a Chrome or Chromium
- browser, which Plotly's renderer drives. It is recommended rather than
- required: without it every other feature still works, and the chart can be
- exported to a self-contained interactive HTML file instead.
+ Nothing is downloaded at runtime. Charts export to PNG, PDF, SVG and
+ self-contained interactive HTML using only what the package ships with.
 CONTROL
 
 cat > "${STAGE_DIR}/DEBIAN/postinst" <<'POSTINST'

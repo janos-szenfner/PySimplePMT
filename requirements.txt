@@ -18,7 +18,7 @@
 customtkinter>=6.0.0,<7.0.0     # UI toolkit
 plotly>=6.9.0,<7.0.0            # Every Gantt chart: on screen and exported
 tkinterweb>=4.25.3,<5.0.0       # Embeds the Plotly chart inside Tkinter
-kaleido>=1.3.0,<2.0.0           # Renders the chart to PNG and PDF
+pillow>=12.3.0,<13.0.0          # Draws the PNG and PDF exports
 openpyxl>=3.1.5,<4.0.0          # XLSX import and export
 
 # Enhanced drag-and-drop. The task list falls back to plain Tkinter bindings
@@ -31,7 +31,6 @@ tkinterdnd2>=0.6.2,<1.0.0
 
 darkdetect>=0.8.0,<1.0.0        # customtkinter: system theme detection
 packaging>=26.3                 # customtkinter, plotly
-pillow>=12.3.0,<13.0.0          # customtkinter: CTkImage
 narwhals>=2.24.0,<3.0.0         # plotly: dataframe abstraction layer
 tkinterweb-tkhtml>=2.1.1,<3.0.0 # tkinterweb: the Tkhtml rendering engine
 et-xmlfile>=2.0.0,<3.0.0        # openpyxl
@@ -47,10 +46,9 @@ et-xmlfile>=2.0.0,<3.0.0        # openpyxl
 # solution. It required a JVM and a separately downloaded mpxj.jar on the
 # user's machine, neither of which can go inside a self-contained package.
 #
-# matplotlib and numpy were removed entirely. Plotly now draws the on-screen
-# chart and, through Kaleido, the PNG and PDF exports, so there is no reason
-# to carry a second rendering stack.
+# matplotlib and numpy were removed entirely.
 #
-# Kaleido drives a Chrome or Chromium browser to rasterise a figure. That
-# browser is NOT bundled - see packaging/README.md. HTML export needs no
-# browser at all.
+# Kaleido was removed. Plotly can only rasterise a figure through it, and it
+# does that by driving a Chrome or Chromium browser, downloading one at
+# runtime when none is installed. Static export is drawn with Pillow instead,
+# so the application never fetches anything.

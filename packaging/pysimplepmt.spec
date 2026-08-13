@@ -18,8 +18,9 @@ with unstyled widgets. tkinterdnd2 is handled the same way, and is treated as
 optional because the task list falls back to plain Tkinter bindings when it is
 absent - a missing optional package should not fail the build.
 
-plotly draws every chart; tkinterweb embeds it in the window and Kaleido
-rasterises it for PNG and PDF export. matplotlib is no longer used.
+plotly draws the interactive chart and tkinterweb embeds it in the window.
+PNG, PDF and SVG export is drawn with Pillow by utils/chart_render.py, so no
+browser and no rendering service is involved.
 """
 
 import importlib.util
@@ -79,17 +80,12 @@ bundle('tkinterweb')
 bundle('tkinterweb_tkhtml')
 bundle('tkinterdnd2', optional=True)
 
-# Kaleido turns a Plotly figure into PNG or PDF. It ships data files of its
-# own and is imported lazily by plotly, so it needs collecting explicitly.
-bundle('kaleido', optional=True)
-
 hiddenimports += [
     'plotly.graph_objects',
     'plotly.io',
     'plotly.offline',
     'tkinterweb',
     'tkinterweb_tkhtml',
-    'kaleido',
     'openpyxl',
     'openpyxl.workbook',
     'PIL._tkinter_finder',
@@ -106,7 +102,14 @@ excludes = [
     'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'wx',
     'IPython', 'jupyter', 'notebook', 'pytest', 'sphinx',
     'pandas', 'scipy', 'setuptools._distutils',
-    'matplotlib', 'numpy.tests',
+    'matplotlib', 'numpy',
+    # Plotly's matplotlib bridge, which imports numpy at module level. It is
+    # never used and only produces a collection warning during the build.
+    'plotly.matplotlylib',
+    # Kaleido parses sys.argv at import time, so PyInstaller's isolated
+    # submodule scan exits with "unrecognized arguments" and fails the build.
+    # It is no longer a dependency; excluding it keeps a stray install out.
+    'kaleido',
 ]
 
 

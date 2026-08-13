@@ -45,24 +45,22 @@ sudo apt remove pysimplepmt
 
 - The CPython interpreter and standard library
 - The Tcl/Tk runtime behind Tkinter
-- customtkinter, plotly, tkinterweb, kaleido, openpyxl, tkinterdnd2 and their
+- customtkinter, plotly, tkinterweb, pillow, openpyxl, tkinterdnd2 and their
   transitive dependencies — every package pinned in `requirements.txt`
 
-Plotly draws every chart, tkinterweb embeds it in the window, and Kaleido
-rasterises it for PNG and PDF. matplotlib and numpy were removed entirely.
+Plotly draws the interactive chart and tkinterweb embeds it in the window.
+PNG, PDF and SVG export is drawn with Pillow in `utils/chart_render.py`.
+matplotlib, numpy and Kaleido were all removed.
 
-**Static image export needs a browser.** Kaleido renders a figure by driving
-Chrome or Chromium, which is far too large to bundle, so the package declares
-it as a recommendation rather than shipping it:
+**Nothing is fetched at runtime.** Kaleido, Plotly's own image renderer,
+works by driving a Chrome or Chromium browser and downloads one when none is
+installed — hundreds of megabytes over the network, which defeats the point of
+a self-contained package. Drawing the static export directly means no browser,
+no rendering service and no download.
 
-```
-Recommends: chromium | chromium-browser | google-chrome-stable
-```
-
-`apt` installs recommendations by default, so a normal `apt install ./*.deb`
-pulls one in. Without a browser the app still runs and every other feature
-works; PNG and PDF export reports what to install, and HTML export needs no
-browser at all.
+The one thing taken from the system is a font. `fonts-dejavu-core` is
+recommended so accented characters render; without it the export falls back to
+Pillow's built-in face, which covers little more than ASCII.
 
 **Not bundled** — base system libraries that ship with any Ubuntu desktop and
 that Tk links against. These are declared in the package's `Depends:` field so

@@ -52,7 +52,8 @@ gantt_app/
 │   ├── xlsx_importer.py    # Excel XLSX project plan import
 │   ├── log.py              # Application logging (file, memory, stderr)
 │   ├── chart_figure.py     # Shared Plotly figure builder
-│   ├── image_export.py     # PNG, PDF and HTML export
+│   ├── image_export.py     # PNG, PDF, SVG and HTML export
+│   ├── chart_render.py     # Browser-free static chart drawing
 │   └── xlsx_exporter.py     # Excel XLSX export for tasks data
 │
 └── assets/                # For icons, themes, etc.
@@ -162,13 +163,13 @@ that delegates here, so the two cannot drift apart.
 
 ### PNG Exporter (`utils/png_exporter.py`)
 - **High-Quality Export**: Creates PNG images with configurable DPI (default 300)
-- **Plotly + Kaleido**: The exported image is the same figure shown on screen
+- **Browser-Free**: Drawn with Pillow; nothing is downloaded and no browser is involved
 - **Automatic Scaling**: Properly scales chart elements for image output
 - **Directory Creation**: Automatically creates parent directories
 
 ### PDF Exporter (`utils/pdf_exporter.py`)
 - **Vector Export**: Creates PDF documents with crisp, scalable graphics
-- **Plotly + Kaleido**: Vector PDF from the same figure shown on screen
+- **Browser-Free**: Drawn with Pillow at 150 dpi; export to SVG for scalable output
 - **Consistent Output**: Produces same visual output as PNG export
 - **Directory Creation**: Automatically creates parent directories
 
@@ -231,7 +232,7 @@ Print the active path with `pysimplepmt --log-file`.
 
 ### Required Dependencies
 ```bash
-pip install customtkinter plotly tkinterweb kaleido openpyxl
+pip install customtkinter plotly tkinterweb pillow openpyxl
 ```
 
 Or install everything from the requirements file:

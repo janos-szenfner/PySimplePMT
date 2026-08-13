@@ -22,7 +22,7 @@ REQUIRED_PACKAGES = [
     ('tkinter', 'user interface toolkit'),
     ('plotly', 'Gantt chart rendering'),
     ('tkinterweb', 'embedding the chart in the window'),
-    ('kaleido', 'PNG and PDF export'),
+    ('PIL', 'PNG, PDF and SVG export'),
     ('openpyxl', 'Excel import and export'),
 ]
 

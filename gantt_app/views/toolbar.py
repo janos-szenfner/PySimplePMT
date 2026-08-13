@@ -385,6 +385,7 @@ class Toolbar(ctk.CTkFrame):
         export_menu_items = [
             {"text": "Mermaid...", "command": self.export_mermaid},
             {"text": "HTML...", "command": self.export_html},
+            {"text": "SVG...", "command": self.export_svg},
             {"text": "PNG...", "command": self.export_png},
             {"text": "PDF...", "command": self.export_pdf},
             {"text": "XLSX...", "command": self.export_xlsx}
@@ -899,6 +900,30 @@ class Toolbar(ctk.CTkFrame):
         else:
             messagebox.showerror("Error", "Failed to export project to Mermaid")
     
+    def export_svg(self):
+        """Export the Gantt chart to a scalable SVG file."""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".svg",
+            filetypes=[("SVG Files", "*.svg"), ("All Files", "*.*")],
+            title="Export Gantt Chart to SVG"
+        )
+
+        if not file_path:
+            return
+
+        from gantt_app.utils.image_export import export_gantt_to_svg
+
+        logger.info("Exporting the Gantt chart to SVG: %s", file_path)
+        settings = self.gantt_chart._figure_settings() if self.gantt_chart else None
+        if export_gantt_to_svg(self.project, file_path, settings=settings):
+            messagebox.showinfo("Success", "Gantt chart exported to SVG successfully!")
+        else:
+            messagebox.showerror(
+                "Error",
+                "Failed to export the Gantt chart to SVG.\n\n"
+                "See the Log window for details."
+            )
+
     def export_png(self):
         """Export the Gantt chart to a PNG file."""
         if self.gantt_chart is None:

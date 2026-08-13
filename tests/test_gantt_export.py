@@ -7,10 +7,8 @@ These exercise the figure builder and the exporters directly rather than
 through the GanttChart widget. The widget only wraps them, and building it
 needs a display, which made the suite slow and display-dependent.
 
-PNG and PDF export runs Kaleido, which drives a Chrome or Chromium browser.
-Those tests skip when no browser is installed instead of failing, so the suite
-still passes on a machine without one. HTML export and figure construction
-need no browser and always run.
+Static export is drawn with Pillow rather than handed to a browser, so every
+format runs everywhere with nothing downloaded and nothing installed.
 """
 
 import os
@@ -26,8 +24,11 @@ from gantt_app.utils.chart_figure import (
     build_gantt_figure, build_empty_figure, calculate_date_range
 )
 from gantt_app.utils.image_export import (
-    export_gantt_to_png, export_gantt_to_pdf, export_gantt_to_html,
-    static_export_available, find_browser
+    export_gantt_to_png, export_gantt_to_pdf, export_gantt_to_svg,
+    export_gantt_to_html, static_export_available
+)
+from gantt_app.utils.chart_render import (
+    layout_chart, render_svg, render_image, find_font_file
 )
 
 
@@ -177,38 +178,8 @@ class TestHTMLExport(unittest.TestCase):
             self.assertTrue(os.path.exists(path))
 
 
-class TestBrowserDetection(unittest.TestCase):
-    """Tests for the guard that keeps Kaleido from hanging."""
-
-    def test_find_browser_returns_path_or_none(self):
-        """Detection answers without raising and without downloading."""
-        result = find_browser()
-
-        self.assertTrue(result is None or isinstance(result, str))
-
-    def test_static_export_available_is_a_bool(self):
-        """Availability is reported as a plain boolean."""
-        self.assertIsInstance(static_export_available(), bool)
-
-    def test_export_fails_cleanly_without_a_browser(self):
-        """
-        Without a browser the export returns False rather than hanging.
-
-        Kaleido would otherwise try to download a browser, blocking the
-        application for minutes with no feedback.
-        """
-        if static_export_available():
-            self.skipTest("a browser is installed, so this path is not taken")
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, 'chart.png')
-            self.assertFalse(export_gantt_to_png(sample_project(), path))
-
-
-@unittest.skipUnless(static_export_available(),
-                     "no Chrome or Chromium available for Kaleido")
 class TestStaticExport(unittest.TestCase):
-    """PNG and PDF export, when a browser is present to render them."""
+    """PNG, PDF and SVG export, drawn without a browser."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -232,6 +203,16 @@ class TestStaticExport(unittest.TestCase):
             self.assertTrue(os.path.exists(path))
             self.assertGreater(os.path.getsize(path), 1000)
 
+    def test_export_to_svg(self):
+        """A scalable SVG file is produced."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, 'chart.svg')
+
+            self.assertTrue(export_gantt_to_svg(self.project, path))
+            content = open(path, encoding='utf-8').read()
+            self.assertTrue(content.startswith('<svg'))
+            self.assertIn('</svg>', content)
+
     def test_export_empty_project(self):
         """An empty project exports without error."""
         with tempfile.TemporaryDirectory() as directory:
@@ -239,6 +220,108 @@ class TestStaticExport(unittest.TestCase):
 
             self.assertTrue(export_gantt_to_png(Project(name="Empty"), path))
             self.assertTrue(os.path.exists(path))
+
+    def test_static_export_is_always_available(self):
+        """Export needs only Pillow, which the bundle always carries."""
+        self.assertTrue(static_export_available())
+
+    def test_no_network_access_during_export(self):
+        """
+        Every format is produced offline.
+
+        The application must work from what it ships with, so this blocks
+        outbound sockets and requires each export to still succeed.
+        """
+        import socket
+
+        class Blocked(Exception):
+            """Raised when anything attempts to open a connection."""
+
+        def deny(*args, **kwargs):
+            raise Blocked("network access attempted")
+
+        originals = (socket.socket.connect, socket.create_connection)
+        socket.socket.connect = deny
+        socket.create_connection = deny
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                for name, export in (('png', export_gantt_to_png),
+                                     ('pdf', export_gantt_to_pdf),
+                                     ('svg', export_gantt_to_svg),
+                                     ('html', export_gantt_to_html)):
+                    path = os.path.join(directory, f'chart.{name}')
+                    self.assertTrue(export(self.project, path), name)
+        finally:
+            socket.socket.connect, socket.create_connection = originals
+
+
+class TestChartRenderer(unittest.TestCase):
+    """Tests for the browser-free renderer behind the static exports."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.project = sample_project()
+
+    def test_layout_places_every_task(self):
+        """Each task gets a bar or a milestone marker."""
+        layout = layout_chart(self.project)
+
+        self.assertEqual(len(layout.bars) + len(layout.milestones),
+                         len(self.project.tasks))
+        self.assertEqual(len(layout.row_labels), len(self.project.tasks))
+
+    def test_layout_orders_rows_by_start_date(self):
+        """Rows run top to bottom in start-date order."""
+        layout = layout_chart(self.project)
+        ys = [y for y, _ in layout.row_labels]
+
+        self.assertEqual(ys, sorted(ys))
+
+    def test_dependencies_are_laid_out(self):
+        """Dependency lines are produced for each edge."""
+        layout = layout_chart(self.project)
+        edges = sum(len(t.dependencies) for t in self.project.tasks)
+
+        self.assertEqual(len(layout.dependencies), edges)
+
+    def test_empty_project_layout(self):
+        """An empty project yields a message instead of rows."""
+        layout = layout_chart(Project(name="Empty"))
+
+        self.assertIsNotNone(layout.empty_message)
+        self.assertEqual(layout.bars, [])
+
+    def test_render_image_size_follows_task_count(self):
+        """A longer plan produces a taller image."""
+        small = render_image(self.project, scale=1.0)
+
+        bigger = sample_project()
+        start = bigger.tasks[0].start_date
+        for index in range(10):
+            bigger.add_task(Task.create_task(
+                f"Extra {index}", start + timedelta(days=index),
+                start + timedelta(days=index + 2),
+                task_id=bigger.next_task_id()))
+
+        self.assertGreater(render_image(bigger, scale=1.0).height, small.height)
+
+    def test_svg_escapes_task_names(self):
+        """A name containing markup characters cannot break the document."""
+        project = Project(name="Escaping")
+        project.add_task(Task.create_task(
+            "Fix <script> & \"quotes\"", datetime(2024, 1, 1),
+            datetime(2024, 1, 3), task_id=project.next_task_id()))
+
+        svg = render_svg(project)
+        self.assertNotIn('<script>', svg)
+        self.assertIn('&lt;script&gt;', svg)
+        self.assertIn('&amp;', svg)
+
+    def test_font_lookup_returns_path_or_none(self):
+        """Font discovery answers without raising and without downloading."""
+        result = find_font_file()
+
+        self.assertTrue(result is None or isinstance(result, str))
 
 
 if __name__ == '__main__':
