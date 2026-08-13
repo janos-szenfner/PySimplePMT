@@ -91,14 +91,17 @@ gantt_app/
 - **Empty State**: Helpful message when no tasks exist
 
 ### Toolbar (`views/toolbar.py`)
-- **Undo/Redo**: Undo and Redo buttons with visual state indication
-- **Project Management**: Add Task, Add Sub-Task, Add Milestone, Project Info
-- **File Operations**: Save Project, Load Project, New Project
-- **Import**: Import GAN, Import MPP, Import Mermaid, Import XLSX
-- **Export**: Export Mermaid, Export PNG, Export PDF
-- **Theme Toggle**: Switch between light/dark modes
-- **Log**: Opens the application log window
+The toolbar has been redesigned with dropdown menus for better organization:
+
+- **Create**: Dropdown with Task, Sub-Task, Milestone
+- **Project**: Dropdown with New Project, Load Project, Save Project
+- **Import**: Dropdown with MPP, GAN, Mermaid, XLSX import
+- **Export**: Dropdown with Mermaid, PNG, PDF, XLSX export
+- **Edit**: Dropdown with Undo, Redo
+- **View**: Dropdown with Project Info, Toggle Theme
+- **Log**: Opens the application log window (dark yellow button)
 - **Dialog Integration**: File dialogs, input validation, parent task selection for subtasks
+- **Color Scheme**: All main buttons are blue with white text, dropdown items are dark green with white text, Log button is dark yellow with white text
 
 ### File I/O (`utils/file_io.py`)
 - **JSON Serialization**: Handles datetime objects and None values
@@ -286,12 +289,12 @@ pysimplepmt --log-file      # print the log file path
    - Start adding tasks and milestones
 
 2. **Add Tasks**
-   - Click "Add Task" button
+   - Click **Create** dropdown menu and select "Task..."
    - Enter task name and duration in days
    - Set start date and other properties
 
 3. **Add Sub-Tasks**
-   - Click "Add Sub-Task" button
+   - Click **Create** dropdown menu and select "Sub-Task..."
    - Enter subtask name and duration in days
    - Select a parent task from the list (must have at least one task)
    - Any task can be the parent, **including an existing sub-task**, so hierarchies can go deeper than two levels
@@ -301,59 +304,74 @@ pysimplepmt --log-file      # print the log file path
    - Sub-tasks appear indented under their parent in the task list
 
 4. **Add Milestones**
-   - Click "Add Milestone" button
+   - Click **Create** dropdown menu and select "Milestone..."
    - Enter milestone name and date
    - Milestones appear as diamonds in the Gantt chart
 
-4. **Set Dependencies**
+5. **Set Dependencies**
    - Drag a task onto another task in the task list
    - Or edit dependencies in the task edit dialog (select multiple tasks and subtasks as dependencies)
    - Dependencies appear as red arrows in the Gantt chart
    - Cannot create circular dependencies (a task cannot depend on itself or its own subtasks)
 
-5. **Edit Tasks**
+6. **Edit Tasks**
    - Double-click on a task in the task list
    - Modify properties, dependencies, and colors
    - Save changes or delete the task
 
-6. **Save Project**
-   - Click "Save Project" button
+7. **Save Project**
+   - Click **Project** dropdown menu and select "Save Project..."
    - Choose file location and name
    - Project is saved in JSON format
 
-7. **Load Project**
-   - Click "Load Project" button
+8. **Load Project**
+   - Click **Project** dropdown menu and select "Load Project..."
    - Select a previously saved JSON file
 
-8. **Import Projects**
-   - Click "Import GAN" to import GanttProject files
-   - Click "Import MPP" to import MS Project files (requires Tasklib)
-   - Click "Import Mermaid" to import Mermaid Gantt chart files (.mmd, .mermaid)
-   - Click "Import XLSX" to import an Excel project plan (requires openpyxl)
-   - Importing replaces the current project and clears the undo/redo history
+9. **Create New Project**
+   - Click **Project** dropdown menu and select "New Project..."
+   - Enter project name
+   - Start adding tasks and milestones
 
-9. **Export Projects**
-   - Click "Export Mermaid" to export project to Mermaid format
-   - Click "Export PNG" to export Gantt chart as PNG image
-   - Click "Export PDF" to export Gantt chart as PDF document
-   - Click "Export XLSX" to export all tasks to Excel format
+10. **Import Projects**
+    - Click **Import** dropdown menu and select the format:
+    - "MPP..." to import MS Project files (requires Tasklib)
+    - "GAN..." to import GanttProject files
+    - "Mermaid..." to import Mermaid Gantt chart files (.mmd, .mermaid)
+    - "XLSX..." to import an Excel project plan (requires openpyxl)
+    - Importing replaces the current project and clears the undo/redo history
 
-10. **View the Log**
-    - Click the "Log" button in the top right
+11. **Export Projects**
+    - Click **Export** dropdown menu and select the format:
+    - "Mermaid..." to export project to Mermaid format
+    - "PNG..." to export Gantt chart as PNG image
+    - "PDF..." to export Gantt chart as PDF document
+    - "XLSX..." to export all tasks to Excel format
+
+12. **Undo/Redo**
+    - Click **Edit** dropdown menu and select "Undo" to revert the last action
+    - Click **Edit** dropdown menu and select "Redo" to reapply the last undone action
+    - Menu items are disabled when no actions are available
+    - Supports undo/redo for: adding tasks, removing tasks, updating tasks, editing project info, setting dependencies
+
+13. **View Project Information**
+    - Click **View** dropdown menu and select "Project Info"
+    - Edit the project name
+
+14. **Toggle Theme**
+    - Click **View** dropdown menu and select "Toggle Theme"
+    - Switch between light and dark modes
+
+15. **View the Log**
+    - Click the **Log** button in the top right (dark yellow button)
     - Filter by level, auto-refresh, and copy or save the log to a file
     - Import and export failures appear here with full tracebacks
     - The log is also written to a file; see the Logging section for its location
 
-11. **Undo/Redo**
-    - Click "Undo" to revert the last action
-    - Click "Redo" to reapply the last undone action
-    - Buttons are disabled when no actions are available
-    - Supports undo/redo for: adding tasks, removing tasks, updating tasks, editing project info, setting dependencies
-
 ### Keyboard Shortcuts
 - **Double-click** on tasks to edit
 - **Drag and drop** to set dependencies
-- **Toggle Theme** button to switch between light/dark modes
+- Use **View** dropdown menu and select "Toggle Theme" to switch between light/dark modes
 
 ## Sample Data
 
