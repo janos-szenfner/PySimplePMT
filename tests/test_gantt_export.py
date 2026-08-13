@@ -390,3 +390,77 @@ class TestPreferredWidth(unittest.TestCase):
         image = render_image(project, width=width, scale=1.0)
 
         self.assertEqual(image.size[0], width)
+
+
+class TestRenderBudget(unittest.TestCase):
+    """
+    Tests that a rendered chart can never grow without bound.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Dragging the pane divider redraws the chart, and each redraw hands a
+    fresh image to Tk, whose image memory Python does not collect. With no
+    ceiling on the image size a long plan produced hundreds of megabytes per
+    redraw, which was enough to lock up the machine.
+    """
+
+    def _project(self, count, span_days):
+        """Build a project with a given number of tasks over a span."""
+        project = Project(name=f"{count} tasks")
+        start = datetime(2020, 1, 1)
+        step = max(1, span_days // max(count, 1))
+        for index in range(count):
+            project.add_task(Task.create_task(
+                f"T{index}",
+                start + timedelta(days=index * step),
+                start + timedelta(days=index * step + 5),
+                task_id=project.next_task_id()
+            ))
+        return project
+
+    def test_small_project_is_untouched(self):
+        """An ordinary plan is drawn at full row height."""
+        from gantt_app.utils.chart_render import layout_chart, ROW_HEIGHT
+
+        layout = layout_chart(self._project(8, 60), width=1400)
+        spacing = layout.row_labels[1][0] - layout.row_labels[0][0]
+
+        self.assertEqual(spacing, ROW_HEIGHT)
+
+    def test_tall_project_is_bounded(self):
+        """A plan with hundreds of tasks stays within the pixel budget."""
+        from gantt_app.utils.chart_render import layout_chart, MAX_PIXELS
+
+        layout = layout_chart(self._project(1000, 3000), width=6000)
+
+        self.assertLessEqual(layout.width * layout.height, MAX_PIXELS)
+
+    def test_every_task_still_gets_a_row(self):
+        """Rows are compressed rather than tasks being dropped."""
+        from gantt_app.utils.chart_render import layout_chart
+
+        project = self._project(1000, 3000)
+        layout = layout_chart(project, width=6000)
+
+        self.assertEqual(len(layout.row_labels), len(project.tasks))
+
+    def test_rendered_image_respects_the_budget(self):
+        """The image handed to Tk is bounded, not just the layout."""
+        from gantt_app.utils.chart_render import MAX_PIXELS, preferred_width
+
+        project = self._project(1000, 3000)
+        image = render_image(project, width=preferred_width(project, 1400),
+                             scale=2.0)
+
+        self.assertLessEqual(image.size[0] * image.size[1], MAX_PIXELS)
+
+    def test_extreme_project_still_renders(self):
+        """An unreasonable plan produces an image rather than failing."""
+        from gantt_app.utils.chart_render import MAX_PIXELS, preferred_width
+
+        project = self._project(3000, 3650)
+        image = render_image(project, width=preferred_width(project, 1400),
+                             scale=2.0)
+
+        self.assertLessEqual(image.size[0] * image.size[1], MAX_PIXELS)
+        self.assertGreater(image.size[0], 0)

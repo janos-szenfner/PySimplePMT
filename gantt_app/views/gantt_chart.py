@@ -23,10 +23,23 @@ import plotly.graph_objects as go
 
 from gantt_app.models import Project
 from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
+from PIL import ImageTk
+
 from gantt_app.utils.chart_render import render_image, preferred_width
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
+
+
+#: How long to wait after the last resize event before redrawing.
+RESIZE_SETTLE_MS = 350
+
+#: Ignore width changes smaller than this; a redraw is expensive.
+RESIZE_THRESHOLD_PX = 24
+
+#: Supersampling for the on-screen chart. Every extra step multiplies both
+#: the render time and the Tk image memory, so it is lower than the exports.
+SCREEN_SCALE = 1.0
 
 
 class GanttChart(ctk.CTkFrame):
@@ -77,6 +90,8 @@ class GanttChart(ctk.CTkFrame):
         self._canvas = None
         self._last_render_width = 0
         self._resize_job = None
+        self._drawing = False
+        self._photo = None
 
         # Draw initial chart
         self.draw_chart()
@@ -86,31 +101,45 @@ class GanttChart(ctk.CTkFrame):
 
     def on_resize(self, event=None):
         """
-        Redraw after the window settles.
+        Redraw once the window has settled at a new size.
 
         DEVELOPMENT NOTES:
         ------------------
-        Configure fires continuously while a window is dragged, and each
-        redraw rasterises the whole chart, so the work is deferred until the
-        resizing stops. Redrawing on every event made the window crawl.
+        Configure fires continuously while a pane divider is dragged, and
+        each redraw rasterises a multi-megapixel image and hands it to Tk,
+        whose image memory Python does not manage. Doing that per event
+        exhausted memory badly enough to lock up the machine, so the work is
+        deferred until the events stop and skipped entirely while a draw is
+        already in progress.
+
+        Events from child widgets are ignored: rebuilding the canvas inside
+        this frame raises Configure of its own, and acting on those is what
+        turns a redraw into a loop that feeds itself.
         """
+        if event is not None and getattr(event, 'widget', None) is not self:
+            return
+
         if self._resize_job is not None:
             try:
                 self.after_cancel(self._resize_job)
             except (tk.TclError, ValueError):
                 pass
+            self._resize_job = None
+
         try:
-            self._resize_job = self.after(250, self._resize_settled)
+            self._resize_job = self.after(RESIZE_SETTLE_MS, self._resize_settled)
         except tk.TclError:
             self._resize_job = None
 
     def _resize_settled(self):
         """Redraw once the window has stopped changing size."""
         self._resize_job = None
-        if not self.winfo_exists():
+
+        if self._drawing or not self.winfo_exists():
             return
-        # Only re-rasterise when the width actually changed
-        if abs(self.chart_frame.winfo_width() - self._last_render_width) > 20:
+
+        # Only re-rasterise when the width actually changed by a visible amount
+        if abs(self.chart_frame.winfo_width() - self._last_render_width) > RESIZE_THRESHOLD_PX:
             self.draw_chart()
     
     def draw_chart(self):
@@ -130,6 +159,17 @@ class GanttChart(ctk.CTkFrame):
         window shows and what a user exports are now identical. The
         interactive Plotly version is still available through Export > HTML.
         """
+        if self._drawing:
+            # A redraw triggered from inside a redraw would recurse
+            return
+        self._drawing = True
+        try:
+            self._draw_chart_now()
+        finally:
+            self._drawing = False
+
+    def _draw_chart_now(self):
+        """Rasterise the chart and put it on screen."""
         available = self.chart_frame.winfo_width()
         if available < 100:
             # Called before the frame has been sized; use a sensible default
@@ -145,7 +185,7 @@ class GanttChart(ctk.CTkFrame):
                 self.project,
                 settings=self._figure_settings(),
                 width=width,
-                scale=1.5
+                scale=SCREEN_SCALE
             )
         except Exception:
             logger.exception("Could not draw the Gantt chart")
@@ -175,6 +215,24 @@ class GanttChart(ctk.CTkFrame):
         settings['critical_path_color'] = self.critical_path_color
         return settings
 
+    def _release_photo(self):
+        """
+        Drop the Tk image currently on screen.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Tk owns this memory, so letting the Python reference go is not
+        enough on its own; the image is deleted explicitly before the next
+        one is built.
+        """
+        if self._photo is None:
+            return
+        try:
+            self.tk.call('image', 'delete', str(self._photo))
+        except (tk.TclError, AttributeError):
+            pass
+        self._photo = None
+
     def _clear_frame(self):
         """Remove whatever is currently displayed."""
         for widget in self.chart_frame.winfo_children():
@@ -195,10 +253,13 @@ class GanttChart(ctk.CTkFrame):
         """
         self._clear_frame()
 
-        # CTkImage keeps its own reference; holding it here stops the
-        # underlying PhotoImage being garbage collected while displayed
-        self._chart_image = ctk.CTkImage(light_image=image, dark_image=image,
-                                         size=image.size)
+        # A single ImageTk.PhotoImage drawn straight onto the canvas.
+        # CTkImage was building two Tk images per redraw, one for the light
+        # theme and one for the dark, and Tk image memory is not managed by
+        # Python's collector - repeated redraws while dragging the divider
+        # piled those up until the machine ran out of memory.
+        self._release_photo()
+        self._photo = ImageTk.PhotoImage(image)
 
         container = tk.Frame(self.chart_frame)
         container.pack(fill=tk.BOTH, expand=True)
@@ -220,14 +281,16 @@ class GanttChart(ctk.CTkFrame):
         vertical.grid(row=0, column=1, sticky=tk.NS)
         horizontal.grid(row=1, column=0, sticky=tk.EW)
 
-        holder = ctk.CTkLabel(canvas, image=self._chart_image, text="")
-        canvas.create_window(0, 0, anchor=tk.NW, window=holder)
+        # create_image rather than a label in a canvas window: one fewer
+        # widget, and nothing that reports the image size as a size request,
+        # which could otherwise push the pane wider and trigger another redraw
+        canvas.create_image(0, 0, anchor=tk.NW, image=self._photo)
         canvas.configure(scrollregion=(0, 0, image.size[0], image.size[1]))
 
         self._bind_scrolling(canvas)
 
         self._canvas = canvas
-        self._image_label = holder
+        self._image_label = None
 
     def _bind_scrolling(self, canvas):
         """

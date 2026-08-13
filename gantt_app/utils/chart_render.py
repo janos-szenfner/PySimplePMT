@@ -46,6 +46,7 @@ logger = get_logger(__name__)
 
 #: Layout metrics, in pixels.
 ROW_HEIGHT = 34
+MIN_ROW_HEIGHT = 8
 BAR_HEIGHT = 20
 MARGIN_LEFT = 220
 MARGIN_RIGHT = 60
@@ -91,6 +92,13 @@ MIN_PIXELS_PER_DAY = 6
 #: Upper bound on the rendered width, so a multi-year plan cannot produce an
 #: image large enough to exhaust memory.
 MAX_WIDTH = 6000
+
+#: Upper bound on the total pixels in a rendered chart. Width alone is not
+#: enough of a guard: a long plan with hundreds of tasks is tall as well as
+#: wide, and the product is what decides how much memory the image and the
+#: Tk copy of it take. Repeated redraws of an unbounded image while dragging
+#: the pane divider were enough to lock a machine up.
+MAX_PIXELS = 24_000_000
 
 
 def preferred_width(project: Project, available: int = 0) -> int:
@@ -159,7 +167,30 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                            title=title,
                            empty_message="Add tasks to see the Gantt chart")
 
-    height = MARGIN_TOP + len(tasks) * ROW_HEIGHT + MARGIN_BOTTOM
+    # Keep the whole chart within a bounded number of pixels. Rows are
+    # squeezed before anything is dropped, so every task stays visible: a
+    # plan with hundreds of tasks would otherwise be tens of thousands of
+    # pixels tall, and rendering that repeatedly while dragging the pane
+    # divider was enough to exhaust memory.
+    row_height = ROW_HEIGHT
+    height = MARGIN_TOP + len(tasks) * row_height + MARGIN_BOTTOM
+    if width * height > MAX_PIXELS:
+        budget = max(MAX_PIXELS // max(width, 1) - MARGIN_TOP - MARGIN_BOTTOM,
+                     len(tasks) * MIN_ROW_HEIGHT)
+        row_height = max(MIN_ROW_HEIGHT, budget // max(len(tasks), 1))
+        height = MARGIN_TOP + len(tasks) * row_height + MARGIN_BOTTOM
+
+        # Rows have a floor, so a very long task list stays tall no matter
+        # what. Give back the remaining pixels by narrowing the chart, which
+        # the horizontal scrollbar already copes with.
+        if width * height > MAX_PIXELS:
+            width = max(MIN_WIDTH, MAX_PIXELS // max(height, 1))
+
+        logger.info("Compressed chart to %dx%d (rows %dpx) for %d tasks to "
+                    "stay within the pixel budget",
+                    width, height, row_height, len(tasks))
+
+    bar_height = max(6, int(row_height * BAR_HEIGHT / ROW_HEIGHT))
     plot_left = MARGIN_LEFT
     plot_right = width - MARGIN_RIGHT
     plot_span = max(plot_right - plot_left, 1)
@@ -174,7 +205,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     def y_for(index: int) -> float:
         """Centre of the row at the given index."""
-        return MARGIN_TOP + index * ROW_HEIGHT + ROW_HEIGHT / 2
+        return MARGIN_TOP + index * row_height + row_height / 2
 
     layout = ChartLayout(width=width, height=height, settings=resolved,
                          title=title)
@@ -204,8 +235,8 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         layout.bars.append({
             'x0': start_x,
             'x1': end_x,
-            'y0': centre - BAR_HEIGHT / 2,
-            'y1': centre + BAR_HEIGHT / 2,
+            'y0': centre - bar_height / 2,
+            'y1': centre + bar_height / 2,
             'color': (resolved['critical_path_color'] if task.id in critical
                       else task.color),
             'progress': max(0, min(100, task.progress)),
@@ -427,6 +458,27 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
+def _safe_scale(layout: 'ChartLayout', scale: float) -> float:
+    """
+    Reduce the supersampling factor if the image would be too large.
+
+    RETURNS:
+    --------
+    float
+        A scale that keeps the intermediate image within MAX_PIXELS.
+    """
+    scale = max(1.0, float(scale))
+    pixels = layout.width * layout.height * scale * scale
+    if pixels <= MAX_PIXELS:
+        return scale
+
+    reduced = max(1.0, (MAX_PIXELS / (layout.width * layout.height)) ** 0.5)
+    logger.info("Reducing chart supersampling from %.2f to %.2f: %dx%d would "
+                "need %.0f megapixels", scale, reduced,
+                layout.width, layout.height, pixels / 1e6)
+    return reduced
+
+
 def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400, scale: float = 2.0) -> Image.Image:
     """
@@ -446,7 +498,7 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
     """
     layout = layout_chart(project, settings, width)
     s = layout.settings
-    scale = max(1.0, float(scale))
+    scale = _safe_scale(layout, scale)
 
     size = (int(layout.width * scale), int(layout.height * scale))
     image = Image.new('RGB', size, s['bg_color'])
