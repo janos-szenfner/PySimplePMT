@@ -6,13 +6,12 @@ Contains action buttons for managing the project.
 
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
-from datetime import datetime, timedelta
 from typing import Optional, Callable, List, Dict
 
 import customtkinter as ctk
 
 from gantt_app.models import Task, Project
-from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
+from gantt_app.utils.file_io import save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
 from gantt_app.utils.mpp_importer import import_mpp_file
 from gantt_app.utils.mermaid_importer import import_mermaid_file
@@ -71,7 +70,7 @@ class DropdownButton(ctk.CTkButton):
                         fg_color=fg_color, hover_color=hover_color, **kwargs)
         
         self.menu_items = menu_items
-        self.menu_window = None
+        self._popups = []
         self._dismiss_binding = None
     
     #: The dropdown currently showing its menu, if any. Only one opens at a
@@ -94,90 +93,116 @@ class DropdownButton(ctk.CTkButton):
         undecorated, always-on-top window with no bindings and no way to
         dismiss it. Every click on a menu button added another one.
         """
-        # A second click on the same button closes the menu
-        if self.menu_window is not None and self._menu_is_alive():
+        if self._popups:
             self.close_menu()
             return
 
         DropdownButton.close_open_menu()
 
         try:
-            self._build_menu()
+            DropdownButton._open_menu_owner = self
+            x = self.winfo_rootx()
+            y = self.winfo_rooty() + self.winfo_height()
+            self._open_popup(self.menu_items, x, y, level=0)
+
+            toplevel = self.winfo_toplevel()
+            self._dismiss_binding = toplevel.bind(
+                "<Button-1>", self._on_click_elsewhere, add="+"
+            )
         except Exception:
             logger.exception("Could not build the %r menu", self.cget("text"))
             self.close_menu()
 
-    def _menu_is_alive(self) -> bool:
-        """Check whether the popup window still exists."""
-        try:
-            return bool(self.menu_window and self.menu_window.winfo_exists())
-        except tk.TclError:
-            return False
+    def _open_popup(self, items, x, y, level):
+        """
+        Open one level of the menu at the given screen position.
 
-    def _build_menu(self):
-        """Create and populate the popup window."""
-        self.menu_window = ctk.CTkToplevel(self.master)
-        DropdownButton._open_menu_owner = self
+        PARAMETERS:
+        -----------
+        items : List[Dict]
+            Entries for this level. An entry with a 'submenu' key opens a
+            further level instead of running a command.
+        x, y : int
+            Screen coordinates for the top left of the popup.
+        level : int
+            Nesting depth; 0 is the menu directly under the button.
 
-        self.menu_window.title("")
-        self.menu_window.overrideredirect(True)
-        self.menu_window.attributes("-topmost", True)
+        DEVELOPMENT NOTES:
+        ------------------
+        Opening a level closes anything already open at that depth or below,
+        which is what lets the pointer move between sibling submenus without
+        leaving orphaned popups behind.
+        """
+        self._close_from_level(level)
 
-        # Position directly below the button
-        button_x = self.winfo_rootx()
-        button_y = self.winfo_rooty()
-        button_height = self.winfo_height()
+        popup = ctk.CTkToplevel(self.master)
+        popup.title("")
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
 
-        height = len(self.menu_items) * self.ITEM_HEIGHT + self.MENU_PADDING * 2
-        self.menu_window.geometry(
-            f"{self.MENU_WIDTH}x{height}+{button_x}+{button_y + button_height}"
-        )
+        height = len(items) * self.ITEM_HEIGHT + self.MENU_PADDING * 2
+        popup.geometry(f"{self.MENU_WIDTH}x{height}+{x}+{y}")
 
-        menu_frame = ctk.CTkFrame(
-            self.menu_window, fg_color=MENU_BG,
-            corner_radius=0, border_width=1, border_color=MENU_BORDER
-        )
-        menu_frame.pack(fill=tk.BOTH, expand=True)
+        frame = ctk.CTkFrame(popup, fg_color=MENU_BG, corner_radius=0,
+                             border_width=1, border_color=MENU_BORDER)
+        frame.pack(fill=tk.BOTH, expand=True)
 
-        for item in self.menu_items:
-            btn = ctk.CTkButton(
-                menu_frame,
-                text=item['text'],
-                command=lambda cmd=item.get('command'): self._on_menu_select(cmd),
+        for index, item in enumerate(items):
+            submenu = item.get('submenu')
+            label = item['text'] + ('   >' if submenu else '')
+
+            if submenu:
+                command = (lambda entries=submenu, row=index, lvl=level:
+                           self._open_submenu(entries, row, lvl))
+            else:
+                command = (lambda cmd=item.get('command'):
+                           self._on_menu_select(cmd))
+
+            button = ctk.CTkButton(
+                frame, text=label, command=command,
                 height=self.ITEM_HEIGHT - 4,
-                fg_color=ACCENT,
-                hover_color=ACCENT_HOVER,
-                text_color=ACCENT_TEXT,
-                anchor="w",
-                corner_radius=0
+                fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                text_color=ACCENT_TEXT, anchor="w", corner_radius=0
             )
-            btn.pack(fill=tk.X, padx=self.MENU_PADDING, pady=2)
+            button.pack(fill=tk.X, padx=self.MENU_PADDING, pady=2)
 
-        # Dismiss on Escape, on losing focus, or on a click anywhere else
-        self.menu_window.bind("<Escape>", lambda _e: self.close_menu())
-        self.menu_window.bind("<FocusOut>", lambda _e: self.close_menu())
+        popup.bind("<Escape>", lambda _e: self.close_menu())
+        self._popups.append(popup)
+        popup.focus_set()
+        return popup
 
-        toplevel = self.winfo_toplevel()
-        self._dismiss_binding = toplevel.bind(
-            "<Button-1>", self._on_click_elsewhere, add="+"
-        )
+    def _open_submenu(self, items, row, level):
+        """Open a child menu beside the row that owns it."""
+        parent = self._popups[level]
+        x = parent.winfo_rootx() + self.MENU_WIDTH - 4
+        y = parent.winfo_rooty() + self.MENU_PADDING + row * self.ITEM_HEIGHT
+        self._open_popup(items, x, y, level + 1)
 
-        self.menu_window.focus_set()
+    def _close_from_level(self, level):
+        """Destroy every popup at or below a nesting depth."""
+        while len(self._popups) > level:
+            popup = self._popups.pop()
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+
+    def _menu_is_alive(self) -> bool:
+        """Check whether any part of the menu is still open."""
+        return bool(self._popups)
 
     def _on_click_elsewhere(self, event):
         """Close the menu when the click lands outside it."""
-        if not self._menu_is_alive():
+        if not self._popups:
             return
-
-        # A click on this button is handled by _show_menu's toggle
         if event.widget is self:
+            # Handled by the toggle in _show_menu
             return
-
         self.close_menu()
 
     def close_menu(self):
         """
-        Dismiss the menu and release everything it registered.
+        Dismiss every level of the menu and release its bindings.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -192,12 +217,7 @@ class DropdownButton(ctk.CTkButton):
                 pass
             self._dismiss_binding = None
 
-        if self.menu_window is not None:
-            try:
-                self.menu_window.destroy()
-            except tk.TclError:
-                pass
-            self.menu_window = None
+        self._close_from_level(0)
 
         if DropdownButton._open_menu_owner is self:
             DropdownButton._open_menu_owner = None
@@ -246,163 +266,102 @@ class Toolbar(ctk.CTkFrame):
         self._create_ui()
     
     def _create_ui(self):
-        """Create the toolbar user interface."""
-        # Create dropdown button
-        self._create_create_buttons()
-        
-        # Project dropdown button
-        self._create_project_buttons()
-        
-        # Import/Export buttons (now with dropdowns)
-        self._create_import_export_buttons()
-        
-        # Edit dropdown button
-        self._create_edit_buttons()
-        
-        # View dropdown button
-        self._create_view_buttons()
-        
+        """
+        Create the toolbar user interface.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The menus are declared in one place, in the order they appear, so the
+        arrangement can be read at a glance instead of being spread across a
+        builder per menu. An entry with a 'submenu' opens a nested level.
+        """
+        for definition in self._menu_definitions():
+            self._add_menu(definition['text'], definition['items'])
+
         # Theme toggle and Log buttons
         self._create_theme_log_buttons()
-    
-    def _create_create_buttons(self):
-        """Create the Create dropdown button for task creation."""
-        create_frame = ctk.CTkFrame(self)
-        create_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Create dropdown button for Task, Sub-Task, Milestone
-        create_menu_items = [
-            {"text": "Task...", "command": self.add_task},
-            {"text": "Sub-Task...", "command": self.add_subtask},
-            {"text": "Milestone...", "command": self.add_milestone}
-        ]
-        
-        create_btn = DropdownButton(
-            create_frame, 
-            text="Create", 
-            menu_items=create_menu_items,
-            width=100,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color="white"
-        )
-        create_btn.pack(side=tk.LEFT, padx=5, pady=5)
-    
-    def _create_edit_buttons(self):
-        """Create the Edit dropdown button for undo/redo operations."""
-        edit_frame = ctk.CTkFrame(self)
-        edit_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Edit dropdown button for Undo, Redo
-        edit_menu_items = [
-            {"text": "Undo", "command": self.undo},
-            {"text": "Redo", "command": self.redo}
-        ]
-        
-        edit_btn = DropdownButton(
-            edit_frame,
-            text="Edit",
-            menu_items=edit_menu_items,
-            width=100,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color="white"
-        )
-        edit_btn.pack(side=tk.LEFT, padx=5, pady=5)
-    
-    def _create_project_buttons(self):
-        """Create dropdown button for project file operations."""
-        project_frame = ctk.CTkFrame(self)
-        project_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Project dropdown button for New, Load, Save
-        project_menu_items = [
-            {"text": "New Project...", "command": self.new_project},
-            {"text": "Load Project...", "command": self.load_project},
-            {"text": "Save Project...", "command": self.save_project}
-        ]
-        
-        project_btn = DropdownButton(
-            project_frame,
-            text="Project",
-            menu_items=project_menu_items,
-            width=100,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color="white"
-        )
-        project_btn.pack(side=tk.LEFT, padx=5, pady=5)
-    
-    def _create_view_buttons(self):
-        """Create the View dropdown button for Project Info, Toggle Theme, and Gantt Chart settings."""
-        view_frame = ctk.CTkFrame(self)
-        view_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # View dropdown button for Project Info, Toggle Theme, Gantt Chart settings
-        view_menu_items = [
-            {"text": "Project Info", "command": self.edit_project_info},
-            {"text": "Toggle Theme", "command": self.toggle_theme},
-            {"text": "Gantt Chart Settings", "command": self.open_gantt_chart_settings}
-        ]
-        
-        view_btn = DropdownButton(
-            view_frame,
-            text="View",
-            menu_items=view_menu_items,
-            width=100,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color="white"
-        )
-        view_btn.pack(side=tk.LEFT, padx=5, pady=5)
-    
 
-    
-    def _create_import_export_buttons(self):
-        """Create dropdown buttons for importing and exporting files."""
-        import_frame = ctk.CTkFrame(self)
-        import_frame.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Import dropdown button
-        import_menu_items = [
-            {"text": "MPP...", "command": self.import_mpp},
-            {"text": "GAN...", "command": self.import_gan},
-            {"text": "Mermaid...", "command": self.import_mermaid},
-            {"text": "XLSX...", "command": self.import_xlsx}
+    def _menu_definitions(self):
+        """
+        Describe every toolbar menu, left to right.
+
+        RETURNS:
+        --------
+        List[Dict]
+            One entry per top-level menu, each with its text and items.
+        """
+        return [
+            {
+                'text': 'Project',
+                'items': [
+                    {"text": "New Project...", "command": self.new_project},
+                    {"text": "Load Project...", "command": self.load_project},
+                    {"text": "Save Project...", "command": self.save_project},
+                ],
+            },
+            {
+                'text': 'File',
+                'items': [
+                    {"text": "Import", "submenu": [
+                        {"text": "MPP...", "command": self.import_mpp},
+                        {"text": "GAN...", "command": self.import_gan},
+                        {"text": "Mermaid...", "command": self.import_mermaid},
+                        {"text": "XLSX...", "command": self.import_xlsx},
+                    ]},
+                    {"text": "Export", "submenu": [
+                        {"text": "Mermaid...", "command": self.export_mermaid},
+                        {"text": "HTML...", "command": self.export_html},
+                        {"text": "SVG...", "command": self.export_svg},
+                        {"text": "PNG...", "command": self.export_png},
+                        {"text": "PDF...", "command": self.export_pdf},
+                        {"text": "XLSX...", "command": self.export_xlsx},
+                    ]},
+                ],
+            },
+            {
+                'text': 'Actions',
+                'items': [
+                    {"text": "Create", "submenu": [
+                        {"text": "Task...", "command": self.add_task},
+                        {"text": "Sub-Task...", "command": self.add_subtask},
+                        {"text": "Milestone...", "command": self.add_milestone},
+                        {"text": "Project Title...", "command": self.edit_project_info},
+                    ]},
+                ],
+            },
+            {
+                'text': 'Edit',
+                'items': [
+                    {"text": "Undo", "command": self.undo},
+                    {"text": "Redo", "command": self.redo},
+                ],
+            },
+            {
+                'text': 'View',
+                'items': [
+                    {"text": "Toggle Theme", "command": self.toggle_theme},
+                    {"text": "Gantt Chart Settings", "command": self.open_gantt_chart_settings},
+                ],
+            },
         ]
-        
-        import_btn = DropdownButton(
-            import_frame,
-            text="Import",
-            menu_items=import_menu_items,
+
+    def _add_menu(self, text, items):
+        """Add one top-level menu button to the toolbar."""
+        frame = ctk.CTkFrame(self)
+        frame.pack(side=tk.LEFT, padx=5, pady=5)
+
+        button = DropdownButton(
+            frame,
+            text=text,
+            menu_items=items,
             width=100,
             fg_color=ACCENT,
             hover_color=ACCENT_HOVER,
-            text_color="white"
+            text_color=ACCENT_TEXT
         )
-        import_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Export dropdown button
-        export_menu_items = [
-            {"text": "Mermaid...", "command": self.export_mermaid},
-            {"text": "HTML...", "command": self.export_html},
-            {"text": "SVG...", "command": self.export_svg},
-            {"text": "PNG...", "command": self.export_png},
-            {"text": "PDF...", "command": self.export_pdf},
-            {"text": "XLSX...", "command": self.export_xlsx}
-        ]
-        
-        export_btn = DropdownButton(
-            import_frame,
-            text="Export",
-            menu_items=export_menu_items,
-            width=100,
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color="white"
-        )
-        export_btn.pack(side=tk.LEFT, padx=5, pady=5)
-    
+        button.pack(side=tk.LEFT, padx=5, pady=5)
+        return button
+
     def _create_theme_log_buttons(self):
         """Create the log button."""
         theme_frame = ctk.CTkFrame(self)
@@ -644,9 +603,9 @@ class Toolbar(ctk.CTkFrame):
         return selected_task[0]
     
     def edit_project_info(self):
-        """Edit project information with undo support."""
+        """Edit the project title with undo support."""
         new_name = simpledialog.askstring(
-            "Project Info", "Enter project name:", 
+            "Project Title", "Enter the project title:",
             parent=self.master, initialvalue=self.project.name
         )
         
