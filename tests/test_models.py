@@ -580,3 +580,45 @@ class TestTaskValidation(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class TestPropertiesAreNotCalled(unittest.TestCase):
+    """
+    Guards against using a model property as if it were a method.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    main.py called task.duration_days(), which raises
+    "TypeError: 'int' object is not callable" the moment a task is selected.
+    Nothing caught it because the failure only happens in a GUI callback,
+    where Tk sends the traceback to a stderr that a packaged build has no
+    console for. This scans the source instead.
+    """
+
+    def test_model_properties_are_never_called(self):
+        """No source file calls a Task or Project property as a method."""
+        import ast
+        import pathlib
+
+        from gantt_app import models
+
+        properties = {
+            name for cls in (models.Task, models.Project)
+            for name, value in vars(cls).items()
+            if isinstance(value, property)
+        }
+        self.assertIn('duration_days', properties)
+
+        offenders = []
+        root = pathlib.Path(models.__file__).parent.parent
+        for path in sorted(root.rglob('*.py')):
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in properties):
+                    offenders.append(
+                        f"{path.relative_to(root)}:{node.lineno} "
+                        f"calls .{node.func.attr}()"
+                    )
+
+        self.assertEqual(offenders, [], "properties must be read, not called")

@@ -893,7 +893,9 @@ class DragDropTaskList(ctk.CTkFrame):
         self._apply_grid_style()
 
         # Configure tags for subtask styling
-        self.tree.tag_configure('subtask', foreground='#7f8c8d')
+        # Sub-tasks are ordinary work and read in the same colour as tasks;
+        # the indent and the Type column already mark them as nested
+        self.tree.tag_configure('subtask', foreground=self.GRID_TEXT)
 
         # Alternating row shading, which is what makes the rows read as a grid
         self.tree.tag_configure('oddrow', background=self.GRID_ROW_ALT)
@@ -1005,13 +1007,34 @@ class DragDropTaskList(ctk.CTkFrame):
             self.drag_item = None
     
     def on_double_click(self, event):
-        """Handle double click to edit task."""
+        """
+        Handle double click to edit task.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The edit dialog is opened inside a try/except so a failure while
+        building it is reported rather than leaving an empty window on
+        screen with nothing in the log.
+        """
         item = self.tree.selection()[0] if self.tree.selection() else None
-        if item:
-            task_id = self.tree.item(item, 'text')
-            task = self.project.get_task_by_id(task_id)
-            if task and self.on_task_edit:
-                self.on_task_edit(task)
+        if not item:
+            return
+
+        task_id = self.tree.item(item, 'text')
+        task = self.project.get_task_by_id(task_id)
+        if not task or not self.on_task_edit:
+            return
+
+        logger.info("Editing task %s %r", task.id, task.name)
+        try:
+            self.on_task_edit(task)
+        except Exception:
+            logger.exception("Could not open the edit dialog for task %s", task.id)
+            messagebox.showerror(
+                "Edit Task Failed",
+                "The task could not be opened for editing.\n\n"
+                "See the Log window for details."
+            )
     
     def on_select(self, event):
         """Handle task selection."""
@@ -1304,9 +1327,10 @@ class DragDropTaskList(ctk.CTkFrame):
             display_name = ('  ' * indent_level) + '├── ' + display_name
         
         # Insert into tree
-        item_id = self.tree.insert(parent_item, tk.END, 
+        item_id = self.tree.insert(parent_item, tk.END,
                                  iid=task.id,
                                  text=task.id,
+                                 open=True,
                                  values=(
                                      task.id,  # IDs are short sequential numbers
                                      display_name,

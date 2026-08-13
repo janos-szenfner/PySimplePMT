@@ -61,6 +61,11 @@ class GanttApp(ctk.CTk):
         
         # Bind events
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # Tk sends callback exceptions to stderr, which a packaged build has
+        # no console for, so a failing dialog just appeared empty with no
+        # explanation anywhere. Route them into the log instead.
+        self.report_callback_exception = self._on_callback_error
     
     def _create_sample_data(self):
         """Create sample tasks for demonstration."""
@@ -205,7 +210,8 @@ class GanttApp(ctk.CTk):
                      f"Dependencies: {len(task.dependencies)}"
             )
         else:
-            duration = task.duration_days() or 0
+            # duration_days is a property, not a method
+            duration = task.duration_days or 0
             self.status_bar.configure(
                 text=f"Task: {task.name} | {task.start_date.strftime('%Y-%m-%d')} - "
                      f"{task.end_date.strftime('%Y-%m-%d') if task.end_date else 'N/A'} "
@@ -258,6 +264,31 @@ class GanttApp(ctk.CTk):
         else:
             self.status_bar.configure(text=f"Project: {self.project.name} | No tasks")
     
+    def _on_callback_error(self, exc_type, exc_value, exc_traceback):
+        """
+        Log an exception raised inside a Tk callback and tell the user.
+
+        PARAMETERS:
+        -----------
+        exc_type, exc_value, exc_traceback
+            The exception, as Tkinter passes it to report_callback_exception.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Without this, an error while building a dialog left an empty window
+        on screen and nothing in the log; the traceback went to a stderr that
+        nobody sees. Every UI failure is now recorded with its stack and
+        named in the status bar.
+        """
+        logger.error("Unhandled error in a UI callback",
+                     exc_info=(exc_type, exc_value, exc_traceback))
+        try:
+            self.status_bar.configure(
+                text=f"Error: {exc_value} - see the Log window for details"
+            )
+        except Exception:
+            pass
+
     def on_close(self):
         """
         Handle application close.

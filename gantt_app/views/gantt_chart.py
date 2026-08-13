@@ -25,9 +25,8 @@ import customtkinter as ctk
 import plotly.graph_objects as go
 
 from gantt_app.models import Task, Project
-from gantt_app.utils.chart_figure import (
-    build_gantt_figure, build_empty_figure, DEFAULT_WIDTH
-)
+from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
+from gantt_app.utils.chart_render import render_image
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -68,55 +67,104 @@ class GanttChart(ctk.CTkFrame):
             "grid_color": "#ecf0f1"
         }
         
-        # Create figure
+        # Kept so callers can still obtain the interactive figure, for the
+        # HTML export and for anything that wants Plotly's own output
         self.figure = go.Figure()
-        
-        # Try to import tkinterweb for embedding
-        self.has_tkinterweb = False
-        self.browser = None
-        try:
-            import tkinterweb
-            self.has_tkinterweb = True
-        except ImportError:
-            logger.warning("tkinterweb is not installed; the chart cannot be displayed")
-        
+
         # Create a frame to hold the chart
         self.chart_frame = ctk.CTkFrame(self)
         self.chart_frame.pack(fill=tk.BOTH, expand=True)
-        
+
+        self._image_label = None
+        self._chart_image = None
+        self._last_render_width = 0
+        self._resize_job = None
+
         # Draw initial chart
         self.draw_chart()
-        
+
         # Bind to configure events for resizing
         self.bind('<Configure>', self.on_resize)
-    
-    def on_resize(self, event):
-        """Handle window resize by redrawing the chart."""
-        self.draw_chart()
+
+    def on_resize(self, event=None):
+        """
+        Redraw after the window settles.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Configure fires continuously while a window is dragged, and each
+        redraw rasterises the whole chart, so the work is deferred until the
+        resizing stops. Redrawing on every event made the window crawl.
+        """
+        if self._resize_job is not None:
+            try:
+                self.after_cancel(self._resize_job)
+            except (tk.TclError, ValueError):
+                pass
+        try:
+            self._resize_job = self.after(250, self._resize_settled)
+        except tk.TclError:
+            self._resize_job = None
+
+    def _resize_settled(self):
+        """Redraw once the window has stopped changing size."""
+        self._resize_job = None
+        if not self.winfo_exists():
+            return
+        # Only re-rasterise when the width actually changed
+        if abs(self.chart_frame.winfo_width() - self._last_render_width) > 20:
+            self.draw_chart()
     
     def draw_chart(self):
-        """Build the Plotly figure for the project and render it."""
+        """
+        Draw the Gantt chart into the window.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The chart is rasterised with Pillow rather than handed to Plotly.
+        Plotly renders through JavaScript, and the only way to run that
+        inside Tkinter is tkinterweb, whose Tkhtml engine executes no
+        JavaScript unless the optional PythonMonkey backend is installed -
+        and even then Tkhtml is an HTML/CSS renderer, not a browser capable
+        of running plotly.js. The result was a permanently blank chart area.
+
+        The same renderer produces the PNG, PDF and SVG exports, so what the
+        window shows and what a user exports are now identical. The
+        interactive Plotly version is still available through Export > HTML.
+        """
+        width = self.chart_frame.winfo_width()
+        if width < 100:
+            # Called before the frame has been sized; use a sensible default
+            width = max(int(self.width) * 100, DEFAULT_WIDTH)
+        self._last_render_width = width
+
         try:
-            self.figure = build_gantt_figure(
+            image = render_image(
                 self.project,
                 settings=self._figure_settings(),
-                width=DEFAULT_WIDTH
+                width=width,
+                scale=1.5
             )
         except Exception:
-            logger.exception("Could not build the Gantt figure")
-            self.figure = build_empty_figure(self._figure_settings())
+            logger.exception("Could not draw the Gantt chart")
+            self._show_message("The chart could not be drawn.\n"
+                               "See the Log window for details.", "red")
+            return
 
-        self._render_chart()
+        self._show_image(image)
+
+        logger.debug("Drew Gantt chart for %r (%d task(s), %dpx wide)",
+                     self.project.name, len(self.project.tasks), width)
 
     def _figure_settings(self):
         """
-        Collect the appearance settings passed to the figure builder.
+        Collect the appearance settings passed to the renderers.
 
         DEVELOPMENT NOTES:
         ------------------
         The settings dialog writes both into chart_settings and onto the
         individual colour attributes, so both are merged here rather than the
-        builder having to know about the widget.
+        renderer having to know about the widget.
         """
         settings = dict(getattr(self, 'chart_settings', {}) or {})
         settings.setdefault('task_color', self.task_color)
@@ -125,50 +173,56 @@ class GanttChart(ctk.CTkFrame):
         settings['critical_path_color'] = self.critical_path_color
         return settings
 
-    def _render_chart(self):
-        """
-        Render the current figure into the Tkinter frame.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        plotly.js is inlined rather than pulled from a CDN. The packaged
-        application is meant to work with no network at all, and a CDN
-        reference left the chart area blank whenever the machine was offline.
-        """
+    def _clear_frame(self):
+        """Remove whatever is currently displayed."""
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
+        self._image_label = None
 
-        if not self.has_tkinterweb:
-            ctk.CTkLabel(
-                self.chart_frame,
-                text=("The Gantt chart needs tkinterweb.\n"
-                      "Install it with:  pip install tkinterweb"),
-                text_color="gray"
-            ).pack(pady=40)
-            logger.warning("tkinterweb is unavailable; chart not rendered")
-            return
+    def _show_image(self, image):
+        """Display a rendered chart image, scrollable when it is tall."""
+        self._clear_frame()
 
-        try:
-            import tkinterweb
+        # CTkImage keeps its own reference; holding it here stops the
+        # underlying PhotoImage being garbage collected while displayed
+        self._chart_image = ctk.CTkImage(light_image=image, dark_image=image,
+                                         size=image.size)
 
-            html = self.figure.to_html(include_plotlyjs=True, full_html=True)
+        canvas = tk.Canvas(self.chart_frame, highlightthickness=0,
+                           background=self._figure_settings().get('bg_color',
+                                                                  '#ffffff'))
+        scrollbar = ttk.Scrollbar(self.chart_frame, orient=tk.VERTICAL,
+                                  command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
 
-            self.browser = tkinterweb.HtmlFrame(self.chart_frame,
-                                                messages_enabled=False)
-            self.browser.load_html(html)
-            self.browser.pack(fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-            logger.debug("Rendered Gantt chart for %r (%d tasks)",
-                         self.project.name, len(self.project.tasks))
+        holder = ctk.CTkLabel(canvas, image=self._chart_image, text="")
+        canvas.create_window(0, 0, anchor=tk.NW, window=holder)
+        canvas.configure(scrollregion=(0, 0, image.size[0], image.size[1]))
 
-        except Exception as e:
-            logger.exception("Error rendering the Gantt chart")
-            ctk.CTkLabel(
-                self.chart_frame,
-                text=f"Error rendering chart: {e}",
-                text_color="red"
-            ).pack(pady=20)
+        self._image_label = holder
 
+    def _show_message(self, message: str, colour: str = "gray"):
+        """Display a message in place of the chart."""
+        self._clear_frame()
+        ctk.CTkLabel(self.chart_frame, text=message,
+                     text_color=colour).pack(pady=40)
+
+    def build_figure(self):
+        """
+        Build the interactive Plotly figure for this project.
+
+        RETURNS:
+        --------
+        go.Figure
+            Used by the HTML export, which runs in a real browser where
+            plotly.js works.
+        """
+        self.figure = build_gantt_figure(self.project,
+                                         settings=self._figure_settings())
+        return self.figure
 
     def update_chart(self):
         """Update the chart with current project data."""
