@@ -93,14 +93,14 @@ class TestXLSXImporter(unittest.TestCase):
         project = self.importer.import_xlsx(self.make(SAMPLE_ROWS))
 
         build = project.get_task_by_id("3")
-        self.assertEqual(sorted(build.dependencies), ["1", "2"])
+        self.assertEqual(sorted(build.dependency_ids), ["1", "2"])
 
     def test_dash_means_no_predecessor(self):
         """An en-dash placeholder does not become a dependency."""
         project = self.importer.import_xlsx(self.make(SAMPLE_ROWS))
 
         kickoff = project.get_task_by_id("1")
-        self.assertEqual(kickoff.dependencies, [])
+        self.assertEqual(kickoff.dependency_ids, [])
 
     def test_status_maps_to_progress(self):
         """Status text is translated into a progress percentage."""
@@ -198,7 +198,7 @@ class TestXLSXImporter(unittest.TestCase):
 
         first = next(t for t in project.tasks if t.name == 'First')
         second = next(t for t in project.tasks if t.name == 'Second')
-        self.assertEqual(second.dependencies, [first.id])
+        self.assertEqual(second.dependency_ids, [first.id])
 
     def test_unknown_predecessor_is_dropped(self):
         """A predecessor with no matching task does not create a dangling edge."""
@@ -304,7 +304,7 @@ class TestXLSXImporter(unittest.TestCase):
         # The first row keeps the sheet's ID, so its dependency still resolves
         alpha = next(t for t in project.tasks if t.name == 'Alpha')
         gamma = next(t for t in project.tasks if t.name == 'Gamma')
-        self.assertEqual(gamma.dependencies, [alpha.id])
+        self.assertEqual(gamma.dependency_ids, [alpha.id])
 
     def test_duplicate_id_is_reported(self):
         """A duplicated ID column value is logged rather than silently fixed."""
@@ -415,9 +415,9 @@ class TestXLSXRoundTrip(unittest.TestCase):
 
         for name, task in original.items():
             expected = sorted(self.original.get_task_by_id(d).name
-                              for d in task.dependencies)
+                              for d in task.dependency_ids)
             actual = sorted(self.reimported.get_task_by_id(d).name
-                            for d in reimported[name].dependencies)
+                            for d in reimported[name].dependency_ids)
             self.assertEqual(expected, actual, name)
 
     def test_hierarchy_preserved(self):
@@ -501,7 +501,7 @@ class TestXLSXValueParsing(unittest.TestCase):
 
             first = next(t for t in project.tasks if t.name == 'Analysis, phase 2')
             build = next(t for t in project.tasks if t.name == 'Build')
-            self.assertEqual(build.dependencies, [first.id])
+            self.assertEqual(build.dependency_ids, [first.id])
         finally:
             if os.path.exists(path):
                 os.unlink(path)

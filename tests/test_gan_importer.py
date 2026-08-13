@@ -210,9 +210,9 @@ class TestGANImporter(unittest.TestCase):
         project = self.importer.import_gan(self._create_gan_file(SAMPLE_GAN))
 
         # Task 1 declares <depend id="2"/>, meaning 2 comes after 1
-        self.assertEqual(project.get_task_by_id("1").dependencies, [])
-        self.assertEqual(project.get_task_by_id("2").dependencies, ["1"])
-        self.assertEqual(project.get_task_by_id("3").dependencies, ["2"])
+        self.assertEqual(project.get_task_by_id("1").dependency_ids, [])
+        self.assertEqual(project.get_task_by_id("2").dependency_ids, ["1"])
+        self.assertEqual(project.get_task_by_id("3").dependency_ids, ["2"])
 
     def test_milestone_from_meeting_attribute(self):
         """meeting="true" marks a milestone with no end date."""
@@ -321,7 +321,7 @@ class TestGANImporter(unittest.TestCase):
 
         self.assertIsNotNone(project)
         self.assertEqual(len(project.tasks), 2)
-        self.assertEqual(project.get_task_by_id("2").dependencies, ["1"])
+        self.assertEqual(project.get_task_by_id("2").dependency_ids, ["1"])
 
     def test_legacy_depends_on_form(self):
         """The legacy <depends-on><dependency idref=""/> form still works."""
@@ -339,7 +339,7 @@ class TestGANImporter(unittest.TestCase):
 '''
         project = self.importer.import_gan(self._create_gan_file(xml))
 
-        self.assertEqual(project.get_task_by_id("2").dependencies, ["1"])
+        self.assertEqual(project.get_task_by_id("2").dependency_ids, ["1"])
 
     def test_dependency_to_missing_task_is_dropped(self):
         """An edge naming a task not in the file does not dangle."""
@@ -355,7 +355,7 @@ class TestGANImporter(unittest.TestCase):
         project = self.importer.import_gan(self._create_gan_file(xml))
 
         self.assertEqual(len(project.tasks), 1)
-        self.assertEqual(project.get_task_by_id("1").dependencies, [])
+        self.assertEqual(project.get_task_by_id("1").dependency_ids, [])
 
     def test_empty_project(self):
         """A file with no tasks imports as an empty project."""

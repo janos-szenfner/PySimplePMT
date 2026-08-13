@@ -1,0 +1,332 @@
+"""
+The Dependency tab shared by the task creation and editing dialogs.
+
+WHY THIS MODULE EXISTS:
+======================
+Dependencies used to be a column of checkboxes: one row per candidate task,
+with nothing to say how the link behaves. A link now carries a type and a
+hardness, so it needs a grid with a row per dependency and a control per
+setting, and both dialogs need exactly the same thing.
+
+DEVELOPMENT NOTES:
+------------------
+The editor owns a working copy of the links and hands it back on request, so
+a cancelled dialog leaves the task untouched.
+
+Choosing a predecessor also moves the dependent task, which is what the
+"Start - Start" and "End - Start" settings are for. The dialog asks this
+widget for the resulting start date rather than computing it itself; the rule
+lives in Project.constrained_start_date so the same logic serves the UI, the
+importers and any later scheduling.
+"""
+
+import tkinter as tk
+from tkinter import ttk, messagebox
+from typing import Callable, List, Optional
+
+import customtkinter as ctk
+
+from gantt_app.models import (
+    Dependency, Project, Task,
+    DEPENDENCY_TYPE_LABELS, DEPENDENCY_HARDNESS,
+)
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
+
+
+#: Reverse lookup from the label shown in the UI to the stored code.
+TYPE_CODE_BY_LABEL = {label: code for code, label in DEPENDENCY_TYPE_LABELS.items()}
+
+#: Explanations shown beneath the grid.
+HELP_TEXT = (
+    "Type\n"
+    "    Start - Start:  this task starts when the selected task starts.\n"
+    "    End - Start:    this task starts after the selected task ends.\n"
+    "\n"
+    "Link Hardness\n"
+    "    Hard:    the start date is fixed to that date.\n"
+    "    Rubber:  the task cannot start earlier, but may start later."
+)
+
+
+class DependencyEditor(ctk.CTkFrame):
+    """
+    A grid of dependency links with per-row Type and Link Hardness.
+
+    PARAMETERS:
+    -----------
+    master : widget
+        Parent widget, normally a tab.
+    project : Project
+        Used to list candidate predecessors and resolve their names.
+    task : Task
+        The task being edited. Used to exclude itself and its descendants.
+    on_changed : Optional[Callable]
+        Called after any change, so the dialog can refresh the start date.
+    """
+
+    COLUMNS = ('task', 'type', 'hardness')
+
+    def __init__(self, master, project: Project, task: Task,
+                 on_changed: Optional[Callable] = None):
+        super().__init__(master)
+
+        self.project = project
+        self.task = task
+        self.on_changed = on_changed
+
+        # Work on a copy so cancelling the dialog changes nothing
+        self.links: List[Dependency] = [
+            Dependency(d.task_id, d.dep_type, d.hardness) for d in task.dependencies
+        ]
+
+        self._build_ui()
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
+
+    def _build_ui(self):
+        """Lay out the add row, the grid and the help text."""
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        add_row = ctk.CTkFrame(self)
+        add_row.grid(row=0, column=0, sticky=tk.EW, padx=5, pady=(5, 8))
+        add_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(add_row, text="Task:").grid(row=0, column=0, padx=(8, 4), pady=8)
+        self.candidate_var = ctk.StringVar()
+        self.candidate_menu = ctk.CTkOptionMenu(
+            add_row, variable=self.candidate_var, values=["(none available)"],
+            width=240
+        )
+        self.candidate_menu.grid(row=0, column=1, sticky=tk.EW, padx=4, pady=8)
+
+        ctk.CTkLabel(add_row, text="Type:").grid(row=0, column=2, padx=(12, 4), pady=8)
+        self.type_var = ctk.StringVar(value=DEPENDENCY_TYPE_LABELS['FS'])
+        ctk.CTkOptionMenu(
+            add_row, variable=self.type_var,
+            values=list(DEPENDENCY_TYPE_LABELS.values()), width=130
+        ).grid(row=0, column=3, padx=4, pady=8)
+
+        ctk.CTkLabel(add_row, text="Hardness:").grid(row=0, column=4, padx=(12, 4), pady=8)
+        self.hardness_var = ctk.StringVar(value='Hard')
+        ctk.CTkOptionMenu(
+            add_row, variable=self.hardness_var,
+            values=list(DEPENDENCY_HARDNESS), width=100
+        ).grid(row=0, column=5, padx=4, pady=8)
+
+        ctk.CTkButton(add_row, text="Add", width=70,
+                      command=self.add_selected).grid(row=0, column=6,
+                                                      padx=(12, 8), pady=8)
+
+        # The grid of existing links
+        table_frame = ctk.CTkFrame(self)
+        table_frame.grid(row=1, column=0, sticky=tk.NSEW, padx=5, pady=5)
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(table_frame, columns=self.COLUMNS,
+                                 show='headings', selectmode='browse',
+                                 style='Gantt.Treeview')
+        self.tree.heading('task', text='Depends on', anchor=tk.W)
+        self.tree.heading('type', text='Type', anchor=tk.W)
+        self.tree.heading('hardness', text='Link Hardness', anchor=tk.W)
+        self.tree.column('task', width=260, stretch=True)
+        self.tree.column('type', width=130, stretch=False)
+        self.tree.column('hardness', width=120, stretch=False)
+
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL,
+                                  command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.grid(row=0, column=0, sticky=tk.NSEW)
+        scrollbar.grid(row=0, column=1, sticky=tk.NS)
+
+        self.tree.bind('<Double-1>', lambda _e: self.edit_selected())
+
+        # Row actions
+        actions = ctk.CTkFrame(self)
+        actions.grid(row=2, column=0, sticky=tk.EW, padx=5, pady=(0, 5))
+        ctk.CTkButton(actions, text="Change Type", width=120,
+                      command=self.cycle_type).pack(side=tk.LEFT, padx=5, pady=6)
+        ctk.CTkButton(actions, text="Change Hardness", width=150,
+                      command=self.cycle_hardness).pack(side=tk.LEFT, padx=5, pady=6)
+        ctk.CTkButton(actions, text="Remove", width=90,
+                      command=self.remove_selected).pack(side=tk.RIGHT, padx=5, pady=6)
+
+        help_label = ctk.CTkLabel(self, text=HELP_TEXT, justify=tk.LEFT,
+                                  anchor=tk.W, text_color="#6b7280")
+        help_label.grid(row=3, column=0, sticky=tk.EW, padx=10, pady=(4, 8))
+
+    # ------------------------------------------------------------------
+    # Data
+    # ------------------------------------------------------------------
+
+    def candidate_tasks(self) -> List[Task]:
+        """
+        Get the tasks that may be chosen as a predecessor.
+
+        RETURNS:
+        --------
+        List[Task]
+            Every task except this one, its descendants, and any already
+            linked - a task cannot depend on itself or on its own sub-tasks.
+        """
+        taken = {link.task_id for link in self.links}
+        candidates = []
+        for other in self.project.tasks:
+            if other.id == self.task.id or other.id in taken:
+                continue
+            if self._is_descendant(other.id, self.task.id):
+                continue
+            candidates.append(other)
+        return sorted(candidates, key=lambda t: t.start_date)
+
+    def _is_descendant(self, task_id: str, ancestor_id: str) -> bool:
+        """Check whether a task sits under an ancestor in the hierarchy."""
+        seen = set()
+        current = self.project.get_task_by_id(task_id)
+        while current is not None and current.id not in seen:
+            seen.add(current.id)
+            if current.id == ancestor_id:
+                return True
+            if not current.parent_task_id:
+                return False
+            current = self.project.get_task_by_id(current.parent_task_id)
+        return False
+
+    def _label_for(self, task: Task) -> str:
+        """Format a task for the chooser."""
+        return f"{task.id} - {task.name}"
+
+    def refresh(self):
+        """Redraw the grid and the list of candidates."""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        for index, link in enumerate(self.links):
+            predecessor = self.project.get_task_by_id(link.task_id)
+            name = self._label_for(predecessor) if predecessor else link.task_id
+            self.tree.insert(
+                '', tk.END, iid=str(index),
+                values=(name, link.type_label, link.hardness),
+                tags=('oddrow' if index % 2 else 'evenrow',)
+            )
+
+        self.tree.tag_configure('oddrow', background='#f4f4f4')
+        self.tree.tag_configure('evenrow', background='#ffffff')
+
+        candidates = self.candidate_tasks()
+        if candidates:
+            values = [self._label_for(t) for t in candidates]
+            self.candidate_menu.configure(values=values, state=tk.NORMAL)
+            if self.candidate_var.get() not in values:
+                self.candidate_var.set(values[0])
+        else:
+            self.candidate_menu.configure(values=["(none available)"],
+                                          state=tk.DISABLED)
+            self.candidate_var.set("(none available)")
+
+        if self.on_changed:
+            self.on_changed()
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def add_selected(self):
+        """Add a link to the task chosen in the add row."""
+        label = self.candidate_var.get()
+        match = next((t for t in self.candidate_tasks()
+                      if self._label_for(t) == label), None)
+        if match is None:
+            messagebox.showinfo("No Task Selected",
+                                "Choose a task to depend on first.",
+                                parent=self.winfo_toplevel())
+            return
+
+        dep_type = TYPE_CODE_BY_LABEL.get(self.type_var.get(), 'FS')
+        self.links.append(Dependency(match.id, dep_type, self.hardness_var.get()))
+        logger.info("Added dependency on %s (%s, %s) to task %s",
+                    match.id, dep_type, self.hardness_var.get(), self.task.id)
+        self.refresh()
+
+    def _selected_index(self) -> Optional[int]:
+        """Get the index of the highlighted row."""
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        try:
+            return int(selection[0])
+        except ValueError:
+            return None
+
+    def remove_selected(self):
+        """Remove the highlighted link."""
+        index = self._selected_index()
+        if index is None:
+            return
+        removed = self.links.pop(index)
+        logger.info("Removed dependency on %s from task %s",
+                    removed.task_id, self.task.id)
+        self.refresh()
+
+    def cycle_type(self):
+        """Switch the highlighted link between the two types."""
+        index = self._selected_index()
+        if index is None:
+            return
+        link = self.links[index]
+        link.dep_type = 'SS' if link.dep_type == 'FS' else 'FS'
+        self.refresh()
+        self.tree.selection_set(str(index))
+
+    def cycle_hardness(self):
+        """Switch the highlighted link between Hard and Rubber."""
+        index = self._selected_index()
+        if index is None:
+            return
+        link = self.links[index]
+        link.hardness = 'Rubber' if link.hardness == 'Hard' else 'Hard'
+        self.refresh()
+        self.tree.selection_set(str(index))
+
+    def edit_selected(self):
+        """Double-click cycles the type, the setting people change most."""
+        self.cycle_type()
+
+    # ------------------------------------------------------------------
+    # Results
+    # ------------------------------------------------------------------
+
+    def get_links(self) -> List[Dependency]:
+        """Get the edited links, for the dialog to store on the task."""
+        return [Dependency(d.task_id, d.dep_type, d.hardness) for d in self.links]
+
+    def required_start_date(self, start_date):
+        """
+        Get the start date the current links imply.
+
+        PARAMETERS:
+        -----------
+        start_date : datetime
+            The task's start date as currently entered in the General tab.
+
+        RETURNS:
+        --------
+        Optional[datetime]
+            The date the task should start, or None when nothing constrains
+            it. Lets the dialog fill in the start date as soon as a
+            dependency is chosen.
+        """
+        probe = Task(
+            id=self.task.id, name=self.task.name or 'probe',
+            start_date=start_date,
+            end_date=self.task.end_date,
+            is_milestone=self.task.is_milestone,
+        )
+        probe.dependencies = self.get_links()
+        return self.project.constrained_start_date(probe)

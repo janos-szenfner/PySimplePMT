@@ -5,7 +5,7 @@ Uses tkinterdnd2 for drag-and-drop functionality with ttk.Treeview.
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
 from typing import Optional, Callable, List, Dict, Any
 import copy
@@ -14,6 +14,8 @@ import customtkinter as ctk
 
 from gantt_app.models import Task, Project
 from gantt_app.utils.undoredo import ProjectStateTracker
+from gantt_app.views.modal import grab_when_visible
+from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -51,7 +53,8 @@ class EditTaskDialog(ctk.CTkToplevel):
         self.title(f"Edit Task: {task.name}")
         self.geometry("500x600")
         self.transient(master)
-        self.grab_set()
+        # Deferred: grabbing before the window is mapped fails on X11
+        grab_when_visible(self)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         
         # Create form
@@ -61,10 +64,23 @@ class EditTaskDialog(ctk.CTkToplevel):
         self.center_window()
     
     def _create_form(self):
-        """Create the edit form widgets."""
+        """
+        Create the edit form widgets.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The form is split across a General tab and a Dependency tab. Links
+        now carry a type and a hardness, which needs a grid rather than the
+        single column of checkboxes the fields used to share space with.
+        """
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 5))
+        self.tabs.add("General")
+        self.tabs.add("Dependency")
+
         # Main frame
-        main_frame = ctk.CTkScrollableFrame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        main_frame = ctk.CTkScrollableFrame(self.tabs.tab("General"))
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Configure grid columns
         main_frame.columnconfigure(1, weight=1)
@@ -146,91 +162,13 @@ class EditTaskDialog(ctk.CTkToplevel):
         self.color_entry.grid(row=9, column=1, sticky=tk.EW, pady=5)
         self.color_entry.insert(0, self.task.color)
         
-        # Dependencies
-        ctk.CTkLabel(main_frame, text="Dependencies:").grid(row=10, column=0, sticky=tk.W, pady=5)
-        
-        # Available tasks for dependencies
-        self.dep_vars = []
-        self.dep_frame = ctk.CTkScrollableFrame(main_frame)
-        self.dep_frame.grid(row=11, column=0, columnspan=2, sticky=tk.EW, pady=5)
-        self.dep_frame.configure(height=150)
-        
-        # Filter out current task and its descendants from available dependencies
-        # (a task cannot depend on itself or its own subtasks - that would create a circle)
-        available_tasks = []
-        for t in self.project.tasks:
-            if t.id != self.task.id:
-                # Check if this task is a descendant of the current task
-                if not self._is_descendant(t.id, self.task.id, self.project):
-                    available_tasks.append(t)
-        
-        # Sort tasks by start date for consistent display
-        available_tasks.sort(key=lambda t: t.start_date)
-        
-        # Create checkboxes for each available task with hierarchical grouping
-        # Display tasks and subtasks in a structured way
-        if available_tasks:
-            # Group tasks by parent (root tasks have no parent)
-            root_tasks = [t for t in available_tasks if t.parent_task_id is None]
-            subtasks = [t for t in available_tasks if t.parent_task_id is not None]
-            
-            # Sort by start date
-            root_tasks.sort(key=lambda t: t.start_date)
-            subtasks.sort(key=lambda t: t.start_date)
-            
-            # Create a frame for each root task and its subtasks
-            for root_task in root_tasks:
-                # Root task checkbox
-                var = ctk.BooleanVar(value=root_task.id in self.task.dependencies)
-                self.dep_vars.append((root_task.id, var))
-                
-                check = ctk.CTkCheckBox(
-                    self.dep_frame, 
-                    text=f"{root_task.name} ({root_task.start_date.strftime('%Y-%m-%d')})",
-                    variable=var
-                )
-                check.pack(fill=tk.X, padx=5, pady=2, anchor=tk.W)
-                
-                # Find subtasks that belong to this root task
-                root_subtasks = [st for st in subtasks if st.parent_task_id == root_task.id]
-                
-                # Add subtasks under the root task with indentation
-                for subtask in root_subtasks:
-                    var = ctk.BooleanVar(value=subtask.id in self.task.dependencies)
-                    self.dep_vars.append((subtask.id, var))
-                    
-                    check = ctk.CTkCheckBox(
-                        self.dep_frame, 
-                        text=f"  ├── {subtask.name} (Sub-Task) ({subtask.start_date.strftime('%Y-%m-%d')})",
-                        variable=var
-                    )
-                    check.pack(fill=tk.X, padx=15, pady=2, anchor=tk.W)
-            
-            # Add any remaining subtasks that don't have a parent in available tasks
-            # (this can happen if the parent was filtered out due to circular dependency)
-            remaining_subtasks = [st for st in subtasks if st.parent_task_id not in [t.id for t in root_tasks]]
-            for subtask in remaining_subtasks:
-                var = ctk.BooleanVar(value=subtask.id in self.task.dependencies)
-                self.dep_vars.append((subtask.id, var))
-                
-                parent_name = self.project.get_task_by_id(subtask.parent_task_id).name if self.project.get_task_by_id(subtask.parent_task_id) else "Unknown"
-                check = ctk.CTkCheckBox(
-                    self.dep_frame, 
-                    text=f"  └─ {subtask.name} (Sub-Task of {parent_name}) ({subtask.start_date.strftime('%Y-%m-%d')})",
-                    variable=var
-                )
-                check.pack(fill=tk.X, padx=5, pady=2, anchor=tk.W)
-        
-        # Add a note about multiple selection
-        if available_tasks:
-            note_label = ctk.CTkLabel(
-                self.dep_frame, 
-                text="Check multiple boxes to select tasks and subtasks as dependencies",
-                text_color="#7f8c8d",
-                font=ctk.CTkFont(size=10, slant="italic")
-            )
-            note_label.pack(fill=tk.X, padx=5, pady=(5, 0), anchor=tk.W)
-        
+        # Dependencies live on their own tab
+        self.dependency_editor = DependencyEditor(
+            self.tabs.tab("Dependency"), self.project, self.task,
+            on_changed=self._on_dependencies_changed
+        )
+        self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
         # Buttons
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(fill=tk.X, padx=20, pady=10)
@@ -239,6 +177,43 @@ class EditTaskDialog(ctk.CTkToplevel):
         ctk.CTkButton(button_frame, text="Delete", fg_color="#e74c3c", hover_color="#c0392b", command=self.delete).pack(side=tk.RIGHT, padx=5)
         ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
     
+    def _on_dependencies_changed(self):
+        """
+        Update the start date to match the current dependency links.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what makes choosing a predecessor fill in the start date. A
+        Hard link pins it; a Rubber link only moves it when the current date
+        would start too early.
+        """
+        if not hasattr(self, 'start_date_entry'):
+            return
+        try:
+            current = datetime.strptime(self.start_date_entry.get(), '%Y-%m-%d')
+        except (ValueError, tk.TclError):
+            return
+
+        required = self.dependency_editor.required_start_date(current)
+        if required is None or required == current:
+            return
+
+        duration = None
+        if self.task.end_date and self.task.start_date:
+            duration = self.task.end_date - self.task.start_date
+
+        self.start_date_entry.delete(0, tk.END)
+        self.start_date_entry.insert(0, required.strftime('%Y-%m-%d'))
+
+        # Keep the length of the task, shifting the end with the start
+        if duration is not None and not self.is_milestone_var.get():
+            self.end_date_entry.configure(state=tk.NORMAL)
+            self.end_date_entry.delete(0, tk.END)
+            self.end_date_entry.insert(0, (required + duration).strftime('%Y-%m-%d'))
+
+        logger.debug("Start date moved to %s by a dependency",
+                     required.strftime('%Y-%m-%d'))
+
     def toggle_milestone(self):
         """Toggle milestone mode."""
         is_milestone = self.is_milestone_var.get()
@@ -288,10 +263,8 @@ class EditTaskDialog(ctk.CTkToplevel):
             self.task.progress = int(self.progress_slider.get())
             self.task.color = self.color_entry.get()
             
-            # Update dependencies
-            self.task.dependencies = [
-                task_id for task_id, var in self.dep_vars if var.get()
-            ]
+            # Update dependencies from the Dependency tab
+            self.task.dependencies = self.dependency_editor.get_links()
             
             # Use undo/redo if available
             if self.project_tracker:
@@ -423,7 +396,8 @@ class CreateTaskDialog(ctk.CTkToplevel):
         
         self.geometry("500x700")
         self.transient(master)
-        self.grab_set()
+        # Deferred: grabbing before the window is mapped fails on X11
+        grab_when_visible(self)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         
         # Create form
@@ -435,8 +409,13 @@ class CreateTaskDialog(ctk.CTkToplevel):
     def _create_form(self):
         """Create the task creation form widgets."""
         # Main frame
-        main_frame = ctk.CTkScrollableFrame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 5))
+        self.tabs.add("General")
+        self.tabs.add("Dependency")
+
+        main_frame = ctk.CTkScrollableFrame(self.tabs.tab("General"))
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Configure grid columns
         main_frame.columnconfigure(1, weight=1)
@@ -538,40 +517,23 @@ class CreateTaskDialog(ctk.CTkToplevel):
         else:
             self.color_entry.insert(0, "#3498db")
         
-        # Dependencies
-        ctk.CTkLabel(main_frame, text="Dependencies:").grid(row=row_offset+5, column=0, sticky=tk.W, pady=5)
-        
-        # Available tasks for dependencies
-        self.dep_vars = []
-        self.dep_frame = ctk.CTkScrollableFrame(main_frame)
-        self.dep_frame.grid(row=row_offset+6, column=0, columnspan=2, sticky=tk.EW, pady=5)
-        self.dep_frame.configure(height=150)
-        
-        # Get available tasks (exclude self if editing, but for new task just show all)
-        available_tasks = []
-        for t in self.project.tasks:
-            # Check if this task is a descendant of the parent (for subtasks)
-            if self.parent_task:
-                if not self._is_descendant(t.id, self.parent_task.id, self.project):
-                    available_tasks.append(t)
-            else:
-                available_tasks.append(t)
-        
-        # Sort tasks by start date for consistent display
-        available_tasks.sort(key=lambda t: t.start_date)
-        
-        # Create checkboxes for each available task
-        if available_tasks:
-            for task in available_tasks:
-                var = ctk.BooleanVar(value=False)
-                self.dep_vars.append((task.id, var))
-                
-                check = ctk.CTkCheckBox(
-                    self.dep_frame,
-                    text=f"{task.name} ({task.start_date.strftime('%Y-%m-%d')})",
-                    variable=var
-                )
-                check.pack(fill=tk.X, padx=5, pady=2, anchor=tk.W)
+        # Dependencies live on their own tab. A task being created has no
+        # ID yet, so a stand-in carries the parent link used to exclude
+        # invalid candidates.
+        probe = Task(
+            id='__new__',
+            name=self.task_type,
+            start_date=datetime.now(),
+            task_type=self.task_type,
+            parent_task_id=self.parent_task.id if self.parent_task else None,
+            is_milestone=self.is_milestone,
+        )
+        self.dependency_editor = DependencyEditor(
+            self.tabs.tab("Dependency"), self.project, probe,
+            on_changed=self._on_dependencies_changed
+        )
+        self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
         
         # Note about dependencies
         if available_tasks:
@@ -608,6 +570,45 @@ class CreateTaskDialog(ctk.CTkToplevel):
         value = int(self.progress_slider.get())
         self.progress_label.configure(text=f"{value}%")
     
+    def _on_dependencies_changed(self):
+        """
+        Move the start date to satisfy the chosen dependency links.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Selecting a predecessor fills the start date in straight away, so a
+        new task lands where its links require without the user working the
+        date out.
+        """
+        if not hasattr(self, 'start_date_entry'):
+            return
+        try:
+            current = datetime.strptime(self.start_date_entry.get(), '%Y-%m-%d')
+        except (ValueError, tk.TclError):
+            return
+
+        required = self.dependency_editor.required_start_date(current)
+        if required is None or required == current:
+            return
+
+        duration = None
+        try:
+            end_text = self.end_date_entry.get()
+            if end_text:
+                duration = datetime.strptime(end_text, '%Y-%m-%d') - current
+        except (ValueError, AttributeError, tk.TclError):
+            duration = None
+
+        self.start_date_entry.delete(0, tk.END)
+        self.start_date_entry.insert(0, required.strftime('%Y-%m-%d'))
+
+        if duration is not None and not self.is_milestone:
+            self.end_date_entry.delete(0, tk.END)
+            self.end_date_entry.insert(0, (required + duration).strftime('%Y-%m-%d'))
+
+        logger.debug("New task start moved to %s by a dependency",
+                     required.strftime('%Y-%m-%d'))
+
     def save(self):
         """Save the new task."""
         try:
@@ -641,8 +642,8 @@ class CreateTaskDialog(ctk.CTkToplevel):
             # Get color
             color = self.color_entry.get()
             
-            # Get dependencies
-            dependencies = [task_id for task_id, var in self.dep_vars if var.get()]
+            # Get dependencies from the Dependency tab
+            dependencies = self.dependency_editor.get_links()
             
             # Determine parent task ID
             parent_task_id = None
@@ -1183,7 +1184,7 @@ class DragDropTaskList(ctk.CTkFrame):
             
             visited.add(task_id)
             
-            for dep_id in task.dependencies:
+            for dep_id in task.dependency_ids:
                 if dep_id == source_id:
                     return True
                 if check_circle(dep_id, visited.copy()):

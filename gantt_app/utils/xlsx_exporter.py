@@ -114,7 +114,7 @@ def _get_task_data_dict(task: Task, project: Project) -> Dict[str, Any]:
     
     # Get dependency names
     dependency_names = []
-    for dep_id in task.dependencies:
+    for dep_id in task.dependency_ids:
         dep_task = project.get_task_by_id(dep_id)
         if dep_task:
             dependency_names.append(dep_task.name)
@@ -235,7 +235,7 @@ def _create_tasks_workbook(project: Project):
     # Write dependency data
     row_num = 2
     for task in project.tasks:
-        for dep_id in task.dependencies:
+        for dep_id in task.dependency_ids:
             dep_task = project.get_task_by_id(dep_id)
             if dep_task:
                 ws_deps.cell(row=row_num, column=1, value=task.name)

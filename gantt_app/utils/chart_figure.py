@@ -91,7 +91,7 @@ def _hover_text(task: Task, project: Project) -> str:
     """Build the tooltip shown when hovering a task bar."""
     end = task.end_date or task.start_date
     names = []
-    for dep_id in task.dependencies:
+    for dep_id in task.dependency_ids:
         dep = project.get_task_by_id(dep_id)
         names.append(dep.name if dep else dep_id)
 
@@ -166,7 +166,7 @@ def _add_dependencies(figure: go.Figure, tasks: List[Task], project: Project,
     for task in tasks:
         if task.id not in positions:
             continue
-        for dep_id in task.dependencies:
+        for dep_id in task.dependency_ids:
             dep = project.get_task_by_id(dep_id)
             if dep is None or dep.id not in positions:
                 continue

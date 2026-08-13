@@ -422,12 +422,18 @@ class GANImporter:
                 except (TypeError, ValueError):
                     lag = 0
 
+                # GanttProject writes hardness="Strong" or "Rubber", which
+                # are exactly this application's Hard and Rubber links
+                raw_hardness = str(depend_elem.get('hardness', 'Strong')).strip()
+                hardness = 'Rubber' if raw_hardness.lower() == 'rubber' else 'Hard'
+
                 edges.append({
                     'predecessor': str(predecessor_id),
                     'successor': str(successor_id),
                     'type': DEPENDENCY_TYPES.get(
                         str(depend_elem.get('type', '2')), 'FS'
                     ),
+                    'hardness': hardness,
                     'lag': lag,
                 })
 
@@ -441,6 +447,7 @@ class GANImporter:
                             'predecessor': str(dep_id),
                             'successor': str(predecessor_id),
                             'type': 'FS',
+                            'hardness': 'Hard',
                             'lag': 0,
                         })
 
@@ -466,8 +473,9 @@ class GANImporter:
                 continue
             if successor.id == predecessor.id:
                 continue
-            if predecessor.id not in successor.dependencies:
-                successor.dependencies.append(predecessor.id)
+            successor.add_dependency(predecessor.id,
+                                     dep_type='SS' if edge['type'] == 'SS' else 'FS',
+                                     hardness=edge.get('hardness', 'Hard'))
 
     def parse_tasks(self, root: ET.Element,
                     calendar: Optional[GanttProjectCalendar] = None) -> List[Task]:

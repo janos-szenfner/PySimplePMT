@@ -245,7 +245,7 @@ def _sort_tasks_for_dependencies(project: Project) -> List[Task]:
             return
         
         # Visit all dependencies first
-        for dep_id in task.dependencies:
+        for dep_id in task.dependency_ids:
             dep_task = project.get_task_by_id(dep_id)
             if dep_task:
                 visit(dep_task)
@@ -420,7 +420,7 @@ def generate_mermaid_content(project: Project,
         mermaid_id = id_to_mermaid_id[task.id]
 
         # Get dependencies that have already been defined
-        valid_deps = [dep_id for dep_id in task.dependencies
+        valid_deps = [dep_id for dep_id in task.dependency_ids
                       if dep_id in defined_task_ids and dep_id not in summary_ids]
 
         if task.is_milestone:

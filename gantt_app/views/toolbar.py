@@ -20,6 +20,7 @@ from gantt_app.utils.xlsx_importer import import_xlsx_file
 from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
 from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.undoredo import UndoRedoManager
+from gantt_app.views.modal import grab_when_visible
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -594,7 +595,8 @@ class Toolbar(ctk.CTkFrame):
         dialog.title("Select Parent Task")
         dialog.geometry("400x300")
         dialog.transient(self.master)
-        dialog.grab_set()
+        # Deferred: grabbing before the window is mapped fails on X11
+        grab_when_visible(dialog)
         
         # Add label
         label = tk.Label(dialog, text="Select a parent task for the subtask:")

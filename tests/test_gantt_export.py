@@ -280,7 +280,7 @@ class TestChartRenderer(unittest.TestCase):
     def test_dependencies_are_laid_out(self):
         """Dependency lines are produced for each edge."""
         layout = layout_chart(self.project)
-        edges = sum(len(t.dependencies) for t in self.project.tasks)
+        edges = sum(len(t.dependency_ids) for t in self.project.tasks)
 
         self.assertEqual(len(layout.dependencies), edges)
 

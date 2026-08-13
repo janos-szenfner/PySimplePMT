@@ -5,9 +5,153 @@ Contains the Task and Project classes that form the core data structure.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 import uuid
+
+
+#: How a dependency constrains the dependent task's start.
+DEPENDENCY_TYPES = ('SS', 'FS')
+
+#: How strictly the constraint is applied.
+DEPENDENCY_HARDNESS = ('Hard', 'Rubber')
+
+#: Labels shown in the user interface.
+DEPENDENCY_TYPE_LABELS = {
+    'SS': 'Start - Start',
+    'FS': 'End - Start',
+}
+DEPENDENCY_HARDNESS_LABELS = {
+    'Hard': 'Hard',
+    'Rubber': 'Rubber',
+}
+
+
+@dataclass
+class Dependency:
+    """
+    A link from a predecessor task to the task that depends on it.
+
+    Attributes:
+        task_id: ID of the predecessor
+        dep_type: 'SS' (Start - Start) or 'FS' (End - Start)
+        hardness: 'Hard' or 'Rubber'
+
+    DEVELOPMENT NOTES:
+    ------------------
+    'SS' means the dependent task starts when the predecessor starts; 'FS'
+    means it starts after the predecessor finishes.
+
+    Hardness decides whether that date is fixed or merely a floor. 'Hard'
+    pins the start to the computed date; 'Rubber' only forbids starting
+    earlier, so a task may be scheduled later than its predecessor allows.
+
+    GanttProject uses the same two concepts, writing type="1"/"2" and
+    hardness="Strong"/"Rubber", so a .gan file maps onto this directly.
+    """
+
+    task_id: str
+    dep_type: str = 'FS'
+    hardness: str = 'Hard'
+
+    def __post_init__(self):
+        """Normalise the type and hardness to known values."""
+        self.task_id = str(self.task_id)
+
+        dep_type = str(self.dep_type or 'FS').upper()
+        # Finish-Start is written several ways; anything unknown falls back
+        # to it because it is by far the most common link
+        self.dep_type = 'SS' if dep_type == 'SS' else 'FS'
+
+        hardness = str(self.hardness or 'Hard').capitalize()
+        self.hardness = 'Rubber' if hardness == 'Rubber' else 'Hard'
+
+    @property
+    def type_label(self) -> str:
+        """Human readable dependency type."""
+        return DEPENDENCY_TYPE_LABELS[self.dep_type]
+
+    def to_dict(self) -> dict:
+        """Convert to a dictionary for serialization."""
+        return {
+            'task_id': self.task_id,
+            'dep_type': self.dep_type,
+            'hardness': self.hardness,
+        }
+
+    @classmethod
+    def from_any(cls, value) -> 'Dependency':
+        """
+        Build a Dependency from a plain ID, a dict, or another Dependency.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Projects saved before dependencies carried a type stored a bare list
+        of task IDs. Accepting a string here keeps those files loading, and
+        keeps `dependencies=[task.id]` working everywhere it is already used.
+        """
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, dict):
+            return cls(
+                task_id=value.get('task_id') or value.get('id'),
+                dep_type=value.get('dep_type', 'FS'),
+                hardness=value.get('hardness', 'Hard'),
+            )
+        return cls(task_id=str(value))
+
+
+
+class DependencyList(list):
+    """
+    A list of Dependency objects that accepts plain task IDs.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Existing code appends bare task IDs - `task.dependencies.append(dep_id)`
+    appears in the importers, the task list and the tests. Coercing only on
+    assignment left those appends putting raw strings into the list, so
+    reading dependency_ids blew up with "'str' object has no attribute
+    'task_id'". Every mutation route is normalised here instead.
+    """
+
+    def __init__(self, values=()):
+        super().__init__(Dependency.from_any(v) for v in values)
+
+    def append(self, value):
+        """Append a dependency, accepting an ID, dict or Dependency."""
+        super().append(Dependency.from_any(value))
+
+    def insert(self, index, value):
+        """Insert a dependency, accepting an ID, dict or Dependency."""
+        super().insert(index, Dependency.from_any(value))
+
+    def extend(self, values):
+        """Extend with dependencies, accepting IDs, dicts or Dependency."""
+        super().extend(Dependency.from_any(v) for v in values)
+
+    def __setitem__(self, index, value):
+        """Replace an entry, accepting an ID, dict or Dependency."""
+        if isinstance(index, slice):
+            super().__setitem__(index, [Dependency.from_any(v) for v in value])
+        else:
+            super().__setitem__(index, Dependency.from_any(value))
+
+    def __contains__(self, value):
+        """Membership works for a Dependency or a bare task ID."""
+        if isinstance(value, str):
+            return any(d.task_id == value for d in self)
+        return super().__contains__(value)
+
+    def remove(self, value):
+        """Remove by Dependency or by bare task ID."""
+        if isinstance(value, str):
+            for item in self:
+                if item.task_id == value:
+                    super().remove(item)
+                    return
+            raise ValueError(value)
+        super().remove(value)
 
 
 @dataclass
@@ -39,14 +183,23 @@ class Task:
     start_date: datetime
     end_date: Optional[datetime] = None
     progress: int = 0
-    dependencies: List[str] = field(default_factory=list)
+    dependencies: List['Dependency'] = field(default_factory=list)
     color: str = "#1f6aa5"
     is_milestone: bool = False
     task_type: str = "Task"
     parent_task_id: Optional[str] = None
     
     def __post_init__(self):
-        """Validate task data after initialization."""
+        """
+        Validate task data after initialization.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Dependencies are coerced into Dependency objects here, so callers
+        may still pass a plain list of task IDs. That keeps every existing
+        `dependencies=[task.id]` call working and lets projects saved before
+        dependencies carried a type load unchanged.
+        """
         if not self.name:
             raise ValueError("Task name cannot be empty")
         if self.progress < 0 or self.progress > 100:
@@ -54,6 +207,74 @@ class Task:
         if self.is_milestone and self.end_date is not None:
             # For milestones, end_date should be None or same as start_date
             self.end_date = None
+
+        self.dependencies = DependencyList(self.dependencies or [])
+
+    def __setattr__(self, name, value):
+        """
+        Coerce dependencies whenever they are assigned.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Plenty of existing code assigns a plain list of task IDs, and the
+        importers and undo/redo do it too. Normalising on assignment rather
+        than only in __post_init__ means those callers keep working and the
+        list can never end up holding a mix of strings and Dependency
+        objects.
+        """
+        if name == 'dependencies' and value is not None:
+            value = value if isinstance(value, DependencyList) else DependencyList(value)
+        super().__setattr__(name, value)
+
+    @property
+    def dependency_ids(self) -> List[str]:
+        """
+        Get just the predecessor IDs.
+
+        RETURNS:
+        --------
+        List[str]
+            The task IDs this task depends on, without the link details.
+            Used by scheduling, rendering and export code that does not care
+            how the link is configured.
+        """
+        return [d.task_id for d in self.dependencies]
+
+    def get_dependency(self, task_id: str) -> Optional['Dependency']:
+        """Get the link to a given predecessor, or None."""
+        for dependency in self.dependencies:
+            if dependency.task_id == task_id:
+                return dependency
+        return None
+
+    def add_dependency(self, task_id: str, dep_type: str = 'FS',
+                       hardness: str = 'Hard') -> 'Dependency':
+        """
+        Add or update a link to a predecessor.
+
+        RETURNS:
+        --------
+        Dependency
+            The stored link. Adding the same predecessor twice updates the
+            existing link rather than duplicating it.
+        """
+        existing = self.get_dependency(task_id)
+        if existing is not None:
+            existing.dep_type = dep_type
+            existing.hardness = hardness
+            existing.__post_init__()
+            return existing
+
+        dependency = Dependency(task_id=task_id, dep_type=dep_type,
+                                hardness=hardness)
+        self.dependencies.append(dependency)
+        return dependency
+
+    def remove_dependency(self, task_id: str) -> bool:
+        """Remove the link to a predecessor. True when one was removed."""
+        before = len(self.dependencies)
+        self.dependencies = [d for d in self.dependencies if d.task_id != task_id]
+        return len(self.dependencies) < before
     
     @classmethod
     def create_task(cls, name: str, start_date: datetime, end_date: datetime, 
@@ -206,7 +427,7 @@ class Task:
             'start_date': self.start_date.isoformat(),
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'progress': self.progress,
-            'dependencies': self.dependencies,
+            'dependencies': [d.to_dict() for d in self.dependencies],
             'color': self.color,
             'is_milestone': self.is_milestone,
             'task_type': self.task_type,
@@ -361,10 +582,11 @@ class Project:
 
         for task in self.tasks:
             task.id = mapping[task.id]
-            task.dependencies = [
-                mapping[dep_id] for dep_id in task.dependencies
-                if dep_id in mapping
-            ]
+            for dependency in task.dependencies:
+                dependency.task_id = mapping.get(dependency.task_id,
+                                                 dependency.task_id)
+            task.dependencies = [d for d in task.dependencies
+                                 if d.task_id in mapping.values()]
             if task.parent_task_id is not None:
                 task.parent_task_id = mapping.get(task.parent_task_id)
                 if task.parent_task_id is None:
@@ -407,12 +629,10 @@ class Project:
         
         # Remove task from dependencies of other tasks
         for task in self.tasks:
-            if task_id in task.dependencies:
-                task.dependencies.remove(task_id)
+            task.remove_dependency(task_id)
             # Also remove any subtask dependencies
             for subtask_id in subtask_ids:
-                if subtask_id in task.dependencies:
-                    task.dependencies.remove(subtask_id)
+                task.remove_dependency(subtask_id)
         
         if len(self.tasks) < initial_count:
             self._update_dates()
@@ -431,12 +651,12 @@ class Project:
         task = self.get_task_by_id(task_id)
         if task is None:
             return []
-        return [self.get_task_by_id(dep_id) for dep_id in task.dependencies 
+        return [self.get_task_by_id(dep_id) for dep_id in task.dependency_ids
                 if self.get_task_by_id(dep_id) is not None]
     
     def get_dependents(self, task_id: str) -> List[Task]:
         """Get all tasks that depend on this task."""
-        return [task for task in self.tasks if task_id in task.dependencies]
+        return [task for task in self.tasks if task_id in task.dependency_ids]
     
     def get_subtasks(self, task_id: str) -> List[Task]:
         """
@@ -529,6 +749,96 @@ class Project:
         
         return project
     
+    def constrained_start_date(self, task: Task) -> Optional[datetime]:
+        """
+        Work out the start date a task's dependencies require.
+
+        PARAMETERS:
+        -----------
+        task : Task
+            The dependent task.
+
+        RETURNS:
+        --------
+        Optional[datetime]
+            The date the task should start, or None when nothing constrains
+            it. A 'Hard' link pins the start exactly; 'Rubber' links only set
+            a floor, so the task keeps its own later start if it has one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Start - Start uses the predecessor's start date. End - Start uses the
+        day after the predecessor finishes, because end dates in this model
+        are inclusive: a task ending on the 5th occupies the whole of the
+        5th, so its successor starts on the 6th. Milestones have no end date,
+        so both types resolve to the milestone's own date.
+
+        With several links, the hard ones win outright and the latest of them
+        applies. Otherwise the rubber links contribute a floor.
+        """
+        hard_dates = []
+        floor_dates = []
+
+        for dependency in task.dependencies:
+            predecessor = self.get_task_by_id(dependency.task_id)
+            if predecessor is None:
+                continue
+
+            if dependency.dep_type == 'SS' or predecessor.is_milestone:
+                required = predecessor.start_date
+            else:
+                end = predecessor.end_date or predecessor.start_date
+                required = end + timedelta(days=1)
+
+            if required is None:
+                continue
+            if dependency.hardness == 'Hard':
+                hard_dates.append(required)
+            else:
+                floor_dates.append(required)
+
+        if hard_dates:
+            return max(hard_dates)
+        if floor_dates:
+            floor = max(floor_dates)
+            return floor if task.start_date < floor else task.start_date
+        return None
+
+    def apply_dependency_constraints(self, task: Task,
+                                     preserve_duration: bool = True) -> bool:
+        """
+        Move a task so it satisfies its dependency links.
+
+        PARAMETERS:
+        -----------
+        task : Task
+            The task to reschedule.
+        preserve_duration : bool
+            Keep the task's length, shifting the end date by the same amount.
+
+        RETURNS:
+        --------
+        bool
+            True when the task moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Called when a dependency is added or changed, which is what makes
+        picking a predecessor set the dependent task's start date without
+        the user typing it.
+        """
+        required = self.constrained_start_date(task)
+        if required is None or required == task.start_date:
+            return False
+
+        shift = required - task.start_date
+        task.start_date = required
+        if preserve_duration and task.end_date is not None:
+            task.end_date = task.end_date + shift
+
+        self._update_dates()
+        return True
+
     def get_summary_task_ids(self) -> set:
         """
         Get the IDs of tasks that have sub-tasks beneath them.
@@ -638,7 +948,7 @@ class Project:
             """The tasks that must finish before this one can start."""
             result = []
             seen = {task.id}
-            for dep_id in task.dependencies:
+            for dep_id in task.dependency_ids:
                 for dep in resolve_dependency(dep_id):
                     if dep.id not in seen:
                         seen.add(dep.id)

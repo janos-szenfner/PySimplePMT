@@ -34,7 +34,7 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task.start_date, self.start_date)
         self.assertEqual(task.end_date, self.end_date)
         self.assertEqual(task.progress, 0)
-        self.assertEqual(task.dependencies, [])
+        self.assertEqual(task.dependency_ids, [])
         self.assertEqual(task.color, "#1f6aa5")
         self.assertFalse(task.is_milestone)
     
@@ -55,7 +55,7 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task.end_date, self.end_date)
         self.assertEqual(task.color, "#3498db")
         self.assertEqual(task.progress, 50)
-        self.assertEqual(task.dependencies, ["dep1", "dep2"])
+        self.assertEqual(task.dependency_ids, ["dep1", "dep2"])
         self.assertFalse(task.is_milestone)
     
     def test_create_milestone_factory_method(self):
@@ -72,7 +72,7 @@ class TestTask(unittest.TestCase):
         self.assertEqual(milestone.start_date, self.start_date)
         self.assertIsNone(milestone.end_date)
         self.assertEqual(milestone.color, "#e74c3c")
-        self.assertEqual(milestone.dependencies, ["dep1"])
+        self.assertEqual(milestone.dependency_ids, ["dep1"])
         self.assertTrue(milestone.is_milestone)
     
     def test_task_empty_name_validation(self):
@@ -149,7 +149,10 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task_dict['start_date'], "2024-01-01T00:00:00")
         self.assertEqual(task_dict['end_date'], "2024-01-10T00:00:00")
         self.assertEqual(task_dict['progress'], 25)
-        self.assertEqual(task_dict['dependencies'], ["dep1"])
+        # Dependencies serialise with their type and hardness
+        self.assertEqual(task_dict['dependencies'],
+                         [{'task_id': 'dep1', 'dep_type': 'FS',
+                           'hardness': 'Hard'}])
         self.assertEqual(task_dict['color'], "#3498db")
         self.assertFalse(task_dict['is_milestone'])
     
@@ -173,7 +176,7 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task.start_date, datetime(2024, 1, 1))
         self.assertEqual(task.end_date, datetime(2024, 1, 10))
         self.assertEqual(task.progress, 25)
-        self.assertEqual(task.dependencies, ['dep1'])
+        self.assertEqual(task.dependency_ids, ['dep1'])
         self.assertEqual(task.color, '#3498db')
         self.assertFalse(task.is_milestone)
 
@@ -280,7 +283,7 @@ class TestProject(unittest.TestCase):
         
         # task2 should no longer have the dependency
         remaining_task2 = project.get_task_by_id(task2.id)
-        self.assertEqual(remaining_task2.dependencies, [])
+        self.assertEqual(remaining_task2.dependency_ids, [])
     
     def test_get_task_by_id(self):
         """Test getting a task by ID."""

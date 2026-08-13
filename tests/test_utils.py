@@ -184,7 +184,7 @@ class TestTaskSerialization(unittest.TestCase):
         self.assertIsNone(restored_milestone.end_date)
         self.assertTrue(restored_milestone.is_milestone)
         self.assertEqual(restored_milestone.color, "#ff0000")
-        self.assertEqual(restored_milestone.dependencies, ["task1"])
+        self.assertEqual(restored_milestone.dependency_ids, ["task1"])
 
 
 class TestCriticalPath(unittest.TestCase):
@@ -290,7 +290,7 @@ class TestCriticalPath(unittest.TestCase):
         for i in range(1, len(critical_path)):
             current_task = critical_path[i]
             prev_task = critical_path[i-1]
-            self.assertIn(prev_task.id, current_task.dependencies)
+            self.assertIn(prev_task.id, current_task.dependency_ids)
 
 
 if __name__ == '__main__':

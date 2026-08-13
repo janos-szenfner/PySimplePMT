@@ -169,7 +169,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         })
 
     for task in tasks:
-        for dep_id in task.dependencies:
+        for dep_id in task.dependency_ids:
             dep = project.get_task_by_id(dep_id)
             if dep is None or dep.id not in positions:
                 continue

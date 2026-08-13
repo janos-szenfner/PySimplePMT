@@ -473,7 +473,7 @@ class MermaidImporter:
                 if task_id in task_map and 'dependency' in info:
                     dep_id = info['dependency']
                     task = task_map[task_id]
-                    task.dependencies.append(dep_id)
+                    task.add_dependency(dep_id)
             
             self._calculate_task_dates(tasks_info, task_map)
 
@@ -586,7 +586,7 @@ class MermaidExporter:
         def visit(task: Task):
             if task.id in visited:
                 return
-            for dep_id in task.dependencies:
+            for dep_id in task.dependency_ids:
                 dep_task = project.get_task_by_id(dep_id)
                 if dep_task:
                     visit(dep_task)

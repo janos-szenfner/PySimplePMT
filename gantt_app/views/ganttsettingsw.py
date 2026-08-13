@@ -8,6 +8,7 @@ import tkinter as tk
 from typing import Optional, Callable, Dict
 
 import customtkinter as ctk
+from gantt_app.views.modal import grab_when_visible
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -73,7 +74,8 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
         self.title("Gantt Chart Settings")
         self.geometry("500x600")
         self.transient(master)
-        self.grab_set()
+        # Deferred: grabbing before the window is mapped fails on X11
+        grab_when_visible(self)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         
         # Store current settings

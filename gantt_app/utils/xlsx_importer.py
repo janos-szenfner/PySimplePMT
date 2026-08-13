@@ -528,8 +528,7 @@ class XLSXImporter:
             for token in tokens:
                 target = resolve(token)
                 if target is not None and target.id != task.id:
-                    if target.id not in task.dependencies:
-                        task.dependencies.append(target.id)
+                    task.add_dependency(target.id)
 
     def _apply_explicit_parents(self, records: List[Dict[str, Any]],
                                 tasks: List[Task]) -> None:

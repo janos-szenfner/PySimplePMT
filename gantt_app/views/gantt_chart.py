@@ -18,13 +18,10 @@ This module provides the visual Gantt chart display for the application.
 
 import tkinter as tk
 from tkinter import ttk
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Tuple, Any
-
 import customtkinter as ctk
 import plotly.graph_objects as go
 
-from gantt_app.models import Task, Project
+from gantt_app.models import Project
 from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
 from gantt_app.utils.chart_render import render_image
 from gantt_app.utils.log import get_logger

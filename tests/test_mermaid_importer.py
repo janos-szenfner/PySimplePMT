@@ -80,8 +80,8 @@ class TestMermaidImporter(unittest.TestCase):
         task2 = project.get_task_by_id("a2")
         task3 = project.get_task_by_id("a3")
         
-        self.assertEqual(task2.dependencies, ["a1"])
-        self.assertEqual(task3.dependencies, ["a2"])
+        self.assertEqual(task2.dependency_ids, ["a1"])
+        self.assertEqual(task3.dependency_ids, ["a2"])
         
         # Each task starts the day after its predecessor finishes
         self.assertEqual(task1.start_date, datetime(2024, 1, 1))
@@ -110,8 +110,8 @@ class TestMermaidImporter(unittest.TestCase):
         milestone = project.get_task_by_id("m1")
         impl = project.get_task_by_id("a2")
         
-        self.assertEqual(milestone.dependencies, ["a1"])
-        self.assertEqual(impl.dependencies, ["m1"])
+        self.assertEqual(milestone.dependency_ids, ["a1"])
+        self.assertEqual(impl.dependency_ids, ["m1"])
         
         self.assertTrue(milestone.is_milestone)
         self.assertFalse(impl.is_milestone)
