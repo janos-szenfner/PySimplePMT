@@ -4,33 +4,41 @@
 # so an end user installing the .deb needs none of it - not even Python.
 # See packaging/README.md for what the built package does still rely on.
 #
-# Upper bounds are deliberate: a packaged desktop app should be rebuilt and
-# retested against a new major version rather than silently picking one up.
+# Lower bounds are the latest release of each package as of 2026-08-13, taken
+# from PyPI rather than from memory. Upper bounds stop at the next major
+# version: a packaged desktop app should be rebuilt and retested against a new
+# major release rather than silently picking one up.
 
 # --- Direct dependencies -------------------------------------------------
 
-customtkinter>=5.2.0,<7.0.0     # UI toolkit
-plotly>=5.0.0,<7.0.0           # Interactive Gantt chart rendering
-numpy>=1.21.0,<3.0.0            # Required by plotly
-openpyxl>=3.0.0,<4.0.0          # XLSX import and export
-tkinterweb>=4.0.0,<5.0.0       # Required for embedding Plotly charts in Tkinter
+customtkinter>=6.0.0,<7.0.0     # UI toolkit
+plotly>=6.9.0,<7.0.0            # Interactive Gantt chart in the main window
+tkinterweb>=4.25.3,<5.0.0       # Embeds the Plotly chart inside Tkinter
+matplotlib>=3.11.1,<4.0.0       # Static PNG and PDF export of the Gantt chart
+numpy>=2.5.2,<3.0.0             # Required by matplotlib
+openpyxl>=3.1.5,<4.0.0          # XLSX import and export
 
 # Enhanced drag-and-drop. The task list falls back to plain Tkinter bindings
 # when this is missing, but the packaged build ships with it.
-tkinterdnd2>=0.3.0,<0.5.0
+tkinterdnd2>=0.6.2,<1.0.0
 
 # --- Transitive dependencies ---------------------------------------------
 # Listed explicitly so the packaged set is auditable and reproducible rather
 # than whatever the resolver happens to choose on build day.
 
-darkdetect>=0.7.0,<1.0.0        # customtkinter: system theme detection
-packaging>=20.0                 # customtkinter, plotly
-python-dateutil>=2.7,<3.0.0     # plotly: date handling
-pytz>=2020.1                    # plotly: timezone support (optional)
-six>=1.5                        # python-dateutil
-et-xmlfile>=1.1.0,<3.0.0        # openpyxl
-pandoc>=2.0.0                   # plotly: HTML conversion (optional)
-pygments>=2.4.0                 # plotly: syntax highlighting (optional)
+darkdetect>=0.8.0,<1.0.0        # customtkinter: system theme detection
+packaging>=26.3                 # customtkinter, plotly, matplotlib
+narwhals>=2.24.0,<3.0.0         # plotly: dataframe abstraction layer
+tkinterweb-tkhtml>=2.1.1,<3.0.0 # tkinterweb: the Tkhtml rendering engine
+pillow>=12.3.0,<13.0.0          # matplotlib: image handling
+contourpy>=1.3.3,<2.0.0         # matplotlib
+cycler>=0.12.1,<1.0.0           # matplotlib
+fonttools>=4.63.0,<5.0.0        # matplotlib
+kiwisolver>=1.5.0,<2.0.0        # matplotlib
+pyparsing>=3.3.2,<4.0.0         # matplotlib
+python-dateutil>=2.9.0,<3.0.0   # matplotlib
+six>=1.17.0                     # python-dateutil
+et-xmlfile>=2.0.0,<3.0.0        # openpyxl
 
 # --- Deliberately NOT bundled --------------------------------------------
 #
@@ -42,3 +50,6 @@ pygments>=2.4.0                 # plotly: syntax highlighting (optional)
 # A JPype + mpxj backend was removed: it is a Java bridge, not a Python
 # solution. It required a JVM and a separately downloaded mpxj.jar on the
 # user's machine, neither of which can go inside a self-contained package.
+#
+# Kaleido is not used either. Plotly needs it for write_image, but it ships a
+# bundled browser binary; static export goes through matplotlib instead.

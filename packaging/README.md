@@ -45,8 +45,14 @@ sudo apt remove pysimplepmt
 
 - The CPython interpreter and standard library
 - The Tcl/Tk runtime behind Tkinter
-- customtkinter, plotly, tkinterweb, numpy, openpyxl, tkinterdnd2 and their
-  transitive dependencies — every package pinned in `requirements.txt`
+- customtkinter, plotly, tkinterweb, matplotlib, numpy, openpyxl, tkinterdnd2
+  and their transitive dependencies — every package pinned in
+  `requirements.txt`
+
+Plotly and tkinterweb render the interactive chart in the window; matplotlib
+is still required, both for PNG/PDF export and because
+`gantt_app/utils/__init__.py` imports the exporters unconditionally, so the
+app will not start without it.
 
 **Not bundled** — base system libraries that ship with any Ubuntu desktop and
 that Tk links against. These are declared in the package's `Depends:` field so

@@ -5,7 +5,7 @@ A cross-platform desktop application for project management with Gantt chart vis
 ## Overview
 
 This is a complete implementation of a project management tool with:
-- Static Gantt chart visualization
+- Interactive Gantt chart visualization
 - Drag-and-drop task list for dependency management
 - Support for milestones (single-date tasks)
 - JSON storage and file import for GAN/MPP/Mermaid files
@@ -37,7 +37,9 @@ gantt_app/
 ├── views/
 │   ├── __init__.py
 │   ├── task_list.py       # Drag-and-drop task list with EditTaskDialog
-│   ├── gantt_chart.py     # Static Gantt chart visualization
+│   ├── gantt_chart.py     # Interactive Plotly Gantt chart
+│   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
+│   ├── log_window.py      # Application log viewer
 │   └── toolbar.py         # Action buttons and file operations
 │
 ├── utils/
@@ -229,7 +231,7 @@ Print the active path with `pysimplepmt --log-file`.
 
 ### Required Dependencies
 ```bash
-pip install customtkinter plotly tkinterweb numpy openpyxl
+pip install customtkinter plotly tkinterweb matplotlib numpy openpyxl
 ```
 
 Or install everything from the requirements file:

@@ -20,7 +20,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 REQUIRED_PACKAGES = [
     ('customtkinter', 'user interface'),
     ('tkinter', 'user interface toolkit'),
-    ('matplotlib', 'Gantt chart rendering, PNG and PDF export'),
+    ('plotly', 'interactive Gantt chart'),
+    ('tkinterweb', 'embedding the chart in the window'),
+    ('matplotlib', 'PNG and PDF export'),
     ('numpy', 'chart maths'),
     ('openpyxl', 'Excel import and export'),
 ]

@@ -18,7 +18,8 @@ with unstyled widgets. tkinterdnd2 is handled the same way, and is treated as
 optional because the task list falls back to plain Tkinter bindings when it is
 absent - a missing optional package should not fail the build.
 
-plotly and tkinterweb are now used for the interactive Gantt chart visualization.
+plotly and tkinterweb render the interactive Gantt chart in the main window;
+matplotlib is still required for static PNG and PDF export.
 """
 
 import importlib.util
@@ -71,22 +72,26 @@ def bundle(package_name, optional=False):
           f"{len(package_hidden)} modules")
 
 
-# Themes and assets that these packages load from disk at runtime
+# Themes, assets and rendering engines these packages load from disk at runtime
 bundle('customtkinter')
+bundle('plotly')
+bundle('tkinterweb')
+bundle('tkinterweb_tkhtml')
 bundle('tkinterdnd2', optional=True)
 
-# plotly's data files (JSON schemas, etc.) still need collecting
-datas += collect_data_files('plotly')
-
-# tkinterweb HTML rendering support
-datas += collect_data_files('tkinterweb')
-datas += collect_data_files('tkinterweb_tkhtml')
+# matplotlib renders the static PNG and PDF exports. It is reached through
+# gantt_app/utils/__init__.py, which imports png_exporter and pdf_exporter
+# unconditionally, so the application will not even start without it - its
+# data files (fonts, style sheets) have to be collected alongside plotly's.
+datas += collect_data_files('matplotlib')
 
 hiddenimports += [
     'plotly.graph_objects',
     'plotly.offline',
     'tkinterweb',
     'tkinterweb_tkhtml',
+    'matplotlib.backends.backend_agg',
+    'matplotlib.backends.backend_pdf',
     'openpyxl',
     'openpyxl.workbook',
     'PIL._tkinter_finder',

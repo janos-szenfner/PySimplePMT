@@ -455,3 +455,57 @@ class GanttChart(ctk.CTkFrame):
         self.figure = go.Figure()
         self._draw_empty_chart()
         self._render_chart()
+
+    def export_to_png(self, filepath: str, dpi: int = 300) -> bool:
+        """
+        Export the Gantt chart to a PNG file.
+
+        PARAMETERS:
+        -----------
+        filepath : str
+            Path to save the PNG file.
+        dpi : int, optional
+            Dots per inch for the output image (default 300).
+
+        RETURNS:
+        --------
+        bool
+            True if successful, False otherwise.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The on-screen chart is drawn with Plotly, but static export still
+        goes through the matplotlib renderer in utils/png_exporter.py.
+        Plotly's own write_image needs Kaleido, a large bundled browser
+        binary, whereas the matplotlib path is already present, already
+        tested, and already packaged.
+
+        The Toolbar calls this method, so it must exist for the Export > PNG
+        action to work at all.
+        """
+        from gantt_app.utils.png_exporter import export_gantt_to_png
+        return export_gantt_to_png(self.project, filepath,
+                                   width=self.width, height=self.height,
+                                   dpi=dpi)
+
+    def export_to_pdf(self, filepath: str) -> bool:
+        """
+        Export the Gantt chart to a PDF file.
+
+        PARAMETERS:
+        -----------
+        filepath : str
+            Path to save the PDF file.
+
+        RETURNS:
+        --------
+        bool
+            True if successful, False otherwise.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Delegates to the matplotlib renderer, as export_to_png does.
+        """
+        from gantt_app.utils.pdf_exporter import export_gantt_to_pdf
+        return export_gantt_to_pdf(self.project, filepath,
+                                   width=self.width, height=self.height)
