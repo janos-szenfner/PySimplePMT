@@ -3,4 +3,4 @@ Gantt Project Management Tool - A cross-platform desktop app for project managem
 """
 
 __version__ = "1.0.0"
-__author__ = "Mistral Vibe"
+__author__ = "janosszenfner"
