@@ -1,0 +1,17 @@
+# Core dependencies
+customtkinter>=4.6.0
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# File I/O and import
+# For GAN files (XML parsing) - included in standard library
+
+# For MPP files (optional)
+# tasklib>=1.0.0  # Pure Python MPP reader
+# jpype1>=1.4.0  # For Java bridge with mpxj
+
+# Drag and drop (optional enhancement)
+# tkinterdnd2>=0.3.0
+
+# Testing (included in standard library)
+# unittest is part of Python standard library

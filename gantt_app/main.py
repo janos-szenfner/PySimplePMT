@@ -1,0 +1,299 @@
+"""
+Main application entry point for the Gantt Project Management Tool.
+
+Creates the main window and manages the application components.
+"""
+
+import sys
+import os
+from datetime import datetime
+from typing import Optional
+
+import customtkinter as ctk
+
+from gantt_app.models import Project, Task
+from gantt_app.views.task_list import DragDropTaskList, EditTaskDialog
+from gantt_app.views.gantt_chart import GanttChart
+from gantt_app.views.toolbar import Toolbar
+from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
+from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
+
+
+class GanttApp(ctk.CTk):
+    """
+    Main application class for the Gantt Project Management Tool.
+    
+    Manages the project, task list, Gantt chart, and toolbar components.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Configure main window
+        self.title("Gantt Project Manager")
+        self.geometry("1400x900")
+        self.minsize(1200, 800)
+        
+        # Set appearance
+        ctk.set_appearance_mode("system")  # "system", "dark", or "light"
+        ctk.set_default_color_theme("blue")
+        
+        # Create project
+        self.project = Project(name="New Project")
+        
+        # Create undo/redo manager
+        self.undo_redo_manager = UndoRedoManager(max_history=100)
+        self.undo_redo_manager.set_project(self.project)
+        
+        # Create project state tracker for easier undo/redo integration
+        self.project_tracker = ProjectStateTracker(self.project, self.undo_redo_manager)
+        
+        # Create sample data
+        self._create_sample_data()
+        
+        # Create UI components
+        self._create_ui()
+        
+        # Bind events
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+    
+    def _create_sample_data(self):
+        """Create sample tasks for demonstration."""
+        today = datetime.now()
+        
+        # Add sample tasks
+        task1 = Task.create_task(
+            name="Project Planning",
+            start_date=today,
+            end_date=today + timedelta(days=3),
+            color="#3498db"
+        )
+        
+        # Add a subtask under Project Planning
+        subtask1 = Task.create_subtask(
+            name="Requirements Gathering",
+            parent_task=task1,
+            end_date=today + timedelta(days=1),
+            color="#9b59b6"
+        )
+        
+        task2 = Task.create_task(
+            name="Design Phase",
+            start_date=today + timedelta(days=4),
+            end_date=today + timedelta(days=10),
+            dependencies=[task1.id],
+            color="#2ecc71"
+        )
+        
+        # Add a subtask under Design Phase
+        subtask2 = Task.create_subtask(
+            name="UI Mockups",
+            parent_task=task2,
+            end_date=today + timedelta(days=6),
+            color="#8e44ad"
+        )
+        
+        task3 = Task.create_task(
+            name="Implementation",
+            start_date=today + timedelta(days=11),
+            end_date=today + timedelta(days=20),
+            dependencies=[task2.id],
+            color="#f39c12",
+            progress=30
+        )
+        
+        # Add milestone
+        milestone = Task.create_milestone(
+            name="Design Review",
+            date=today + timedelta(days=10),
+            dependencies=[task2.id],
+            color="#e74c3c"
+        )
+        
+        # Add more tasks
+        task4 = Task.create_task(
+            name="Testing",
+            start_date=today + timedelta(days=21),
+            end_date=today + timedelta(days=25),
+            dependencies=[task3.id, milestone.id],
+            color="#9b59b6"
+        )
+        
+        task5 = Task.create_task(
+            name="Deployment",
+            start_date=today + timedelta(days=26),
+            end_date=today + timedelta(days=28),
+            dependencies=[task4.id],
+            color="#1abc9c"
+        )
+        
+        # Add tasks to project (in order: root tasks first, then subtasks)
+        self.project.add_task(task1)
+        self.project.add_task(subtask1)
+        self.project.add_task(task2)
+        self.project.add_task(subtask2)
+        self.project.add_task(task3)
+        self.project.add_task(milestone)
+        self.project.add_task(task4)
+        self.project.add_task(task5)
+    
+    def _create_ui(self):
+        """Create the user interface."""
+        # Main layout
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        
+        # Create toolbar (gantt_chart will be set after it's created)
+        self.toolbar = Toolbar(
+            self, self.project,
+            on_project_changed=self.update_all,
+            undo_redo_manager=self.undo_redo_manager
+        )
+        self.toolbar.grid(row=0, column=0, sticky=tk.EW, padx=10, pady=10)
+        
+        # Create main content frame
+        content_frame = ctk.CTkFrame(self)
+        content_frame.grid(row=1, column=0, sticky=tk.NSEW, padx=10, pady=10)
+        
+        content_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_columnconfigure(1, weight=2)
+        content_frame.grid_rowconfigure(0, weight=1)
+        
+        # Create task list
+        self.task_list = DragDropTaskList(
+            content_frame, self.project,
+            on_task_select=self.on_task_select,
+            on_task_edit=self.edit_task,
+            on_project_changed=self.update_all,
+            project_tracker=self.project_tracker
+        )
+        self.task_list.grid(row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+        
+        # Create Gantt chart
+        self.gantt_chart = GanttChart(
+            content_frame, self.project,
+            width=10, height=6, dpi=100
+        )
+        self.gantt_chart.grid(row=0, column=1, sticky=tk.NSEW, padx=5, pady=5)
+        
+        # Set Gantt chart reference in toolbar for export functionality
+        self.toolbar.set_gantt_chart(self.gantt_chart)
+        
+        # Create status bar
+        self.status_bar = ctk.CTkLabel(
+            self, text="Ready", anchor=tk.W,
+            height=25, padx=10
+        )
+        self.status_bar.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
+    
+    def on_task_select(self, task: Task):
+        """Handle task selection in the task list."""
+        # Update status bar
+        if task.is_milestone:
+            self.status_bar.configure(
+                text=f"Milestone: {task.name} ({task.start_date.strftime('%Y-%m-%d')}) | "
+                     f"Dependencies: {len(task.dependencies)}"
+            )
+        else:
+            duration = task.duration_days() or 0
+            self.status_bar.configure(
+                text=f"Task: {task.name} | {task.start_date.strftime('%Y-%m-%d')} - "
+                     f"{task.end_date.strftime('%Y-%m-%d') if task.end_date else 'N/A'} "
+                     f"({duration} days) | Progress: {task.progress}% | "
+                     f"Dependencies: {len(task.dependencies)}"
+            )
+        
+        # Highlight task in Gantt chart (could be implemented)
+        self.gantt_chart.update_chart()
+    
+    def edit_task(self, task: Task):
+        """Open the task edit dialog."""
+        dialog = EditTaskDialog(
+            self, task, self.project,
+            on_save=self.on_task_saved,
+            on_delete=self.on_task_deleted,
+            project_tracker=self.project_tracker
+        )
+        dialog.wait_window()
+    
+    def on_task_saved(self, task: Task):
+        """Handle task save from edit dialog."""
+        self.update_all()
+        self.status_bar.configure(text=f"Task '{task.name}' updated successfully")
+    
+    def on_task_deleted(self, task_id: str):
+        """Handle task deletion."""
+        # The deletion is already handled by EditTaskDialog with undo support
+        # Just update the UI
+        self.update_all()
+        self.status_bar.configure(text="Task deleted successfully")
+    
+    def update_all(self):
+        """Update all components with current project data."""
+        self.task_list.update_task_list()
+        self.gantt_chart.update_chart()
+        
+        # Update window title with project name
+        if self.project.name:
+            self.title(f"Gantt Project Manager - {self.project.name}")
+        
+        # Update status bar
+        if self.project.tasks:
+            milestone_count = sum(1 for t in self.project.tasks if t.is_milestone)
+            task_count = len(self.project.tasks) - milestone_count
+            self.status_bar.configure(
+                text=f"Project: {self.project.name} | "
+                     f"Tasks: {task_count} | Milestones: {milestone_count}"
+            )
+        else:
+            self.status_bar.configure(text=f"Project: {self.project.name} | No tasks")
+    
+    def on_close(self):
+        """Handle application close."""
+        # Check for unsaved changes
+        if self.project.tasks:
+            result = ctk.messagebox.askyesnocancel(
+                "Exit", "Do you want to save your project before exiting?"
+            )
+            if result:  # Yes, save
+                self._save_on_exit()
+            elif result is None:  # Cancel
+                return
+        
+        self.destroy()
+    
+    def _save_on_exit(self):
+        """Save project when exiting."""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Save Project Before Exit"
+        )
+        
+        if file_path:
+            save_project(self.project, file_path)
+
+
+# Import tkinter modules
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from datetime import timedelta
+
+
+def main():
+    """Run the main application."""
+    try:
+        app = GanttApp()
+        app.mainloop()
+    except Exception as e:
+        print(f"Error: {e}")
+        # Show error message
+        root = ctk.CTk()
+        root.withdraw()
+        messagebox.showerror("Error", f"Failed to start application: {e}")
+        root.destroy()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

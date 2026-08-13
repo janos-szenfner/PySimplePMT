@@ -1,0 +1,455 @@
+"""
+Unit tests for data models (Task and Project classes).
+"""
+
+import unittest
+import json
+from datetime import datetime, timedelta
+import uuid
+
+from gantt_app.models import Task, Project
+
+
+class TestTask(unittest.TestCase):
+    """Test cases for the Task class."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_id = str(uuid.uuid4())
+        self.start_date = datetime(2024, 1, 1)
+        self.end_date = datetime(2024, 1, 10)
+        self.task_name = "Test Task"
+    
+    def test_create_task_basic(self):
+        """Test creating a basic task."""
+        task = Task(
+            id=self.test_id,
+            name=self.task_name,
+            start_date=self.start_date,
+            end_date=self.end_date
+        )
+        
+        self.assertEqual(task.id, self.test_id)
+        self.assertEqual(task.name, self.task_name)
+        self.assertEqual(task.start_date, self.start_date)
+        self.assertEqual(task.end_date, self.end_date)
+        self.assertEqual(task.progress, 0)
+        self.assertEqual(task.dependencies, [])
+        self.assertEqual(task.color, "#1f6aa5")
+        self.assertFalse(task.is_milestone)
+    
+    def test_create_task_factory_method(self):
+        """Test the create_task factory method."""
+        task = Task.create_task(
+            name="Factory Task",
+            start_date=self.start_date,
+            end_date=self.end_date,
+            color="#3498db",
+            progress=50,
+            dependencies=["dep1", "dep2"]
+        )
+        
+        self.assertIsNotNone(task.id)
+        self.assertEqual(task.name, "Factory Task")
+        self.assertEqual(task.start_date, self.start_date)
+        self.assertEqual(task.end_date, self.end_date)
+        self.assertEqual(task.color, "#3498db")
+        self.assertEqual(task.progress, 50)
+        self.assertEqual(task.dependencies, ["dep1", "dep2"])
+        self.assertFalse(task.is_milestone)
+    
+    def test_create_milestone_factory_method(self):
+        """Test the create_milestone factory method."""
+        milestone = Task.create_milestone(
+            name="Test Milestone",
+            date=self.start_date,
+            color="#e74c3c",
+            dependencies=["dep1"]
+        )
+        
+        self.assertIsNotNone(milestone.id)
+        self.assertEqual(milestone.name, "Test Milestone")
+        self.assertEqual(milestone.start_date, self.start_date)
+        self.assertIsNone(milestone.end_date)
+        self.assertEqual(milestone.color, "#e74c3c")
+        self.assertEqual(milestone.dependencies, ["dep1"])
+        self.assertTrue(milestone.is_milestone)
+    
+    def test_task_empty_name_validation(self):
+        """Test that empty task names raise ValueError."""
+        with self.assertRaises(ValueError):
+            Task(id="test", name="", start_date=self.start_date)
+    
+    def test_task_progress_validation(self):
+        """Test that invalid progress values raise ValueError."""
+        with self.assertRaises(ValueError):
+            Task(id="test", name="Test", start_date=self.start_date, progress=-1)
+        
+        with self.assertRaises(ValueError):
+            Task(id="test", name="Test", start_date=self.start_date, progress=101)
+    
+    def test_milestone_end_date_handling(self):
+        """Test that milestones with end_date get it set to None."""
+        # Create a milestone with end_date
+        milestone = Task(
+            id="milestone1",
+            name="Test Milestone",
+            start_date=self.start_date,
+            end_date=self.end_date,
+            is_milestone=True
+        )
+        # The __post_init__ should have set end_date to None
+        self.assertIsNone(milestone.end_date)
+    
+    def test_duration_days_regular_task(self):
+        """Test duration calculation for regular tasks."""
+        task = Task(
+            id="test",
+            name="Test",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=9)
+        )
+        self.assertEqual(task.duration_days, 10)  # Inclusive counting
+    
+    def test_duration_days_milestone(self):
+        """Test duration calculation for milestones."""
+        milestone = Task.create_milestone(
+            name="Test Milestone",
+            date=self.start_date
+        )
+        self.assertEqual(milestone.duration_days, 0)
+    
+    def test_duration_days_no_end_date(self):
+        """Test duration calculation when end_date is None."""
+        task = Task(
+            id="test",
+            name="Test",
+            start_date=self.start_date,
+            end_date=None
+        )
+        self.assertIsNone(task.duration_days)
+    
+    def test_to_dict(self):
+        """Test serialization to dictionary."""
+        task = Task(
+            id="test123",
+            name="Test Task",
+            start_date=self.start_date,
+            end_date=self.end_date,
+            progress=25,
+            dependencies=["dep1"],
+            color="#3498db",
+            is_milestone=False
+        )
+        
+        task_dict = task.to_dict()
+        
+        self.assertEqual(task_dict['id'], "test123")
+        self.assertEqual(task_dict['name'], "Test Task")
+        self.assertEqual(task_dict['start_date'], "2024-01-01T00:00:00")
+        self.assertEqual(task_dict['end_date'], "2024-01-10T00:00:00")
+        self.assertEqual(task_dict['progress'], 25)
+        self.assertEqual(task_dict['dependencies'], ["dep1"])
+        self.assertEqual(task_dict['color'], "#3498db")
+        self.assertFalse(task_dict['is_milestone'])
+    
+    def test_from_dict(self):
+        """Test deserialization from dictionary."""
+        task_dict = {
+            'id': 'test123',
+            'name': 'Test Task',
+            'start_date': '2024-01-01T00:00:00',
+            'end_date': '2024-01-10T00:00:00',
+            'progress': 25,
+            'dependencies': ['dep1'],
+            'color': '#3498db',
+            'is_milestone': False
+        }
+        
+        task = Task.from_dict(task_dict)
+        
+        self.assertEqual(task.id, "test123")
+        self.assertEqual(task.name, "Test Task")
+        self.assertEqual(task.start_date, datetime(2024, 1, 1))
+        self.assertEqual(task.end_date, datetime(2024, 1, 10))
+        self.assertEqual(task.progress, 25)
+        self.assertEqual(task.dependencies, ['dep1'])
+        self.assertEqual(task.color, '#3498db')
+        self.assertFalse(task.is_milestone)
+
+
+class TestProject(unittest.TestCase):
+    """Test cases for the Project class."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.start_date = datetime(2024, 1, 1)
+        self.end_date = datetime(2024, 1, 10)
+        
+        # Create sample tasks
+        self.task1 = Task.create_task(
+            name="Task 1",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=3)
+        )
+        
+        self.task2 = Task.create_task(
+            name="Task 2",
+            start_date=self.start_date + timedelta(days=4),
+            end_date=self.start_date + timedelta(days=8)
+        )
+        
+        self.milestone = Task.create_milestone(
+            name="Milestone 1",
+            date=self.start_date + timedelta(days=8)
+        )
+    
+    def test_create_empty_project(self):
+        """Test creating an empty project."""
+        project = Project(name="Empty Project")
+        
+        self.assertEqual(project.name, "Empty Project")
+        self.assertEqual(project.tasks, [])
+        self.assertIsNone(project.start_date)
+        self.assertIsNone(project.end_date)
+    
+    def test_create_project_with_tasks(self):
+        """Test creating a project with tasks."""
+        tasks = [self.task1, self.task2]
+        project = Project(name="Test Project", tasks=tasks)
+        
+        self.assertEqual(project.name, "Test Project")
+        self.assertEqual(len(project.tasks), 2)
+        # Project dates should be calculated from tasks
+        self.assertEqual(project.start_date, self.start_date)
+        # task2 ends on start_date + 8 days = start_date + timedelta(days=8)
+        self.assertEqual(project.end_date, self.start_date + timedelta(days=8))
+    
+    def test_add_task(self):
+        """Test adding a task to a project."""
+        project = Project(name="Test Project")
+        project.add_task(self.task1)
+        
+        self.assertEqual(len(project.tasks), 1)
+        self.assertEqual(project.tasks[0].name, "Task 1")
+        self.assertEqual(project.start_date, self.start_date)
+        self.assertEqual(project.end_date, self.start_date + timedelta(days=3))
+    
+    def test_add_multiple_tasks(self):
+        """Test adding multiple tasks to a project."""
+        project = Project(name="Test Project")
+        project.add_task(self.task1)
+        project.add_task(self.task2)
+        project.add_task(self.milestone)
+        
+        self.assertEqual(len(project.tasks), 3)
+        # Start date should be earliest task
+        self.assertEqual(project.start_date, self.start_date)
+        # End date should be latest end date
+        self.assertEqual(project.end_date, self.start_date + timedelta(days=8))
+    
+    def test_remove_task(self):
+        """Test removing a task from a project."""
+        project = Project(name="Test Project", tasks=[self.task1, self.task2])
+        
+        # Remove task1
+        result = project.remove_task(self.task1.id)
+        self.assertTrue(result)
+        self.assertEqual(len(project.tasks), 1)
+        self.assertEqual(project.tasks[0].id, self.task2.id)
+        
+        # Try to remove non-existent task
+        result = project.remove_task("non-existent-id")
+        self.assertFalse(result)
+    
+    def test_remove_task_updates_dependencies(self):
+        """Test that removing a task also removes it from other tasks' dependencies."""
+        # Create tasks with dependencies
+        task1 = Task.create_task(name="Task 1", start_date=self.start_date, end_date=self.start_date + timedelta(days=3))
+        task2 = Task.create_task(
+            name="Task 2", 
+            start_date=self.start_date + timedelta(days=4),
+            end_date=self.start_date + timedelta(days=8),
+            dependencies=[task1.id]
+        )
+        
+        project = Project(name="Test Project", tasks=[task1, task2])
+        
+        # Remove task1
+        project.remove_task(task1.id)
+        
+        # task2 should no longer have the dependency
+        remaining_task2 = project.get_task_by_id(task2.id)
+        self.assertEqual(remaining_task2.dependencies, [])
+    
+    def test_get_task_by_id(self):
+        """Test getting a task by ID."""
+        project = Project(name="Test Project", tasks=[self.task1, self.task2])
+        
+        retrieved = project.get_task_by_id(self.task1.id)
+        self.assertEqual(retrieved.name, "Task 1")
+        
+        # Test non-existent task
+        self.assertIsNone(project.get_task_by_id("non-existent-id"))
+    
+    def test_get_dependencies(self):
+        """Test getting dependencies for a task."""
+        task1 = Task.create_task(name="Task 1", start_date=self.start_date, end_date=self.start_date + timedelta(days=3))
+        task2 = Task.create_task(
+            name="Task 2", 
+            start_date=self.start_date + timedelta(days=4),
+            end_date=self.start_date + timedelta(days=8),
+            dependencies=[task1.id]
+        )
+        
+        project = Project(name="Test Project", tasks=[task1, task2])
+        
+        dependencies = project.get_dependencies(task2.id)
+        self.assertEqual(len(dependencies), 1)
+        self.assertEqual(dependencies[0].id, task1.id)
+    
+    def test_get_dependents(self):
+        """Test getting tasks that depend on a given task."""
+        task1 = Task.create_task(name="Task 1", start_date=self.start_date, end_date=self.start_date + timedelta(days=3))
+        task2 = Task.create_task(
+            name="Task 2", 
+            start_date=self.start_date + timedelta(days=4),
+            end_date=self.start_date + timedelta(days=8),
+            dependencies=[task1.id]
+        )
+        
+        project = Project(name="Test Project", tasks=[task1, task2])
+        
+        dependents = project.get_dependents(task1.id)
+        self.assertEqual(len(dependents), 1)
+        self.assertEqual(dependents[0].id, task2.id)
+    
+    def test_to_dict(self):
+        """Test serialization of project to dictionary."""
+        project = Project(name="Test Project", tasks=[self.task1, self.task2])
+        
+        project_dict = project.to_dict()
+        
+        self.assertEqual(project_dict['name'], "Test Project")
+        self.assertEqual(len(project_dict['tasks']), 2)
+        self.assertEqual(project_dict['start_date'], "2024-01-01T00:00:00")
+        # task2 ends on start_date + 8 days = 2024-01-09
+        self.assertEqual(project_dict['end_date'], "2024-01-09T00:00:00")
+    
+    def test_from_dict(self):
+        """Test deserialization of project from dictionary."""
+        project_dict = {
+            'name': 'Test Project',
+            'tasks': [
+                {
+                    'id': 'task1',
+                    'name': 'Task 1',
+                    'start_date': '2024-01-01T00:00:00',
+                    'end_date': '2024-01-03T00:00:00',
+                    'progress': 0,
+                    'dependencies': [],
+                    'color': '#1f6aa5',
+                    'is_milestone': False
+                },
+                {
+                    'id': 'task2',
+                    'name': 'Task 2',
+                    'start_date': '2024-01-04T00:00:00',
+                    'end_date': '2024-01-08T00:00:00',
+                    'progress': 0,
+                    'dependencies': ['task1'],
+                    'color': '#1f6aa5',
+                    'is_milestone': False
+                }
+            ],
+            'start_date': '2024-01-01T00:00:00',
+            'end_date': '2024-01-08T00:00:00'
+        }
+        
+        project = Project.from_dict(project_dict)
+        
+        self.assertEqual(project.name, "Test Project")
+        self.assertEqual(len(project.tasks), 2)
+        self.assertEqual(project.start_date, datetime(2024, 1, 1))
+        self.assertEqual(project.end_date, datetime(2024, 1, 8))
+    
+    def test_critical_path_simple(self):
+        """Test critical path calculation for simple project."""
+        # Create a linear sequence of tasks
+        task1 = Task.create_task(
+            name="Task 1",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=3)
+        )
+        task2 = Task.create_task(
+            name="Task 2",
+            start_date=self.start_date + timedelta(days=4),
+            end_date=self.start_date + timedelta(days=8),
+            dependencies=[task1.id]
+        )
+        task3 = Task.create_task(
+            name="Task 3",
+            start_date=self.start_date + timedelta(days=9),
+            end_date=self.start_date + timedelta(days=15),
+            dependencies=[task2.id]
+        )
+        
+        project = Project(name="Linear Project", tasks=[task1, task2, task3])
+        critical_path = project.get_critical_path()
+        
+        # Critical path should include all tasks in sequence
+        self.assertEqual(len(critical_path), 3)
+        self.assertEqual(critical_path[0].id, task1.id)
+        self.assertEqual(critical_path[1].id, task2.id)
+        self.assertEqual(critical_path[2].id, task3.id)
+    
+    def test_critical_path_with_milestones(self):
+        """Test critical path calculation with milestones."""
+        task1 = Task.create_task(
+            name="Task 1",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=3)
+        )
+        milestone = Task.create_milestone(
+            name="Review",
+            date=self.start_date + timedelta(days=4),
+            dependencies=[task1.id]
+        )
+        task2 = Task.create_task(
+            name="Task 2",
+            start_date=self.start_date + timedelta(days=5),
+            end_date=self.start_date + timedelta(days=10),
+            dependencies=[milestone.id]
+        )
+        
+        project = Project(name="Milestone Project", tasks=[task1, milestone, task2])
+        critical_path = project.get_critical_path()
+        
+        # Critical path should include the longest path
+        self.assertTrue(len(critical_path) >= 2)
+        # Should include the milestone if it's on the critical path
+        task_ids = [t.id for t in critical_path]
+        self.assertIn(milestone.id, task_ids)
+
+
+class TestTaskValidation(unittest.TestCase):
+    """Test validation logic for Task class."""
+    
+    def test_progress_validation_low(self):
+        """Test that progress < 0 raises ValueError."""
+        with self.assertRaises(ValueError):
+            Task(id="test", name="Test", start_date=datetime.now(), progress=-5)
+    
+    def test_progress_validation_high(self):
+        """Test that progress > 100 raises ValueError."""
+        with self.assertRaises(ValueError):
+            Task(id="test", name="Test", start_date=datetime.now(), progress=105)
+    
+    def test_empty_name_validation(self):
+        """Test that empty name raises ValueError."""
+        with self.assertRaises(ValueError):
+            Task(id="test", name="", start_date=datetime.now())
+
+
+if __name__ == '__main__':
+    unittest.main()
