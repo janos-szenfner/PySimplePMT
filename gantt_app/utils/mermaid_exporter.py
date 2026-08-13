@@ -88,6 +88,9 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def _generate_task_id(task: Task, used_ids: Set[str]) -> str:
@@ -257,7 +260,87 @@ def _sort_tasks_for_dependencies(project: Project) -> List[Task]:
     return sorted_tasks
 
 
-def generate_mermaid_content(project: Project, 
+def _section_task_for(task: Task, project: Project) -> Optional[Task]:
+    """
+    Get the summary task whose section a task belongs to.
+
+    PARAMETERS:
+    -----------
+    task : Task
+        The task being exported
+    project : Project
+        The project the task belongs to
+
+    RETURNS:
+    --------
+    Optional[Task]
+        The task's outermost summary ancestor, or None when the task sits at
+        the root level.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The ancestor is returned rather than its name so callers can group by
+    identity. Grouping by name merged two distinct parents that happened to
+    share one - readily produced by the XLSX importer, whose phase parents
+    are named from free-text spreadsheet cells - and the merge was
+    irreversible on the next import.
+
+    Mermaid sections do not nest, so a hierarchy deeper than two levels
+    collapses onto its top-level ancestor. The full parent chain is still
+    preserved in the project's own JSON format.
+    """
+    ancestor = None
+    current = task
+    seen = {current.id}
+
+    while current.parent_task_id:
+        parent = project.get_task_by_id(current.parent_task_id)
+        if parent is None or parent.id in seen:
+            break
+        seen.add(parent.id)
+        ancestor = parent
+        current = parent
+
+    return ancestor
+
+
+def _group_tasks_by_section(tasks: List[Task], project: Project,
+                            summary_ids: Set[str]) -> List[Task]:
+    """
+    Reorder tasks so every section's members are contiguous.
+
+    RETURNS:
+    --------
+    List[Task]
+        The same tasks, grouped by section in order of first appearance and
+        keeping the incoming (dependency-respecting) order inside each group.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Without this, a topological order that interleaves sections would emit
+    the same 'section' header several times.
+    """
+    groups: dict = {}
+    order: List[Optional[str]] = []
+
+    for task in tasks:
+        if task.id in summary_ids:
+            continue
+        section = _section_task_for(task, project)
+        # Key on identity, not name: two parents may share a name
+        key = section.id if section is not None else None
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(task)
+
+    grouped: List[Task] = []
+    for key in order:
+        grouped.extend(groups[key])
+    return grouped
+
+
+def generate_mermaid_content(project: Project,
                             include_date_format: bool = True) -> str:
     """
     Generate Mermaid Gantt chart content from a Project.
@@ -315,17 +398,31 @@ def generate_mermaid_content(project: Project,
     
     # Sort tasks topologically based on dependencies
     sorted_tasks = _sort_tasks_for_dependencies(project)
-    
+
+    # Summary tasks are written as Mermaid sections rather than as tasks:
+    # a section is exactly the grouping they represent, and emitting them as
+    # ordinary tasks would flatten the hierarchy on the next import.
+    summary_ids = project.get_summary_task_ids()
+    sorted_tasks = _group_tasks_by_section(sorted_tasks, project, summary_ids)
+    current_section_id = object()  # sentinel: no section emitted yet
+
     # Track which tasks have been defined
     defined_task_ids = set()
-    
+
     for task in sorted_tasks:
+        section = _section_task_for(task, project)
+        section_id = section.id if section is not None else None
+        if section_id != current_section_id:
+            if section is not None:
+                lines.append(f"    section {section.name}")
+            current_section_id = section_id
+
         mermaid_id = id_to_mermaid_id[task.id]
-        
+
         # Get dependencies that have already been defined
-        valid_deps = [dep_id for dep_id in task.dependencies 
-                     if dep_id in defined_task_ids]
-        
+        valid_deps = [dep_id for dep_id in task.dependencies
+                      if dep_id in defined_task_ids and dep_id not in summary_ids]
+
         if task.is_milestone:
             date_str = _format_date(task.start_date)
             if valid_deps and len(valid_deps) == 1:
@@ -415,7 +512,7 @@ def export_project_to_mermaid(project: Project, filepath: str,
         return True
         
     except Exception as e:
-        print(f"Error exporting to Mermaid: {e}")
+        logger.exception(f"Error exporting to Mermaid: {e}")
         import traceback
         traceback.print_exc()
         return False

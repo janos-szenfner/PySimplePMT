@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PySimplePMT
+GenericName=Project Management
+Comment=Gantt chart project management with GanttProject, Mermaid and Excel import
+Exec=pysimplepmt %f
+Icon=pysimplepmt
+Terminal=false
+Categories=Office;ProjectManagement;
+Keywords=gantt;project;planning;schedule;roadmap;
+MimeType=application/json;text/x-mermaid;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;
+StartupNotify=true
+StartupWMClass=pysimplepmt

@@ -1,0 +1,6 @@
+# Build-time dependencies for producing a packaged PySimplePMT build.
+#
+# Install alongside requirements.txt:
+#   pip install -r requirements.txt -r requirements-build.txt
+
+pyinstaller>=6.0.0,<7.0.0

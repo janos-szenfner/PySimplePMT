@@ -11,6 +11,9 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 class JSONFileIO:
@@ -81,7 +84,7 @@ class JSONFileIO:
                 )
             return True
         except Exception as e:
-            print(f"Error saving project: {e}")
+            logger.exception(f"Error saving project: {e}")
             return False
     
     @classmethod
@@ -97,7 +100,7 @@ class JSONFileIO:
         """
         try:
             if not os.path.exists(filepath):
-                print(f"File not found: {filepath}")
+                logger.warning(f"File not found: {filepath}")
                 return None
             
             with open(filepath, 'r', encoding='utf-8') as f:
@@ -111,10 +114,10 @@ class JSONFileIO:
             return project
             
         except json.JSONDecodeError as e:
-            print(f"Error decoding JSON: {e}")
+            logger.exception(f"Error decoding JSON: {e}")
             return None
         except Exception as e:
-            print(f"Error loading project: {e}")
+            logger.exception(f"Error loading project: {e}")
             return None
 
 

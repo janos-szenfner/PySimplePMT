@@ -818,16 +818,36 @@ class DragDropTaskList(ctk.CTkFrame):
         # First pass: add all root tasks
         root_tasks = self.project.get_root_tasks()
         root_tasks_sorted = sorted(root_tasks, key=lambda t: t.start_date)
-        
+
         for task in root_tasks_sorted:
             item_id = self._add_task_to_tree(task, indent_level=0)
             tree_items[task.id] = item_id
-        
-        # Second pass: add all subtasks under their parents
-        for task in sorted(self.project.tasks, key=lambda t: t.start_date):
-            if task.parent_task_id and task.parent_task_id in tree_items:
-                parent_item = tree_items[task.parent_task_id]
-                self._add_task_to_tree(task, parent_item=parent_item, indent_level=1)
+
+        # Further passes: add subtasks once their parent is in the tree.
+        # Imported files (notably GanttProject) can nest tasks several levels
+        # deep, so keep sweeping until a pass places nothing new - a single
+        # pass would silently drop anything below the second level.
+        remaining = [t for t in sorted(self.project.tasks, key=lambda t: t.start_date)
+                     if t.parent_task_id]
+
+        while remaining:
+            placed = []
+            for task in remaining:
+                parent_item = tree_items.get(task.parent_task_id)
+                if parent_item is None:
+                    continue
+                item_id = self._add_task_to_tree(task, parent_item=parent_item,
+                                                 indent_level=1)
+                tree_items[task.id] = item_id
+                placed.append(task)
+
+            if not placed:
+                # Orphaned subtasks (parent missing or a cycle) - show at root
+                for task in remaining:
+                    tree_items[task.id] = self._add_task_to_tree(task, indent_level=0)
+                break
+
+            remaining = [t for t in remaining if t not in placed]
     
     def _add_task_to_tree(self, task: Task, parent_item: str = '', indent_level: int = 0):
         """

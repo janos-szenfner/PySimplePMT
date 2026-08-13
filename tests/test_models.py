@@ -431,6 +431,133 @@ class TestProject(unittest.TestCase):
         task_ids = [t.id for t in critical_path]
         self.assertIn(milestone.id, task_ids)
 
+    def test_critical_path_excludes_summary_tasks(self):
+        """A parent task spanning its sub-tasks stays off the critical path."""
+        parent = Task.create_task(
+            name="Phase",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=10)
+        )
+        child = Task.create_subtask(
+            name="Work",
+            parent_task=parent,
+            end_date=self.start_date + timedelta(days=10)
+        )
+
+        project = Project(name="Summary Project", tasks=[parent, child])
+        critical_path = project.get_critical_path()
+
+        task_ids = [t.id for t in critical_path]
+        self.assertNotIn(parent.id, task_ids)
+        self.assertIn(child.id, task_ids)
+
+    def test_critical_path_reaches_the_final_task(self):
+        """The path runs through to the task that finishes last."""
+        # Two predecessors of the finish, one on a longer chain
+        first = Task.create_task(
+            name="First", start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=9)
+        )
+        long_branch = Task.create_task(
+            name="Long branch", start_date=self.start_date + timedelta(days=10),
+            end_date=self.start_date + timedelta(days=19),
+            dependencies=[first.id]
+        )
+        short_branch = Task.create_task(
+            name="Short branch", start_date=self.start_date + timedelta(days=10),
+            end_date=self.start_date + timedelta(days=12),
+            dependencies=[first.id]
+        )
+        finish = Task.create_task(
+            name="Finish", start_date=self.start_date + timedelta(days=20),
+            end_date=self.start_date + timedelta(days=22),
+            dependencies=[long_branch.id, short_branch.id]
+        )
+
+        project = Project(name="Converging",
+                          tasks=[first, long_branch, short_branch, finish])
+        critical_path = project.get_critical_path()
+
+        self.assertEqual([t.name for t in critical_path],
+                         ["First", "Long branch", "Finish"])
+
+    def test_critical_path_ignores_weekend_gaps(self):
+        """Gaps between a task and its successor do not break the chain."""
+        # Friday finish, Monday start - a two day calendar gap
+        friday = datetime(2024, 1, 5)
+        monday = datetime(2024, 1, 8)
+
+        first = Task.create_task(name="Before weekend",
+                                 start_date=datetime(2024, 1, 1), end_date=friday)
+        second = Task.create_task(name="After weekend", start_date=monday,
+                                  end_date=datetime(2024, 1, 12),
+                                  dependencies=[first.id])
+
+        project = Project(name="Working Days", tasks=[first, second])
+        critical_path = project.get_critical_path()
+
+        self.assertEqual([t.name for t in critical_path],
+                         ["Before weekend", "After weekend"])
+
+    def test_critical_path_through_a_summary_dependency(self):
+        """Depending on a summary task links to the work inside it."""
+        phase = Task.create_task(
+            name="Phase", start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=9)
+        )
+        inner = Task.create_subtask(
+            name="Inner work", parent_task=phase,
+            end_date=self.start_date + timedelta(days=9)
+        )
+        after = Task.create_task(
+            name="After the phase",
+            start_date=self.start_date + timedelta(days=10),
+            end_date=self.start_date + timedelta(days=15),
+            dependencies=[phase.id]
+        )
+
+        project = Project(name="Summary Dependency",
+                          tasks=[phase, inner, after])
+        critical_path = project.get_critical_path()
+
+        names = [t.name for t in critical_path]
+        self.assertEqual(names, ["Inner work", "After the phase"])
+        self.assertNotIn("Phase", names)
+
+    def test_critical_path_survives_a_dependency_cycle(self):
+        """A cyclic dependency returns a path instead of hanging."""
+        first = Task.create_task(name="A", start_date=self.start_date,
+                                 end_date=self.start_date + timedelta(days=2))
+        second = Task.create_task(name="B",
+                                  start_date=self.start_date + timedelta(days=3),
+                                  end_date=self.start_date + timedelta(days=5))
+        first.dependencies = [second.id]
+        second.dependencies = [first.id]
+
+        project = Project(name="Cyclic", tasks=[first, second])
+        critical_path = project.get_critical_path()
+
+        self.assertTrue(len(critical_path) >= 1)
+        self.assertEqual(len({t.id for t in critical_path}), len(critical_path))
+
+    def test_get_summary_task_ids(self):
+        """Tasks referenced as a parent are reported as summary tasks."""
+        parent = Task.create_task(
+            name="Phase",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=5)
+        )
+        child = Task.create_subtask(name="Work", parent_task=parent)
+        standalone = Task.create_task(
+            name="Standalone",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=2)
+        )
+
+        project = Project(name="Summary IDs", tasks=[parent, child, standalone])
+
+        self.assertEqual(project.get_summary_task_ids(), {parent.id})
+
 
 class TestTaskValidation(unittest.TestCase):
     """Test validation logic for Task class."""

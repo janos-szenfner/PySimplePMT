@@ -6,7 +6,7 @@ Contains the Task and Project classes that form the core data structure.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 import uuid
 
 
@@ -432,72 +432,176 @@ class Project:
         
         return project
     
+    def get_summary_task_ids(self) -> set:
+        """
+        Get the IDs of tasks that have sub-tasks beneath them.
+
+        RETURNS:
+        --------
+        set
+            IDs of every task referenced as a parent by another task.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Importers derive these summary tasks from the source file's grouping
+        (Mermaid sections, spreadsheet phases, nested GanttProject tasks).
+        They span their children rather than representing work of their own,
+        so scheduling calculations should look through them.
+        """
+        return {task.parent_task_id for task in self.tasks if task.parent_task_id}
+
     def get_critical_path(self) -> List[Task]:
         """
-        Calculate the critical path using a simplified algorithm.
-        The critical path is the longest path through the project network.
+        Calculate the critical path through the project network.
+
+        RETURNS:
+        --------
+        List[Task]
+            The longest chain of dependent tasks ending at the task that
+            finishes last, ordered from the start of the project to its end.
+            Empty for a project with no tasks.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The chain is measured by accumulated duration rather than by comparing
+        calendar dates. Plans that are scheduled in working days leave weekend
+        and holiday gaps between a task and its successor, and a date-based
+        comparison reads those gaps as slack, which would drop most of the
+        chain. Accumulated duration is unaffected by them.
+
+        Summary tasks are excluded: they merely envelope their sub-tasks, so
+        leaving them in would let a group bar outrank the actual work it
+        contains and surface as the critical path itself.
+
+        The endpoint is the task that finishes last, with the longer chain
+        winning any tie. An earlier implementation picked whichever tied task
+        happened to come first in iteration order, which could end the path
+        one task short of the project's real finish.
         """
         if not self.tasks:
             return []
-        
-        # Sort tasks by start date
-        sorted_tasks = sorted(self.tasks, key=lambda t: t.start_date)
-        
-        # Calculate early start and early finish for each task
-        early_start = {}
-        early_finish = {}
-        
-        for task in sorted_tasks:
-            # Early start is the maximum early finish of all dependencies
-            dep_finish_dates = []
-            for dep_id in task.dependencies:
-                dep_task = self.get_task_by_id(dep_id)
-                if dep_task and dep_task.id in early_finish:
-                    dep_finish_dates.append(early_finish[dep_task.id])
-            
-            if dep_finish_dates:
-                early_start[task.id] = max(dep_finish_dates)
-            else:
-                early_start[task.id] = task.start_date
-            
-            if task.is_milestone:
-                early_finish[task.id] = early_start[task.id]
-            else:
-                if task.end_date:
-                    early_finish[task.id] = early_start[task.id] + (task.end_date - task.start_date)
-                else:
-                    early_finish[task.id] = early_start[task.id]
-        
-        # Find the task with the latest early finish
-        if not early_finish:
+
+        summary_ids = self.get_summary_task_ids()
+        candidates = [t for t in self.tasks if t.id not in summary_ids]
+        if not candidates:
             return []
-        
-        latest_finish_task_id = max(early_finish.keys(), key=lambda k: early_finish[k])
-        latest_finish_date = early_finish[latest_finish_task_id]
-        
-        # Backtrack to find the critical path
-        critical_path = []
-        current_task_id = latest_finish_task_id
-        
-        while current_task_id:
-            current_task = self.get_task_by_id(current_task_id)
-            if current_task:
-                critical_path.append(current_task)
-                
-                # Find the dependency with the latest early finish that matches our early start
-                best_dep = None
-                best_finish = None
-                
-                for dep_id in current_task.dependencies:
-                    dep_task = self.get_task_by_id(dep_id)
-                    if dep_task and dep_task.id in early_finish:
-                        if early_finish[dep_task.id] == early_start[current_task.id]:
-                            if best_finish is None or early_finish[dep_task.id] > best_finish:
-                                best_dep = dep_task
-                                best_finish = early_finish[dep_task.id]
-                
-                current_task_id = best_dep.id if best_dep else None
+
+        by_id = {task.id: task for task in candidates}
+
+        children: Dict[Optional[str], List[Task]] = {}
+        for task in self.tasks:
+            children.setdefault(task.parent_task_id, []).append(task)
+
+        def duration(task: Task) -> int:
+            """Length of a task in days; milestones take no time."""
+            if task.is_milestone or task.end_date is None:
+                return 0
+            return max((task.end_date - task.start_date).days + 1, 0)
+
+        resolved_deps: Dict[str, List[Task]] = {}
+
+        def resolve_dependency(dep_id: str) -> List[Task]:
+            """
+            Expand one dependency into the real tasks it stands for.
+
+            DEVELOPMENT NOTES:
+            ------------------
+            Depending on a summary task means depending on the work inside it,
+            so a summary reference resolves to its non-summary descendants.
+            GanttProject files rely on this heavily - several tasks there
+            depend on a parent task - and dropping those edges would cut the
+            chain in half.
+            """
+            if dep_id in resolved_deps:
+                return resolved_deps[dep_id]
+
+            resolved_deps[dep_id] = []  # guards against a cycle re-entering
+
+            if dep_id in by_id:
+                found = [by_id[dep_id]]
             else:
-                current_task_id = None
-        
+                found = []
+                stack = [dep_id]
+                seen = set()
+                while stack:
+                    current_id = stack.pop()
+                    if current_id in seen:
+                        continue
+                    seen.add(current_id)
+                    for child in children.get(current_id, []):
+                        if child.id in by_id:
+                            found.append(child)
+                        else:
+                            stack.append(child.id)
+
+            resolved_deps[dep_id] = found
+            return found
+
+        def predecessors(task: Task) -> List[Task]:
+            """The tasks that must finish before this one can start."""
+            result = []
+            seen = {task.id}
+            for dep_id in task.dependencies:
+                for dep in resolve_dependency(dep_id):
+                    if dep.id not in seen:
+                        seen.add(dep.id)
+                        result.append(dep)
+            return result
+
+        # Longest chain of accumulated duration ending at each task. Computed
+        # with an explicit stack so deep chains cannot exhaust recursion, and
+        # guarded so a dependency cycle cannot loop forever.
+        chain_length: Dict[str, int] = {}
+        in_progress: Set[str] = set()
+
+        for root in candidates:
+            if root.id in chain_length:
+                continue
+            stack = [(root, False)]
+            while stack:
+                task, expanded = stack.pop()
+                if expanded:
+                    in_progress.discard(task.id)
+                    best = 0
+                    for dep in predecessors(task):
+                        best = max(best, chain_length.get(dep.id, 0))
+                    chain_length[task.id] = best + duration(task)
+                    continue
+                if task.id in chain_length or task.id in in_progress:
+                    continue
+                in_progress.add(task.id)
+                stack.append((task, True))
+                for dep in predecessors(task):
+                    if dep.id not in chain_length and dep.id not in in_progress:
+                        stack.append((dep, False))
+
+        def finish_date(task: Task) -> datetime:
+            """The date a task finishes, falling back to its start."""
+            return task.end_date or task.start_date
+
+        # The project ends with the last task to finish; prefer the longer
+        # chain when several finish on the same date
+        end_task = max(
+            candidates,
+            key=lambda t: (finish_date(t), chain_length.get(t.id, 0))
+        )
+
+        # Walk back through the predecessor that contributes the longest chain
+        critical_path: List[Task] = []
+        current: Optional[Task] = end_task
+        visited: Set[str] = set()
+
+        while current is not None and current.id not in visited:
+            visited.add(current.id)
+            critical_path.append(current)
+
+            deps = predecessors(current)
+            if not deps:
+                break
+
+            current = max(
+                deps,
+                key=lambda t: (chain_length.get(t.id, 0), finish_date(t))
+            )
+
         return critical_path[::-1]  # Reverse to get start to end order

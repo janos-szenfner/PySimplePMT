@@ -16,8 +16,12 @@ from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
 from gantt_app.utils.mpp_importer import import_mpp_file
 from gantt_app.utils.mermaid_importer import import_mermaid_file
+from gantt_app.utils.xlsx_importer import import_xlsx_file
 from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
 from gantt_app.utils.undoredo import UndoRedoManager
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 class Toolbar(ctk.CTkFrame):
@@ -145,6 +149,13 @@ class Toolbar(ctk.CTkFrame):
             command=self.import_mermaid, width=100
         )
         import_mermaid_btn.pack(side=tk.LEFT, padx=5, pady=5)
+
+        # Import XLSX button
+        import_xlsx_btn = ctk.CTkButton(
+            import_frame, text="Import XLSX",
+            command=self.import_xlsx, width=100
+        )
+        import_xlsx_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
     def _create_export_buttons(self):
         """Create buttons for exporting files."""
@@ -197,17 +208,37 @@ class Toolbar(ctk.CTkFrame):
         self.update_undo_redo_buttons()
     
     def _create_theme_toggle(self):
-        """Create theme toggle button."""
+        """Create the theme toggle and log buttons."""
         theme_frame = ctk.CTkFrame(self)
         theme_frame.pack(side=tk.RIGHT, padx=5, pady=5)
-        
+
         # Theme toggle
         self.theme_toggle = ctk.CTkButton(
             theme_frame, text="Toggle Theme",
             command=self.toggle_theme, width=100
         )
         self.theme_toggle.pack(side=tk.LEFT, padx=5, pady=5)
-    
+
+        # Log viewer
+        self.log_button = ctk.CTkButton(
+            theme_frame, text="Log",
+            command=self.show_log, width=70
+        )
+        self.log_button.pack(side=tk.LEFT, padx=5, pady=5)
+
+    def show_log(self):
+        """Open the application log window."""
+        try:
+            from gantt_app.views.log_window import LogWindow
+            LogWindow.show(self.winfo_toplevel())
+            logger.debug("Log window opened")
+        except Exception as e:
+            logger.exception("Could not open the log window")
+            messagebox.showerror(
+                "Log Unavailable",
+                f"Could not open the log window:\n{e}"
+            )
+
     def add_task(self):
         """Add a new task to the project with undo support."""
         # Create a default task
@@ -219,7 +250,9 @@ class Toolbar(ctk.CTkFrame):
         if duration_days is None:  # User cancelled
             return
         
-        default_end = default_start + timedelta(days=duration_days)
+        # Durations are inclusive: a 1 day task starts and ends on the same
+        # day, matching Task.duration_days and every importer
+        default_end = default_start + timedelta(days=duration_days - 1)
         
         # Get task name
         task_name = simpledialog.askstring(
@@ -299,22 +332,23 @@ class Toolbar(ctk.CTkFrame):
         """Add a new subtask to the project with undo support."""
         from gantt_app.models import Task
         
-        # Check if there are any tasks to be a parent
-        root_tasks = self.project.get_root_tasks()
-        if not root_tasks:
+        # Any task can be a parent, including an existing sub-task, so that
+        # hierarchies deeper than two levels can be built
+        candidate_parents = self._candidate_parent_tasks()
+        if not candidate_parents:
             messagebox.showwarning("No Parent Task", "You need at least one task to create a subtask.")
             return
-        
+
         # Get subtask name
         subtask_name = simpledialog.askstring(
             "New Sub-Task", "Enter subtask name:", parent=self.master
         )
-        
+
         if not subtask_name:
             return
-        
+
         # Let user select parent task
-        parent_task = self._select_parent_task(root_tasks)
+        parent_task = self._select_parent_task(candidate_parents)
         if not parent_task:
             return
         
@@ -329,7 +363,8 @@ class Toolbar(ctk.CTkFrame):
         
         # Calculate end date based on parent start date
         parent_start = parent_task.start_date
-        subtask_end = parent_start + timedelta(days=duration_days)
+        # Inclusive duration, as in add_task
+        subtask_end = parent_start + timedelta(days=duration_days - 1)
         
         # Create subtask
         subtask = Task.create_subtask(
@@ -352,24 +387,87 @@ class Toolbar(ctk.CTkFrame):
             if self.on_project_changed:
                 self.on_project_changed()
     
-    def _select_parent_task(self, root_tasks: List[Task]) -> Optional[Task]:
+    def _candidate_parent_tasks(self) -> List[Task]:
+        """
+        Get the tasks that may act as a parent, in hierarchy order.
+
+        RETURNS:
+        --------
+        List[Task]
+            Every non-milestone task, each parent immediately followed by its
+            own descendants, so the selection list reads as a tree.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Sub-tasks are included, which is what allows hierarchies deeper than
+        two levels to be built from the UI. Imported files (GanttProject in
+        particular) already nest several levels deep, so restricting this to
+        root tasks made the UI unable to express what the importers produce.
+        Milestones are excluded because they are single-date markers with no
+        span for a child to sit inside.
+        """
+        by_parent = {}
+        for task in self.project.tasks:
+            by_parent.setdefault(task.parent_task_id, []).append(task)
+
+        for group in by_parent.values():
+            group.sort(key=lambda t: t.start_date)
+
+        ordered: List[Task] = []
+        visited = set()
+
+        def walk(parent_id):
+            for task in by_parent.get(parent_id, []):
+                if task.id in visited:
+                    continue
+                visited.add(task.id)
+                if not task.is_milestone:
+                    ordered.append(task)
+                walk(task.id)
+
+        walk(None)
+
+        # Include anything unreachable from the root (orphaned parent reference)
+        for task in self.project.tasks:
+            if task.id not in visited and not task.is_milestone:
+                ordered.append(task)
+
+        return ordered
+
+    def _task_depth(self, task: Task) -> int:
+        """Get how many levels down a task sits, 0 for a root task."""
+        depth = 0
+        current = task
+        seen = {current.id}
+        while current.parent_task_id:
+            parent = self.project.get_task_by_id(current.parent_task_id)
+            if parent is None or parent.id in seen:
+                break
+            seen.add(parent.id)
+            current = parent
+            depth += 1
+        return depth
+
+    def _select_parent_task(self, candidate_tasks: List[Task]) -> Optional[Task]:
         """
         Show a dialog to select a parent task for a subtask.
-        
+
         PARAMETERS:
         -----------
-        root_tasks : List[Task]
-            List of root tasks that can be parents
-        
+        candidate_tasks : List[Task]
+            Tasks that can be parents, in hierarchy order
+
         RETURNS:
         --------
         Optional[Task]
             The selected parent task, or None if cancelled
-        
+
         DEVELOPMENT NOTES:
         ------------------
         Uses a dictionary to map listbox indices to task objects.
         This provides a clean way to retrieve the selected task.
+        Entries are indented by depth so nesting is visible when picking a
+        sub-task as the parent.
         """
         # Create a simple dialog with a listbox
         dialog = tk.Toplevel(self.master)
@@ -389,9 +487,10 @@ class Toolbar(ctk.CTkFrame):
         # Store mapping from index to task
         task_map = {}
         
-        # Add tasks to listbox
-        for i, task in enumerate(root_tasks):
-            display_name = f"{task.name} ({task.start_date.strftime('%Y-%m-%d')})"
+        # Add tasks to listbox, indented by how deep they sit
+        for i, task in enumerate(candidate_tasks):
+            indent = "    " * self._task_depth(task)
+            display_name = f"{indent}{task.name} ({task.start_date.strftime('%Y-%m-%d')})"
             listbox.insert(tk.END, display_name)
             task_map[i] = task
         
@@ -575,7 +674,12 @@ class Toolbar(ctk.CTkFrame):
             
             tk.messagebox.showinfo("Success", f"Imported {len(project.tasks)} tasks from MPP file")
         else:
-            messagebox.showerror("Error", "Failed to import MPP file (Tasklib or JPype + mpxj required)")
+            messagebox.showerror(
+                "Error",
+                "Failed to import MPP file.\n\n"
+                "MS Project import needs the optional Tasklib reader:\n"
+                "    pip install tasklib"
+            )
     
     def import_mermaid(self):
         """Import a Mermaid (.mmd or .mermaid) file."""
@@ -609,6 +713,43 @@ class Toolbar(ctk.CTkFrame):
         else:
             messagebox.showerror("Error", "Failed to import Mermaid file")
     
+    def import_xlsx(self):
+        """Import an Excel (.xlsx) project plan."""
+        # Ask for file path
+        file_path = filedialog.askopenfilename(
+            filetypes=[("Excel Files", "*.xlsx;*.xlsm"), ("All Files", "*.*")],
+            title="Import XLSX File"
+        )
+
+        if not file_path:
+            return
+
+        # Import XLSX file
+        project = import_xlsx_file(file_path)
+        if project:
+            # Replace current project
+            self.project.name = project.name
+            self.project.tasks = project.tasks
+            self.project.start_date = project.start_date
+            self.project.end_date = project.end_date
+
+            # Clear undo/redo history when importing
+            if self.undo_redo_manager:
+                self.undo_redo_manager.clear()
+                self.update_undo_redo_buttons()
+
+            if self.on_project_changed:
+                self.on_project_changed()
+
+            messagebox.showinfo("Success", f"Imported {len(project.tasks)} tasks from XLSX file")
+        else:
+            messagebox.showerror(
+                "Error",
+                "Failed to import XLSX file.\n\n"
+                "Check that openpyxl is installed and that the sheet has a "
+                "header row naming a task column plus a start date or duration."
+            )
+
     def export_mermaid(self):
         """Export the current project to a Mermaid (.mmd) file."""
         # Ask for file path

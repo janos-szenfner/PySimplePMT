@@ -25,8 +25,12 @@ wheels/
 *.egg
 
 # PyInstaller
+# *.spec ignores the specs PyInstaller generates beside a script. The one in
+# packaging/ is hand-maintained and the build cannot run without it, so it is
+# explicitly re-included.
 *.manifest
 *.spec
+!packaging/*.spec
 
 # Installer logs
 pip-log.txt

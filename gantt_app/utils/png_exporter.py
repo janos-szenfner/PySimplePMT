@@ -74,6 +74,9 @@ from matplotlib.patches import Polygon, Rectangle, Arrow
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def _draw_gantt_chart_on_axes(ax, project: Project):
@@ -517,7 +520,7 @@ def export_gantt_to_png(project: Project, filepath: str,
         return True
         
     except Exception as e:
-        print(f"Error exporting to PNG: {e}")
+        logger.exception(f"Error exporting to PNG: {e}")
         import traceback
         traceback.print_exc()
         return False

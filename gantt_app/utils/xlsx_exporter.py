@@ -71,6 +71,9 @@ except ImportError:
     Workbook = None  # type: ignore
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     # For type hints only - this won't cause import errors at runtime
@@ -351,8 +354,8 @@ def generate_xlsx_bytes(project: Project) -> Optional[bytes]:
     data further before saving to disk.
     """
     if not OPENPYXL_AVAILABLE:
-        print("Error: openpyxl library is required for Excel export")
-        print("Install it with: pip install openpyxl")
+        logger.error("Error: openpyxl library is required for Excel export")
+        logger.warning("Install it with: pip install openpyxl")
         return None
     
     try:
@@ -367,7 +370,7 @@ def generate_xlsx_bytes(project: Project) -> Optional[bytes]:
         return output.getvalue()
         
     except Exception as e:
-        print(f"Error generating XLSX: {e}")
+        logger.exception(f"Error generating XLSX: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -421,8 +424,8 @@ def export_project_to_xlsx(project: Project, filepath: str) -> bool:
     and return False.
     """
     if not OPENPYXL_AVAILABLE:
-        print("Error: openpyxl library is required for Excel export")
-        print("Install it with: pip install openpyxl")
+        logger.error("Error: openpyxl library is required for Excel export")
+        logger.warning("Install it with: pip install openpyxl")
         return False
     
     try:
@@ -436,7 +439,7 @@ def export_project_to_xlsx(project: Project, filepath: str) -> bool:
         return True
         
     except Exception as e:
-        print(f"Error exporting to XLSX: {e}")
+        logger.exception(f"Error exporting to XLSX: {e}")
         import traceback
         traceback.print_exc()
         return False

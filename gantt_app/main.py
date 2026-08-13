@@ -17,6 +17,11 @@ from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
+from gantt_app.utils.log import (
+    setup_logging, get_logger, install_exception_hook, get_log_file_path
+)
+
+logger = get_logger(__name__)
 
 
 class GanttApp(ctk.CTk):
@@ -282,11 +287,22 @@ from datetime import timedelta
 
 def main():
     """Run the main application."""
+    # Set logging up before anything else, so a failure during construction
+    # is recorded rather than lost - a packaged build has no console
+    setup_logging()
+    install_exception_hook()
+
+    logger.info("Starting PySimplePMT")
+    log_path = get_log_file_path()
+    if log_path:
+        logger.info("Logging to %s", log_path)
+
     try:
         app = GanttApp()
         app.mainloop()
+        logger.info("Application closed")
     except Exception as e:
-        print(f"Error: {e}")
+        logger.exception("Failed to start application")
         # Show error message
         root = ctk.CTk()
         root.withdraw()

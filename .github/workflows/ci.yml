@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.11', '3.12']
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # Tkinter is part of the standard library but ships separately on Ubuntu.
+      # xvfb gives the toolkit a display so importing the view modules works.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-tk xvfb
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the test suite
+        run: xvfb-run -a python run_tests.py
+
+  build-check:
+    name: Package build check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-tk xvfb fakeroot dpkg-dev
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      # Proves the packaging path still works before a release is tagged
+      - name: Build the .deb
+        run: ./packaging/build_deb.sh 0.0.0-ci
+
+      - name: Inspect the package
+        run: |
+          deb=$(ls dist/*.deb)
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | head -30
+
+      - name: Upload the package for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: pysimplepmt-deb-ci
+          path: dist/*.deb
+          retention-days: 7

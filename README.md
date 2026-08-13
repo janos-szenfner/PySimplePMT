@@ -1,6 +1,6 @@
 # PySimplePMT - Gantt Project Management Tool
 
-A cross-platform desktop application for project management with Gantt chart visualization, drag-and-drop task management, and support for importing MS Project and GanttProject files.
+A cross-platform desktop application for project management with Gantt chart visualization, drag-and-drop task management, and support for importing MS Project, GanttProject, Mermaid and Excel files.
 
 ## Overview
 
@@ -17,10 +17,12 @@ This is a complete implementation of a project management tool with:
 - **Drag-and-Drop Task List**: Reorder tasks and set dependencies by dragging
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
-- **File Import**: Import from GanttProject (.gan), MS Project (.mpp), and Mermaid (.mmd) files
+- **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
+- **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and tasks to Excel XLSX
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Critical Path**: Automatic calculation and visualization of the critical path
+- **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
 - **Progress Tracking**: Track completion percentage for each task
 
 ## Project Structure
@@ -45,6 +47,8 @@ gantt_app/
 │   ├── mpp_importer.py     # MPP (MS Project) file import
 │   ├── mermaid_importer.py # Mermaid (.mmd) file import
 │   ├── mermaid_exporter.py # Mermaid (.mmd) file export
+│   ├── xlsx_importer.py    # Excel XLSX project plan import
+│   ├── log.py              # Application logging (file, memory, stderr)
 │   ├── pdf_exporter.py     # PDF export for Gantt charts
 │   ├── png_exporter.py     # PNG export for Gantt charts
 │   └── xlsx_exporter.py     # Excel XLSX export for tasks data
@@ -90,9 +94,10 @@ gantt_app/
 - **Undo/Redo**: Undo and Redo buttons with visual state indication
 - **Project Management**: Add Task, Add Sub-Task, Add Milestone, Project Info
 - **File Operations**: Save Project, Load Project, New Project
-- **Import**: Import GAN, Import MPP, Import Mermaid
+- **Import**: Import GAN, Import MPP, Import Mermaid, Import XLSX
 - **Export**: Export Mermaid, Export PNG, Export PDF
 - **Theme Toggle**: Switch between light/dark modes
+- **Log**: Opens the application log window
 - **Dialog Integration**: File dialogs, input validation, parent task selection for subtasks
 
 ### File I/O (`utils/file_io.py`)
@@ -102,22 +107,47 @@ gantt_app/
 
 ### GAN Importer (`utils/gan_importer.py`)
 - **XML Parsing**: Uses xml.etree.ElementTree for GAN files
-- **Date Parsing**: Handles various date formats from GAN files
-- **Color Mapping**: Converts GAN color definitions to hex
-- **Task Parsing**: Extracts tasks, milestones, dependencies
-- **Project Import**: Full project structure import
+- **Namespace Handling**: Reads both GanttProject 3.x files (no namespace) and older namespaced files
+- **Working-Day Calendar**: Replays the file's `<calendars>` block (weekend definition plus recurring and year-specific holidays) to turn each task's working-day duration into an end date, reproducing the dates GanttProject displays
+- **Date Parsing**: Handles plain `YYYY-MM-DD` dates and legacy ISO 8601 timestamps
+- **Nested Sub-Tasks**: Tasks nested inside other tasks are imported to any depth as Sub-Tasks with the correct parent
+- **Dependency Direction**: `<depend>` names a *successor*, so edges are reversed onto the dependent task; the legacy `<depends-on><dependency idref=""/>` form is also supported
+- **Milestones**: Detected from `meeting="true"` or a zero duration; summary tasks are never treated as milestones
+- **Colors**: Reads the per-task `color` attribute, with an optional `<colors>` lookup table as a fallback
 
 ### Mermaid Importer (`utils/mermaid_importer.py`)
 - **Syntax Parsing**: Parses Mermaid Gantt chart text format
 - **Task Extraction**: Extracts tasks, milestones, and dependencies
+- **Section Grouping**: Each `section` becomes a parent task and its tasks become Sub-Tasks (disable with `MermaidImporter(group_by_section=False)`)
+- **Frontmatter**: An optional `---` delimited YAML config block is stripped before parsing
+- **Directives**: `title`, `dateFormat`, `axisFormat`, `excludes`, `todayMarker` and similar lines are skipped
 - **Date Handling**: Supports various date formats with automatic detection
+- **Inclusive Durations**: A `5d` task starting on the 1st ends on the 5th, and a dependent task starts the day after its predecessor finishes
 - **Dependency Resolution**: Calculates task dates based on "after" dependencies
+
+### XLSX Importer (`utils/xlsx_importer.py`)
+- **Header-Driven**: Locates the task table by scoring rows against known column names, so a title block above the table is fine
+- **Column Aliases**: Recognises common English and Hungarian headers (`Task`/`Feladat`, `Start`/`Kezdés`, `Pred.`/`Előzmény`, `Duration (wd)`/`Munkanap`, …)
+- **Date Handling**: Reads real datetimes, Excel day serial numbers, and common date strings; formula columns are read from their cached values
+- **Duration Fallback**: Derives a missing end date from the duration, skipping weekends when the column is labelled in working days
+- **Phase Grouping**: Each distinct Phase value becomes a parent task (disable with `XLSXImporter(group_by_phase=False)`); an explicit `Parent Task` column takes precedence
+- **Dependencies**: Splits multi-predecessor cells (`6;7`), resolves references by ID or by task name, ignores `–`/`n/a` placeholders, and drops references to tasks that are not present
+- **Progress**: Taken from a Progress column, or mapped from Status text (`Done` → 100, `Ongoing` → 50, `Not started` → 0)
+- **Optional Dependency**: Requires openpyxl, and reports a clear error when it is missing
 
 ### Mermaid Exporter (`utils/mermaid_exporter.py`)
 - **Syntax Generation**: Creates valid Mermaid Gantt chart syntax
 - **Topological Sorting**: Orders tasks based on dependencies
+- **Section Output**: Parent tasks are written as `section` headers rather than as tasks, so hierarchy survives an export/import round-trip; tasks are grouped so each header appears once
 - **ID Generation**: Creates valid Mermaid IDs from task names
 - **Date Formatting**: Uses YYYY-MM-DD format for maximum compatibility
+
+Note that Mermaid sections do not nest, so a hierarchy deeper than two levels
+collapses onto its top-level ancestor on export. The full parent chain is
+preserved in the project's own JSON format.
+
+`MermaidExporter` in `mermaid_importer.py` is a backwards-compatible wrapper
+that delegates here, so the two cannot drift apart.
 
 ### PNG Exporter (`utils/png_exporter.py`)
 - **High-Quality Export**: Creates PNG images with configurable DPI (default 300)
@@ -142,11 +172,29 @@ gantt_app/
 - **Directory Creation**: Automatically creates parent directories
 
 ### MPP Importer (`utils/mpp_importer.py`)
-- **Dual Implementation**: Tasklib (pure Python) and JPype+mpxj (Java bridge)
-- **Fallback Mechanism**: Tries Tasklib first, then JPype
+- **Pure Python**: Uses the Tasklib reader; no Java runtime involved
+- **Optional Dependency**: Absent Tasklib disables MPP import and is reported at info level, not as an error
 - **Date Conversion**: Java Date to Python datetime
 - **Task Properties**: Full task import with dependencies and progress
 - **Error Handling**: Graceful degradation when libraries not available
+
+### Logging (`utils/log.py`)
+- **Three Destinations**: A rotating log file on disk, an in-memory buffer for the Log window, and stderr when started from a terminal
+- **Log Window**: The "Log" button in the toolbar opens `views/log_window.py`, with level filtering, auto-refresh, and Copy / Save As / Clear actions
+- **Why In-Memory**: A packaged desktop build has no console, so anything printed to stdout is lost. The bounded buffer (5000 records) is what makes errors visible to a user who can't run the app from a terminal
+- **Full Tracebacks**: Import and export failures are logged with `logger.exception`, so the stack trace is captured rather than just the message
+- **Uncaught Exceptions**: `install_exception_hook()` routes anything that escapes into the log before the app dies
+- **Never Fatal**: Logging degrades to memory-and-stderr if the log directory cannot be written; it never prevents startup
+
+Log file locations:
+
+| Platform | Path |
+|---|---|
+| Linux | `$XDG_STATE_HOME/pysimplepmt/` (default `~/.local/state/pysimplepmt/`) |
+| macOS | `~/Library/Logs/PySimplePMT/` |
+| Windows | `%LOCALAPPDATA%\PySimplePMT\logs\` |
+
+Print the active path with `pysimplepmt --log-file`.
 
 ### Undo/Redo Manager (`utils/undoredo.py`)
 - **Command Pattern**: Encapsulates actions as command objects with execute/undo methods
@@ -172,8 +220,16 @@ gantt_app/
 
 ### Required Dependencies
 ```bash
-pip install customtkinter matplotlib numpy
+pip install customtkinter matplotlib numpy openpyxl
 ```
+
+Or install everything from the requirements file:
+```bash
+pip install -r requirements.txt
+```
+
+`openpyxl` is required for Excel XLSX import and export. Without it the app
+still runs, but the Import XLSX and Export XLSX actions report an error.
 
 ### Optional Dependencies
 ```bash
@@ -181,18 +237,26 @@ pip install customtkinter matplotlib numpy
 pip install lxml  # For better XML parsing performance
 
 # For MPP file import
-pip install tasklib  # Pure Python MPP reader (recommended)
-# OR
-pip install JPype1  # For Java bridge with mpxj (requires Java JDK 8+)
+pip install tasklib  # Pure Python MPP reader
 
 # For enhanced drag-and-drop (recommended)
 pip install tkinterdnd2
-
-# For Excel XLSX export
-pip install openpyxl
 ```
 
 ## Usage
+
+### Installing on Ubuntu / Debian
+
+Download the `.deb` from the [Releases page](../../releases) and install it:
+
+```bash
+sudo apt install ./pysimplepmt_1.0.0_amd64.deb
+```
+
+The package is **self-contained**: the Python interpreter, the Tcl/Tk runtime
+and every third-party library are bundled, so no Python installation and no
+pip packages are required. See [packaging/README.md](packaging/README.md) for
+what it does still rely on and how it is built.
 
 ### Running the Application
 ```bash
@@ -201,6 +265,17 @@ python3 run.py
 
 # Method 2: Run from the gantt_app directory
 python3 -m gantt_app.main
+
+# Installed from the .deb
+pysimplepmt
+```
+
+Command line options:
+
+```bash
+pysimplepmt --version       # print the version
+pysimplepmt --self-check    # verify every dependency imports
+pysimplepmt --log-file      # print the log file path
 ```
 
 ### Basic Operations
@@ -219,6 +294,9 @@ python3 -m gantt_app.main
    - Click "Add Sub-Task" button
    - Enter subtask name and duration in days
    - Select a parent task from the list (must have at least one task)
+   - Any task can be the parent, **including an existing sub-task**, so hierarchies can go deeper than two levels
+   - The list is indented to show how deep each candidate sits
+   - Milestones are not offered as parents (they are single-date markers with no span)
    - Sub-tasks automatically inherit the start date from their parent
    - Sub-tasks appear indented under their parent in the task list
 
@@ -249,8 +327,10 @@ python3 -m gantt_app.main
 
 8. **Import Projects**
    - Click "Import GAN" to import GanttProject files
-   - Click "Import MPP" to import MS Project files (requires Tasklib or JPype)
+   - Click "Import MPP" to import MS Project files (requires Tasklib)
    - Click "Import Mermaid" to import Mermaid Gantt chart files (.mmd, .mermaid)
+   - Click "Import XLSX" to import an Excel project plan (requires openpyxl)
+   - Importing replaces the current project and clears the undo/redo history
 
 9. **Export Projects**
    - Click "Export Mermaid" to export project to Mermaid format
@@ -258,7 +338,13 @@ python3 -m gantt_app.main
    - Click "Export PDF" to export Gantt chart as PDF document
    - Click "Export XLSX" to export all tasks to Excel format
 
-10. **Undo/Redo**
+10. **View the Log**
+    - Click the "Log" button in the top right
+    - Filter by level, auto-refresh, and copy or save the log to a file
+    - Import and export failures appear here with full tracebacks
+    - The log is also written to a file; see the Logging section for its location
+
+11. **Undo/Redo**
     - Click "Undo" to revert the last action
     - Click "Redo" to reapply the last undone action
     - Buttons are disabled when no actions are available
@@ -342,14 +428,55 @@ Projects are saved as JSON files with the following structure:
 ```
 
 ### GAN Import
-Supports GanttProject XML files:
-- Tasks with start/end dates
-- Milestones (tasks with 0 duration)
-- Dependencies
+Supports GanttProject XML files (`.gan`), as written by GanttProject 3.x and
+earlier namespaced versions:
+- Tasks scheduled as a start date plus a working-day duration
+- End dates computed against the file's weekend and holiday calendar
+- Milestones (`meeting="true"` or zero duration)
+- Sub-tasks nested to any depth
+- Dependencies, reversed from GanttProject's successor-based `<depend>` elements
 - Custom colors
 
+Note that GanttProject stores durations in working days and never writes an end
+date, so the `<calendars>` block is what makes the imported dates line up with
+what GanttProject shows. Holidays declared with an empty `year` recur annually.
+
+### XLSX Import
+Supports spreadsheet project plans (`.xlsx`, `.xlsm`). The importer finds the
+task table by its header row rather than by fixed positions, so a title block
+above the table and extra columns beside it are both fine.
+
+Recognised columns (any subset; a task/name column plus a start date or
+duration is the minimum):
+
+| Column | Purpose |
+|---|---|
+| ID / Azonosító | Task identifier used by the predecessor column |
+| Task / Name / Feladat | Task name (**required**) |
+| Phase / Section / Fázis | Grouping - becomes a parent task |
+| Parent Task | Explicit parent, used instead of Phase grouping |
+| Start / Kezdés | Start date |
+| End / Befejezés | End date |
+| Duration / Duration (wd) / Munkanap | Duration; `wd` headers skip weekends |
+| Pred. / Predecessors / Előzmény | Dependencies, e.g. `6;7` |
+| Progress (%) / Készültség | Completion percentage |
+| Status / Státusz | Mapped to progress when no Progress column exists |
+| Milestone / Type / Color | Milestone flag, task type, bar colour |
+
+Files produced by this application's own XLSX export can be read back, since
+its `ID` / `Name` / `Parent Task` / `Start Date` / `End Date` headers are
+recognised too. The round-trip is lossless: task count, project name (read
+from the `Project Name:` label on the Summary sheet), dates, progress,
+milestone flags, colours, dependencies and hierarchy all survive.
+
+Dependencies are exported as task **names**. The importer therefore tries the
+whole cell as a single name before splitting it, so a task called
+"Analysis, phase 2" is not torn in half. Only `;`, `,` and `|` separate
+references - `/` does not, because names such as "Education / training"
+contain one.
+
 ### MPP Import
-Supports Microsoft Project files (when Tasklib or JPype+mpxj is available):
+Supports Microsoft Project files (when Tasklib is available):
 - Tasks and milestones
 - Dependencies (predecessors)
 - Progress tracking
@@ -398,9 +525,16 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 - Clear error messages for users
 
 ### 4. Critical Path Calculation
-- Simplified algorithm suitable for most projects
-- Forward pass to calculate early start/finish dates
-- Backward pass to identify critical tasks
+- Longest chain of dependent tasks, ending at the task that finishes last
+- Measured by **accumulated duration**, not by comparing calendar dates: plans
+  scheduled in working days leave weekend and holiday gaps between a task and
+  its successor, and a date-based comparison reads those gaps as slack, which
+  drops most of the chain
+- Summary tasks are excluded from the chain, but a dependency **on** a summary
+  task resolves to the work inside it, so grouping does not sever the network
+- Ties on the finish date are broken by chain length, so the path always
+  reaches the project's real finish
+- Cycle-safe and iterative, so deep chains cannot exhaust recursion
 - Visual highlighting in Gantt chart
 
 ### 5. Color Management
@@ -440,6 +574,12 @@ Run specific test modules:
 python3 run_tests.py test_models
 python3 run_tests.py test_file_io
 python3 run_tests.py test_gan_importer
+python3 run_tests.py test_mermaid_importer
+python3 run_tests.py test_xlsx_importer
+python3 run_tests.py test_gantt_export
+python3 run_tests.py test_task_hierarchy
+python3 run_tests.py test_log
+python3 run_tests.py test_undoredo
 python3 run_tests.py test_utils
 ```
 
@@ -448,8 +588,18 @@ python3 run_tests.py test_utils
 Unit tests cover:
 - ✅ **Models**: Task and Project classes, serialization, critical path calculation
 - ✅ **File I/O**: JSON save/load, datetime handling, error cases
-- ✅ **GAN Import**: XML parsing, date parsing, color mapping, dependencies
+- ✅ **GAN Import**: Real GanttProject 3.x fixtures - working-day calendar, nested sub-tasks, successor-to-predecessor edge reversal, milestones, colors, namespaced files
+- ✅ **Mermaid Import/Export**: Inclusive durations, dependency chains, section grouping, frontmatter, round-trip
+- ✅ **XLSX Import**: Header detection, column aliases, Excel serial dates, working-day durations, phase grouping, dependency resolution, lossless export round-trip
+- ✅ **Task Hierarchy**: Three-level sub-task creation, parent candidate ordering, cycle safety
+- ✅ **Logging**: Buffer capacity and filtering, file output, failure paths, importer errors reaching the log
+- ✅ **Gantt Export**: PNG and PDF rendering
+- ✅ **Undo/Redo**: Command stack behaviour
 - ✅ **Utilities**: Project utilities, validation, edge cases
+
+The GAN fixtures deliberately mirror the format GanttProject actually writes.
+An earlier version of these tests used an invented schema, which let the
+importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
 All modules import successfully and all tests pass:
@@ -465,21 +615,60 @@ All modules import successfully and all tests pass:
 ## Known Limitations
 
 1. **Drag-and-Drop**: Full tkinterdnd2 integration implemented with graceful fallback
-2. **MPP Import**: Requires external libraries (Tasklib or JPype+mpxj)
+2. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
-4. **Printing**: No built-in print/export functionality yet
+4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
+5. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
+6. **GAN Import**: Dependency lag (`difference`) and non finish-start dependency types are read but not yet applied to the schedule
 
 ## Future Enhancements
 
 - [x] Full tkinterdnd2 integration
 - [x] PDF/PNG export for Gantt charts
+- [x] XLSX import
+- [x] Application log viewer
+- [ ] **Shared working-day calendar model** (see below)
 - [ ] GAN file export
+- [ ] Apply GAN dependency lag and SS/FF/SF dependency types
 - [ ] Resource management
 - [ ] Timeline zoom/pan
 - [ ] Filtering and grouping
 - [x] Undo/Redo functionality
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
+
+### Planned: shared working-day calendar model
+
+Today the notion of a working day exists in two places and belongs to neither:
+`GanttProjectCalendar` in `gan_importer.py`, which replays the weekend and
+holiday rules from a `.gan` file, and a weekends-only helper in
+`xlsx_importer.py` used when a spreadsheet gives a duration but no end date.
+The application core has no calendar at all, so anything created or edited in
+the app is scheduled in plain calendar days.
+
+The plan is to promote this into a first-class model - roughly
+`utils/calendar.py`, with a `WorkCalendar` owned by the `Project` and
+serialised alongside it:
+
+- **One definition of a working day**: a weekend rule plus a holiday list,
+  populated from whichever file was imported and editable afterwards.
+- **Calendar-aware scheduling**: adding or dragging a task lands on working
+  days, so a plan imported from GanttProject keeps its shape when edited
+  rather than drifting onto weekends.
+- **Round-trip fidelity**: GanttProject durations are working days. Without a
+  calendar in the model, exporting back to `.gan` cannot reconstruct the
+  durations the file started with.
+- **Full critical path analysis**: this is the blocker for proper CPM float.
+  A backward pass computing late start/finish needs to measure slack in
+  *working* days; measured in calendar days, the weekend between a task
+  finishing on Friday and its successor starting on Monday reads as two days
+  of float, and almost every task falls off the critical path. That is why
+  `get_critical_path()` currently uses accumulated duration along the longest
+  chain instead, and why it returns a single chain rather than every
+  zero-float task.
+- **Holiday presets**: GanttProject ships regional calendars (the sample file
+  carries a Hungarian one); the same list could be offered when starting a
+  project from scratch.
 
 ---
 

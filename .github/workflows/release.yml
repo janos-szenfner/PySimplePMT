@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without a leading v (e.g. 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    name: Build Ubuntu .deb
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      # python3-tk provides the Tcl/Tk runtime PyInstaller bundles into the
+      # package; fakeroot and dpkg-dev build the archive itself.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-tk xvfb fakeroot dpkg-dev
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Record the resolved dependency set
+        run: |
+          pip freeze > dependency-manifest.txt
+          echo "Bundled dependencies:"
+          cat dependency-manifest.txt
+
+      - name: Determine the version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Building version ${version}"
+
+      - name: Run the test suite
+        run: xvfb-run -a python run_tests.py
+
+      - name: Build the .deb
+        run: ./packaging/build_deb.sh "${{ steps.version.outputs.version }}"
+
+      - name: Install the package
+        run: |
+          deb=$(ls dist/*.deb)
+          sudo apt-get install -y "./${deb}"
+
+      # A package that installs but will not start is worse than a failed
+      # build, so launch it against a virtual display and require that it
+      # stays up. Exiting early means it crashed on startup.
+      - name: Smoke test the installed application
+        run: |
+          set +e
+          xvfb-run -a timeout 25 /usr/bin/pysimplepmt
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "Application started and stayed running."
+          else
+            echo "Application exited early with status ${status}." >&2
+            exit 1
+          fi
+
+      # Runs against the *installed* package, so it covers the .deb layout
+      # rather than only the staging directory.
+      - name: Verify the installed package is self-contained
+        run: |
+          echo "== Declared dependencies =="
+          dpkg-deb --field "$(ls dist/*.deb)" Depends
+          echo
+          echo "== Version and dependency self-check =="
+          /usr/bin/pysimplepmt --version
+          /usr/bin/pysimplepmt --self-check
+          echo
+          echo "== The launcher must not invoke a system Python =="
+          cat /usr/bin/pysimplepmt
+          if grep -qE '\bpython3?\b' /usr/bin/pysimplepmt; then
+            echo "ERROR: launcher depends on a system Python interpreter" >&2
+            exit 1
+          fi
+          echo
+          echo "== The bundle ships its own interpreter =="
+          test -x /opt/pysimplepmt/pysimplepmt
+          find /opt/pysimplepmt -maxdepth 2 -name 'libpython*' -o -maxdepth 2 -name 'python3*' | head
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.deb > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pysimplepmt-${{ steps.version.outputs.version }}-deb
+          path: |
+            dist/*.deb
+            dist/SHA256SUMS
+            dependency-manifest.txt
+          retention-days: 30
+
+      - name: Publish the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PySimplePMT ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/*.deb
+            dist/SHA256SUMS
+            dependency-manifest.txt
+          body: |
+            ## PySimplePMT ${{ steps.version.outputs.version }}
+
+            ### Install on Ubuntu / Debian
+
+            ```bash
+            sudo apt install ./pysimplepmt_${{ steps.version.outputs.version }}_amd64.deb
+            ```
+
+            Then launch it from your applications menu, or run `pysimplepmt`.
+
+            ### Self-contained
+
+            The package bundles the Python interpreter, the Tcl/Tk runtime and
+            every third-party library. **No Python installation and no pip
+            packages are required.** It relies only on base system libraries
+            (`libc6`, `libx11-6`, `libxext6`, `libxrender1`, `libfontconfig1`,
+            `libfreetype6`) that ship with any Ubuntu desktop.
+
+            The exact set of bundled libraries is recorded in
+            `dependency-manifest.txt`, and `SHA256SUMS` covers the package.
+
+            ### Removal
+
+            ```bash
+            sudo apt remove pysimplepmt
+            ```

@@ -25,6 +25,9 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 class MermaidImporter:
@@ -35,10 +38,21 @@ class MermaidImporter:
     milestones, and their relationships.
     """
     
-    def __init__(self):
+    def __init__(self, group_by_section: bool = True):
+        """
+        PARAMETERS:
+        -----------
+        group_by_section : bool, optional
+            When True (default), each 'section' in the Mermaid chart becomes a
+            parent Task and the tasks below it become Sub-Tasks of it, so the
+            chart's grouping survives the import. Set to False to import a
+            flat task list instead.
+        """
         self.default_color = "#1f6aa5"
         self.milestone_color = "#e74c3c"
-    
+        self.section_color = "#34495e"
+        self.group_by_section = group_by_section
+
     def _parse_date(self, date_str: str, date_format: str = "%Y-%m-%d") -> Optional[datetime]:
         """Parse date string from Mermaid file."""
         if not date_str or date_str.strip() == '':
@@ -49,40 +63,102 @@ class MermaidImporter:
             return None
     
     def _parse_duration(self, duration_str: str, start_date: datetime) -> Optional[datetime]:
-        """Parse duration string and calculate end date."""
+        """
+        Parse duration string and calculate the inclusive end date.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Mermaid treats a duration as a span of N calendar units starting on
+        start_date, so a "5d" task running from the 1st occupies the 1st
+        through the 5th. Task.end_date is inclusive (duration_days adds +1),
+        so the last day of the span is returned rather than the first day
+        after it. Returning the exclusive end here made every imported bar
+        one day too long.
+        """
         if not duration_str or duration_str.strip() == '':
             return None
-        
+
         duration_str = duration_str.strip().lower()
         match = re.match(r'^(\d+)\s*([a-z]*)$', duration_str)
         if not match:
             return None
-        
+
         number = int(match.group(1))
         unit = match.group(2)
-        
-        if unit in ['d', 'day', 'days']:
-            return start_date + timedelta(days=number)
-        elif unit in ['w', 'week', 'weeks']:
-            return start_date + timedelta(weeks=number)
+
+        if unit in ['w', 'week', 'weeks']:
+            days = number * 7
         elif unit in ['m', 'month', 'months']:
-            return start_date + timedelta(days=number * 30)
+            days = number * 30
         else:
-            return start_date + timedelta(days=number)
+            # 'd'/'day'/'days' and any unrecognised unit are treated as days
+            days = number
+
+        if days <= 0:
+            return start_date
+
+        return start_date + timedelta(days=days - 1)
     
+    #: Chart-level directives that never describe a task.
+    DIRECTIVES = (
+        'title', 'dateFormat', 'axisFormat', 'excludes', 'includes',
+        'todayMarker', 'tickInterval', 'weekday', 'weekend',
+    )
+
     def _strip_indentation(self, line: str) -> str:
         """Remove leading whitespace from a line."""
         return line.strip()
-    
+
+    def _is_directive(self, line: str) -> bool:
+        """Check whether a stripped line is a chart-level directive."""
+        for directive in self.DIRECTIVES:
+            if line == directive or line.startswith(directive + ' '):
+                return True
+        return False
+
+    def _strip_frontmatter(self, content: str) -> str:
+        """
+        Remove a leading YAML frontmatter block from Mermaid content.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Mermaid allows an optional '---' delimited YAML header carrying
+        rendering config (theme, look, etc.). None of it maps onto the
+        project model, and its 'key: value' lines could otherwise be
+        mistaken for task definitions.
+        """
+        lines = content.split('\n')
+        first = 0
+        while first < len(lines) and not lines[first].strip():
+            first += 1
+
+        if first >= len(lines) or lines[first].strip() != '---':
+            return content
+
+        for index in range(first + 1, len(lines)):
+            if lines[index].strip() in ('---', '...'):
+                return '\n'.join(lines[index + 1:])
+
+        # Unterminated frontmatter - leave the content untouched
+        return content
+
+    def _extract_section(self, line: str) -> Optional[str]:
+        """Return the section name if the line opens a section, else None."""
+        line = self._strip_indentation(line)
+        if not line.startswith('section'):
+            return None
+        name = line[len('section'):].strip()
+        return name or None
+
     def _extract_task_info(self, line: str) -> Optional[Dict[str, Any]]:
         """Extract task information from a Mermaid Gantt line."""
         line = self._strip_indentation(line)
         
         if not line or line.startswith('section') or line.startswith('%'):
             return None
-        if line.startswith('title') or line.startswith('dateFormat'):
+        if line == 'gantt' or self._is_directive(line):
             return None
-        
+
         is_milestone = False
         if line.startswith('milestone'):
             is_milestone = True
@@ -192,15 +268,15 @@ class MermaidImporter:
                     
                     if dep_id in task_map:
                         dep_task = task_map[dep_id]
-                        # For dependent tasks, set start_date to the end of the dependency
-                        # For milestones, use their start_date as the point after which to continue
+                        # A dependent task starts the day after its predecessor
+                        # finishes. Milestones have zero duration, so anything
+                        # following one starts on the milestone date itself.
                         new_start_date = None
-                        if dep_task.end_date:
-                            new_start_date = dep_task.end_date
-                        elif dep_task.is_milestone and dep_task.start_date:
-                            # For milestones, dependent tasks start the same day or next day
+                        if dep_task.is_milestone and dep_task.start_date:
                             new_start_date = dep_task.start_date
-                        
+                        elif dep_task.end_date:
+                            new_start_date = dep_task.end_date + timedelta(days=1)
+
                         if new_start_date and new_start_date != task.start_date:
                             task.start_date = new_start_date
                             
@@ -216,23 +292,145 @@ class MermaidImporter:
             if not changed:
                 break
     
+    def _make_section_id(self, section_name: str, used_ids: set) -> str:
+        """Build a task ID for a section that cannot collide with a task ID."""
+        base = re.sub(r'[^a-zA-Z0-9_]', '_', section_name.strip().lower()).strip('_')
+        candidate = f"section_{base}" if base else "section"
+
+        if candidate not in used_ids:
+            return candidate
+
+        counter = 2
+        while f"{candidate}_{counter}" in used_ids:
+            counter += 1
+        return f"{candidate}_{counter}"
+
+    def _build_section_hierarchy(self, tasks_info: List[Dict], task_map: Dict,
+                                 tasks: List[Task]) -> List[Task]:
+        """
+        Turn Mermaid sections into parent tasks holding their tasks as Sub-Tasks.
+
+        RETURNS:
+        --------
+        List[Task]
+            The full task list, with each section's parent task inserted
+            immediately before the tasks belonging to it. Tasks that appear
+            before any section stay at the root level.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Section parents are derived, not declared: their span is the envelope
+        of their children, computed after _calculate_task_dates has resolved
+        every 'after' chain. Milestones contribute only their start date since
+        they carry no end_date.
+        """
+        # Keyed by the (occurrence, name) pair assigned while parsing, so two
+        # sections sharing a name stay distinct
+        section_members: Dict[tuple, List[Task]] = {}
+        section_order: List[tuple] = []
+
+        for info in tasks_info:
+            section = info.get('section')
+            task = task_map.get(info['id'])
+            if not section or task is None:
+                continue
+            if section not in section_members:
+                section_members[section] = []
+                section_order.append(section)
+            section_members[section].append(task)
+
+        if not section_members:
+            return tasks
+
+        used_ids = set(task_map.keys())
+        section_tasks: Dict[tuple, Task] = {}
+
+        for section in section_order:
+            members = section_members[section]
+            section_name = section[1]
+
+            starts = [t.start_date for t in members if t.start_date]
+            ends = [t.end_date for t in members if t.end_date]
+            # A milestone-only section still needs a span to draw
+            ends.extend(t.start_date for t in members if t.end_date is None and t.start_date)
+
+            if not starts:
+                continue
+
+            section_id = self._make_section_id(section_name, used_ids)
+            used_ids.add(section_id)
+
+            parent = Task(
+                id=section_id,
+                name=section_name,
+                start_date=min(starts),
+                end_date=max(ends) if ends else None,
+                progress=0,
+                dependencies=[],
+                color=self.section_color,
+                is_milestone=False,
+                task_type="Task",
+                parent_task_id=None
+            )
+            section_tasks[section] = parent
+
+            for member in members:
+                member.task_type = "Sub-Task"
+                member.parent_task_id = section_id
+
+        # Rebuild the list so each parent precedes the tasks it contains
+        ordered: List[Task] = []
+        emitted_sections = set()
+
+        for info in tasks_info:
+            task = task_map.get(info['id'])
+            if task is None or task in ordered:
+                continue
+            section = info.get('section')
+            if section in section_tasks and section not in emitted_sections:
+                ordered.append(section_tasks[section])
+                emitted_sections.add(section)
+            ordered.append(task)
+
+        # Preserve anything the info list did not account for
+        for task in tasks:
+            if task not in ordered:
+                ordered.append(task)
+
+        return ordered
+
     def _parse_mermaid_content(self, content: str) -> Optional[Project]:
         """Parse Mermaid Gantt content and create a Project object."""
         try:
+            content = self._strip_frontmatter(content)
             metadata = self._extract_metadata(content)
             project_name = metadata.get('title', "Imported Mermaid Project")
             python_date_format = self._convert_mermaid_to_python_format(
                 metadata.get('dateFormat', "YYYY-MM-DD")
             )
-            
+
             lines = content.split('\n')
             tasks_info = []
-            
+            current_section = None
+            section_count = 0
+
             for line in lines:
+                section = self._extract_section(line)
+                if section is not None:
+                    # Each 'section' line opens a new group, keyed by its
+                    # position rather than its name. Mermaid renders two
+                    # blocks that share a name as two separate sections, and
+                    # keying by name alone silently merged them into one
+                    # parent task.
+                    section_count += 1
+                    current_section = (section_count, section)
+                    continue
+
                 task_info = self._extract_task_info(line)
                 if task_info:
+                    task_info['section'] = current_section
                     tasks_info.append(task_info)
-            
+
             tasks = []
             task_map = {}
             
@@ -278,12 +476,15 @@ class MermaidImporter:
                     task.dependencies.append(dep_id)
             
             self._calculate_task_dates(tasks_info, task_map)
-            
+
+            if self.group_by_section:
+                tasks = self._build_section_hierarchy(tasks_info, task_map, tasks)
+
             project = Project(name=project_name, tasks=tasks)
             return project
             
         except Exception as e:
-            print(f"Error parsing Mermaid content: {e}")
+            logger.exception(f"Error parsing Mermaid content: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -292,7 +493,7 @@ class MermaidImporter:
         """Import a Mermaid file and convert it to a Project object."""
         try:
             if not Path(filepath).exists():
-                print(f"File not found: {filepath}")
+                logger.warning(f"File not found: {filepath}")
                 return None
             
             with open(filepath, 'r', encoding='utf-8') as f:
@@ -301,16 +502,25 @@ class MermaidImporter:
             return self._parse_mermaid_content(content)
             
         except Exception as e:
-            print(f"Error importing Mermaid file: {e}")
+            logger.exception(f"Error importing Mermaid file: {e}")
             return None
 
 
 class MermaidExporter:
-    """Exports Project objects to Mermaid Gantt chart format."""
-    
+    """
+    Exports Project objects to Mermaid Gantt chart format.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Kept for backwards compatibility. The real implementation lives in
+    mermaid_exporter.py, which is what the toolbar calls; this class delegates
+    to it so the two cannot drift apart. They previously did, and only the
+    toolbar's copy learned to write sections.
+    """
+
     def __init__(self):
         pass
-    
+
     def _generate_task_id(self, task: Task, used_ids: set) -> str:
         """Generate a unique task ID for Mermaid export."""
         if task.id and task.id not in used_ids:
@@ -354,56 +564,16 @@ class MermaidExporter:
                 f.write(content)
             return True
         except Exception as e:
-            print(f"Error exporting Mermaid file: {e}")
+            logger.exception(f"Error exporting Mermaid file: {e}")
             return False
     
-    def _generate_mermaid_content_with_dependencies(self, project: Project, 
+    def _generate_mermaid_content_with_dependencies(self, project: Project,
                                                    include_date_format: bool = True) -> str:
         """Generate Mermaid content with proper dependency handling."""
-        lines = []
-        used_ids = set()
-        id_to_mermaid_id = {}
-        
-        lines.append("gantt")
-        if project.name:
-            lines.append(f"    title {project.name}")
-        if include_date_format:
-            lines.append("    dateFormat  YYYY-MM-DD")
-        
-        for task in project.tasks:
-            mermaid_id = self._generate_task_id(task, used_ids)
-            id_to_mermaid_id[task.id] = mermaid_id
-        
-        sorted_tasks = self._sort_tasks_for_dependencies(project)
-        defined_task_ids = set()
-        
-        for task in sorted_tasks:
-            mermaid_id = id_to_mermaid_id[task.id]
-            valid_deps = [dep_id for dep_id in task.dependencies if dep_id in defined_task_ids]
-            
-            if task.is_milestone:
-                date_str = self._format_date(task.start_date)
-                if valid_deps and len(valid_deps) == 1:
-                    dep_mermaid_id = id_to_mermaid_id.get(valid_deps[0], valid_deps[0])
-                    lines.append(f"    milestone {task.name} :{mermaid_id}, after {dep_mermaid_id}")
-                else:
-                    lines.append(f"    milestone {task.name} :{mermaid_id}, {date_str}")
-            else:
-                date_str = self._format_date(task.start_date)
-                duration_days = self._get_task_duration_days(task)
-                if duration_days is None or duration_days <= 0:
-                    duration_days = 1
-                
-                if valid_deps and len(valid_deps) == 1:
-                    dep_mermaid_id = id_to_mermaid_id.get(valid_deps[0], valid_deps[0])
-                    lines.append(f"    {task.name} :{mermaid_id}, after {dep_mermaid_id}, {duration_days}d")
-                else:
-                    lines.append(f"    {task.name} :{mermaid_id}, {date_str}, {duration_days}d")
-            
-            defined_task_ids.add(task.id)
-        
-        return "\n".join(lines)
-    
+        from gantt_app.utils.mermaid_exporter import generate_mermaid_content
+
+        return generate_mermaid_content(project, include_date_format)
+
     def _sort_tasks_for_dependencies(self, project: Project) -> List[Task]:
         """Sort tasks to ensure dependencies are defined before dependent tasks."""
         visited = set()
