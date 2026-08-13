@@ -18,7 +18,13 @@ from gantt_app.utils.undoredo import ProjectStateTracker
 # Try to import tkinterdnd2 for enhanced drag and drop
 try:
     import tkinterdnd2
-    TKINTERDND2_AVAILABLE = True
+    # Check if Treeview and Scrollbar are available in the expected location
+    if (hasattr(tkinterdnd2, 'TkinterDnD') and 
+        hasattr(tkinterdnd2.TkinterDnD, 'Treeview') and
+        hasattr(tkinterdnd2.TkinterDnD, 'Scrollbar')):
+        TKINTERDND2_AVAILABLE = True
+    else:
+        TKINTERDND2_AVAILABLE = False
 except ImportError:
     TKINTERDND2_AVAILABLE = False
 
