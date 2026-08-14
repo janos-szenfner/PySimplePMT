@@ -30,6 +30,7 @@ from gantt_app.models import Task, Project
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.colorpalette import ColorPalette
+from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.contextmenu import TaskContextMenu
 from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.utils.log import get_logger
@@ -42,16 +43,20 @@ class EditTaskDialog(ctk.CTkToplevel):
     Dialog for editing task properties.
     """
     
-    def __init__(self, master, task: Task, project: Project, 
+    def __init__(self, master, task: Task, project: Project,
                  on_save: Callable[[Task], None], on_delete: Callable[[str], None],
-                 project_tracker: ProjectStateTracker = None):
+                 project_tracker: ProjectStateTracker = None,
+                 on_new: Callable[[], None] = None):
         super().__init__(master)
-        
+
         self.task = task
         self.project = project
         self.on_save = on_save
         self.on_delete = on_delete
         self.project_tracker = project_tracker
+        # Called by Save & New once the edit is saved; without it that
+        # button just saves and closes
+        self.on_new = on_new
         
         self.title(f"Edit Task: {task.name}")
         self.geometry("620x640")
@@ -127,16 +132,13 @@ class EditTaskDialog(ctk.CTkToplevel):
         
         # Start Date
         ctk.CTkLabel(main_frame, text="Start Date:").grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.start_date_entry = ctk.CTkEntry(main_frame)
+        self.start_date_entry = DateEntry(main_frame, date=self.task.start_date)
         self.start_date_entry.grid(row=5, column=1, sticky=tk.EW, pady=5)
-        self.start_date_entry.insert(0, self.task.start_date.strftime('%Y-%m-%d'))
         
         # End Date
         ctk.CTkLabel(main_frame, text="End Date:").grid(row=6, column=0, sticky=tk.W, pady=5)
-        self.end_date_entry = ctk.CTkEntry(main_frame)
+        self.end_date_entry = DateEntry(main_frame, date=self.task.end_date)
         self.end_date_entry.grid(row=6, column=1, sticky=tk.EW, pady=5)
-        if self.task.end_date:
-            self.end_date_entry.insert(0, self.task.end_date.strftime('%Y-%m-%d'))
         # Disable end date for milestones
         if self.task.is_milestone:
             self.end_date_entry.configure(state=tk.DISABLED)
@@ -173,13 +175,23 @@ class EditTaskDialog(ctk.CTkToplevel):
         )
         self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Buttons
+        # Buttons. Delete sits on its own at the far left, away from the two
+        # Save buttons: it is the one action here that cannot be taken back
+        # by pressing the button beside it.
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        ctk.CTkButton(button_frame, text="Save", command=self.save).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Delete", fg_color="#e74c3c", hover_color="#c0392b", command=self.delete).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+        ctk.CTkButton(button_frame, text="Delete", fg_color="#e74c3c",
+                      hover_color="#c0392b",
+                      command=self.delete).pack(side=tk.LEFT, padx=5)
+
+        # Packed right to left, so this reads Close, Save & Close, Save & New
+        ctk.CTkButton(button_frame, text="Save & New", width=110,
+                      command=self.save_and_new).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(button_frame, text="Save & Close", width=120,
+                      command=self.save).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(button_frame, text="Close",
+                      command=self.cancel).pack(side=tk.RIGHT, padx=5)
     
     def _on_dependencies_changed(self):
         """
@@ -239,7 +251,41 @@ class EditTaskDialog(ctk.CTkToplevel):
         self.progress_label.configure(text=f"{value}%")
     
     def save(self):
-        """Save the edited task with undo support."""
+        """Save the changes and close the dialog."""
+        if self._apply():
+            self.destroy()
+
+    def save_and_new(self):
+        """
+        Save the changes, then open an empty form for another task.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The new form is opened by whoever opened this dialog, through on_new,
+        rather than built here. Adding a task means placing it in the plan and
+        recording it for undo, which is the task list's job; this dialog only
+        knows how to edit the one task it was given.
+
+        Nothing opens if the save failed, so a bad date leaves the form up
+        with its error rather than being replaced by a blank one.
+        """
+        if not self._apply():
+            return
+
+        self.destroy()
+        if self.on_new:
+            self.on_new()
+
+    def _apply(self) -> bool:
+        """
+        Write the form back onto the task.
+
+        RETURNS:
+        --------
+        bool
+            True when the task was saved, False when the form would not
+            parse - which leaves the dialog open showing why.
+        """
         try:
             # Store old task for undo
             old_task = copy.copy(self.task)
@@ -289,18 +335,23 @@ class EditTaskDialog(ctk.CTkToplevel):
                     # Call save callback
                     if self.on_save:
                         self.on_save(new_task)
-                    self.destroy()
-                    return
-            
+                    return True
+
             # Call save callback (fallback)
             if self.on_save:
                 self.on_save(self.task)
-            
-            self.destroy()
-            
+
+            return True
+
         except ValueError as e:
-            # Show error for invalid date format
-            ctk.CTkLabel(self, text=f"Error: {e}", text_color="red").pack(pady=10)
+            # Show the reason without closing, so the entry can be corrected
+            messagebox.showerror(
+                "Invalid Date",
+                f"{e}\n\nDates are written as YYYY-MM-DD; the calendar "
+                "button beside the box fills one in.",
+                parent=self,
+            )
+            return False
     
     def delete(self):
         """Delete the task with undo support."""
@@ -472,14 +523,14 @@ class CreateTaskDialog(ctk.CTkToplevel):
             start_date_str = datetime.now().strftime('%Y-%m-%d')
         
         ctk.CTkLabel(main_frame, text="Start Date:").grid(row=row_offset, column=0, sticky=tk.W, pady=5)
-        self.start_date_entry = ctk.CTkEntry(main_frame)
+        self.start_date_entry = DateEntry(
+            main_frame, date=datetime.strptime(start_date_str, '%Y-%m-%d'))
         self.start_date_entry.grid(row=row_offset, column=1, sticky=tk.EW, pady=5)
-        self.start_date_entry.insert(0, start_date_str)
         
         # End Date (not for milestones)
         if not self.is_milestone:
             ctk.CTkLabel(main_frame, text="End Date:").grid(row=row_offset+1, column=0, sticky=tk.W, pady=5)
-            self.end_date_entry = ctk.CTkEntry(main_frame)
+            self.end_date_entry = DateEntry(main_frame)
             self.end_date_entry.grid(row=row_offset+1, column=1, sticky=tk.EW, pady=5)
             # Default end date: start + 7 days for tasks, start + 1 day for subtasks
             if self.parent_task:
@@ -543,12 +594,17 @@ class CreateTaskDialog(ctk.CTkToplevel):
         )
         self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Buttons
+        # Buttons, packed right to left so they read
+        # Close, Save & Close, Save & New
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        ctk.CTkButton(button_frame, text="Save", command=self.save).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+        ctk.CTkButton(button_frame, text="Save & New", width=110,
+                      command=self.save_and_new).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(button_frame, text="Save & Close", width=120,
+                      command=self.save).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(button_frame, text="Close",
+                      command=self.cancel).pack(side=tk.RIGHT, padx=5)
     
     def toggle_milestone(self):
         """Toggle milestone mode."""
@@ -610,7 +666,60 @@ class CreateTaskDialog(ctk.CTkToplevel):
                      required.strftime('%Y-%m-%d'))
 
     def save(self):
-        """Save the new task."""
+        """Create the task and close the dialog."""
+        if self._apply():
+            self.destroy()
+
+    def save_and_new(self):
+        """
+        Create the task, then clear the form for another one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The dialog stays open rather than closing and reopening. Entering a
+        run of tasks is the whole point of the button, and a window that
+        blinks away and back loses its position and the field the user was
+        about to type in.
+
+        Nothing is cleared if the save failed, so a rejected date leaves the
+        form as it was for correcting.
+        """
+        if self._apply():
+            self._reset_form()
+
+    def _reset_form(self):
+        """
+        Empty the form ready for the next task.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The dates are kept. A run of tasks entered one after another almost
+        always sits in the same part of the plan, so carrying the dates over
+        saves setting them again; the name is what changes every time, and it
+        takes the focus.
+        """
+        self.name_entry.delete(0, tk.END)
+        self.progress_slider.set(0)
+        self.update_progress_label()
+
+        self.dependency_editor.links = []
+        self.dependency_editor.refresh(notify=False)
+
+        try:
+            self.name_entry.focus_set()
+        except tk.TclError:
+            pass
+
+    def _apply(self) -> bool:
+        """
+        Build the task from the form and hand it to the save callback.
+
+        RETURNS:
+        --------
+        bool
+            True when a task was created, False when the form would not
+            parse - which leaves the dialog open showing why.
+        """
         try:
             # Determine final task type
             if self.is_milestone_var.get():
@@ -686,12 +795,18 @@ class CreateTaskDialog(ctk.CTkToplevel):
             # Call save callback
             if self.on_save:
                 self.on_save(task)
-            
-            self.destroy()
-            
+
+            return True
+
         except ValueError as e:
-            # Show error
-            ctk.CTkLabel(self, text=f"Error: {e}", text_color="red").pack(pady=10)
+            # Show the reason without closing, so it can be corrected
+            messagebox.showerror(
+                "Cannot Create Task",
+                f"{e}\n\nDates are written as YYYY-MM-DD; the calendar "
+                "button beside the box fills one in.",
+                parent=self,
+            )
+            return False
     
     def cancel(self):
         """Cancel task creation."""

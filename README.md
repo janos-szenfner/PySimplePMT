@@ -44,6 +44,7 @@ gantt_app/
 │   ├── task_list.py       # Drag-to-reorder task list with EditTaskDialog
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
 │   ├── colorpalette.py    # Colour swatches shared by the task dialogs
+│   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── gantt_chart.py     # Interactive Plotly Gantt chart
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
@@ -86,7 +87,7 @@ gantt_app/
 - **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Task, Sub-Task, Milestone), Edit and Delete, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
 - **Indent / Outdent**: Indent makes a task a sub-task of the row above it; outdent lifts it beside its parent, becoming a task again at the top level. A branch moves as a whole, and both are undoable
-- **EditTaskDialog**: Comprehensive task editing interface with all fields visible
+- **EditTaskDialog**: Comprehensive task editing interface with all fields visible. Buttons read Delete (set apart), Close, Save & Close, Save & New
 - **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
 - **Hierarchical Display**: Sub-tasks are visually indented under their parent tasks with tree structure
@@ -97,6 +98,8 @@ gantt_app/
   - Milestone toggle with automatic end_date handling
   - Progress slider with percentage display
   - Colour chosen from a palette of swatches rather than typed as a hex code
+  - Start and end dates picked from a calendar, or typed as YYYY-MM-DD
+  - Save & Close, or Save & New to keep entering tasks without reopening the dialog
   - Dependency management via checkboxes (select multiple tasks and subtasks for all task types including milestones)
   - Task Type selection (Task or Sub-Task)
   - Parent Task display for sub-tasks
@@ -658,10 +661,10 @@ All modules import successfully and all tests pass:
 
 ## Known Limitations
 
-2. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
-3. **Performance**: Large projects (>100 tasks) may impact chart rendering
-4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
-5. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
+1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
+2. **Performance**: Large projects (>100 tasks) may impact chart rendering
+3. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
+4. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
 
 ## Future Enhancements
 
@@ -671,9 +674,9 @@ All modules import successfully and all tests pass:
 - [x] Application log viewer
 - [ ] **Shared working-day calendar model** (see below)
 - [ ] GAN file export
-- [ ] Apply GAN dependency lag and SS/FF/SF dependency types
+- [x] Apply GAN dependency lag and SS/FF/SF dependency types
 - [ ] Resource management
-- [ ] Timeline zoom/pan
+- [x] Timeline zoom/pan
 - [ ] Filtering and grouping
 - [x] Undo/Redo functionality
 - [ ] Multiple projects support

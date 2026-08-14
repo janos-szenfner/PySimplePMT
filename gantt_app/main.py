@@ -270,7 +270,12 @@ class GanttApp(ctk.CTk):
             self, task, self.project,
             on_save=self.on_task_saved,
             on_delete=self.on_task_deleted,
-            project_tracker=self.project_tracker
+            project_tracker=self.project_tracker,
+            # Save & New continues from the task just edited, so the new one
+            # lands beside it rather than at the end of the plan
+            on_new=lambda anchor=task.id: self.task_list.create_task(
+                "Task", anchor
+            ),
         )
         dialog.wait_window()
     
