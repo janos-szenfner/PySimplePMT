@@ -927,6 +927,8 @@ class DragDropTaskList(ctk.CTkFrame):
             self.tree,
             project_getter=lambda: self.project,
             on_move=self.move_task,
+            on_indent=self.indent_task,
+            on_outdent=self.outdent_task,
             on_edit=self.edit_task,
             on_delete=self.delete_task,
         )
@@ -1252,6 +1254,67 @@ class DragDropTaskList(ctk.CTkFrame):
         self._apply_reorder(
             lambda: self.project.move_task_before(task_id, target_id), task_id
         )
+
+    def indent_task(self, task_id: str):
+        """Make a task a sub-task of the row above it."""
+        self._apply_restructure(lambda: self.project.indent_task(task_id),
+                                task_id, "Indent Task")
+
+    def outdent_task(self, task_id: str):
+        """Move a task out to sit beside its parent."""
+        self._apply_restructure(lambda: self.project.outdent_task(task_id),
+                                task_id, "Outdent Task")
+
+    def _apply_restructure(self, change, task_id: str, label: str):
+        """
+        Run a change to the hierarchy, record it for undo and redraw.
+
+        PARAMETERS:
+        -----------
+        change : callable
+            Performs the change, returning True when anything moved.
+        task_id : str
+            The task being moved, so it can be reselected afterwards.
+        label : str
+            What to call the change in the undo history.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The undo entry records the hierarchy as well as the order. Indenting
+        rewrites parent_task_id and task_type on the tasks themselves, which
+        the reorder entry cannot express - both of its orderings hold the
+        same objects, so restoring one puts the list back and leaves every
+        parent where the indent left it.
+
+        The row is reopened after the redraw: a task indented under a
+        collapsed parent would otherwise vanish from view, looking for all
+        the world as if it had been deleted.
+        """
+        before = self.project.structure_snapshot()
+
+        if not change():
+            return
+
+        if self.project_tracker:
+            self.project_tracker.restructure_tasks(
+                before, self.project.structure_snapshot(), label
+            )
+
+        self.update_task_list()
+
+        try:
+            parent = self.tree.parent(task_id)
+            while parent:
+                self.tree.item(parent, open=True)
+                parent = self.tree.parent(parent)
+            self.tree.selection_set(task_id)
+            self.tree.focus(task_id)
+            self.tree.see(task_id)
+        except tk.TclError:
+            pass
+
+        if self.on_project_changed:
+            self.on_project_changed()
 
     def _apply_reorder(self, reorder, task_id: str):
         """

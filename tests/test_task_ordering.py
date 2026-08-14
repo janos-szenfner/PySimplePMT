@@ -203,6 +203,259 @@ class TestMoveTaskBefore(unittest.TestCase):
         self.assertFalse(self.project.move_task_before("nope", "001"))
 
 
+class TestIndent(unittest.TestCase):
+    """Indenting makes a task a sub-task of the row above it."""
+
+    def setUp(self):
+        """Three root tasks."""
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        for task_id in ("A", "B", "C"):
+            self.project.add_task(Task(
+                id=task_id, name=task_id, start_date=base,
+                end_date=base + timedelta(days=2),
+            ))
+
+    def parent_of(self, task_id):
+        """The parent ID recorded on a task."""
+        return self.project.get_task_by_id(task_id).parent_task_id
+
+    def test_it_goes_under_the_row_above(self):
+        """The preceding sibling becomes the parent."""
+        self.assertTrue(self.project.indent_task("B"))
+
+        self.assertEqual(self.parent_of("B"), "A")
+
+    def test_it_becomes_a_subtask(self):
+        """The type changes with the level."""
+        self.project.indent_task("B")
+
+        self.assertEqual(self.project.get_task_by_id("B").task_type,
+                         "Sub-Task")
+
+    def test_the_first_row_cannot_indent(self):
+        """There is nothing above it to go under."""
+        self.assertFalse(self.project.can_indent("A"))
+        self.assertFalse(self.project.indent_task("A"))
+
+    def test_it_can_nest_further(self):
+        """Indenting twice puts a task two levels down."""
+        self.project.indent_task("B")
+        self.project.indent_task("C")
+
+        self.assertTrue(self.project.indent_task("C"))
+
+        self.assertEqual(self.parent_of("C"), "B")
+
+    def test_a_task_carries_its_subtasks(self):
+        """The whole branch moves down a level."""
+        self.project.add_task(Task(
+            id="B1", name="B1", start_date=datetime(2026, 1, 1),
+            task_type="Sub-Task", parent_task_id="B",
+        ))
+
+        self.project.indent_task("B")
+
+        self.assertEqual(self.parent_of("B"), "A")
+        self.assertEqual(self.parent_of("B1"), "B")
+
+    def test_a_milestone_cannot_take_children(self):
+        """
+        Indenting under a milestone is refused.
+
+        A milestone marks a moment rather than spanning one, so it cannot
+        bracket sub-tasks - and the next reschedule would promote them
+        straight back out again.
+        """
+        milestone = self.project.get_task_by_id("A")
+        milestone.is_milestone = True
+        milestone.end_date = None
+
+        self.assertFalse(self.project.can_indent("B"))
+        self.assertFalse(self.project.indent_task("B"))
+
+    def test_indenting_under_a_predecessor_is_refused(self):
+        """
+        A task cannot go under something it waits for.
+
+        A summary takes its finish from its children, so a child that must
+        also start after that summary finishes has no possible date: every
+        pass pushes the child out, which pushes the summary out with it, and
+        the schedule never settles.
+        """
+        self.project.get_task_by_id("B").add_dependency("A", 'FS', 'Hard')
+
+        self.assertFalse(self.project.can_indent("B"))
+        self.assertFalse(self.project.indent_task("B"))
+
+    def test_an_indirect_predecessor_is_refused_too(self):
+        """
+        The wait is followed through the chain, not just one link.
+
+        Order is A, B, C, so indenting C would put it under B. C waits on A,
+        and A waits on B, so C waits on B at one remove.
+        """
+        self.project.get_task_by_id("C").add_dependency("A", 'FS', 'Hard')
+        self.project.get_task_by_id("A").add_dependency("B", 'FS', 'Hard')
+
+        self.assertFalse(self.project.can_indent("C"))
+
+    def test_a_dependent_subtask_blocks_the_indent(self):
+        """A wait anywhere in the branch counts, not only on the task."""
+        self.project.add_task(Task(
+            id="B1", name="B1", start_date=datetime(2026, 1, 1),
+            task_type="Sub-Task", parent_task_id="B",
+        ))
+        self.project.get_task_by_id("B1").add_dependency("A", 'FS', 'Hard')
+
+        self.assertFalse(self.project.can_indent("B"))
+
+    def test_an_unrelated_link_still_allows_indenting(self):
+        """Only a wait on the prospective parent is a problem."""
+        self.project.get_task_by_id("B").add_dependency("C", 'FS', 'Hard')
+
+        self.assertTrue(self.project.can_indent("B"))
+
+    def test_a_cycle_in_the_links_does_not_hang_the_check(self):
+        """The walk is guarded, so a corrupt file cannot lock it up."""
+        self.project.get_task_by_id("B").add_dependency("C", 'FS', 'Hard')
+        self.project.get_task_by_id("C").add_dependency("B", 'FS', 'Hard')
+
+        self.project.can_indent("C")        # must return
+
+    def test_the_row_stays_in_place(self):
+        """A task indented under the row above does not jump elsewhere."""
+        self.project.indent_task("B")
+
+        self.assertEqual(ids(self.project), ["A", "B", "C"])
+
+    def test_an_unknown_task_is_ignored(self):
+        """Indenting something that is not there does nothing."""
+        self.assertFalse(self.project.indent_task("nope"))
+
+
+class TestOutdent(unittest.TestCase):
+    """Outdenting lifts a task to sit beside its parent."""
+
+    def setUp(self):
+        """A parent with two sub-tasks, and a task after it."""
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        self.project.add_task(Task(id="A", name="A", start_date=base,
+                                   end_date=base + timedelta(days=2)))
+        for task_id in ("B", "C"):
+            self.project.add_task(Task(
+                id=task_id, name=task_id, start_date=base,
+                end_date=base + timedelta(days=2),
+                task_type="Sub-Task", parent_task_id="A",
+            ))
+        self.project.add_task(Task(id="D", name="D", start_date=base,
+                                   end_date=base + timedelta(days=2)))
+
+    def test_it_leaves_its_parent(self):
+        """The task rises to its parent's level."""
+        self.assertTrue(self.project.outdent_task("B"))
+
+        self.assertIsNone(self.project.get_task_by_id("B").parent_task_id)
+
+    def test_it_becomes_a_task_at_the_top_level(self):
+        """A task with no parent left is a task, not a sub-task."""
+        self.project.outdent_task("B")
+
+        self.assertEqual(self.project.get_task_by_id("B").task_type, "Task")
+
+    def test_it_stays_a_subtask_when_still_nested(self):
+        """Coming out of a nested level leaves it a sub-task."""
+        self.project.indent_task("C")          # C under B, both under A
+
+        self.project.outdent_task("C")         # C back beside B, still in A
+
+        task = self.project.get_task_by_id("C")
+        self.assertEqual(task.parent_task_id, "A")
+        self.assertEqual(task.task_type, "Sub-Task")
+
+    def test_a_root_task_cannot_outdent(self):
+        """There is no level above the top one."""
+        self.assertFalse(self.project.can_outdent("A"))
+        self.assertFalse(self.project.outdent_task("A"))
+
+    def test_it_lands_after_its_old_parent(self):
+        """The task slots in behind the branch it came out of."""
+        self.project.outdent_task("B")
+
+        self.assertEqual(ids(self.project), ["A", "C", "B", "D"])
+
+    def test_it_carries_its_subtasks(self):
+        """The whole branch comes up a level."""
+        self.project.indent_task("C")          # C under B
+
+        self.project.outdent_task("B")         # B out to the top level
+
+        self.assertIsNone(self.project.get_task_by_id("B").parent_task_id)
+        self.assertEqual(self.project.get_task_by_id("C").parent_task_id, "B")
+
+    def test_an_unknown_task_is_ignored(self):
+        """Outdenting something that is not there does nothing."""
+        self.assertFalse(self.project.outdent_task("nope"))
+
+    def test_outdent_then_indent_restores_the_level(self):
+        """
+        A task put back returns to the parent it came from.
+
+        Its position among that parent's children does not come back: going
+        out moved it past its former siblings, and coming in again puts it at
+        the end. That is what every planner does, and Move up is the way back.
+        """
+        self.project.outdent_task("B")
+        self.project.indent_task("B")
+
+        task = self.project.get_task_by_id("B")
+        self.assertEqual(task.parent_task_id, "A")
+        self.assertEqual(task.task_type, "Sub-Task")
+        self.assertEqual(ids(self.project), ["A", "C", "B", "D"])
+
+
+class TestStructureSnapshot(unittest.TestCase):
+    """
+    Capturing the hierarchy for undo.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Indenting rewrites parent_task_id and task_type on the tasks themselves,
+    so restoring an ordering alone leaves every parent where the indent put
+    it - both orderings hold the same objects.
+    """
+
+    def setUp(self):
+        """Three root tasks."""
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        for task_id in ("A", "B", "C"):
+            self.project.add_task(Task(id=task_id, name=task_id,
+                                       start_date=base,
+                                       end_date=base + timedelta(days=2)))
+
+    def test_it_restores_the_hierarchy(self):
+        """Parent and type come back, not just the order."""
+        snapshot = self.project.structure_snapshot()
+        self.project.indent_task("B")
+
+        self.project.restore_structure(snapshot)
+
+        task = self.project.get_task_by_id("B")
+        self.assertIsNone(task.parent_task_id)
+        self.assertEqual(task.task_type, "Task")
+
+    def test_it_restores_the_order(self):
+        """The list comes back as it was."""
+        snapshot = self.project.structure_snapshot()
+        self.project.move_task("C", 'top')
+
+        self.project.restore_structure(snapshot)
+
+        self.assertEqual(ids(self.project), ["A", "B", "C"])
+
+
 class TestGetSiblings(unittest.TestCase):
     """The sibling group a move is confined to."""
 

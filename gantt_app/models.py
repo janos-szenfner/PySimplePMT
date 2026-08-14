@@ -760,6 +760,193 @@ class Project:
         self.tasks = self._flatten(children)
         return True
 
+    def indent_target(self, task_id: str) -> Optional[Task]:
+        """
+        The task that indenting would move this one under.
+
+        RETURNS:
+        --------
+        Optional[Task]
+            The sibling directly above, or None when indenting is not
+            possible: the first task in a group has nothing above it to go
+            under, and a milestone cannot take sub-tasks because it marks a
+            moment rather than spanning one.
+        """
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            return None
+
+        siblings = self.get_siblings(task_id)
+        index = next((i for i, t in enumerate(siblings) if t.id == task_id),
+                     None)
+        if index is None or index == 0:
+            return None
+
+        above = siblings[index - 1]
+        if above.is_milestone:
+            return None
+        if self._branch_depends_on(task_id, above.id):
+            return None
+        return above
+
+    def _descendant_ids(self, task_id: str) -> Set[str]:
+        """Every task beneath this one, however deeply nested."""
+        children = self._children_by_parent()
+        found: Set[str] = set()
+        stack = [task_id]
+        while stack:
+            current = stack.pop()
+            for child in children.get(current, []):
+                if child.id not in found:
+                    found.add(child.id)
+                    stack.append(child.id)
+        return found
+
+    def _branch_depends_on(self, task_id: str, target_id: str) -> bool:
+        """
+        Whether a task or anything under it depends on the target.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what stops a task being indented under something it waits
+        for. A summary takes its finish from its children, so a child that
+        must also start after that summary finishes has no possible date:
+        every pass pushes the child out, which pushes the summary's finish
+        out with it, and the schedule never settles. Planners reject the
+        link for the same reason.
+
+        The walk follows dependencies transitively, so an indirect wait is
+        caught as well, and is guarded against a cycle in the links.
+        """
+        branch = {task_id} | self._descendant_ids(task_id)
+
+        seen: Set[str] = set()
+        stack = list(branch)
+        while stack:
+            current_id = stack.pop()
+            if current_id in seen:
+                continue
+            seen.add(current_id)
+
+            current = self.get_task_by_id(current_id)
+            if current is None:
+                continue
+            for dep_id in current.dependency_ids:
+                if dep_id == target_id:
+                    return True
+                if dep_id not in seen:
+                    stack.append(dep_id)
+
+        return False
+
+    def can_indent(self, task_id: str) -> bool:
+        """Whether the task can be moved a level deeper."""
+        return self.indent_target(task_id) is not None
+
+    def can_outdent(self, task_id: str) -> bool:
+        """Whether the task can be moved a level shallower."""
+        task = self.get_task_by_id(task_id)
+        if task is None or not task.parent_task_id:
+            return False
+        return self.get_task_by_id(task.parent_task_id) is not None
+
+    def indent_task(self, task_id: str) -> bool:
+        """
+        Make a task a sub-task of the sibling directly above it.
+
+        RETURNS:
+        --------
+        bool
+            True when the task moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The task keeps its own sub-tasks, which follow it down a level
+        because they point at it rather than at its parent.
+
+        The new parent becomes a summary, so the next reschedule derives its
+        dates from its children - including the task just moved under it.
+        That is the point of indenting: a phase spans the work inside it.
+
+        No repositioning is needed. The task already sits immediately after
+        the sibling it is going under, so rebuilding the list from the
+        hierarchy puts it at the end of that sibling's children.
+        """
+        new_parent = self.indent_target(task_id)
+        if new_parent is None:
+            return False
+
+        task = self.get_task_by_id(task_id)
+        task.parent_task_id = new_parent.id
+        task.task_type = "Sub-Task"
+
+        self.tasks = self._flatten(self._children_by_parent())
+        return True
+
+    def outdent_task(self, task_id: str) -> bool:
+        """
+        Move a task out to sit beside its parent.
+
+        RETURNS:
+        --------
+        bool
+            True when the task moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A task lifted all the way out has no parent left, so it becomes a
+        task in its own right; one that is still nested stays a sub-task of
+        whatever it landed in.
+
+        It keeps its own sub-tasks. Its old parent may stop being a summary
+        entirely, in which case that parent goes back to holding its own
+        dates rather than deriving them.
+
+        As with indenting, position looks after itself: the task already
+        follows its old parent in the list, so rebuilding from the hierarchy
+        drops it in directly after that parent's remaining children.
+        """
+        if not self.can_outdent(task_id):
+            return False
+
+        task = self.get_task_by_id(task_id)
+        parent = self.get_task_by_id(task.parent_task_id)
+
+        task.parent_task_id = parent.parent_task_id
+        task.task_type = "Task" if task.parent_task_id is None else "Sub-Task"
+
+        self.tasks = self._flatten(self._children_by_parent())
+        return True
+
+    def structure_snapshot(self):
+        """
+        Capture the order and the hierarchy, for undo.
+
+        RETURNS:
+        --------
+        Tuple[List[Task], Dict[str, Tuple[Optional[str], str]]]
+            The task list, and each task's parent and type by ID.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Indenting changes parent_task_id and task_type on the Task objects
+        themselves, which restoring an ordering alone would not put back -
+        both lists hold the same objects.
+        """
+        return (
+            list(self.tasks),
+            {t.id: (t.parent_task_id, t.task_type) for t in self.tasks},
+        )
+
+    def restore_structure(self, snapshot) -> None:
+        """Put back an order and hierarchy taken by structure_snapshot."""
+        order, parents = snapshot
+        self.tasks = list(order)
+        for task in self.tasks:
+            if task.id in parents:
+                task.parent_task_id, task.task_type = parents[task.id]
+        self._update_dates()
+
     def move_task_before(self, task_id: str, target_id: str) -> bool:
         """
         Put a task at the position a sibling currently occupies.

@@ -35,6 +35,12 @@ MOVE_ACTIONS = (
     ("Move to bottom", 'bottom'),
 )
 
+#: The hierarchy entries, as (label, DragDropTaskList method name).
+LEVEL_ACTIONS = (
+    ("Indent", 'indent'),
+    ("Outdent", 'outdent'),
+)
+
 #: Entries following the moves, after a separator.
 TASK_ACTIONS = ("Edit", "Delete")
 
@@ -54,6 +60,12 @@ class TaskContextMenu:
     on_move : callable
         Called with (task_id, target) when a move is chosen, where target is
         one of 'top', 'up', 'down' or 'bottom'.
+    on_indent : callable, optional
+        Called with the task ID when Indent is chosen. Omitted, the entry is
+        greyed out.
+    on_outdent : callable, optional
+        Called with the task ID when Outdent is chosen. Omitted, the entry is
+        greyed out.
     on_edit : callable, optional
         Called with the task ID when Edit is chosen. Omitted, the entry is
         greyed out.
@@ -69,10 +81,13 @@ class TaskContextMenu:
     """
 
     def __init__(self, tree, project_getter, on_move,
+                 on_indent=None, on_outdent=None,
                  on_edit=None, on_delete=None):
         self.tree = tree
         self._project_getter = project_getter
         self._on_move = on_move
+        self._on_indent = on_indent
+        self._on_outdent = on_outdent
         self._on_edit = on_edit
         self._on_delete = on_delete
         self._menu = None
@@ -179,6 +194,23 @@ class TaskContextMenu:
 
         menu.add_separator()
 
+        # Indent needs a row above to go under, and outdent needs a parent to
+        # come out of, so both are greyed out where they would do nothing
+        level_allowed = {
+            'indent': self._on_indent is not None
+            and project.can_indent(task_id),
+            'outdent': self._on_outdent is not None
+            and project.can_outdent(task_id),
+        }
+        for label, action in LEVEL_ACTIONS:
+            menu.add_command(
+                label=label,
+                state=tk.NORMAL if level_allowed[action] else tk.DISABLED,
+                command=lambda a=action: self._invoke_level(task_id, a),
+            )
+
+        menu.add_separator()
+
         menu.add_command(
             label="Edit",
             state=tk.NORMAL if self._on_edit else tk.DISABLED,
@@ -199,6 +231,18 @@ class TaskContextMenu:
             self._on_move(task_id, target)
         except Exception:
             logger.exception("Could not move task %s to %s", task_id, target)
+
+    def _invoke_level(self, task_id, action):
+        """Indent or outdent the clicked task."""
+        handler = (self._on_indent if action == 'indent'
+                   else self._on_outdent)
+        if not handler:
+            return
+        logger.info("Context menu: %s task %s", action, task_id)
+        try:
+            handler(task_id)
+        except Exception:
+            logger.exception("Could not %s task %s", action, task_id)
 
     def _invoke_edit(self, task_id):
         """Open the edit window for the clicked task."""

@@ -82,7 +82,8 @@ gantt_app/
 
 ### Task List View (`views/task_list.py`)
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
-- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top, Move up, Move down, Move to bottom, then Edit and Delete; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
+- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, then Indent and Outdent, then Edit and Delete; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
+- **Indent / Outdent**: Indent makes a task a sub-task of the row above it; outdent lifts it beside its parent, becoming a task again at the top level. A branch moves as a whole, and both are undoable
 - **EditTaskDialog**: Comprehensive task editing interface with all fields visible
 - **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone

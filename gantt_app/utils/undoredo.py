@@ -352,6 +352,49 @@ class UpdateProjectNameCommand(Command):
 
 
 @dataclass
+class RestructureTasksCommand(Command):
+    """
+    Command to change where tasks sit in the hierarchy.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project whose structure changed.
+    old_snapshot : tuple
+        Project.structure_snapshot() taken before the change.
+    new_snapshot : tuple
+        The same, taken after it.
+    label : str
+        What to call the change in the undo history.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Indenting rewrites parent_task_id and task_type on the Task objects
+    themselves, so ReorderTasksCommand cannot undo it: both of its orderings
+    hold the same objects, and restoring one puts the list back while leaving
+    every task's parent where the indent left it.
+    """
+    project: Project
+    old_snapshot: tuple
+    new_snapshot: tuple
+    label: str = "Restructure Tasks"
+    name: str = field(default="", init=False)
+
+    def __post_init__(self):
+        self.name = self.label
+
+    def execute(self) -> bool:
+        """Apply the new structure."""
+        self.project.restore_structure(self.new_snapshot)
+        return True
+
+    def undo(self) -> bool:
+        """Restore the previous structure."""
+        self.project.restore_structure(self.old_snapshot)
+        return True
+
+
+@dataclass
 class ReorderTasksCommand(Command):
     """
     Command to change the order of the tasks in a project.
@@ -725,6 +768,31 @@ def create_update_task_command(project: Project, task_id: str, old_task: Task, n
     return UpdateTaskCommand(project=project, task_id=task_id, old_task=old_task, new_task=new_task)
 
 
+def create_restructure_tasks_command(project: Project, old_snapshot,
+                                     new_snapshot,
+                                     label: str = "Restructure Tasks"
+                                     ) -> RestructureTasksCommand:
+    """
+    Create a command to change where tasks sit in the hierarchy.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project whose structure changed
+    old_snapshot, new_snapshot : tuple
+        Project.structure_snapshot() from before and after the change
+    label : str
+        What to call it in the undo history
+
+    RETURNS:
+    --------
+    RestructureTasksCommand
+        A command that applies the new structure when executed
+    """
+    return RestructureTasksCommand(project=project, old_snapshot=old_snapshot,
+                                   new_snapshot=new_snapshot, label=label)
+
+
 def create_reorder_tasks_command(project: Project, old_order: List[Task],
                                  new_order: List[Task]) -> ReorderTasksCommand:
     """
@@ -915,6 +983,28 @@ class ProjectStateTracker:
         command = create_update_task_command(self.project, task_id, old_task, new_task)
         return self.manager.execute(command)
     
+    def restructure_tasks(self, old_snapshot, new_snapshot,
+                          label: str = "Restructure Tasks") -> bool:
+        """
+        Record a change to where tasks sit in the hierarchy.
+
+        PARAMETERS:
+        -----------
+        old_snapshot, new_snapshot : tuple
+            Project.structure_snapshot() from before and after the change.
+        label : str
+            What to call it in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            True if successful, False otherwise.
+        """
+        command = create_restructure_tasks_command(
+            self.project, old_snapshot, new_snapshot, label
+        )
+        return self.manager.execute(command)
+
     def reorder_tasks(self, old_order: List[Task], new_order: List[Task]) -> bool:
         """
         Record a change to the order of the project's tasks.

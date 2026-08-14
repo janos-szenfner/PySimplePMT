@@ -72,6 +72,27 @@ class TaskListTestCase(unittest.TestCase):
         except Exception:
             pass
 
+    def entry_index(self, menu, label):
+        """
+        Position of a menu entry by its label.
+
+        Looked up rather than hardcoded: entries have been inserted ahead of
+        Edit and Delete more than once, and a stale index silently invokes
+        the wrong action instead of failing.
+        """
+        for index in range(menu.index('end') + 1):
+            if menu.type(index) == 'separator':
+                continue
+            if menu.entrycget(index, 'label') == label:
+                return index
+        self.fail(f"no {label!r} entry in the menu")
+
+    def invoke_entry(self, task_id, label):
+        """Build the menu for a task and invoke one of its entries."""
+        menu = self.task_list.context_menu._build(self.project, task_id)
+        menu.invoke(self.entry_index(menu, label))
+        return menu
+
     def rows(self):
         """Every visible row, parents before their children."""
         found = []
@@ -174,6 +195,163 @@ class TestHierarchyDisplay(TaskListTestCase):
         self.task_list.select_task("005")
 
         self.assertEqual(self.task_list.tree.selection(), ("005",))
+
+
+class TestIndentOutdent(TaskListTestCase):
+    """The Indent and Outdent entries, and what they do to the tree."""
+
+    def levels(self):
+        """Each task's type and parent, by ID."""
+        return {t.id: (t.task_type, t.parent_task_id)
+                for t in self.project.tasks}
+
+    def states(self, task_id):
+        """The Indent and Outdent entry states for a row."""
+        menu = self.task_list.context_menu._build(self.project, task_id)
+        found = {}
+        for index in range(menu.index('end') + 1):
+            if menu.type(index) == 'separator':
+                continue
+            label = menu.entrycget(index, 'label')
+            if label in ("Indent", "Outdent"):
+                found[label] = str(menu.entrycget(index, 'state'))
+        return found
+
+    def test_both_entries_are_offered(self):
+        """The menu carries Indent and Outdent."""
+        self.assertEqual(set(self.states("002")), {"Indent", "Outdent"})
+
+    def test_indent_is_greyed_out_on_the_first_row(self):
+        """There is nothing above it to go under."""
+        self.assertEqual(self.states("001")["Indent"], 'disabled')
+
+    def test_indent_is_offered_further_down(self):
+        """A row with a sibling above it can go under that sibling."""
+        self.assertEqual(self.states("002")["Indent"], 'normal')
+
+    def test_outdent_is_greyed_out_at_the_top_level(self):
+        """A root task has no level to come out of."""
+        self.assertEqual(self.states("002")["Outdent"], 'disabled')
+
+    def test_outdent_is_offered_for_a_subtask(self):
+        """A sub-task can be lifted out."""
+        self.assertEqual(self.states("004")["Outdent"], 'normal')
+
+    def test_indenting_reparents_and_retypes(self):
+        """The row goes under the one above and becomes a sub-task."""
+        self.invoke_entry("002", "Indent")
+
+        self.assertEqual(self.levels()["002"], ("Sub-Task", "001"))
+
+    def test_indenting_nests_the_row_in_the_tree(self):
+        """The change is visible, not just in the model."""
+        self.invoke_entry("002", "Indent")
+
+        self.assertIn("002", self.task_list.tree.get_children("001"))
+
+    def test_outdenting_lifts_a_subtask_to_a_task(self):
+        """A sub-task taken to the top level becomes a task."""
+        self.invoke_entry("004", "Outdent")
+
+        self.assertEqual(self.levels()["004"], ("Task", None))
+
+    def test_the_moved_row_stays_selected(self):
+        """The task stays put so it can be moved again."""
+        self.invoke_entry("002", "Indent")
+
+        self.assertEqual(self.task_list.tree.selection(), ("002",))
+
+    def test_a_collapsed_parent_is_reopened(self):
+        """
+        A row indented into a folded branch is still shown.
+
+        Left closed it would vanish from view, which reads as the task
+        having been deleted.
+        """
+        self.task_list.tree.item("001", open=False)
+
+        self.invoke_entry("002", "Indent")
+
+        self.assertTrue(self.task_list.tree.item("001", 'open'))
+
+    def test_indenting_carries_the_subtasks(self):
+        """A branch moves as a whole."""
+        self.invoke_entry("002", "Indent")
+
+        levels = self.levels()
+        self.assertEqual(levels["002"], ("Sub-Task", "001"))
+        self.assertEqual(levels["004"], ("Sub-Task", "002"))
+
+    def test_indenting_under_a_milestone_is_refused(self):
+        """A milestone cannot bracket sub-tasks."""
+        first = self.project.get_task_by_id("001")
+        first.is_milestone = True
+        first.end_date = None
+
+        self.assertEqual(self.states("002")["Indent"], 'disabled')
+
+
+class TestIndentUndo(TaskListTestCase):
+    """
+    Indenting is undoable, hierarchy and all.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The reorder entry cannot express this: both of its orderings hold the
+    same Task objects, so restoring one puts the list back while leaving
+    every parent where the indent left it.
+    """
+
+    def setUp(self):
+        """Add an undo manager to the shared fixture."""
+        super().setUp()
+        from gantt_app.utils.undoredo import (
+            UndoRedoManager, ProjectStateTracker,
+        )
+
+        self.manager = UndoRedoManager()
+        self.manager.set_project(self.project)
+        self.task_list.project_tracker = ProjectStateTracker(
+            self.project, self.manager
+        )
+
+    def level_of(self, task_id):
+        """A task's type and parent."""
+        task = self.project.get_task_by_id(task_id)
+        return task.task_type, task.parent_task_id
+
+    def test_undo_restores_the_parent_and_type(self):
+        """Undoing an indent puts the task back at its old level."""
+        self.task_list.indent_task("002")
+        self.assertEqual(self.level_of("002"), ("Sub-Task", "001"))
+
+        self.manager.undo()
+
+        self.assertEqual(self.level_of("002"), ("Task", None))
+
+    def test_redo_reapplies_the_indent(self):
+        """Redo puts it back under the row above."""
+        self.task_list.indent_task("002")
+        self.manager.undo()
+
+        self.manager.redo()
+
+        self.assertEqual(self.level_of("002"), ("Sub-Task", "001"))
+
+    def test_undo_restores_an_outdent(self):
+        """The same holds coming the other way."""
+        self.task_list.outdent_task("004")
+        self.assertEqual(self.level_of("004"), ("Task", None))
+
+        self.manager.undo()
+
+        self.assertEqual(self.level_of("004"), ("Sub-Task", "002"))
+
+    def test_a_refused_change_records_nothing(self):
+        """Indenting the first row leaves the undo history alone."""
+        self.task_list.indent_task("001")
+
+        self.assertFalse(self.manager.can_undo())
 
 
 class TestDoubleClick(TaskListTestCase):
@@ -414,11 +592,12 @@ class TestContextMenu(TaskListTestCase):
         return entries
 
     def test_the_entries_are_offered_in_order(self):
-        """The four moves come first, then Edit and Delete."""
+        """Moves, then the level changes, then Edit and Delete."""
         labels = [label for label, _ in self.menu_for("002")]
 
         self.assertEqual(labels, ["Move to top", "Move up",
                                   "Move down", "Move to bottom",
+                                  "Indent", "Outdent",
                                   "Edit", "Delete"])
 
     def test_edit_and_delete_come_last(self):
@@ -427,20 +606,22 @@ class TestContextMenu(TaskListTestCase):
 
         self.assertEqual(labels[-2:], ["Edit", "Delete"])
 
-    def test_a_separator_divides_the_groups(self):
-        """The moves are separated from Edit and Delete."""
+    def test_separators_divide_the_three_groups(self):
+        """Moves, level changes and task actions are kept apart."""
         menu = self.task_list.context_menu._build(self.project, "002")
 
         kinds = [menu.type(i) for i in range(menu.index('end') + 1)]
 
-        self.assertEqual(kinds.count('separator'), 1)
+        self.assertEqual(kinds.count('separator'), 2)
         self.assertEqual(kinds.index('separator'), 4)
 
     def test_a_middle_row_can_move_either_way(self):
-        """Everything is available to a task with siblings on both sides."""
+        """Every move is available to a task with siblings on both sides."""
         states = {label: state for label, state in self.menu_for("002")}
+        moves = [state for label, state in states.items()
+                 if label.startswith("Move")]
 
-        self.assertTrue(all(state == 'normal' for state in states.values()))
+        self.assertTrue(all(state == 'normal' for state in moves))
 
     def test_the_first_row_cannot_move_up(self):
         """Upward moves are greyed out at the top of a group."""
@@ -483,17 +664,13 @@ class TestContextMenu(TaskListTestCase):
 
     def test_choosing_an_entry_moves_the_task(self):
         """Invoking a menu entry reorders the rows."""
-        menu = self.task_list.context_menu._build(self.project, "003")
-
-        menu.invoke(0)  # Move to top
+        self.invoke_entry("003", "Move to top")
 
         self.assertEqual(self.rows()[0], "003")
 
     def test_a_subtask_moves_within_its_parent(self):
         """A sub-task's move keeps it under the same parent."""
-        menu = self.task_list.context_menu._build(self.project, "005")
-
-        menu.invoke(0)  # Move to top
+        self.invoke_entry("005", "Move to top")
 
         self.assertEqual(self.rows(), ["001", "002", "005", "004", "003"])
         self.assertEqual(
@@ -516,8 +693,7 @@ class TestContextMenu(TaskListTestCase):
         opened = []
         self.task_list.on_task_edit = opened.append
 
-        menu = self.task_list.context_menu._build(self.project, "003")
-        menu.invoke(5)  # Edit
+        self.invoke_entry("003", "Edit")
 
         self.assertEqual([task.id for task in opened], ["003"])
 
@@ -527,8 +703,7 @@ class TestContextMenu(TaskListTestCase):
         self.task_list.on_task_edit = opened.append
         self.task_list.tree.selection_set("001")
 
-        menu = self.task_list.context_menu._build(self.project, "003")
-        menu.invoke(5)
+        self.invoke_entry("003", "Edit")
 
         self.assertEqual([task.id for task in opened], ["003"])
 
@@ -536,10 +711,9 @@ class TestContextMenu(TaskListTestCase):
         """Confirming the prompt deletes the row."""
         from unittest import mock
 
-        menu = self.task_list.context_menu._build(self.project, "003")
         with mock.patch('gantt_app.views.task_list.messagebox.askyesno',
                         return_value=True):
-            menu.invoke(6)  # Delete
+            self.invoke_entry("003", "Delete")
 
         self.assertNotIn("003", self.rows())
         self.assertIsNone(self.project.get_task_by_id("003"))
@@ -549,10 +723,9 @@ class TestContextMenu(TaskListTestCase):
         from unittest import mock
 
         before = self.rows()
-        menu = self.task_list.context_menu._build(self.project, "003")
         with mock.patch('gantt_app.views.task_list.messagebox.askyesno',
                         return_value=False):
-            menu.invoke(6)
+            self.invoke_entry("003", "Delete")
 
         self.assertEqual(self.rows(), before)
 
@@ -560,10 +733,9 @@ class TestContextMenu(TaskListTestCase):
         """The prompt says how many sub-tasks will go with the parent."""
         from unittest import mock
 
-        menu = self.task_list.context_menu._build(self.project, "002")
         with mock.patch('gantt_app.views.task_list.messagebox.askyesno',
                         return_value=False) as ask:
-            menu.invoke(6)
+            self.invoke_entry("002", "Delete")
 
         message = ask.call_args[0][1]
         self.assertIn("2 sub-task", message)
@@ -572,10 +744,9 @@ class TestContextMenu(TaskListTestCase):
         """A task with no children gets a plain prompt."""
         from unittest import mock
 
-        menu = self.task_list.context_menu._build(self.project, "003")
         with mock.patch('gantt_app.views.task_list.messagebox.askyesno',
                         return_value=False) as ask:
-            menu.invoke(6)
+            self.invoke_entry("003", "Delete")
 
         self.assertNotIn("sub-task", ask.call_args[0][1])
 
@@ -583,10 +754,9 @@ class TestContextMenu(TaskListTestCase):
         """Deleting a parent removes the whole branch."""
         from unittest import mock
 
-        menu = self.task_list.context_menu._build(self.project, "002")
         with mock.patch('gantt_app.views.task_list.messagebox.askyesno',
                         return_value=True):
-            menu.invoke(6)
+            self.invoke_entry("002", "Delete")
 
         self.assertEqual(self.rows(), ["001", "003"])
 
