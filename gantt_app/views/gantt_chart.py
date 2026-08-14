@@ -361,10 +361,21 @@ class GanttChart(ctk.CTkFrame):
         self.update_chart()
     
     def clear_chart(self):
-        """Clear the chart."""
+        """
+        Clear the chart.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This called _draw_empty_chart and _render_chart, which were the
+        matplotlib-era drawing helpers and went away with that renderer,
+        leaving the method raising AttributeError for anything that used it.
+        The Tk image is released here too, since dropping the Python
+        reference alone does not free image memory Tk owns.
+        """
         self.figure = go.Figure()
-        self._draw_empty_chart()
-        self._render_chart()
+        self._clear_frame()
+        self._release_photo()
+        self._show_message("No chart to display.")
 
     def export_to_png(self, filepath: str, dpi: int = 300) -> bool:
         """
@@ -384,10 +395,9 @@ class GanttChart(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        Rendering goes through the same Plotly figure shown on screen, so an
-        exported image matches the chart exactly. Kaleido drives a Chrome or
-        Chromium browser to rasterise it; when none is installed the export
-        returns False and logs what to install rather than hanging.
+        Rendering goes through the same Pillow renderer that draws the chart
+        on screen, so an exported image matches the window exactly and nothing
+        is downloaded to produce it.
         """
         from gantt_app.utils.image_export import export_gantt_to_png
         return export_gantt_to_png(self.project, filepath,

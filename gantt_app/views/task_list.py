@@ -536,21 +536,10 @@ class CreateTaskDialog(ctk.CTkToplevel):
         )
         self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        
-        # Note about dependencies
-        if available_tasks:
-            note_label = ctk.CTkLabel(
-                self.dep_frame,
-                text="Check multiple boxes to select dependencies",
-                text_color="#7f8c8d",
-                font=ctk.CTkFont(size=10, slant="italic")
-            )
-            note_label.pack(fill=tk.X, padx=5, pady=(5, 0), anchor=tk.W)
-        
         # Buttons
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(fill=tk.X, padx=20, pady=10)
-        
+
         ctk.CTkButton(button_frame, text="Save", command=self.save).pack(side=tk.RIGHT, padx=5)
         ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
     

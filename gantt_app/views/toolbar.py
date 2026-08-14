@@ -935,20 +935,24 @@ class Toolbar(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        Kaleido rasterises the Plotly figure by driving a Chrome or Chromium
-        browser. Missing that browser is by far the most likely cause, and a
-        bare "export failed" leaves the user with nowhere to go, so the
-        message names the fix and points at HTML export as the alternative.
+        This used to import NO_BROWSER_MESSAGE, a constant describing how to
+        install a browser for Kaleido. Kaleido went away when exports moved to
+        Pillow and the constant went with it, so this function - the one that
+        runs when an export fails - raised ImportError and replaced the error
+        dialog with a crash.
+
+        Rendering is now Pillow only, so the sole way it can be unavailable is
+        Pillow itself missing, which cannot happen in a packaged build.
         """
-        from gantt_app.utils.image_export import (
-            static_export_available, NO_BROWSER_MESSAGE
-        )
+        from gantt_app.utils.image_export import static_export_available
 
         if not static_export_available():
-            logger.warning("%s export unavailable: no browser for Kaleido",
+            logger.warning("%s export unavailable: Pillow is missing",
                            image_format)
             messagebox.showwarning(
-                f"{image_format} Export Unavailable", NO_BROWSER_MESSAGE
+                f"{image_format} Export Unavailable",
+                "Image export needs the Pillow library, which is not "
+                "available.\n\nExport the chart as HTML instead."
             )
             return
 
