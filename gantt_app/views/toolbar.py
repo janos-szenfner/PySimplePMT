@@ -5,7 +5,12 @@ Contains action buttons for managing the project.
 """
 
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+from tkinter import simpledialog
+# Message boxes and file choosers that stay native on every desktop:
+# Tk's own are native on macOS and Windows but drawn by Tk on X11.
+# Aliased so the call sites below read exactly as they always have.
+from gantt_app.views import dialogs as messagebox
+from gantt_app.views import dialogs as filedialog
 from typing import Optional, Callable, List, Dict
 
 import customtkinter as ctk

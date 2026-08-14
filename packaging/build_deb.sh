@@ -156,7 +156,7 @@ Architecture: ${ARCH}
 Maintainer: ${MAINTAINER}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6, libx11-6, libxext6, libxrender1, libfontconfig1, libfreetype6
-Recommends: xdg-utils, fonts-dejavu-core
+Recommends: xdg-utils, fonts-dejavu-core, zenity
 Description: Gantt chart project management tool
  PySimplePMT is a desktop project management application with Gantt chart
  visualisation, drag-and-drop task management and sub-task hierarchies.

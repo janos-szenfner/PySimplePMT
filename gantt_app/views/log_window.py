@@ -12,7 +12,11 @@ window that displays it.
 
 import logging
 import tkinter as tk
-from tkinter import filedialog, messagebox
+# Message boxes and file choosers that stay native on every desktop:
+# Tk's own are native on macOS and Windows but drawn by Tk on X11.
+# Aliased so the call sites below read exactly as they always have.
+from gantt_app.views import dialogs as messagebox
+from gantt_app.views import dialogs as filedialog
 from datetime import datetime
 
 import customtkinter as ctk

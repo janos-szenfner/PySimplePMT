@@ -71,6 +71,16 @@ start:
 libc6, libx11-6, libxext6, libxrender1, libfontconfig1, libfreetype6
 ```
 
+**Recommended, not required** — `zenity` (or `kdialog` on KDE) gives the file
+and folder choosers the desktop's own appearance. Tk has no native chooser on
+X11 and draws its own, which looks nothing like the rest of the desktop. Both
+are already present on a stock GNOME or KDE install; without either, the
+application falls back to Tk's chooser and everything still works:
+
+```
+xdg-utils, fonts-dejavu-core, zenity
+```
+
 **Deliberately excluded**: MS Project (`.mpp`) import, which needs the
 optional `tasklib` reader. The feature degrades gracefully and reports what to
 install.

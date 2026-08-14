@@ -22,6 +22,7 @@ This is a complete implementation of a project management tool with:
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and tasks to Excel XLSX
 - **Modern UI**: Built with CustomTkinter for a professional look
+- **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Critical Path**: Automatic calculation and visualization of the critical path
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in days and Hard/Rubber link hardness
 - **Built-in Help**: A Help button on the Dependency tab opens a full reference on link types, lead/lag, hardness and how the plan reschedules
@@ -45,6 +46,7 @@ gantt_app/
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
 │   ├── colorpalette.py    # Colour swatches shared by the task dialogs
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
+│   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── gantt_chart.py     # Interactive Plotly Gantt chart
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog

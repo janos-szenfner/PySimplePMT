@@ -19,7 +19,10 @@ of the pointer position, which plain Tk reports perfectly well.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
+# See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
+# to match the application on X11
+from gantt_app.views import dialogs as messagebox
 from datetime import datetime, timedelta
 from typing import Optional, Callable, List, Dict, Any
 import copy
