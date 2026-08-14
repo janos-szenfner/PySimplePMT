@@ -325,8 +325,10 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Task...", "command": self.add_task},
                         {"text": "Sub-Task...", "command": self.add_subtask},
                         {"text": "Milestone...", "command": self.add_milestone},
-                        {"text": "Project Title...", "command": self.edit_project_info},
                     ]},
+                    # Renaming the project is not a create action, so it sits
+                    # beside Create rather than inside it
+                    {"text": "Project Title...", "command": self.edit_project_info},
                 ],
             },
             {

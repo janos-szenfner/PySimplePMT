@@ -21,10 +21,6 @@ tkinterweb>=4.25.3,<5.0.0       # Embeds the Plotly chart inside Tkinter
 pillow>=12.3.0,<13.0.0          # Draws the PNG and PDF exports
 openpyxl>=3.1.5,<4.0.0          # XLSX import and export
 
-# Enhanced drag-and-drop. The task list falls back to plain Tkinter bindings
-# when this is missing, but the packaged build ships with it.
-tkinterdnd2>=0.6.2,<1.0.0
-
 # --- Transitive dependencies ---------------------------------------------
 # Listed explicitly so the packaged set is auditable and reproducible rather
 # than whatever the resolver happens to choose on build day.

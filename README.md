@@ -252,9 +252,6 @@ pip install lxml  # For better XML parsing performance
 
 # For MPP file import
 pip install tasklib  # Pure Python MPP reader
-
-# For enhanced drag-and-drop (recommended)
-pip install tkinterdnd2
 ```
 
 ## Usage
@@ -543,11 +540,12 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 - Custom date formatting for better readability
 
 ### 2. Drag-and-Drop Implementation
-- Full tkinterdnd2 integration with enhanced drag-and-drop functionality
-- Graceful fallback to basic Tkinter bindings when tkinterdnd2 not available
-- Circular dependency prevention algorithm
-- Visual feedback during drag operations
-- Support for drag initiation, positioning, and drop events
+- Rows are reordered by dragging, implemented in plain Tkinter. tkinterdnd2 is
+  not used: it exchanges drops with other applications, while moving a row
+  inside one Treeview needs only the pointer position
+- A thin blue line marks where the dragged row will land
+- Moves are confined to a task's own siblings, so nothing is reparented by accident
+- A press becomes a drag only past a small threshold, leaving clicks alone
 
 ### 3. MPP Import Flexibility
 - Multiple import methods with automatic fallback
@@ -644,7 +642,6 @@ All modules import successfully and all tests pass:
 
 ## Known Limitations
 
-1. **Drag-and-Drop**: Full tkinterdnd2 integration implemented with graceful fallback
 2. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
 4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
@@ -653,7 +650,7 @@ All modules import successfully and all tests pass:
 
 ## Future Enhancements
 
-- [x] Full tkinterdnd2 integration
+- [x] Drag-and-drop row reordering
 - [x] PDF/PNG export for Gantt charts
 - [x] XLSX import
 - [x] Application log viewer

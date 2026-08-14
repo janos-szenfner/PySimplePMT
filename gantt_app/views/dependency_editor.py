@@ -92,7 +92,20 @@ class DependencyEditor(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        """Lay out the add row, the grid and the help text."""
+        """
+        Lay out the add row, the grid and the help text.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The add controls are stacked over two rows rather than strung along
+        one. On a single row the fixed widths came to roughly 700px inside a
+        500px dialog, so the Add button sat outside the window and there was
+        no way to add a dependency at all until the dialog was dragged wider.
+
+        Only the predecessor menu is given weight; the rest keep their natural
+        size, so narrowing the dialog shrinks the long control rather than
+        pushing the button off the edge.
+        """
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -100,31 +113,36 @@ class DependencyEditor(ctk.CTkFrame):
         add_row.grid(row=0, column=0, sticky=tk.EW, padx=5, pady=(5, 8))
         add_row.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(add_row, text="Task:").grid(row=0, column=0, padx=(8, 4), pady=8)
+        # First row: the predecessor, which needs the most room
+        ctk.CTkLabel(add_row, text="Task:").grid(
+            row=0, column=0, sticky=tk.W, padx=(8, 4), pady=(8, 4))
         self.candidate_var = ctk.StringVar()
         self.candidate_menu = ctk.CTkOptionMenu(
-            add_row, variable=self.candidate_var, values=["(none available)"],
-            width=240
+            add_row, variable=self.candidate_var, values=["(none available)"]
         )
-        self.candidate_menu.grid(row=0, column=1, sticky=tk.EW, padx=4, pady=8)
+        self.candidate_menu.grid(row=0, column=1, columnspan=5, sticky=tk.EW,
+                                 padx=(4, 8), pady=(8, 4))
 
-        ctk.CTkLabel(add_row, text="Type:").grid(row=0, column=2, padx=(12, 4), pady=8)
+        # Second row: the link settings and the button
+        ctk.CTkLabel(add_row, text="Type:").grid(
+            row=1, column=0, sticky=tk.W, padx=(8, 4), pady=(4, 8))
         self.type_var = ctk.StringVar(value=DEPENDENCY_TYPE_LABELS['FS'])
         ctk.CTkOptionMenu(
             add_row, variable=self.type_var,
-            values=list(DEPENDENCY_TYPE_LABELS.values()), width=130
-        ).grid(row=0, column=3, padx=4, pady=8)
+            values=list(DEPENDENCY_TYPE_LABELS.values()), width=150
+        ).grid(row=1, column=1, sticky=tk.W, padx=4, pady=(4, 8))
 
-        ctk.CTkLabel(add_row, text="Hardness:").grid(row=0, column=4, padx=(12, 4), pady=8)
+        ctk.CTkLabel(add_row, text="Hardness:").grid(
+            row=1, column=2, sticky=tk.W, padx=(12, 4), pady=(4, 8))
         self.hardness_var = ctk.StringVar(value='Hard')
         ctk.CTkOptionMenu(
             add_row, variable=self.hardness_var,
-            values=list(DEPENDENCY_HARDNESS), width=100
-        ).grid(row=0, column=5, padx=4, pady=8)
+            values=list(DEPENDENCY_HARDNESS), width=90
+        ).grid(row=1, column=3, sticky=tk.W, padx=4, pady=(4, 8))
 
         ctk.CTkButton(add_row, text="Add", width=70,
-                      command=self.add_selected).grid(row=0, column=6,
-                                                      padx=(12, 8), pady=8)
+                      command=self.add_selected).grid(
+            row=1, column=5, sticky=tk.E, padx=(12, 8), pady=(4, 8))
 
         # The grid of existing links
         table_frame = ctk.CTkFrame(self)

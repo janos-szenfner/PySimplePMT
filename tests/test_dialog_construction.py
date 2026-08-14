@@ -121,6 +121,83 @@ class TestDialogConstruction(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestDependencyEditorLayout(unittest.TestCase):
+    """
+    The Dependency tab keeps its controls inside the dialog.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The add controls used to sit on one row of fixed widths totalling roughly
+    700px inside a 500px dialog, which put the Add button past the right edge
+    with no way to add a dependency at all. These pin the dialog wide enough,
+    and the controls narrow enough, that it stays reachable.
+    """
+
+    def setUp(self):
+        """Build a root window and a project with a few tasks."""
+        import customtkinter as ctk
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        for index in range(1, 4):
+            self.project.add_task(Task(
+                id=f"00{index}", name=f"Task {index}",
+                start_date=base, end_date=base + timedelta(days=3),
+            ))
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _add_button(self, editor):
+        """Find the Dependency tab's Add button."""
+        import customtkinter as ctk
+
+        for frame in editor.winfo_children():
+            for widget in frame.winfo_children():
+                if (isinstance(widget, ctk.CTkButton)
+                        and widget.cget('text') == 'Add'):
+                    return widget
+        self.fail("the Dependency tab has no Add button")
+
+    def _dialog(self):
+        """Open an edit dialog squeezed to its minimum size."""
+        from gantt_app.views.task_list import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.project.tasks[0], self.project,
+                                on_save=lambda task: None,
+                                on_delete=lambda task_id: None)
+        dialog.geometry("560x480")
+        dialog.update_idletasks()
+        return dialog
+
+    def test_the_add_button_fits_at_the_minimum_width(self):
+        """Squeezed to its minimum, the dialog still shows the Add button."""
+        dialog = self._dialog()
+        button = self._add_button(dialog.dependency_editor)
+
+        right_edge = (button.winfo_rootx() - dialog.winfo_rootx()
+                      + button.winfo_width())
+
+        self.assertLessEqual(right_edge, dialog.winfo_width())
+
+    def test_the_add_controls_are_stacked(self):
+        """The predecessor menu and the Add button are on separate rows."""
+        dialog = self._dialog()
+        editor = dialog.dependency_editor
+        button = self._add_button(editor)
+
+        self.assertGreater(button.winfo_rooty(),
+                           editor.candidate_menu.winfo_rooty())
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestExportFailureReporting(unittest.TestCase):
     """The export error path does not fail on its own imports."""
 

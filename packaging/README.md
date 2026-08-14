@@ -45,8 +45,8 @@ sudo apt remove pysimplepmt
 
 - The CPython interpreter and standard library
 - The Tcl/Tk runtime behind Tkinter
-- customtkinter, plotly, tkinterweb, pillow, openpyxl, tkinterdnd2 and their
-  transitive dependencies — every package pinned in `requirements.txt`
+- customtkinter, plotly, tkinterweb, pillow, openpyxl and their transitive
+  dependencies — every package pinned in `requirements.txt`
 
 Plotly draws the interactive chart and tkinterweb embeds it in the window.
 PNG, PDF and SVG export is drawn with Pillow in `utils/chart_render.py`.

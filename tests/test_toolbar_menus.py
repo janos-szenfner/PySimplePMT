@@ -93,19 +93,31 @@ class TestMenuContents(unittest.TestCase):
                           'PNG...', 'PDF...', 'XLSX...'])
 
     def test_actions_nests_create(self):
-        """Actions carries Create as a submenu."""
+        """Actions carries Create as a submenu, then Project Title."""
         items = find(self.tree, 'Actions')['items']
 
-        self.assertEqual(labels(items), ['Create'])
+        self.assertEqual(labels(items), ['Create', 'Project Title...'])
         self.assertIn('submenu', items[0])
 
-    def test_create_submenu_includes_project_title(self):
-        """Project Title sits under Create, renamed from Project Info."""
+    def test_create_submenu_holds_only_the_create_actions(self):
+        """Create offers the three things that can be created, nothing else."""
         create = find(self.tree, 'Actions')['items'][0]
 
         self.assertEqual(labels(create['submenu']),
-                         ['Task...', 'Sub-Task...', 'Milestone...',
-                          'Project Title...'])
+                         ['Task...', 'Sub-Task...', 'Milestone...'])
+
+    def test_project_title_sits_directly_under_actions(self):
+        """
+        Renaming the project is reachable in one step.
+
+        It used to sit inside Create, which put a rename next to the three
+        create actions and behind an extra hop.
+        """
+        items = find(self.tree, 'Actions')['items']
+        title = next(i for i in items if i['text'] == 'Project Title...')
+
+        self.assertNotIn('submenu', title)
+        self.assertTrue(callable(title['command']))
 
     def test_project_info_left_the_view_menu(self):
         """View no longer offers Project Info."""

@@ -14,9 +14,12 @@ DEVELOPMENT NOTES:
 ------------------
 customtkinter ships its themes and assets as package data rather than as
 importable modules, so they have to be collected explicitly or the app starts
-with unstyled widgets. tkinterdnd2 is handled the same way, and is treated as
-optional because the task list falls back to plain Tkinter bindings when it is
-absent - a missing optional package should not fail the build.
+with unstyled widgets.
+
+tkinterdnd2 used to be bundled for drag-and-drop. Nothing imports it: it
+exchanges drops with other applications, while reordering a row inside one
+Treeview needs only the pointer position, so the task list does that in plain
+Tk. Bundling it added a native extension for no gain.
 
 plotly draws the interactive chart and tkinterweb embeds it in the window.
 PNG, PDF and SVG export is drawn with Pillow by utils/chart_render.py, so no
@@ -78,7 +81,6 @@ bundle('customtkinter')
 bundle('plotly')
 bundle('tkinterweb')
 bundle('tkinterweb_tkhtml')
-bundle('tkinterdnd2', optional=True)
 
 hiddenimports += [
     'plotly.graph_objects',

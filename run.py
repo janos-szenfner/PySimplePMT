@@ -28,7 +28,6 @@ REQUIRED_PACKAGES = [
 
 #: Packages that improve the app but whose absence is handled gracefully.
 OPTIONAL_PACKAGES = [
-    ('tkinterdnd2', 'enhanced drag-and-drop'),
     ('tasklib', 'MS Project import'),
 ]
 

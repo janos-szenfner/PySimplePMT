@@ -53,7 +53,9 @@ class EditTaskDialog(ctk.CTkToplevel):
         self.project_tracker = project_tracker
         
         self.title(f"Edit Task: {task.name}")
-        self.geometry("500x600")
+        self.geometry("620x640")
+        # The Dependency tab needs this much to keep its Add button on screen
+        self.minsize(560, 480)
         self.transient(master)
         # Deferred: grabbing before the window is mapped fails on X11
         grab_when_visible(self)
@@ -398,7 +400,8 @@ class CreateTaskDialog(ctk.CTkToplevel):
         else:
             self.title("Create New Task")
         
-        self.geometry("500x700")
+        self.geometry("620x720")
+        self.minsize(560, 480)
         self.transient(master)
         # Deferred: grabbing before the window is mapped fails on X11
         grab_when_visible(self)
