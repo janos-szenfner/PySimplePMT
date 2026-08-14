@@ -25,7 +25,9 @@ class TestDependency(unittest.TestCase):
     def test_labels_match_the_user_interface(self):
         """The stored codes map onto the labels shown in the dialog."""
         self.assertEqual(DEPENDENCY_TYPE_LABELS['SS'], 'Start - Start')
-        self.assertEqual(DEPENDENCY_TYPE_LABELS['FS'], 'End - Start')
+        self.assertEqual(DEPENDENCY_TYPE_LABELS['FS'], 'Finish - Start')
+        self.assertEqual(DEPENDENCY_TYPE_LABELS['FF'], 'Finish - Finish')
+        self.assertEqual(DEPENDENCY_TYPE_LABELS['SF'], 'Start - Finish')
         self.assertEqual(Dependency('1', 'SS').type_label, 'Start - Start')
 
     def test_values_are_normalised(self):

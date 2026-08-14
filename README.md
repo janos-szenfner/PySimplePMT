@@ -23,6 +23,9 @@ This is a complete implementation of a project management tool with:
 - **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and tasks to Excel XLSX
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Critical Path**: Automatic calculation and visualization of the critical path
+- **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in days and Hard/Rubber link hardness
+- **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
+- **Summary Roll-Up**: A task with sub-tasks spans them and shows their duration-weighted progress
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
 - **Progress Tracking**: Track completion percentage for each task
 
@@ -649,7 +652,6 @@ All modules import successfully and all tests pass:
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
 4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
 5. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
-6. **GAN Import**: Dependency lag (`difference`) and non finish-start dependency types are read but not yet applied to the schedule
 
 ## Future Enhancements
 

@@ -4,7 +4,7 @@ The Dependency tab shared by the task creation and editing dialogs.
 WHY THIS MODULE EXISTS:
 ======================
 Dependencies used to be a column of checkboxes: one row per candidate task,
-with nothing to say how the link behaves. A link now carries a type and a
+with nothing to say how the link behaves. A link carries a type, a lag and a
 hardness, so it needs a grid with a row per dependency and a control per
 setting, and both dialogs need exactly the same thing.
 
@@ -13,11 +13,10 @@ DEVELOPMENT NOTES:
 The editor owns a working copy of the links and hands it back on request, so
 a cancelled dialog leaves the task untouched.
 
-Choosing a predecessor also moves the dependent task, which is what the
-"Start - Start" and "End - Start" settings are for. The dialog asks this
+Choosing a predecessor also moves the dependent task. The dialog asks this
 widget for the resulting start date rather than computing it itself; the rule
-lives in Project.constrained_start_date so the same logic serves the UI, the
-importers and any later scheduling.
+lives in Project.constrained_dates, so the same logic serves the UI, the
+importers and the scheduler.
 """
 
 import tkinter as tk
@@ -28,7 +27,7 @@ import customtkinter as ctk
 
 from gantt_app.models import (
     Dependency, Project, Task,
-    DEPENDENCY_TYPE_LABELS, DEPENDENCY_HARDNESS,
+    DEPENDENCY_TYPES, DEPENDENCY_TYPE_LABELS, DEPENDENCY_HARDNESS,
 )
 from gantt_app.utils.log import get_logger
 
@@ -41,12 +40,18 @@ TYPE_CODE_BY_LABEL = {label: code for code, label in DEPENDENCY_TYPE_LABELS.item
 #: Explanations shown beneath the grid.
 HELP_TEXT = (
     "Type\n"
-    "    Start - Start:  this task starts when the selected task starts.\n"
-    "    End - Start:    this task starts after the selected task ends.\n"
+    "    Finish - Start:   this task starts after the selected one finishes.\n"
+    "    Start - Start:    this task starts when the selected one starts.\n"
+    "    Finish - Finish:  this task finishes after the selected one finishes.\n"
+    "    Start - Finish:   this task finishes once the selected one starts.\n"
+    "\n"
+    "Lag (days)\n"
+    "    Positive:  wait this many days after the link is satisfied.\n"
+    "    Negative:  lead time, so the two may overlap by that much.\n"
     "\n"
     "Link Hardness\n"
-    "    Hard:    the start date is fixed to that date.\n"
-    "    Rubber:  the task cannot start earlier, but may start later."
+    "    Hard:    the date is fixed to the one the link gives.\n"
+    "    Rubber:  the task cannot be earlier than that, but may be later."
 )
 
 
@@ -66,7 +71,7 @@ class DependencyEditor(ctk.CTkFrame):
         Called after any change, so the dialog can refresh the start date.
     """
 
-    COLUMNS = ('task', 'type', 'hardness')
+    COLUMNS = ('task', 'type', 'lag', 'hardness')
 
     def __init__(self, master, project: Project, task: Task,
                  on_changed: Optional[Callable] = None):
@@ -78,7 +83,8 @@ class DependencyEditor(ctk.CTkFrame):
 
         # Work on a copy so cancelling the dialog changes nothing
         self.links: List[Dependency] = [
-            Dependency(d.task_id, d.dep_type, d.hardness) for d in task.dependencies
+            Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+            for d in task.dependencies
         ]
 
         self._build_ui()
@@ -132,17 +138,23 @@ class DependencyEditor(ctk.CTkFrame):
             values=list(DEPENDENCY_TYPE_LABELS.values()), width=150
         ).grid(row=1, column=1, sticky=tk.W, padx=4, pady=(4, 8))
 
-        ctk.CTkLabel(add_row, text="Hardness:").grid(
+        ctk.CTkLabel(add_row, text="Lag:").grid(
             row=1, column=2, sticky=tk.W, padx=(12, 4), pady=(4, 8))
+        self.lag_var = ctk.StringVar(value='0')
+        ctk.CTkEntry(add_row, textvariable=self.lag_var, width=56).grid(
+            row=1, column=3, sticky=tk.W, padx=4, pady=(4, 8))
+
+        ctk.CTkLabel(add_row, text="Hardness:").grid(
+            row=2, column=0, sticky=tk.W, padx=(8, 4), pady=(0, 8))
         self.hardness_var = ctk.StringVar(value='Hard')
         ctk.CTkOptionMenu(
             add_row, variable=self.hardness_var,
             values=list(DEPENDENCY_HARDNESS), width=90
-        ).grid(row=1, column=3, sticky=tk.W, padx=4, pady=(4, 8))
+        ).grid(row=2, column=1, sticky=tk.W, padx=4, pady=(0, 8))
 
         ctk.CTkButton(add_row, text="Add", width=70,
                       command=self.add_selected).grid(
-            row=1, column=5, sticky=tk.E, padx=(12, 8), pady=(4, 8))
+            row=2, column=5, sticky=tk.E, padx=(12, 8), pady=(0, 8))
 
         # The grid of existing links
         table_frame = ctk.CTkFrame(self)
@@ -155,9 +167,11 @@ class DependencyEditor(ctk.CTkFrame):
                                  style='Gantt.Treeview')
         self.tree.heading('task', text='Depends on', anchor=tk.W)
         self.tree.heading('type', text='Type', anchor=tk.W)
+        self.tree.heading('lag', text='Lag', anchor=tk.W)
         self.tree.heading('hardness', text='Link Hardness', anchor=tk.W)
         self.tree.column('task', width=260, stretch=True)
         self.tree.column('type', width=130, stretch=False)
+        self.tree.column('lag', width=60, stretch=False)
         self.tree.column('hardness', width=120, stretch=False)
 
         scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL,
@@ -242,7 +256,7 @@ class DependencyEditor(ctk.CTkFrame):
             name = self._label_for(predecessor) if predecessor else link.task_id
             self.tree.insert(
                 '', tk.END, iid=str(index),
-                values=(name, link.type_label, link.hardness),
+                values=(name, link.type_label, link.lag, link.hardness),
                 tags=('oddrow' if index % 2 else 'evenrow',)
             )
 
@@ -279,10 +293,24 @@ class DependencyEditor(ctk.CTkFrame):
             return
 
         dep_type = TYPE_CODE_BY_LABEL.get(self.type_var.get(), 'FS')
-        self.links.append(Dependency(match.id, dep_type, self.hardness_var.get()))
-        logger.info("Added dependency on %s (%s, %s) to task %s",
-                    match.id, dep_type, self.hardness_var.get(), self.task.id)
+        self.links.append(Dependency(match.id, dep_type,
+                                     self.hardness_var.get(), self._lag()))
+        logger.info("Added dependency on %s (%s, %s, lag %s) to task %s",
+                    match.id, dep_type, self.hardness_var.get(),
+                    self._lag(), self.task.id)
         self.refresh()
+
+    def _lag(self) -> int:
+        """
+        Read the lag box, treating anything unparseable as no lag.
+
+        A half-typed '-' or an empty box should not stop a link being added,
+        so it falls back to zero rather than refusing.
+        """
+        try:
+            return int(str(self.lag_var.get()).strip() or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _selected_index(self) -> Optional[int]:
         """Get the index of the highlighted row."""
@@ -305,12 +333,13 @@ class DependencyEditor(ctk.CTkFrame):
         self.refresh()
 
     def cycle_type(self):
-        """Switch the highlighted link between the two types."""
+        """Step the highlighted link on to the next type, wrapping round."""
         index = self._selected_index()
         if index is None:
             return
         link = self.links[index]
-        link.dep_type = 'SS' if link.dep_type == 'FS' else 'FS'
+        position = DEPENDENCY_TYPES.index(link.dep_type)
+        link.dep_type = DEPENDENCY_TYPES[(position + 1) % len(DEPENDENCY_TYPES)]
         self.refresh()
         self.tree.selection_set(str(index))
 
@@ -334,7 +363,8 @@ class DependencyEditor(ctk.CTkFrame):
 
     def get_links(self) -> List[Dependency]:
         """Get the edited links, for the dialog to store on the task."""
-        return [Dependency(d.task_id, d.dep_type, d.hardness) for d in self.links]
+        return [Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+                for d in self.links]
 
     def required_start_date(self, start_date):
         """

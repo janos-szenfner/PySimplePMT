@@ -7,19 +7,37 @@ Contains the Task and Project classes that form the core data structure.
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
+import logging
 import uuid
 
+# The standard library directly rather than utils.log.get_logger: models is
+# the bottom layer and everything in utils imports it, so reaching back into
+# that package runs gantt_app.utils.__init__ mid-import and deadlocks on a
+# circular import. get_logger only prefixes bare names, and this one is
+# already dotted, so the logger is exactly the same object either way.
+logger = logging.getLogger(__name__)
 
-#: How a dependency constrains the dependent task's start.
-DEPENDENCY_TYPES = ('SS', 'FS')
+
+#: How a dependency constrains the dependent task.
+#:
+#: FS  the successor starts after the predecessor finishes
+#: SS  the successor starts once the predecessor starts
+#: FF  the successor finishes after the predecessor finishes
+#: SF  the successor finishes once the predecessor starts
+DEPENDENCY_TYPES = ('FS', 'SS', 'FF', 'SF')
+
+#: The two that constrain the successor's finish rather than its start.
+FINISH_CONSTRAINED_TYPES = ('FF', 'SF')
 
 #: How strictly the constraint is applied.
 DEPENDENCY_HARDNESS = ('Hard', 'Rubber')
 
 #: Labels shown in the user interface.
 DEPENDENCY_TYPE_LABELS = {
+    'FS': 'Finish - Start',
     'SS': 'Start - Start',
-    'FS': 'End - Start',
+    'FF': 'Finish - Finish',
+    'SF': 'Start - Finish',
 }
 DEPENDENCY_HARDNESS_LABELS = {
     'Hard': 'Hard',
@@ -34,42 +52,59 @@ class Dependency:
 
     Attributes:
         task_id: ID of the predecessor
-        dep_type: 'SS' (Start - Start) or 'FS' (End - Start)
+        dep_type: one of DEPENDENCY_TYPES
         hardness: 'Hard' or 'Rubber'
+        lag: days to wait after the constraint is met; negative is lead time
 
     DEVELOPMENT NOTES:
     ------------------
-    'SS' means the dependent task starts when the predecessor starts; 'FS'
-    means it starts after the predecessor finishes.
+    The four types are the standard set. FS and SS decide when the successor
+    may start; FF and SF decide when it may finish, which is why applying a
+    link cannot be expressed as a start date alone.
 
-    Hardness decides whether that date is fixed or merely a floor. 'Hard'
-    pins the start to the computed date; 'Rubber' only forbids starting
-    earlier, so a task may be scheduled later than its predecessor allows.
+    Lag delays the successor by a number of days once its constraint is
+    satisfied. A negative lag is lead time: the successor may overlap its
+    predecessor by that much, which is how a schedule is compressed.
 
-    GanttProject uses the same two concepts, writing type="1"/"2" and
-    hardness="Strong"/"Rubber", so a .gan file maps onto this directly.
+    Hardness decides whether the resulting date is fixed or merely a floor.
+    'Hard' pins it; 'Rubber' only forbids being earlier, so a task may sit
+    later than its predecessor requires.
+
+    GanttProject writes type="1".."4" and hardness="Strong"/"Rubber", so a
+    .gan file maps onto this directly.
     """
 
     task_id: str
     dep_type: str = 'FS'
     hardness: str = 'Hard'
+    lag: int = 0
 
     def __post_init__(self):
-        """Normalise the type and hardness to known values."""
+        """Normalise the type, hardness and lag to usable values."""
         self.task_id = str(self.task_id)
 
         dep_type = str(self.dep_type or 'FS').upper()
-        # Finish-Start is written several ways; anything unknown falls back
-        # to it because it is by far the most common link
-        self.dep_type = 'SS' if dep_type == 'SS' else 'FS'
+        # Anything unrecognised falls back to Finish-Start, by far the most
+        # common link and what every importer defaults to
+        self.dep_type = dep_type if dep_type in DEPENDENCY_TYPES else 'FS'
 
         hardness = str(self.hardness or 'Hard').capitalize()
         self.hardness = 'Rubber' if hardness == 'Rubber' else 'Hard'
+
+        try:
+            self.lag = int(self.lag or 0)
+        except (TypeError, ValueError):
+            self.lag = 0
 
     @property
     def type_label(self) -> str:
         """Human readable dependency type."""
         return DEPENDENCY_TYPE_LABELS[self.dep_type]
+
+    @property
+    def constrains_finish(self) -> bool:
+        """Whether this link fixes the successor's finish rather than start."""
+        return self.dep_type in FINISH_CONSTRAINED_TYPES
 
     def to_dict(self) -> dict:
         """Convert to a dictionary for serialization."""
@@ -77,6 +112,7 @@ class Dependency:
             'task_id': self.task_id,
             'dep_type': self.dep_type,
             'hardness': self.hardness,
+            'lag': self.lag,
         }
 
     @classmethod
@@ -97,6 +133,7 @@ class Dependency:
                 task_id=value.get('task_id') or value.get('id'),
                 dep_type=value.get('dep_type', 'FS'),
                 hardness=value.get('hardness', 'Hard'),
+                lag=value.get('lag', 0),
             )
         return cls(task_id=str(value))
 
@@ -248,7 +285,7 @@ class Task:
         return None
 
     def add_dependency(self, task_id: str, dep_type: str = 'FS',
-                       hardness: str = 'Hard') -> 'Dependency':
+                       hardness: str = 'Hard', lag: int = 0) -> 'Dependency':
         """
         Add or update a link to a predecessor.
 
@@ -262,11 +299,12 @@ class Task:
         if existing is not None:
             existing.dep_type = dep_type
             existing.hardness = hardness
+            existing.lag = lag
             existing.__post_init__()
             return existing
 
         dependency = Dependency(task_id=task_id, dep_type=dep_type,
-                                hardness=hardness)
+                                hardness=hardness, lag=lag)
         self.dependencies.append(dependency)
         return dependency
 
@@ -913,9 +951,9 @@ class Project:
         
         return project
     
-    def constrained_start_date(self, task: Task) -> Optional[datetime]:
+    def constrained_dates(self, task: Task):
         """
-        Work out the start date a task's dependencies require.
+        Work out the dates a task's dependency links require.
 
         PARAMETERS:
         -----------
@@ -924,52 +962,127 @@ class Project:
 
         RETURNS:
         --------
-        Optional[datetime]
-            The date the task should start, or None when nothing constrains
-            it. A 'Hard' link pins the start exactly; 'Rubber' links only set
-            a floor, so the task keeps its own later start if it has one.
+        Tuple[Optional[datetime], Optional[datetime]]
+            The (start, end) the links require. Either may be None when
+            nothing constrains it. Both are None when the task has no
+            resolvable predecessors.
 
         DEVELOPMENT NOTES:
         ------------------
-        Start - Start uses the predecessor's start date. End - Start uses the
-        day after the predecessor finishes, because end dates in this model
-        are inclusive: a task ending on the 5th occupies the whole of the
-        5th, so its successor starts on the 6th. Milestones have no end date,
-        so both types resolve to the milestone's own date.
+        The four types split into two groups. FS and SS decide when the task
+        may start; FF and SF decide when it may finish. That is why this
+        returns a pair - the old version returned a start date alone and so
+        could not express a Finish-Finish link at all.
 
-        With several links, the hard ones win outright and the latest of them
-        applies. Otherwise the rubber links contribute a floor.
+            FS  start  after the predecessor's finish
+            SS  start  with the predecessor's start
+            FF  finish after the predecessor's finish
+            SF  finish once the predecessor has started
+
+        End dates are inclusive here: a task ending on the 5th occupies the
+        whole of the 5th, so an FS successor starts on the 6th. Milestones
+        have no end date, so their finish is read as their own date.
+
+        Lag shifts the result by that many days, and a negative lag is lead
+        time, letting the successor overlap its predecessor.
+
+        Where several links constrain the same edge, the hard ones win
+        outright and the latest of them applies; otherwise the rubber links
+        only contribute a floor, and the task keeps its own later date.
         """
-        hard_dates = []
-        floor_dates = []
+        hard_starts, floor_starts = [], []
+        hard_ends, floor_ends = [], []
 
         for dependency in task.dependencies:
             predecessor = self.get_task_by_id(dependency.task_id)
             if predecessor is None:
                 continue
 
-            if dependency.dep_type == 'SS' or predecessor.is_milestone:
-                required = predecessor.start_date
-            else:
-                end = predecessor.end_date or predecessor.start_date
-                required = end + timedelta(days=1)
-
-            if required is None:
+            predecessor_start = predecessor.start_date
+            predecessor_end = predecessor.end_date or predecessor.start_date
+            if predecessor_start is None:
                 continue
-            if dependency.hardness == 'Hard':
-                hard_dates.append(required)
-            else:
-                floor_dates.append(required)
 
+            # A milestone marks a moment rather than occupying a day, so the
+            # inclusive-end rule below does not apply to it: a task following
+            # a milestone on the 15th starts on the 15th, not the 16th.
+            finish = (predecessor_start if predecessor.is_milestone
+                      else predecessor_end + timedelta(days=1))
+
+            if dependency.dep_type == 'SS':
+                required = predecessor_start
+            elif dependency.dep_type == 'FS':
+                required = finish
+            elif dependency.dep_type == 'FF':
+                required = predecessor_end
+            else:                                   # SF
+                required = predecessor_start
+
+            required += timedelta(days=dependency.lag)
+
+            if dependency.constrains_finish:
+                target = hard_ends if dependency.hardness == 'Hard' else floor_ends
+            else:
+                target = hard_starts if dependency.hardness == 'Hard' else floor_starts
+            target.append(required)
+
+        start = self._resolve_constraint(hard_starts, floor_starts,
+                                         task.start_date)
+        end = self._resolve_constraint(hard_ends, floor_ends,
+                                       task.end_date or task.start_date)
+        return start, end
+
+    @staticmethod
+    def _resolve_constraint(hard_dates: List[datetime],
+                            floor_dates: List[datetime],
+                            current: Optional[datetime]) -> Optional[datetime]:
+        """
+        Reduce one edge's links to a single date.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A hard link pins the date outright, so the latest of them wins. A
+        rubber link is only a floor, so the task keeps its own date when that
+        is already late enough.
+        """
         if hard_dates:
             return max(hard_dates)
         if floor_dates:
             floor = max(floor_dates)
-            return floor if task.start_date < floor else task.start_date
+            if current is None or current < floor:
+                return floor
+            return current
         return None
 
+    def constrained_start_date(self, task: Task) -> Optional[datetime]:
+        """
+        The start date a task's links require.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Kept because the dialogs ask for a start date to fill in while a task
+        is being edited. A task constrained only by its finish is turned back
+        into a start by holding its duration.
+        """
+        start, end = self.constrained_dates(task)
+        if start is not None:
+            return start
+        if end is None:
+            return None
+
+        span = self._task_span(task)
+        return end - span
+
+    @staticmethod
+    def _task_span(task: Task) -> timedelta:
+        """How long a task lasts, as the gap between its two dates."""
+        if task.is_milestone or task.end_date is None:
+            return timedelta(0)
+        return max(task.end_date - task.start_date, timedelta(0))
+
     def apply_dependency_constraints(self, task: Task,
-                                     preserve_duration: bool = True) -> bool:
+                                     preserve_duration: bool = True,
+                                     forward_only: bool = False) -> bool:
         """
         Move a task so it satisfies its dependency links.
 
@@ -978,7 +1091,10 @@ class Project:
         task : Task
             The task to reschedule.
         preserve_duration : bool
-            Keep the task's length, shifting the end date by the same amount.
+            Keep the task's length, moving both dates together.
+        forward_only : bool
+            Only ever move the task later. Used by the automatic pass; see
+            the note below.
 
         RETURNS:
         --------
@@ -988,20 +1104,283 @@ class Project:
         DEVELOPMENT NOTES:
         ------------------
         Called when a dependency is added or changed, which is what makes
-        picking a predecessor set the dependent task's start date without
-        the user typing it.
+        picking a predecessor set the dependent task's dates without the user
+        typing them.
+
+        A start constraint wins when both apply: FS and SS are the links that
+        place a task, while FF and SF only hold its finish, so honouring the
+        finish first would drag a task away from the predecessor it is meant
+        to follow.
+
+        forward_only exists because a hard link pins a date exactly, which is
+        right when the user has just chosen a predecessor but wrong to apply
+        unasked to a whole plan: it removes every gap. An imported
+        GanttProject file is the clearest case - its dates come from replaying
+        the file's working-day calendar, so a task sits after a weekend, and
+        pinning it to the day after its predecessor threw that away and put
+        the plan on dates GanttProject never showed. Repairing violations
+        without closing deliberate slack is what "keep the links satisfied"
+        actually asks for.
         """
-        required = self.constrained_start_date(task)
-        if required is None or required == task.start_date:
+        required_start, required_end = self.constrained_dates(task)
+        if required_start is None and required_end is None:
             return False
 
-        shift = required - task.start_date
-        task.start_date = required
-        if preserve_duration and task.end_date is not None:
-            task.end_date = task.end_date + shift
+        if forward_only:
+            if required_start is not None and required_start < task.start_date:
+                required_start = None
+            current_end = task.end_date or task.start_date
+            if required_end is not None and required_end < current_end:
+                required_end = None
+            if required_start is None and required_end is None:
+                return False
 
+        span = self._task_span(task)
+        new_start, new_end = task.start_date, task.end_date
+
+        if required_start is not None:
+            new_start = required_start
+            if preserve_duration and task.end_date is not None:
+                new_end = required_start + span
+        elif required_end is not None:
+            new_end = required_end
+            if preserve_duration:
+                new_start = required_end - span
+
+        if task.is_milestone:
+            new_end = None
+
+        if new_start == task.start_date and new_end == task.end_date:
+            return False
+
+        task.start_date = new_start
+        task.end_date = new_end
         self._update_dates()
         return True
+
+    #: Cap on the reschedule fixed-point loop. Auto-scheduling and roll-up
+    #: feed each other - moving a leaf resizes its parent, which can move a
+    #: task linked to that parent - so the pass repeats until nothing changes.
+    #: A cycle in the links would otherwise never settle.
+    MAX_SCHEDULE_PASSES = 12
+
+    def normalise_milestones(self) -> bool:
+        """
+        Enforce the rules a milestone has to obey.
+
+        RETURNS:
+        --------
+        bool
+            True when something changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A milestone marks a moment, so it carries no end date and takes no
+        time. A milestone with sub-tasks would have to span them, which
+        contradicts that, so anything parented to one is promoted to a task
+        of its own rather than being silently dropped.
+        """
+        changed = False
+
+        milestone_ids = {t.id for t in self.tasks if t.is_milestone}
+
+        for task in self.tasks:
+            if task.is_milestone and task.end_date is not None:
+                task.end_date = None
+                changed = True
+            if task.parent_task_id in milestone_ids:
+                task.parent_task_id = None
+                task.task_type = "Task"
+                changed = True
+
+        return changed
+
+    def roll_up_summaries(self) -> bool:
+        """
+        Make every task with sub-tasks span the work beneath it.
+
+        RETURNS:
+        --------
+        bool
+            True when any summary's dates or progress changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A summary task brackets its children rather than holding work of its
+        own, so its dates are derived: it starts with the earliest child and
+        ends with the latest. That is also what keeps a sub-task inside its
+        parent - the parent stretches rather than the child being clipped,
+        which would lose work the user entered.
+
+        Progress is weighted by duration, so a long child that is half done
+        counts for more than a short one that is finished. Children are
+        walked deepest first, so a summary of summaries totals what its own
+        children have already settled on.
+        """
+        children = self._children_by_parent()
+        changed = False
+
+        for task in self._deepest_first():
+            brood = children.get(task.id)
+            if not brood:
+                continue
+
+            starts = [c.start_date for c in brood if c.start_date is not None]
+            ends = [c.end_date or c.start_date for c in brood
+                    if (c.end_date or c.start_date) is not None]
+            if not starts or not ends:
+                continue
+
+            new_start, new_end = min(starts), max(ends)
+
+            total = sum(max((c.end_date or c.start_date) - c.start_date,
+                            timedelta(0)).days + 1 for c in brood)
+            if total:
+                done = sum(
+                    (max((c.end_date or c.start_date) - c.start_date,
+                         timedelta(0)).days + 1) * max(0, min(100, c.progress))
+                    for c in brood
+                )
+                new_progress = int(round(done / total))
+            else:
+                new_progress = task.progress
+
+            if (task.start_date != new_start or task.end_date != new_end
+                    or task.progress != new_progress):
+                task.start_date = new_start
+                task.end_date = new_end
+                task.progress = new_progress
+                changed = True
+
+        return changed
+
+    def _deepest_first(self) -> List[Task]:
+        """
+        Tasks ordered so a child always comes before its parent.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Depth is counted by walking up the parent chain, guarded against a
+        cycle so a corrupted file cannot hang the sort.
+        """
+        def depth(task: Task) -> int:
+            """How far below the root a task sits."""
+            seen = {task.id}
+            level = 0
+            current = task
+            while current.parent_task_id:
+                parent = self.get_task_by_id(current.parent_task_id)
+                if parent is None or parent.id in seen:
+                    break
+                seen.add(parent.id)
+                current = parent
+                level += 1
+            return level
+
+        return sorted(self.tasks, key=depth, reverse=True)
+
+    def _schedule_order(self) -> List[Task]:
+        """
+        Tasks ordered so a predecessor comes before the tasks that follow it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A depth-first topological sort with an explicit stack, so a deep
+        chain cannot exhaust recursion, and an in-progress set so a cycle
+        stops rather than looping. Anything caught in a cycle still comes out,
+        just in an order that satisfies only part of its links - dropping it
+        would remove the task from the schedule entirely.
+        """
+        ordered: List[Task] = []
+        placed: Set[str] = set()
+        in_progress: Set[str] = set()
+
+        for root in self.tasks:
+            if root.id in placed:
+                continue
+            stack = [(root, False)]
+            while stack:
+                task, expanded = stack.pop()
+                if expanded:
+                    in_progress.discard(task.id)
+                    if task.id not in placed:
+                        placed.add(task.id)
+                        ordered.append(task)
+                    continue
+                if task.id in placed or task.id in in_progress:
+                    continue
+                in_progress.add(task.id)
+                stack.append((task, True))
+                for dep_id in task.dependency_ids:
+                    predecessor = self.get_task_by_id(dep_id)
+                    if (predecessor is not None
+                            and predecessor.id not in placed
+                            and predecessor.id not in in_progress):
+                        stack.append((predecessor, False))
+
+        return ordered
+
+    def reschedule(self) -> bool:
+        """
+        Settle the whole plan: apply every link, then roll summaries up.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is the auto-scheduling the dependency types exist for: moving a
+        predecessor drags everything that follows it, rather than the links
+        being applied once when they are created and never again.
+
+        Order matters. Links are applied to the leaves in predecessor-first
+        order so a chain settles in one sweep, then summaries are rolled up
+        from their children. Summaries are skipped by the link pass because
+        their dates come from below; letting a link move one would put it out
+        of step with the children it is supposed to bracket.
+
+        The pass only ever moves a task later - see forward_only on
+        apply_dependency_constraints. Choosing a predecessor in the dialog
+        still pins the date exactly; it is applying that to a whole plan
+        unasked that destroys imported schedules.
+
+        The two feed each other - a resized summary can move a task linked to
+        it - so the pass repeats until nothing changes, capped so a cycle in
+        the links cannot spin here forever.
+        """
+        changed = False
+
+        if self.normalise_milestones():
+            changed = True
+
+        for _ in range(self.MAX_SCHEDULE_PASSES):
+            summary_ids = self.get_summary_task_ids()
+
+            moved = False
+            for task in self._schedule_order():
+                if task.id in summary_ids:
+                    continue
+                if self.apply_dependency_constraints(task, forward_only=True):
+                    moved = True
+
+            if self.roll_up_summaries():
+                moved = True
+
+            if not moved:
+                break
+            changed = True
+        else:
+            logger.warning(
+                "Rescheduling %r did not settle in %d passes; the links "
+                "probably contain a cycle",
+                self.name, self.MAX_SCHEDULE_PASSES
+            )
+
+        if changed:
+            self._update_dates()
+        return changed
 
     def get_summary_task_ids(self) -> set:
         """

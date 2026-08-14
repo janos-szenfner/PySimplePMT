@@ -473,9 +473,14 @@ class GANImporter:
                 continue
             if successor.id == predecessor.id:
                 continue
+            # The type and the lag are parsed above; they used to be flattened
+            # to SS-or-FS with the lag dropped, because the model knew only
+            # those two and had nowhere to put a difference. It carries all
+            # four types and a lag now, so the file's own link survives.
             successor.add_dependency(predecessor.id,
-                                     dep_type='SS' if edge['type'] == 'SS' else 'FS',
-                                     hardness=edge.get('hardness', 'Hard'))
+                                     dep_type=edge.get('type', 'FS'),
+                                     hardness=edge.get('hardness', 'Hard'),
+                                     lag=edge.get('lag', 0))
 
     def parse_tasks(self, root: ET.Element,
                     calendar: Optional[GanttProjectCalendar] = None) -> List[Task]:

@@ -152,7 +152,7 @@ class TestTask(unittest.TestCase):
         # Dependencies serialise with their type and hardness
         self.assertEqual(task_dict['dependencies'],
                          [{'task_id': 'dep1', 'dep_type': 'FS',
-                           'hardness': 'Hard'}])
+                           'hardness': 'Hard', 'lag': 0}])
         self.assertEqual(task_dict['color'], "#3498db")
         self.assertFalse(task_dict['is_milestone'])
     

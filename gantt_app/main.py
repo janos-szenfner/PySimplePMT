@@ -287,7 +287,23 @@ class GanttApp(ctk.CTk):
         self.status_bar.configure(text="Task deleted successfully")
     
     def update_all(self):
-        """Update all components with current project data."""
+        """
+        Settle the schedule, then update every component.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Rescheduling happens here because this is what every mutation path
+        already calls - the toolbar, the dialogs, the task list and the
+        importers all end up in update_all. Links used to be applied only at
+        the moment one was created, so moving a predecessor afterwards left
+        everything downstream of it where it was.
+
+        reschedule returns whether anything moved and is a no-op on a settled
+        plan, so calling it on every refresh costs a single pass.
+        """
+        if self.project.reschedule():
+            logger.debug("Rescheduled %r after a change", self.project.name)
+
         self.task_list.update_task_list()
         self.gantt_chart.update_chart()
         
