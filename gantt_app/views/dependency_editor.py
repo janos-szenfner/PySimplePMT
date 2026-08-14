@@ -13,6 +13,12 @@ DEVELOPMENT NOTES:
 The editor owns a working copy of the links and hands it back on request, so
 a cancelled dialog leaves the task untouched.
 
+It carries no explanatory text of its own. What was here could only afford a
+line or two per setting while taking room the grid wanted, and still had
+nowhere to say what lead time is or when Finish - Finish is the right choice.
+The Help button opens help/dependencyhelp.py instead, which has the space to
+explain all of it properly.
+
 Choosing a predecessor also moves the dependent task. The dialog asks this
 widget for the resulting start date rather than computing it itself; the rule
 lives in Project.constrained_dates, so the same logic serves the UI, the
@@ -29,6 +35,10 @@ from gantt_app.models import (
     Dependency, Project, Task,
     DEPENDENCY_TYPES, DEPENDENCY_TYPE_LABELS, DEPENDENCY_HARDNESS,
 )
+# Imported at module scope rather than inside show_help: a module reached
+# only from a button is exactly what goes missing from a frozen build
+# without anyone noticing until someone clicks it
+from gantt_app.help.dependencyhelp import DependencyHelpWindow
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -36,23 +46,6 @@ logger = get_logger(__name__)
 
 #: Reverse lookup from the label shown in the UI to the stored code.
 TYPE_CODE_BY_LABEL = {label: code for code, label in DEPENDENCY_TYPE_LABELS.items()}
-
-#: Explanations shown beneath the grid.
-HELP_TEXT = (
-    "Type\n"
-    "    Finish - Start:   this task starts after the selected one finishes.\n"
-    "    Start - Start:    this task starts when the selected one starts.\n"
-    "    Finish - Finish:  this task finishes after the selected one finishes.\n"
-    "    Start - Finish:   this task finishes once the selected one starts.\n"
-    "\n"
-    "Lag (days)\n"
-    "    Positive:  wait this many days after the link is satisfied.\n"
-    "    Negative:  lead time, so the two may overlap by that much.\n"
-    "\n"
-    "Link Hardness\n"
-    "    Hard:    the date is fixed to the one the link gives.\n"
-    "    Rubber:  the task cannot be earlier than that, but may be later."
-)
 
 
 class DependencyEditor(ctk.CTkFrame):
@@ -182,7 +175,9 @@ class DependencyEditor(ctk.CTkFrame):
 
         self.tree.bind('<Double-1>', lambda _e: self.edit_selected())
 
-        # Row actions
+        # Row actions. Help sits with them rather than as a block of text
+        # under the grid: the explanation needs far more room than a couple
+        # of lines could give it, and it was taking space the grid wanted
         actions = ctk.CTkFrame(self)
         actions.grid(row=2, column=0, sticky=tk.EW, padx=5, pady=(0, 5))
         ctk.CTkButton(actions, text="Change Type", width=120,
@@ -191,10 +186,13 @@ class DependencyEditor(ctk.CTkFrame):
                       command=self.cycle_hardness).pack(side=tk.LEFT, padx=5, pady=6)
         ctk.CTkButton(actions, text="Remove", width=90,
                       command=self.remove_selected).pack(side=tk.RIGHT, padx=5, pady=6)
+        ctk.CTkButton(actions, text="Help", width=70,
+                      command=self.show_help).pack(side=tk.RIGHT, padx=5, pady=6)
 
-        help_label = ctk.CTkLabel(self, text=HELP_TEXT, justify=tk.LEFT,
-                                  anchor=tk.W, text_color="#6b7280")
-        help_label.grid(row=3, column=0, sticky=tk.EW, padx=10, pady=(4, 8))
+    def show_help(self):
+        """Open the dependency reference."""
+        logger.info("Opening the dependency help window")
+        DependencyHelpWindow.show(self.winfo_toplevel())
 
     # ------------------------------------------------------------------
     # Data

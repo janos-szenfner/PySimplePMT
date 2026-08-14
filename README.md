@@ -24,6 +24,7 @@ This is a complete implementation of a project management tool with:
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Critical Path**: Automatic calculation and visualization of the critical path
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in days and Hard/Rubber link hardness
+- **Built-in Help**: A Help button on the Dependency tab opens a full reference on link types, lead/lag, hardness and how the plan reschedules
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Summary Roll-Up**: A task with sub-tasks spans them and shows their duration-weighted progress
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
@@ -42,10 +43,15 @@ gantt_app/
 │   ├── __init__.py
 │   ├── task_list.py       # Drag-to-reorder task list with EditTaskDialog
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
+│   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── gantt_chart.py     # Interactive Plotly Gantt chart
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── log_window.py      # Application log viewer
 │   └── toolbar.py         # Action buttons and file operations
+│
+├── help/
+│   ├── __init__.py
+│   └── dependencyhelp.py  # Dependency reference behind the Help button
 │
 ├── utils/
 │   ├── __init__.py
