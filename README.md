@@ -43,6 +43,7 @@ gantt_app/
 │   ├── __init__.py
 │   ├── task_list.py       # Drag-to-reorder task list with EditTaskDialog
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
+│   ├── colorpalette.py    # Colour swatches shared by the task dialogs
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── gantt_chart.py     # Interactive Plotly Gantt chart
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
@@ -87,7 +88,7 @@ gantt_app/
 - **Indent / Outdent**: Indent makes a task a sub-task of the row above it; outdent lifts it beside its parent, becoming a task again at the top level. A branch moves as a whole, and both are undoable
 - **EditTaskDialog**: Comprehensive task editing interface with all fields visible
 - **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
-- **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone
+- **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
 - **Hierarchical Display**: Sub-tasks are visually indented under their parent tasks with tree structure
 - **Features**:
   - Double-click a row to expand or collapse its sub-tasks; edit from the right-click menu
@@ -95,6 +96,7 @@ gantt_app/
   - Circular dependency prevention (including parent-child relationships)
   - Milestone toggle with automatic end_date handling
   - Progress slider with percentage display
+  - Colour chosen from a palette of swatches rather than typed as a hex code
   - Dependency management via checkboxes (select multiple tasks and subtasks for all task types including milestones)
   - Task Type selection (Task or Sub-Task)
   - Parent Task display for sub-tasks

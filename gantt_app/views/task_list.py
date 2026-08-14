@@ -29,6 +29,7 @@ import customtkinter as ctk
 from gantt_app.models import Task, Project
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
+from gantt_app.views.colorpalette import ColorPalette
 from gantt_app.views.contextmenu import TaskContextMenu
 from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.utils.log import get_logger
@@ -160,11 +161,10 @@ class EditTaskDialog(ctk.CTkToplevel):
         self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
         self.progress_slider.bind("<ButtonRelease-1>", self.update_progress_label)
         
-        # Color
-        ctk.CTkLabel(main_frame, text="Color:").grid(row=9, column=0, sticky=tk.W, pady=5)
-        self.color_entry = ctk.CTkEntry(main_frame)
-        self.color_entry.grid(row=9, column=1, sticky=tk.EW, pady=5)
-        self.color_entry.insert(0, self.task.color)
+        # Color, chosen from swatches rather than typed as a hex code
+        ctk.CTkLabel(main_frame, text="Color:").grid(row=9, column=0, sticky=tk.NW, pady=5)
+        self.color_palette = ColorPalette(main_frame, color=self.task.color)
+        self.color_palette.grid(row=9, column=1, sticky=tk.W, pady=5)
         
         # Dependencies live on their own tab
         self.dependency_editor = DependencyEditor(
@@ -267,7 +267,7 @@ class EditTaskDialog(ctk.CTkToplevel):
             
             self.task.is_milestone = self.is_milestone_var.get()
             self.task.progress = int(self.progress_slider.get())
-            self.task.color = self.color_entry.get()
+            self.task.color = self.color_palette.get()
             
             # Update dependencies from the Dependency tab
             self.task.dependencies = self.dependency_editor.get_links()
@@ -511,19 +511,21 @@ class CreateTaskDialog(ctk.CTkToplevel):
         self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
         self.progress_slider.bind("<ButtonRelease-1>", self.update_progress_label)
         
-        # Color
-        ctk.CTkLabel(main_frame, text="Color:").grid(row=row_offset+4, column=0, sticky=tk.W, pady=5)
-        self.color_entry = ctk.CTkEntry(main_frame)
-        self.color_entry.grid(row=row_offset+4, column=1, sticky=tk.EW, pady=5)
-        
-        # Default colors based on type
+        # Color, chosen from swatches rather than typed as a hex code.
+        # It starts on the default for whatever is being created.
         if self.is_milestone:
-            self.color_entry.insert(0, "#e74c3c")
+            default_color = "#e74c3c"
         elif self.task_type == "Sub-Task":
-            self.color_entry.insert(0, "#9b59b6")
+            default_color = "#9b59b6"
         else:
-            self.color_entry.insert(0, "#3498db")
-        
+            default_color = "#3498db"
+
+        ctk.CTkLabel(main_frame, text="Color:").grid(
+            row=row_offset+4, column=0, sticky=tk.NW, pady=5)
+        self.color_palette = ColorPalette(main_frame, color=default_color)
+        self.color_palette.grid(row=row_offset+4, column=1, sticky=tk.W, pady=5)
+
+
         # Dependencies live on their own tab. A task being created has no
         # ID yet, so a stand-in carries the parent link used to exclude
         # invalid candidates.
@@ -638,7 +640,7 @@ class CreateTaskDialog(ctk.CTkToplevel):
             progress = int(self.progress_slider.get())
             
             # Get color
-            color = self.color_entry.get()
+            color = self.color_palette.get()
             
             # Get dependencies from the Dependency tab
             dependencies = self.dependency_editor.get_links()
@@ -876,17 +878,28 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Dependencies', text='Dependencies', anchor=tk.W)
         self.tree.heading('Milestone', text='Milestone', anchor=tk.W)
         
-        # Column widths. #0 holds only the expander, so it stays narrow
+        # Column widths. #0 holds only the expander, so it stays narrow.
+        #
+        # Nothing stretches. Name used to, which is what made it impossible
+        # to widen: a stretchable column absorbs whatever width is left over,
+        # so ttk re-stretched it the moment the drag ended and it sprang back.
+        # The same rule squeezed it to a sliver whenever the pane was narrower
+        # than the other columns needed, because a stretchable column is also
+        # the one ttk takes space away from.
+        #
+        # With fixed widths the columns are exactly what they are set to, a
+        # drag sticks, and the horizontal scrollbar reaches anything that no
+        # longer fits. minwidth keeps a column from being dragged shut.
         self.tree.column('#0', width=34, minwidth=34, stretch=False)
-        self.tree.column('ID', width=80, stretch=False)
-        self.tree.column('Name', width=200, stretch=True)
-        self.tree.column('Type', width=80, stretch=False)
-        self.tree.column('Duration', width=100, stretch=False)
-        self.tree.column('Start', width=100, stretch=False)
-        self.tree.column('End', width=100, stretch=False)
-        self.tree.column('Progress', width=80, stretch=False)
-        self.tree.column('Dependencies', width=150, stretch=False)
-        self.tree.column('Milestone', width=80, stretch=False)
+        self.tree.column('ID', width=60, minwidth=40, stretch=False)
+        self.tree.column('Name', width=260, minwidth=80, stretch=False)
+        self.tree.column('Type', width=90, minwidth=60, stretch=False)
+        self.tree.column('Duration', width=110, minwidth=60, stretch=False)
+        self.tree.column('Start', width=100, minwidth=80, stretch=False)
+        self.tree.column('End', width=100, minwidth=80, stretch=False)
+        self.tree.column('Progress', width=80, minwidth=60, stretch=False)
+        self.tree.column('Dependencies', width=150, minwidth=80, stretch=False)
+        self.tree.column('Milestone', width=80, minwidth=60, stretch=False)
         
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
