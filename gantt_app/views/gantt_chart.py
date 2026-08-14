@@ -138,13 +138,41 @@ class GanttChart(ctk.CTkFrame):
         ctk.CTkButton(bar, text="+", width=36,
                       command=self.zoom_in).pack(side=tk.LEFT, padx=2, pady=4)
         ctk.CTkButton(bar, text="Fit", width=48,
-                      command=self.zoom_reset).pack(side=tk.LEFT, padx=(6, 2),
+                      command=self.zoom_to_fit).pack(side=tk.LEFT, padx=(6, 2),
+                                                     pady=4)
+        ctk.CTkButton(bar, text="Reset", width=58,
+                      command=self.zoom_reset).pack(side=tk.LEFT, padx=2,
                                                     pady=4)
 
         self._zoom_label = ctk.CTkLabel(bar, text="100%", width=52)
         self._zoom_label.pack(side=tk.LEFT, padx=6)
 
         return bar
+
+    def zoom_to_fit(self):
+        """
+        Zoom so the whole chart fits the width available.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Fit used to mean 100%, which is not the same thing: at 100% a long
+        plan is drawn wider than the pane on purpose, so every day gets
+        enough pixels to stay readable, and the chart scrolls. Fitting means
+        working out how much narrower than that the pane is and zooming out
+        by exactly that ratio, which leaves nothing to scroll to.
+
+        Reset is the button that goes back to 100%.
+        """
+        available = self.chart_frame.winfo_width()
+        if available < 100:
+            # The pane has not been sized yet, so there is nothing to fit to
+            return
+
+        natural = preferred_width(self.project, available)
+        if natural <= 0:
+            return
+
+        self.set_zoom(available / natural)
 
     def zoom_in(self):
         """Show a shorter span across the same width."""
@@ -155,7 +183,7 @@ class GanttChart(ctk.CTkFrame):
         self.set_zoom(self._zoom / ZOOM_STEP)
 
     def zoom_reset(self):
-        """Return to fitting the available width."""
+        """Return to 100%, the width the chart draws itself at."""
         self.set_zoom(1.0)
 
     def set_zoom(self, zoom: float):

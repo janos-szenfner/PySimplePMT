@@ -455,10 +455,37 @@ class TestCreateSubmenu(TaskListTestCase):
         self.assertNotIn(self.created.id, [t.id for t in self.project.tasks])
 
     def test_an_unknown_row_creates_nothing(self):
-        """A stale row ID is ignored."""
+        """
+        A stale row ID is ignored.
+
+        Not the same as no row at all: a row naming a task that has since
+        gone must not quietly add one at the end of the plan.
+        """
         before = len(self.project.tasks)
 
         self.task_list.create_task("Task", "gone")
+
+        self.assertEqual(len(self.project.tasks), before)
+
+    def test_no_row_creates_at_the_end(self):
+        """Right-clicking the empty space adds a task to the plan."""
+        self.task_list.create_task("Task", None)
+
+        self.assertEqual(self.rows()[-1], self.created.id)
+        self.assertIsNone(self.created.parent_task_id)
+
+    def test_no_row_creates_a_milestone_at_the_end(self):
+        """Milestones work the same way there."""
+        self.task_list.create_task("Milestone", None)
+
+        self.assertTrue(self.created.is_milestone)
+        self.assertEqual(self.rows()[-1], self.created.id)
+
+    def test_no_row_cannot_create_a_subtask(self):
+        """A sub-task has nothing to go under."""
+        before = len(self.project.tasks)
+
+        self.task_list.create_task("Sub-Task", None)
 
         self.assertEqual(len(self.project.tasks), before)
 
@@ -983,15 +1010,56 @@ class TestContextMenu(TaskListTestCase):
 
         self.assertEqual(self.rows(), ["001", "003"])
 
-    def test_right_clicking_empty_space_opens_nothing(self):
-        """A click below the last row has no row to act on."""
-        self.task_list.tree.identify_row = lambda y: ''
+    def test_right_clicking_empty_space_opens_the_menu(self):
+        """
+        A click below the last row still opens a menu.
 
-        result = self.task_list.context_menu.show(
-            SimpleNamespace(x=5, y=900, x_root=0, y_root=0)
-        )
+        It used to do nothing at all, leaving the empty space - the obvious
+        place to right-click to add a task - inert.
+        """
+        menu = self.task_list.context_menu._build(self.project, None)
 
-        self.assertIsNone(result)
+        labels = [menu.entrycget(i, 'label')
+                  for i in range(menu.index('end') + 1)
+                  if menu.type(i) != 'separator']
+
+        self.assertIn("Create", labels)
+
+    def test_row_actions_are_greyed_out_over_empty_space(self):
+        """Nothing that needs a task is offered where there is none."""
+        menu = self.task_list.context_menu._build(self.project, None)
+        states = {menu.entrycget(i, 'label'): str(menu.entrycget(i, 'state'))
+                  for i in range(menu.index('end') + 1)
+                  if menu.type(i) != 'separator'}
+
+        for label in ("Move to top", "Move up", "Move down", "Move to bottom",
+                      "Indent", "Outdent", "Edit", "Delete"):
+            self.assertEqual(states[label], 'disabled', label)
+
+    def test_create_stays_available_over_empty_space(self):
+        """Adding a task is the reason to right-click there."""
+        menu = self.task_list.context_menu._build(self.project, None)
+        index = self.entry_index(menu, "Create")
+        submenu = menu.nametowidget(menu.entrycget(index, 'menu'))
+
+        states = {submenu.entrycget(i, 'label'):
+                  str(submenu.entrycget(i, 'state'))
+                  for i in range(submenu.index('end') + 1)}
+
+        self.assertEqual(states["Task"], 'normal')
+        self.assertEqual(states["Milestone"], 'normal')
+
+    def test_a_subtask_cannot_be_created_over_empty_space(self):
+        """There is no row for it to go under."""
+        menu = self.task_list.context_menu._build(self.project, None)
+        index = self.entry_index(menu, "Create")
+        submenu = menu.nametowidget(menu.entrycget(index, 'menu'))
+
+        states = {submenu.entrycget(i, 'label'):
+                  str(submenu.entrycget(i, 'state'))
+                  for i in range(submenu.index('end') + 1)}
+
+        self.assertEqual(states["Sub-Task"], 'disabled')
 
 
 if __name__ == '__main__':

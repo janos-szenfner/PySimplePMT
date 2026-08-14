@@ -132,24 +132,34 @@ class TaskContextMenu:
 
     def show(self, event):
         """
-        Open the menu over the row that was clicked.
+        Open the menu, over a row or over the empty space below the rows.
 
         DEVELOPMENT NOTES:
         ------------------
         The clicked row is selected first. Right-clicking a row that is not
         the selected one would otherwise act on whatever happened to be
         selected already, which is a reliable way to move the wrong task.
+
+        Clicking below the last row opens the menu with no row behind it.
+        That used to do nothing at all, which left the empty space - the
+        obvious place to right-click to add a task to a plan - inert.
+        Everything that needs a task is greyed out there; Create, Undo and
+        Redo do not, and Create builds at the end of the plan.
         """
-        task_id = self._task_id_at(event)
-        if task_id is None:
-            return None
-
         project = self._project_getter()
-        if project is None or project.get_task_by_id(task_id) is None:
+        if project is None:
             return None
 
-        self.tree.selection_set(task_id)
-        self.tree.focus(task_id)
+        task_id = self._task_id_at(event)
+        if task_id is not None and project.get_task_by_id(task_id) is None:
+            # A row for a task that has since gone
+            task_id = None
+
+        if task_id is not None:
+            self.tree.selection_set(task_id)
+            self.tree.focus(task_id)
+        else:
+            self.tree.selection_remove(*self.tree.selection())
 
         self._close()
         self._menu = self._build(project, task_id)
@@ -184,7 +194,14 @@ class TaskContextMenu:
 
     def _build(self, project, task_id):
         """
-        Build the menu for one task.
+        Build the menu for one task, or for the empty space below the rows.
+
+        PARAMETERS:
+        -----------
+        project : Project
+            The project the rows belong to.
+        task_id : Optional[str]
+            The row the menu was opened on, or None for the empty space.
 
         RETURNS:
         --------
@@ -198,17 +215,25 @@ class TaskContextMenu:
         harmless and repeatable while deleting is neither, so the destructive
         entry sits at the far end of the menu rather than next to something a
         user clicks repeatedly.
+
+        With no row behind it every entry that needs a task is greyed out.
+        Create, Undo and Redo are not: adding a task is the obvious reason to
+        right-click empty space, and it builds at the end of the plan.
         """
         menu = tk.Menu(self.tree, tearoff=0)
+        has_task = task_id is not None
 
-        siblings = project.get_siblings(task_id)
-        position = next(
-            (i for i, task in enumerate(siblings) if task.id == task_id), None
-        )
-        last = len(siblings) - 1
-
-        can_move_up = position is not None and position > 0
-        can_move_down = position is not None and position < last
+        if has_task:
+            siblings = project.get_siblings(task_id)
+            position = next(
+                (i for i, task in enumerate(siblings) if task.id == task_id),
+                None,
+            )
+            last = len(siblings) - 1
+            can_move_up = position is not None and position > 0
+            can_move_down = position is not None and position < last
+        else:
+            can_move_up = can_move_down = False
 
         allowed = {
             'top': can_move_up,
@@ -229,9 +254,9 @@ class TaskContextMenu:
         # Indent needs a row above to go under, and outdent needs a parent to
         # come out of, so both are greyed out where they would do nothing
         level_allowed = {
-            'indent': self._on_indent is not None
+            'indent': has_task and self._on_indent is not None
             and project.can_indent(task_id),
-            'outdent': self._on_outdent is not None
+            'outdent': has_task and self._on_outdent is not None
             and project.can_outdent(task_id),
         }
         for label, action in LEVEL_ACTIONS:
@@ -245,9 +270,14 @@ class TaskContextMenu:
 
         create = tk.Menu(menu, tearoff=0)
         for task_type in CREATE_TYPES:
+            # A sub-task needs a row to go under; the other two do not, and
+            # over empty space they are added at the end of the plan
+            can_create = self._on_create is not None and (
+                has_task or task_type != "Sub-Task"
+            )
             create.add_command(
                 label=task_type,
-                state=tk.NORMAL if self._on_create else tk.DISABLED,
+                state=tk.NORMAL if can_create else tk.DISABLED,
                 command=lambda t=task_type: self._invoke_create(task_id, t),
             )
         menu.add_cascade(label="Create", menu=create)
@@ -257,12 +287,12 @@ class TaskContextMenu:
 
         menu.add_command(
             label="Edit",
-            state=tk.NORMAL if self._on_edit else tk.DISABLED,
+            state=tk.NORMAL if (has_task and self._on_edit) else tk.DISABLED,
             command=lambda: self._invoke_edit(task_id),
         )
         menu.add_command(
             label="Delete",
-            state=tk.NORMAL if self._on_delete else tk.DISABLED,
+            state=tk.NORMAL if (has_task and self._on_delete) else tk.DISABLED,
             command=lambda: self._invoke_delete(task_id),
         )
 

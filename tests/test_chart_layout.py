@@ -247,14 +247,66 @@ class TestZoomControls(unittest.TestCase):
 
         self.assertLess(self.chart._zoom, 1.0)
 
-    def test_fit_returns_to_one(self):
-        """Fit goes back to the fitted width."""
+    def test_reset_returns_to_one(self):
+        """Reset goes back to 100%."""
         self.chart.zoom_in()
         self.chart.zoom_in()
 
         self.chart.zoom_reset()
 
         self.assertEqual(self.chart._zoom, 1.0)
+
+    def test_fit_scales_the_chart_to_the_pane(self):
+        """
+        Fit works out how much narrower the pane is and zooms out by that.
+
+        At 100% a long plan is drawn wider than the pane on purpose, so
+        every day keeps enough pixels to stay readable and the chart
+        scrolls. Fitting is what removes the scrolling.
+        """
+        from gantt_app.utils.chart_render import preferred_width
+
+        available = 700
+        self.chart.chart_frame.winfo_width = lambda: available
+        natural = preferred_width(self.project, available)
+
+        self.chart.zoom_to_fit()
+
+        self.assertAlmostEqual(self.chart._zoom, available / natural, places=4)
+
+    def test_fit_leaves_nothing_to_scroll_to(self):
+        """The rendered width comes out as the width available."""
+        from gantt_app.utils.chart_render import preferred_width
+
+        available = 700
+        self.chart.chart_frame.winfo_width = lambda: available
+
+        self.chart.zoom_to_fit()
+        rendered = preferred_width(self.project, available) * self.chart._zoom
+
+        self.assertAlmostEqual(rendered, available, places=2)
+
+    def test_fit_and_reset_are_different(self):
+        """
+        Fit is not 100%.
+
+        Fit used to be wired to zoom_reset, so the button did not fit
+        anything - it just went back to the width the chart draws itself at.
+        """
+        self.chart.chart_frame.winfo_width = lambda: 700
+
+        self.chart.zoom_to_fit()
+
+        self.assertNotEqual(self.chart._zoom, 1.0)
+
+    def test_fit_before_the_pane_is_sized_does_nothing(self):
+        """There is nothing to fit to until the pane has a width."""
+        self.chart.chart_frame.winfo_width = lambda: 1
+        self.chart.set_zoom(2.0)
+
+        self.chart.zoom_to_fit()
+
+        self.assertEqual(self.chart._zoom, 2.0)
 
     def test_the_label_follows_the_level(self):
         """The percentage beside the buttons tracks the zoom."""

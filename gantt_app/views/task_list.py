@@ -1324,8 +1324,9 @@ class DragDropTaskList(ctk.CTkFrame):
         -----------
         task_type : str
             'Task', 'Sub-Task' or 'Milestone'.
-        anchor_id : str
-            The row the context menu was opened on.
+        anchor_id : Optional[str]
+            The row the context menu was opened on, or None when it was
+            opened over the empty space below the rows.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -1333,14 +1334,30 @@ class DragDropTaskList(ctk.CTkFrame):
         a sub-task. A task or milestone is created beside it and dropped in
         directly below, rather than at the end of the plan: the menu was
         opened on a particular row, so that is where the new one belongs.
-        """
-        anchor = self.project.get_task_by_id(anchor_id)
-        if anchor is None:
-            return
 
-        # A sub-task goes inside the clicked row; a task or milestone goes
-        # beside it, which is what "under this row" means for those
-        if task_type == "Sub-Task":
+        With no row behind the menu the new task goes at the end of the plan
+        at the top level, which is what right-clicking the empty space below
+        the last row asks for. A sub-task has nothing to go under there, and
+        the menu greys it out.
+        """
+        if anchor_id is None:
+            anchor = None
+        else:
+            anchor = self.project.get_task_by_id(anchor_id)
+            if anchor is None:
+                # A row naming a task that has since gone. Not the same as
+                # no row at all, so it creates nothing rather than quietly
+                # adding one at the end of the plan
+                logger.warning("Cannot create at unknown task %s", anchor_id)
+                return
+
+        if anchor is None:
+            if task_type == "Sub-Task":
+                return
+            parent_id = None
+        elif task_type == "Sub-Task":
+            # A sub-task goes inside the clicked row; a task or milestone
+            # goes beside it, which is what "under this row" means for those
             parent_id = anchor.id
         else:
             parent_id = anchor.parent_task_id

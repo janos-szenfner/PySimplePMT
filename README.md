@@ -84,7 +84,7 @@ gantt_app/
 ### Task List View (`views/task_list.py`)
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
 - **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Task, Sub-Task, Milestone), Edit and Delete, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
-- **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan
+- **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
 - **Indent / Outdent**: Indent makes a task a sub-task of the row above it; outdent lifts it beside its parent, becoming a task again at the top level. A branch moves as a whole, and both are undoable
 - **EditTaskDialog**: Comprehensive task editing interface with all fields visible
 - **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
@@ -109,7 +109,7 @@ gantt_app/
 - **Dependency Lines**: Red dotted lines connecting dependent tasks
 - **Critical Path**: Highlighted in orange
 - **Hover Tooltips**: Detailed information on hover (name, dates, duration, progress, dependencies)
-- **Zoom**: Zoom in, zoom out and Fit buttons beneath the chart; the view scrolls at higher zoom levels
+- **Zoom**: Zoom in, zoom out, Fit and Reset buttons beneath the chart. Fit scales the chart to exactly the width available so nothing scrolls; Reset returns to 100%, where a long plan is drawn wider than the pane to keep it readable
 - **Summary Bars**: A task with sub-tasks is drawn as a spanning bracket rather than a solid bar
 - **Row Order**: Chart rows follow the task list, so a reorder is visible in both panes
 - **Labels**: Task names displayed next to milestones
