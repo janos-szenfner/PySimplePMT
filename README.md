@@ -6,7 +6,7 @@ A cross-platform desktop application for project management with Gantt chart vis
 
 This is a complete implementation of a project management tool with:
 - Interactive Gantt chart visualization
-- Drag-and-drop task list for dependency management
+- Drag-and-drop task list for arranging the plan by hand
 - Support for milestones (single-date tasks)
 - JSON storage and file import for GAN/MPP/Mermaid files
 - Modern UI using CustomTkinter
@@ -14,7 +14,7 @@ This is a complete implementation of a project management tool with:
 ## Features
 
 - **Interactive Gantt Chart Visualization**: Visual representation of tasks and milestones with dependency arrows, using Plotly for zoom, pan, and hover tooltips
-- **Drag-and-Drop Task List**: Reorder tasks and set dependencies by dragging
+- **Drag-and-Drop Task List**: Reorder tasks by dragging a row, or from the right-click menu (Move to top / up / down / bottom)
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
 - **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
@@ -36,7 +36,8 @@ gantt_app/
 │
 ├── views/
 │   ├── __init__.py
-│   ├── task_list.py       # Drag-and-drop task list with EditTaskDialog
+│   ├── task_list.py       # Drag-to-reorder task list with EditTaskDialog
+│   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
 │   ├── gantt_chart.py     # Interactive Plotly Gantt chart
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── log_window.py      # Application log viewer
@@ -70,7 +71,8 @@ gantt_app/
 - **Factory Methods**: create_task(), create_milestone() for easy object creation
 
 ### Task List View (`views/task_list.py`)
-- **Drag-and-Drop**: Full tkinterdnd2 integration with enhanced drag-and-drop for setting dependencies, graceful fallback to basic implementation
+- **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and the row it would land on is highlighted while dragging
+- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top, Move up, Move down, Move to bottom, then Edit and Delete; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
 - **EditTaskDialog**: Comprehensive task editing interface with all fields visible
 - **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone
@@ -318,8 +320,8 @@ pysimplepmt --log-file      # print the log file path
    - Milestones appear as diamonds in the Gantt chart
 
 5. **Set Dependencies**
-   - Drag a task onto another task in the task list
-   - Or edit dependencies in the task edit dialog (select multiple tasks and subtasks as dependencies)
+   - Open a task and use its Dependency tab, where the link type (Start-Start,
+     End-Start) and hardness (Hard, Rubber) can be chosen
    - Dependencies appear as red arrows in the Gantt chart
    - Cannot create circular dependencies (a task cannot depend on itself or its own subtasks)
 
@@ -377,9 +379,10 @@ pysimplepmt --log-file      # print the log file path
     - Import and export failures appear here with full tracebacks
     - The log is also written to a file; see the Logging section for its location
 
-### Keyboard Shortcuts
-- **Double-click** on tasks to edit
-- **Drag and drop** to set dependencies
+### Mouse and Keyboard
+- **Double-click** a task to edit it
+- **Drag** a row to reorder it within its siblings
+- **Right-click** a row (two-finger click on macOS) to move, edit or delete it
 - Use **View** dropdown menu and select "Toggle Theme" to switch between light/dark modes
 
 ## Sample Data

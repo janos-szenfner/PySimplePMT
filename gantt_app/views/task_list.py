@@ -1,7 +1,21 @@
 """
-Drag-and-drop task list view for the Gantt Project Management Tool.
+Task list view for the Gantt Project Management Tool.
 
-Uses tkinterdnd2 for drag-and-drop functionality with ttk.Treeview.
+Rows are reordered by dragging them, or through the right-click menu in
+contextmenu.py.
+
+DEVELOPMENT NOTES:
+------------------
+Drag-and-drop used to be routed through tkinterdnd2, behind a guard that
+tested for tkinterdnd2.TkinterDnD.Treeview and .Scrollbar. That library
+provides neither - it exposes Tk, DnDWrapper and the DND_* constants - so the
+guard was always false, every tkinterdnd2 branch was unreachable, and the
+plain-Tk fallback it fell back to had an empty <B1-Motion> handler. Nothing
+responded to a drag on any platform.
+
+tkinterdnd2 is not needed for this in any case: it exists to exchange drops
+with other applications, whereas moving a row inside one Treeview is a matter
+of the pointer position, which plain Tk reports perfectly well.
 """
 
 import tkinter as tk
@@ -15,23 +29,11 @@ import customtkinter as ctk
 from gantt_app.models import Task, Project
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
+from gantt_app.views.contextmenu import TaskContextMenu
 from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
-
-# Try to import tkinterdnd2 for enhanced drag and drop
-try:
-    import tkinterdnd2
-    # Check if Treeview and Scrollbar are available in the expected location
-    if (hasattr(tkinterdnd2, 'TkinterDnD') and 
-        hasattr(tkinterdnd2.TkinterDnD, 'Treeview') and
-        hasattr(tkinterdnd2.TkinterDnD, 'Scrollbar')):
-        TKINTERDND2_AVAILABLE = True
-    else:
-        TKINTERDND2_AVAILABLE = False
-except ImportError:
-    TKINTERDND2_AVAILABLE = False
 
 
 class EditTaskDialog(ctk.CTkToplevel):
@@ -539,7 +541,7 @@ class CreateTaskDialog(ctk.CTkToplevel):
         # Buttons
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(fill=tk.X, padx=20, pady=10)
-
+        
         ctk.CTkButton(button_frame, text="Save", command=self.save).pack(side=tk.RIGHT, padx=5)
         ctk.CTkButton(button_frame, text="Cancel", command=self.cancel).pack(side=tk.RIGHT, padx=5)
     
@@ -720,8 +722,15 @@ class CreateTaskDialog(ctk.CTkToplevel):
 
 class DragDropTaskList(ctk.CTkFrame):
     """
-    Task list with drag-and-drop functionality for setting dependencies.
-    Uses tkinterdnd2 for enhanced drag and drop when available.
+    Task list whose rows can be reordered by dragging or from a right-click
+    menu.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Dragging moves a row within its own set of siblings; the same moves are
+    offered by the context menu in contextmenu.py. Dependencies are set on
+    the Dependency tab of the task dialog, which can express the link type
+    and hardness that a drag cannot.
     """
 
     #: Light grey grid palette for the task table.
@@ -732,6 +741,16 @@ class DragDropTaskList(ctk.CTkFrame):
     GRID_TEXT = '#1a1a1a'
     GRID_SELECT_BG = '#cfe2f3'
     GRID_ROW_HEIGHT = 26
+
+    #: Row colour marking where a dragged task would land.
+    DROP_TARGET_BG = '#ffe9a8'
+
+    #: How far the pointer must travel before a press counts as a drag,
+    #: so a click that wobbles by a pixel still selects rather than moves.
+    DRAG_THRESHOLD_PX = 5
+
+    #: Pointer shown while dragging a row.
+    DRAG_CURSOR = 'hand2'
 
     def _apply_grid_style(self):
         """
@@ -807,10 +826,13 @@ class DragDropTaskList(ctk.CTkFrame):
         # Track dragged task
         self.dragged_task_id = None
         self.drag_item = None
-        
-        # Track drag and drop state for tkinterdnd2
-        self.dnd_enabled = TKINTERDND2_AVAILABLE
-        
+
+        # Where the press started, whether it has become a drag, and the row
+        # currently highlighted as the drop position
+        self._drag_origin = None
+        self._dragging = False
+        self._drop_target = None
+
         # Create UI
         self._create_ui()
         
@@ -827,20 +849,10 @@ class DragDropTaskList(ctk.CTkFrame):
         tree_frame = ctk.CTkFrame(self)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # Create Treeview - use tkinterdnd2.TkinterDnD.Treeview if available
-        if TKINTERDND2_AVAILABLE:
-            TreeviewDnD = tkinterdnd2.TkinterDnD.Treeview
-            self.tree = TreeviewDnD(tree_frame, columns=(
-                'ID', 'Name', 'Type', 'Duration', 'Start', 'End', 'Progress', 'Dependencies', 'Milestone'
-            ), show='headings')
-            # Store reference for dnd operations
-            self.tree_dnd = self.tree
-        else:
-            self.tree = ttk.Treeview(tree_frame, columns=(
-                'ID', 'Name', 'Type', 'Duration', 'Start', 'End', 'Progress', 'Dependencies', 'Milestone'
-            ), show='headings')
-            self.tree_dnd = None
-        
+        self.tree = ttk.Treeview(tree_frame, columns=(
+            'ID', 'Name', 'Type', 'Duration', 'Start', 'End', 'Progress', 'Dependencies', 'Milestone'
+        ), show='headings')
+
         # Configure columns
         self.tree.heading('ID', text='ID', anchor=tk.W)
         self.tree.heading('Name', text='Name', anchor=tk.W)
@@ -863,14 +875,9 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('Dependencies', width=150, stretch=False)
         self.tree.column('Milestone', width=80, stretch=False)
         
-        # Scrollbars - use tkinterdnd2 versions if available
-        if TKINTERDND2_AVAILABLE:
-            vsb = tkinterdnd2.TkinterDnD.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
-            hsb = tkinterdnd2.TkinterDnD.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
-        else:
-            vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
-            hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
-        
+        vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         
         # Grid layout
@@ -901,120 +908,42 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<ButtonRelease-1>', self.on_release)
         self.tree.bind('<B1-Motion>', self.on_drag)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
-        
-        # Enable drag and drop
-        self._enable_dnd()
-    
-    def _enable_dnd(self):
-        """Enable drag and drop for the treeview."""
-        if TKINTERDND2_AVAILABLE:
-            # Register the treeview as a drop target
-            self.tree.drop_target_register(tkinterdnd2.DND_FILES)
-            self.tree.drop_target_register(tkinterdnd2.DND_TEXT)
-            
-            # Bind DnD events
-            self.tree.bind('<<DropEnter>>', self.on_dnd_enter)
-            self.tree.bind('<<DropLeave>>', self.on_dnd_leave)
-            self.tree.bind('<<DropPosition>>', self.on_dnd_position)
-            self.tree.bind('<<Drop>>', self.on_dnd_drop)
-            self.tree.bind('<<DragInit>>', self.on_dnd_init)
-            
-            # For the frame itself
-            self.tree_frame.drop_target_register(tkinterdnd2.DND_FILES)
-            self.tree_frame.drop_target_register(tkinterdnd2.DND_TEXT)
-            self.tree_frame.bind('<<Drop>>', self.on_dnd_drop)
-    
-    def on_dnd_init(self, event):
-        """Handle drag initiation for tkinterdnd2."""
-        # Get the item under the cursor
-        item = self.tree.identify_row(event.y)
-        if item:
-            self.dragged_task_id = self.tree.item(item, 'text')
-            self.tree.selection_set(item)
-            # Store the item for drag feedback
-            self.drag_item = item
-            # Set drag data
-            event.widget.dnd_start(event, 'text/plain', self.dragged_task_id)
-    
-    def on_dnd_enter(self, event):
-        """Handle drag enter for visual feedback."""
-        # Highlight the treeview during drag
-        self.tree.config(bg='#f0f0f0')
-        
-    def on_dnd_leave(self, event):
-        """Handle drag leave for visual feedback."""
-        self.tree.config(bg='')
-        
-    def on_dnd_position(self, event):
-        """Handle drag position for visual feedback."""
-        # Get the item under the cursor
-        item = self.tree.identify_row(event.y)
-        if item and item != self.drag_item:
-            # Highlight the potential drop target
-            self.tree.selection_set(item)
-    
-    def on_dnd_drop(self, event):
-        """Handle drop event for setting dependencies with tkinterdnd2."""
-        if self.dragged_task_id is None:
-            return
-            
-        # Get the target item
-        target_item = self.tree.identify_row(event.y)
-        if target_item:
-            target_task_id = self.tree.item(target_item, 'text')
-            
-            # Don't allow circular dependencies
-            source_task = self.project.get_task_by_id(self.dragged_task_id)
-            target_task = self.project.get_task_by_id(target_task_id)
-            
-            if source_task and target_task:
-                # Check if adding this dependency would create a circular reference
-                if not self._would_create_circle(self.dragged_task_id, target_task_id):
-                    # Add dependency with undo support
-                    if target_task_id not in source_task.dependencies:
-                        # Store old dependencies for undo
-                        old_dependencies = copy.copy(source_task.dependencies)
-                        
-                        # Add the new dependency
-                        source_task.dependencies.append(target_task_id)
-                        
-                        # Use undo/redo if available
-                        if self.project_tracker:
-                            new_dependencies = copy.copy(source_task.dependencies)
-                            if self.project_tracker.update_task(
-                                source_task.id,
-                                dependencies=new_dependencies
-                            ):
-                                self.update_task_list()
-                                if self.on_project_changed:
-                                    self.on_project_changed()
-                        else:
-                            # Fallback
-                            self.update_task_list()
-                            if self.on_project_changed:
-                                self.on_project_changed()
-        
-        # Reset drag state
-        self.dragged_task_id = None
-        self.tree.config(bg='')
-        if hasattr(self, 'drag_item'):
-            self.drag_item = None
-    
+
+        # Rows being dragged over are marked with a tag rather than by
+        # selecting them, so the selection still shows what is being moved
+        self.tree.tag_configure('droptarget', background=self.DROP_TARGET_BG)
+
+        # Right-click menu, which offers the same moves as dragging
+        self.context_menu = TaskContextMenu(
+            self.tree,
+            project_getter=lambda: self.project,
+            on_move=self.move_task,
+            on_edit=self.edit_task,
+            on_delete=self.delete_task,
+        )
+
     def on_double_click(self, event):
+        """Handle double click to edit task."""
+        item = self.tree.selection()[0] if self.tree.selection() else None
+        if item:
+            self.edit_task(item)
+
+    def edit_task(self, task_id: str):
         """
-        Handle double click to edit task.
+        Open the edit window for a task.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task to edit.
 
         DEVELOPMENT NOTES:
         ------------------
-        The edit dialog is opened inside a try/except so a failure while
-        building it is reported rather than leaving an empty window on
-        screen with nothing in the log.
+        Shared by the double-click and the context menu's Edit entry. The
+        dialog is opened inside a try/except so a failure while building it
+        is reported rather than leaving an empty window on screen with
+        nothing in the log.
         """
-        item = self.tree.selection()[0] if self.tree.selection() else None
-        if not item:
-            return
-
-        task_id = self.tree.item(item, 'text')
         task = self.project.get_task_by_id(task_id)
         if not task or not self.on_task_edit:
             return
@@ -1029,7 +958,48 @@ class DragDropTaskList(ctk.CTkFrame):
                 "The task could not be opened for editing.\n\n"
                 "See the Log window for details."
             )
-    
+
+    def delete_task(self, task_id: str):
+        """
+        Delete a task, after confirming, and refresh the list.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task to delete.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Deleting a task takes its sub-tasks with it, so the confirmation says
+        how many will go. A right-click and a menu entry is a short path to
+        losing a branch of the plan, and the count is the part a user cannot
+        see from the row itself.
+
+        The delete is undoable, which the prompt says so that confirming
+        feels less final than it looks.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+
+        subtasks = self.project.get_subtasks(task_id)
+        if subtasks:
+            detail = (f"\n\nIts {len(subtasks)} sub-task(s) will be deleted "
+                      f"as well.")
+        else:
+            detail = ""
+
+        if not messagebox.askyesno(
+            "Delete Task",
+            f"Delete '{task.name}'?{detail}\n\nThis can be undone.",
+            icon=messagebox.WARNING,
+        ):
+            return
+
+        logger.info("Deleting task %s %r", task.id, task.name)
+        self.remove_task(task_id)
+
+
     def on_select(self, event):
         """Handle task selection."""
         item = self.tree.selection()[0] if self.tree.selection() else None
@@ -1040,61 +1010,203 @@ class DragDropTaskList(ctk.CTkFrame):
                 self.on_task_select(task)
     
     def on_press(self, event):
-        """Handle mouse press for drag start."""
+        """
+        Begin a possible drag.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Only the row is recorded here. Whether this becomes a drag is decided
+        in on_drag once the pointer has actually travelled, so an ordinary
+        click to select, and the double-click that opens the edit dialog, are
+        not mistaken for very small drags.
+        """
         item = self.tree.identify_row(event.y)
-        if item:
-            self.dragged_task_id = self.tree.item(item, 'text')
-            self.tree.selection_set(item)
-    
+        if not item:
+            # The heading, or empty space below the last row
+            return
+
+        self.dragged_task_id = item
+        self.drag_item = item
+        self._drag_origin = (event.x, event.y)
+        self._dragging = False
+
     def on_drag(self, event):
-        """Handle drag motion."""
-        # This is a simplified drag implementation
-        # For full drag-and-drop, tkinterdnd2 would be needed
-        pass
-    
+        """
+        Track a drag in progress and mark the row it would drop onto.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This was a no-op whose comment said tkinterdnd2 was needed for real
+        drag-and-drop. It is not: tkinterdnd2 exists to exchange drops with
+        other applications, while moving a row inside a single Treeview only
+        needs the pointer position. The tkinterdnd2 path was unreachable in
+        any case - the guard deciding whether the library was usable tested
+        for TkinterDnD.Treeview and TkinterDnD.Scrollbar, neither of which
+        that library defines - so between the two nothing responded to a drag
+        at all.
+
+        Rows that are not valid drops are deliberately left unmarked, so the
+        highlight only appears where releasing would actually do something.
+        """
+        if self.dragged_task_id is None or self._drag_origin is None:
+            return
+
+        if not self._dragging:
+            if abs(event.y - self._drag_origin[1]) < self.DRAG_THRESHOLD_PX:
+                return
+            self._dragging = True
+            try:
+                self.tree.configure(cursor=self.DRAG_CURSOR)
+            except tk.TclError:
+                pass
+
+        self._mark_drop_target(self.tree.identify_row(event.y))
+
+    def _mark_drop_target(self, item):
+        """Highlight a row as the pending drop position, clearing any other."""
+        if item and not self._is_valid_drop(item):
+            item = None
+
+        if (item or None) == self._drop_target:
+            return
+
+        self._set_drop_tag(self._drop_target, False)
+        self._drop_target = item or None
+        self._set_drop_tag(self._drop_target, True)
+
+    def _set_drop_tag(self, item, on):
+        """Add or remove the drop highlight tag on a row."""
+        if not item:
+            return
+        try:
+            tags = [t for t in self.tree.item(item, 'tags') if t != 'droptarget']
+            if on:
+                tags.append('droptarget')
+            self.tree.item(item, tags=tags)
+        except tk.TclError:
+            pass
+
+    def _is_valid_drop(self, item):
+        """
+        Whether the dragged task can be dropped onto this row.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A move stays inside one set of siblings, so a sub-task cannot be
+        dropped onto a root task and quietly change parent. Refusing here,
+        where the highlight is decided, means an invalid drop looks inert
+        while the pointer is still over it.
+        """
+        if not item or item == self.dragged_task_id:
+            return False
+        source = self.project.get_task_by_id(self.dragged_task_id)
+        target = self.project.get_task_by_id(item)
+        if source is None or target is None:
+            return False
+        return source.parent_task_id == target.parent_task_id
+
+    def _end_drag(self):
+        """Clear every trace of a drag, whether it completed or not."""
+        self._set_drop_tag(self._drop_target, False)
+        self._drop_target = None
+        self.dragged_task_id = None
+        self.drag_item = None
+        self._drag_origin = None
+        self._dragging = False
+        try:
+            self.tree.configure(cursor='')
+        except tk.TclError:
+            pass
+
     def on_release(self, event):
-        """Handle mouse release for drop with undo support."""
+        """
+        Finish a drag by moving the dragged task to the drop position.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A release that never became a drag falls straight through, leaving
+        click-to-select and double-click-to-edit untouched.
+        """
         if self.dragged_task_id is None:
             return
-        
-        # Get the target item
-        target_item = self.tree.identify_row(event.y)
-        if target_item and target_item != self.tree.selection()[0]:
-            target_task_id = self.tree.item(target_item, 'text')
-            
-            # Don't allow circular dependencies
-            source_task = self.project.get_task_by_id(self.dragged_task_id)
-            target_task = self.project.get_task_by_id(target_task_id)
-            
-            if source_task and target_task:
-                # Check if adding this dependency would create a circular reference
-                if not self._would_create_circle(self.dragged_task_id, target_task_id):
-                    # Add dependency with undo support
-                    if target_task_id not in source_task.dependencies:
-                        # Store old dependencies for undo
-                        old_dependencies = copy.copy(source_task.dependencies)
-                        
-                        # Add the new dependency
-                        source_task.dependencies.append(target_task_id)
-                        
-                        # Use undo/redo if available
-                        if self.project_tracker:
-                            new_dependencies = copy.copy(source_task.dependencies)
-                            if self.project_tracker.update_task(
-                                source_task.id,
-                                dependencies=new_dependencies
-                            ):
-                                self.update_task_list()
-                                if self.on_project_changed:
-                                    self.on_project_changed()
-                        else:
-                            # Fallback
-                            self.update_task_list()
-                            if self.on_project_changed:
-                                self.on_project_changed()
-        
-        self.dragged_task_id = None
-    
+
+        if not self._dragging:
+            self._end_drag()
+            return
+
+        source_id = self.dragged_task_id
+        target_id = self._drop_target
+        self._end_drag()
+
+        if target_id:
+            self.move_task_before(source_id, target_id)
+
+    def move_task(self, task_id: str, where: str):
+        """
+        Move a task within its siblings and refresh everything.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task to move.
+        where : str
+            'top', 'up', 'down' or 'bottom'.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what the context menu calls. Ordering belongs to the project
+        rather than to the widget, so the reordering itself lives on Project
+        and this deals only with undo, redrawing and keeping the moved row
+        selected.
+        """
+        self._apply_reorder(lambda: self.project.move_task(task_id, where),
+                            task_id)
+
+    def move_task_before(self, task_id: str, target_id: str):
+        """Move a task to the position its sibling target_id occupies."""
+        self._apply_reorder(
+            lambda: self.project.move_task_before(task_id, target_id), task_id
+        )
+
+    def _apply_reorder(self, reorder, task_id: str):
+        """
+        Run a reordering, record it for undo and redraw.
+
+        PARAMETERS:
+        -----------
+        reorder : callable
+            Performs the move, returning True when anything changed.
+        task_id : str
+            The task being moved, so it can be reselected afterwards.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Order is a property of Project.tasks as a whole rather than of any
+        single task, so the undo entry records the list. update_task, which
+        every other edit goes through, rewrites one task and cannot express
+        a move.
+        """
+        before = list(self.project.tasks)
+
+        if not reorder():
+            return
+
+        if self.project_tracker:
+            self.project_tracker.reorder_tasks(before, list(self.project.tasks))
+
+        self.update_task_list()
+
+        try:
+            self.tree.selection_set(task_id)
+            self.tree.focus(task_id)
+            self.tree.see(task_id)
+        except tk.TclError:
+            pass
+
+        if self.on_project_changed:
+            self.on_project_changed()
+
+
     def _is_descendant(self, task_id: str, potential_ancestor_id: str, project: Project) -> bool:
         """
         Check if a task is a descendant of another task (through parent-child relationships).
@@ -1200,29 +1312,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # Clear existing items
         for item in self.tree.get_children():
             self.tree.delete(item)
-        
-        # First, add root tasks (non-subtasks)
-        root_tasks = self.project.get_root_tasks()
-        root_tasks_sorted = sorted(root_tasks, key=lambda t: t.start_date)
-        
-        for task in root_tasks_sorted:
-            self._add_task_to_tree(task, indent_level=0)
-        
-        # Then add subtasks under their parent tasks
-        for task in self.project.tasks:
-            if task.parent_task_id:
-                # Find the parent task's tree item
-                parent = self.project.get_task_by_id(task.parent_task_id)
-                if parent:
-                    # Find all root tasks and their subtasks to maintain order
-                    pass
-        
-        # Re-sort all items to maintain proper order
-        # Actually, let's use a better approach - add all tasks with proper indentation
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        
-        # Build a proper hierarchy
+
         self._populate_tree_hierarchical()
     
     def _populate_tree_hierarchical(self):
@@ -1234,18 +1324,25 @@ class DragDropTaskList(ctk.CTkFrame):
         This method first adds all root tasks, then adds subtasks under their
         parent tasks. It uses the treeview's parent-child relationships to
         create the visual hierarchy.
+
+        Rows follow the order of Project.tasks. They used to be sorted by
+        start date on every refresh, which left no way to arrange a plan by
+        hand: a moved row sprang straight back to its date-order position, so
+        reordering could not be seen even when it had worked. It also meant
+        the visible order disagreed with the sequential IDs, which are handed
+        out by list position.
+
+        Sorting is left to the Gantt chart, which is where a reader looks for
+        the plan in date order.
         """
         # Restart the row banding for each repopulation
         self._row_counter = 0
 
         # Map task IDs to tree items for parent-child relationships
         tree_items = {}
-        
-        # First pass: add all root tasks
-        root_tasks = self.project.get_root_tasks()
-        root_tasks_sorted = sorted(root_tasks, key=lambda t: t.start_date)
 
-        for task in root_tasks_sorted:
+        # First pass: add all root tasks
+        for task in self.project.get_root_tasks():
             item_id = self._add_task_to_tree(task, indent_level=0)
             tree_items[task.id] = item_id
 
@@ -1253,8 +1350,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # Imported files (notably GanttProject) can nest tasks several levels
         # deep, so keep sweeping until a pass places nothing new - a single
         # pass would silently drop anything below the second level.
-        remaining = [t for t in sorted(self.project.tasks, key=lambda t: t.start_date)
-                     if t.parent_task_id]
+        remaining = [t for t in self.project.tasks if t.parent_task_id]
 
         while remaining:
             placed = []

@@ -390,5 +390,254 @@ class TestProjectStateTracker(unittest.TestCase):
         self.assertEqual(len(self.project.tasks), 1)
 
 
+class TestDependencyUndo(unittest.TestCase):
+    """
+    Undoing a dependency change restores the previous links.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The task list's drag-and-drop handlers appended to task.dependencies before
+    calling update_task. The tracker snapshots the task as it finds it, so the
+    snapshot already held the new link and undo restored the state it was meant
+    to be undoing - the dependency simply stayed.
+
+    The shallow copy behind that snapshot is covered too: copy.copy leaves the
+    copy sharing the live task's DependencyList, so an in-place mutation after
+    the fact would rewrite the undo record.
+    """
+
+    def setUp(self):
+        """Set up a project with two independent tasks."""
+        self.project = Project(name="Test Project")
+        start = datetime(2026, 1, 1)
+        self.first = Task(id="001", name="First", start_date=start,
+                          end_date=start + timedelta(days=2))
+        self.second = Task(id="002", name="Second",
+                           start_date=start + timedelta(days=3),
+                           end_date=start + timedelta(days=5))
+        self.project.add_task(self.first)
+        self.project.add_task(self.second)
+
+        self.manager = UndoRedoManager()
+        self.manager.set_project(self.project)
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+
+    def test_undo_removes_an_added_dependency(self):
+        """Undo takes a newly linked dependency back off the task."""
+        task = self.project.get_task_by_id("002")
+        self.tracker.update_task(
+            "002", dependencies=list(task.dependencies) + ["001"]
+        )
+        self.assertEqual(
+            self.project.get_task_by_id("002").dependency_ids, ["001"]
+        )
+
+        self.assertTrue(self.manager.undo())
+
+        self.assertEqual(self.project.get_task_by_id("002").dependency_ids, [])
+
+    def test_redo_puts_the_dependency_back(self):
+        """Redo reapplies the link undo removed."""
+        self.tracker.update_task("002", dependencies=["001"])
+        self.manager.undo()
+
+        self.assertTrue(self.manager.redo())
+
+        self.assertEqual(
+            self.project.get_task_by_id("002").dependency_ids, ["001"]
+        )
+
+    def test_undo_snapshot_is_independent_of_the_live_task(self):
+        """Mutating the task afterwards does not rewrite the undo record."""
+        task = self.project.get_task_by_id("002")
+        task.add_dependency("001", "FS", "Hard")
+
+        self.tracker.update_task("002", dependencies=["001"], name="Renamed")
+
+        # The task object the snapshot was taken from is no longer in the
+        # project; mutating it must not disturb the recorded history
+        task.dependencies.append("999")
+        task.dependencies[0].hardness = "Rubber"
+
+        self.assertTrue(self.manager.undo())
+
+        restored = self.project.get_task_by_id("002")
+        self.assertEqual(restored.dependency_ids, ["001"])
+        self.assertEqual(restored.dependencies[0].hardness, "Hard")
+
+
+class TestRemoveUndo(unittest.TestCase):
+    """
+    Undoing a delete restores everything the delete took.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Project.remove_task deletes the task's sub-tasks too, and strips the
+    removed ID out of every dependency list. Undo re-inserted only the named
+    task, so deleting a parent and undoing it destroyed its children and left
+    the surviving links broken.
+    """
+
+    def setUp(self):
+        """A parent with two sub-tasks, and a later task depending on it."""
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+
+        self.project.add_task(Task(id="001", name="Parent", start_date=base,
+                                   end_date=base + timedelta(days=5)))
+        for task_id, name in [("002", "Child A"), ("003", "Child B")]:
+            self.project.add_task(Task(
+                id=task_id, name=name, start_date=base,
+                task_type="Sub-Task", parent_task_id="001",
+            ))
+
+        later = Task(id="004", name="Later",
+                     start_date=base + timedelta(days=6),
+                     end_date=base + timedelta(days=8))
+        later.add_dependency("001", "FS", "Hard")
+        self.project.add_task(later)
+
+        self.manager = UndoRedoManager()
+        self.manager.set_project(self.project)
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+
+    def _ids(self):
+        """The project's task IDs in order."""
+        return [task.id for task in self.project.tasks]
+
+    def test_deleting_a_parent_takes_its_subtasks(self):
+        """The delete itself removes the whole branch."""
+        self.assertTrue(self.tracker.remove_task("001"))
+
+        self.assertEqual(self._ids(), ["004"])
+
+    def test_undo_restores_the_subtasks(self):
+        """Undo brings the children back, not just the parent."""
+        self.tracker.remove_task("001")
+
+        self.assertTrue(self.manager.undo())
+
+        self.assertEqual(self._ids(), ["001", "002", "003", "004"])
+
+    def test_undo_restores_dependencies_on_surviving_tasks(self):
+        """A link to the deleted task comes back with it."""
+        self.tracker.remove_task("001")
+        self.assertEqual(self.project.get_task_by_id("004").dependency_ids, [])
+
+        self.manager.undo()
+
+        self.assertEqual(self.project.get_task_by_id("004").dependency_ids,
+                         ["001"])
+
+    def test_undo_restores_the_link_details(self):
+        """The restored link keeps its type and hardness."""
+        self.tracker.remove_task("001")
+        self.manager.undo()
+
+        link = self.project.get_task_by_id("004").get_dependency("001")
+
+        self.assertIsNotNone(link)
+        self.assertEqual(link.dep_type, 'FS')
+        self.assertEqual(link.hardness, 'Hard')
+
+    def test_redo_deletes_the_branch_again(self):
+        """Redo repeats the whole removal."""
+        self.tracker.remove_task("001")
+        self.manager.undo()
+
+        self.assertTrue(self.manager.redo())
+
+        self.assertEqual(self._ids(), ["004"])
+        self.assertEqual(self.project.get_task_by_id("004").dependency_ids, [])
+
+    def test_undo_after_redo_still_restores(self):
+        """The snapshot survives a round trip through redo."""
+        self.tracker.remove_task("001")
+        self.manager.undo()
+        self.manager.redo()
+
+        self.assertTrue(self.manager.undo())
+
+        self.assertEqual(self._ids(), ["001", "002", "003", "004"])
+        self.assertEqual(self.project.get_task_by_id("004").dependency_ids,
+                         ["001"])
+
+    def test_deleting_a_childless_task_is_undoable(self):
+        """The simple case still works."""
+        self.tracker.remove_task("004")
+        self.assertEqual(self._ids(), ["001", "002", "003"])
+
+        self.assertTrue(self.manager.undo())
+
+        self.assertEqual(self._ids(), ["001", "002", "003", "004"])
+
+
+class TestReorderUndo(unittest.TestCase):
+    """Reordering rows is undoable."""
+
+    def setUp(self):
+        """Three root tasks in a known order."""
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        for task_id, name in [("001", "Alpha"), ("002", "Beta"),
+                              ("003", "Gamma")]:
+            self.project.add_task(Task(id=task_id, name=name, start_date=base,
+                                       end_date=base + timedelta(days=2)))
+
+        self.manager = UndoRedoManager()
+        self.manager.set_project(self.project)
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+
+    def _ids(self):
+        """The project's task IDs in order."""
+        return [task.id for task in self.project.tasks]
+
+    def test_undo_restores_the_previous_order(self):
+        """Undo puts a moved task back where it was."""
+        before = list(self.project.tasks)
+        self.project.move_task("003", 'top')
+        self.tracker.reorder_tasks(before, list(self.project.tasks))
+        self.assertEqual(self._ids(), ["003", "001", "002"])
+
+        self.assertTrue(self.manager.undo())
+
+        self.assertEqual(self._ids(), ["001", "002", "003"])
+
+    def test_redo_reapplies_the_move(self):
+        """Redo restores the order undo took away."""
+        before = list(self.project.tasks)
+        self.project.move_task("003", 'top')
+        self.tracker.reorder_tasks(before, list(self.project.tasks))
+        self.manager.undo()
+
+        self.assertTrue(self.manager.redo())
+
+        self.assertEqual(self._ids(), ["003", "001", "002"])
+
+    def test_the_recorded_orders_are_independent(self):
+        """
+        Later moves do not disturb an earlier undo entry.
+
+        The command holds two orderings of the same Task objects, so it has
+        to keep its own lists; storing the caller's would let the next move
+        rewrite the history behind it.
+        """
+        before = list(self.project.tasks)
+        self.project.move_task("003", 'top')
+        after = list(self.project.tasks)
+        self.tracker.reorder_tasks(before, after)
+
+        # A second move, recorded the same way
+        self.project.move_task("002", 'top')
+        self.tracker.reorder_tasks(after, list(self.project.tasks))
+        self.assertEqual(self._ids(), ["002", "003", "001"])
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(self._ids(), ["003", "001", "002"])
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(self._ids(), ["001", "002", "003"])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -599,6 +599,170 @@ class Project:
         """Add a task to the project and update dates."""
         self.tasks.append(task)
         self._update_dates()
+
+    def _children_by_parent(self) -> Dict[Optional[str], List[Task]]:
+        """Group tasks by their parent, each group in current list order."""
+        children: Dict[Optional[str], List[Task]] = {}
+        for task in self.tasks:
+            children.setdefault(task.parent_task_id, []).append(task)
+        return children
+
+    def _flatten(self, children: Dict[Optional[str], List[Task]]) -> List[Task]:
+        """
+        Rebuild the task list from a parent-to-children mapping.
+
+        PARAMETERS:
+        -----------
+        children : Dict[Optional[str], List[Task]]
+            Tasks grouped by parent, each group in the order wanted.
+
+        RETURNS:
+        --------
+        List[Task]
+            Every task, each one immediately followed by its descendants.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Walking down from the roots only reaches tasks whose ancestry is
+        intact. A task orphaned by a missing parent, or caught in a parent
+        cycle, is never reached, so anything left over is appended rather than
+        dropped - losing tasks during a reorder would be far worse than
+        showing them in an odd place.
+        """
+        ordered: List[Task] = []
+        emitted: Set[str] = set()
+
+        def walk(parent_id: Optional[str]):
+            """Emit a parent's children, each followed by its own."""
+            for child in children.get(parent_id, []):
+                if child.id in emitted:
+                    continue
+                emitted.add(child.id)
+                ordered.append(child)
+                walk(child.id)
+
+        walk(None)
+
+        for task in self.tasks:
+            if task.id not in emitted:
+                emitted.add(task.id)
+                ordered.append(task)
+
+        return ordered
+
+    def get_siblings(self, task_id: str) -> List[Task]:
+        """
+        Get the tasks that share a parent with this one, in display order.
+
+        RETURNS:
+        --------
+        List[Task]
+            Includes the task itself. Root tasks are siblings of each other.
+        """
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            return []
+        return [t for t in self.tasks if t.parent_task_id == task.parent_task_id]
+
+    def move_task(self, task_id: str, where: str) -> bool:
+        """
+        Move a task within the group of tasks that share its parent.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task to move.
+        where : str
+            'top', 'up', 'down' or 'bottom'.
+
+        RETURNS:
+        --------
+        bool
+            True when the task actually moved. False when it is already at
+            that end of its group, so callers can skip a pointless redraw.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Moving is confined to siblings: a sub-task reorders among the
+        sub-tasks of its own parent and a root task among the root tasks.
+        That keeps a move from silently reparenting anything, and matches
+        what the row indentation shows.
+
+        A task carries its sub-tasks with it, because the list is rebuilt
+        from the hierarchy rather than by swapping two positions - moving a
+        parent one row up would otherwise step it into the middle of its own
+        children.
+        """
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            return False
+
+        children = self._children_by_parent()
+        siblings = children.get(task.parent_task_id, [])
+        if len(siblings) < 2:
+            return False
+
+        index = siblings.index(task)
+        if where == 'top':
+            new_index = 0
+        elif where == 'up':
+            new_index = index - 1
+        elif where == 'down':
+            new_index = index + 1
+        elif where == 'bottom':
+            new_index = len(siblings) - 1
+        else:
+            raise ValueError(f"Unknown move target: {where!r}")
+
+        new_index = max(0, min(new_index, len(siblings) - 1))
+        if new_index == index:
+            return False
+
+        siblings.insert(new_index, siblings.pop(index))
+        self.tasks = self._flatten(children)
+        return True
+
+    def move_task_before(self, task_id: str, target_id: str) -> bool:
+        """
+        Put a task at the position a sibling currently occupies.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being moved.
+        target_id : str
+            The sibling whose position it should take.
+
+        RETURNS:
+        --------
+        bool
+            True when the task moved. False when the two are not siblings,
+            which is what a drop onto an unrelated row amounts to.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what a drag-and-drop resolves to. Restricting it to siblings
+        keeps dropping a row onto an unrelated one from reparenting it by
+        accident; the drag handler refuses such a drop rather than guessing.
+        """
+        task = self.get_task_by_id(task_id)
+        target = self.get_task_by_id(target_id)
+        if task is None or target is None or task is target:
+            return False
+        if task.parent_task_id != target.parent_task_id:
+            return False
+
+        children = self._children_by_parent()
+        siblings = children.get(task.parent_task_id, [])
+
+        index = siblings.index(task)
+        target_index = siblings.index(target)
+        if index == target_index:
+            return False
+
+        siblings.insert(target_index, siblings.pop(index))
+        self.tasks = self._flatten(children)
+        return True
     
     def remove_task(self, task_id: str) -> bool:
         """

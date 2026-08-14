@@ -76,7 +76,7 @@ can_redo = manager.can_redo()
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Callable
+from typing import Dict, Optional, List, Callable
 import copy
 
 from gantt_app.models import Project, Task
@@ -200,28 +200,56 @@ class RemoveTaskCommand(Command):
     
     DEVELOPMENT NOTES:
     ------------------
-    We store the task object and its index so that when we undo the removal,
-    we can restore the task to its original position. This ensures that the
-    undo operation is truly reversible.
+    Undo restores the whole task list rather than re-inserting the one task
+    at its index, because removing a task does more than drop it: Project's
+    remove_task also deletes every sub-task beneath it, and strips the
+    removed ID out of the dependencies of everything left. Putting back only
+    the named task lost the sub-tasks for good and left the surviving links
+    broken, so deleting a parent and undoing it destroyed its children.
+
+    The dependencies are snapshotted separately because they are rewritten in
+    place on tasks that survive the removal - those Task objects are the same
+    ones the restored list holds, so the list alone does not carry them.
+
+    The snapshot is taken in execute rather than at construction so redo goes
+    through exactly the same path as the original removal.
     """
     project: Project
     task_id: str
     task: Task
     index: int
     name: str = field(default="", init=False)
-    
+    _previous_tasks: Optional[List[Task]] = field(default=None, init=False,
+                                                  repr=False)
+    _previous_dependencies: Optional[Dict[str, list]] = field(
+        default=None, init=False, repr=False)
+
     def __post_init__(self):
         self.name = f"Remove Task: {self.task.name}"
-    
+
     def execute(self) -> bool:
-        """Remove the task from the project."""
+        """Remove the task, remembering enough to put everything back."""
+        self._previous_tasks = list(self.project.tasks)
+        self._previous_dependencies = {
+            task.id: [copy.copy(link) for link in task.dependencies]
+            for task in self.project.tasks
+        }
         return self.project.remove_task(self.task_id)
-    
+
     def undo(self) -> bool:
-        """Re-add the task to the project at its original position."""
-        # Insert at the original index
-        self.project.tasks.insert(self.index, self.task)
-        # Update project dates
+        """Restore the task list as it was before the removal."""
+        if self._previous_tasks is None:
+            # Never executed; restore what little is known
+            self.project.tasks.insert(self.index, self.task)
+            self.project._update_dates()
+            return True
+
+        self.project.tasks = list(self._previous_tasks)
+        for task in self.project.tasks:
+            links = self._previous_dependencies.get(task.id)
+            if links is not None:
+                task.dependencies = [copy.copy(link) for link in links]
+
         self.project._update_dates()
         return True
 
@@ -316,10 +344,50 @@ class UpdateProjectNameCommand(Command):
         """Set the project name to the new name."""
         self.project.name = self.new_name
         return True
-    
+
     def undo(self) -> bool:
         """Restore the project name to the old name."""
         self.project.name = self.old_name
+        return True
+
+
+@dataclass
+class ReorderTasksCommand(Command):
+    """
+    Command to change the order of the tasks in a project.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project whose task order changed.
+    old_order : List[Task]
+        The task list as it was before the move (for undo).
+    new_order : List[Task]
+        The task list after the move (for execute).
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Moving a row is the one edit that changes no task at all - only the
+    order of the list holding them - so UpdateTaskCommand, which swaps one
+    task for another, cannot express it. Both orders hold the same Task
+    objects, so this stores two orderings rather than copies.
+    """
+    project: Project
+    old_order: List[Task]
+    new_order: List[Task]
+    name: str = field(default="", init=False)
+
+    def __post_init__(self):
+        self.name = "Reorder Tasks"
+
+    def execute(self) -> bool:
+        """Apply the new order."""
+        self.project.tasks = list(self.new_order)
+        return True
+
+    def undo(self) -> bool:
+        """Restore the previous order."""
+        self.project.tasks = list(self.old_order)
         return True
 
 
@@ -657,6 +725,29 @@ def create_update_task_command(project: Project, task_id: str, old_task: Task, n
     return UpdateTaskCommand(project=project, task_id=task_id, old_task=old_task, new_task=new_task)
 
 
+def create_reorder_tasks_command(project: Project, old_order: List[Task],
+                                 new_order: List[Task]) -> ReorderTasksCommand:
+    """
+    Create a command to change the order of a project's tasks.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project whose task order changed
+    old_order : List[Task]
+        The task list before the move
+    new_order : List[Task]
+        The task list after the move
+
+    RETURNS:
+    --------
+    ReorderTasksCommand
+        A command that applies the new order when executed
+    """
+    return ReorderTasksCommand(project=project, old_order=old_order,
+                               new_order=new_order)
+
+
 def create_update_project_name_command(project: Project, old_name: str, new_name: str) -> UpdateProjectNameCommand:
     """
     Create a command to update the project name.
@@ -794,8 +885,15 @@ class ProjectStateTracker:
         if not task:
             return False
         
-        # Store the old task
+        # Store the old task.
+        #
+        # copy.copy bypasses __setattr__ and leaves the copy sharing the very
+        # DependencyList the live task holds, so a caller that later mutates
+        # that list in place would rewrite this undo snapshot too. The links
+        # are copied individually because Task.add_dependency updates an
+        # existing Dependency in place rather than replacing it.
         old_task = copy.copy(task)
+        old_task.dependencies = [copy.copy(d) for d in task.dependencies]
         
         # Create a new task with the updated properties
         # We'll use the same ID and just update the specified properties
@@ -817,6 +915,34 @@ class ProjectStateTracker:
         command = create_update_task_command(self.project, task_id, old_task, new_task)
         return self.manager.execute(command)
     
+    def reorder_tasks(self, old_order: List[Task], new_order: List[Task]) -> bool:
+        """
+        Record a change to the order of the project's tasks.
+
+        PARAMETERS:
+        -----------
+        old_order : List[Task]
+            The task list as it was before the move.
+        new_order : List[Task]
+            The task list after the move.
+
+        RETURNS:
+        --------
+        bool
+            True if successful, False otherwise.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The caller has already reordered the project, so executing the
+        command re-applies an order that is in place. That keeps this the
+        same shape as the other tracker methods, and makes the redo path
+        exercise exactly the code the first move did.
+        """
+        command = create_reorder_tasks_command(
+            self.project, list(old_order), list(new_order)
+        )
+        return self.manager.execute(command)
+
     def update_project_name(self, new_name: str) -> bool:
         """
         Update the project name with undo support.
