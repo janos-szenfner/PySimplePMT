@@ -124,42 +124,122 @@ jobs:
             dependency-manifest.txt
           retention-days: 30
 
+      # Uploading assets to the releases API fails intermittently - a 39 MB
+      # package went down with "other side closed" partway through, leaving
+      # the tag pushed and no release at all. The gh CLI is preinstalled on
+      # the runner, so the release is created and each asset uploaded with
+      # explicit retries, then the result is verified.
       - name: Publish the GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          name: PySimplePMT ${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
-          generate_release_notes: true
-          files: |
-            dist/*.deb
-            dist/SHA256SUMS
-            dependency-manifest.txt
-          body: |
-            ## PySimplePMT ${{ steps.version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
 
-            ### Install on Ubuntu / Debian
+          notes_file="$(mktemp)"
+          cat > "$notes_file" <<'NOTES'
+          ## PySimplePMT VERSION_PLACEHOLDER
 
-            ```bash
-            sudo apt install ./pysimplepmt_${{ steps.version.outputs.version }}_amd64.deb
-            ```
+          ### Install on Ubuntu / Debian
 
-            Then launch it from your applications menu, or run `pysimplepmt`.
+          ```bash
+          sudo apt install ./pysimplepmt_VERSION_PLACEHOLDER_amd64.deb
+          ```
 
-            ### Self-contained
+          Then launch it from your applications menu, or run `pysimplepmt`.
 
-            The package bundles the Python interpreter, the Tcl/Tk runtime and
-            every third-party library. **No Python installation and no pip
-            packages are required.** It relies only on base system libraries
-            (`libc6`, `libx11-6`, `libxext6`, `libxrender1`, `libfontconfig1`,
-            `libfreetype6`) that ship with any Ubuntu desktop.
+          ### Self-contained
 
-            The exact set of bundled libraries is recorded in
-            `dependency-manifest.txt`, and `SHA256SUMS` covers the package.
+          The package bundles the Python interpreter, the Tcl/Tk runtime and
+          every third-party library. **No Python installation and no pip
+          packages are required**, and nothing is downloaded at runtime.
 
-            ### Removal
+          The exact set of bundled libraries is recorded in
+          `dependency-manifest.txt`, and `SHA256SUMS` covers the package.
 
-            ```bash
-            sudo apt remove pysimplepmt
-            ```
+          ### Removal
+
+          ```bash
+          sudo apt remove pysimplepmt
+          ```
+          NOTES
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" "$notes_file"
+
+          # Append GitHub's generated changelog. Asking gh for both
+          # --notes-file and --generate-notes is rejected, so the notes are
+          # fetched from the API and concatenated instead. Failing to get
+          # them must not cost us the release, so it is best effort.
+          if generated=$(gh api -X POST \
+                "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+                -f tag_name="$TAG" --jq '.body' 2>/dev/null); then
+            printf '\n\n---\n\n%s\n' "$generated" >> "$notes_file"
+          else
+            echo "Could not fetch generated release notes; continuing." >&2
+          fi
+
+          prerelease=""
+          case "$VERSION" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+
+          # Create the release if this tag does not already have one
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release for $TAG already exists; reusing it."
+          else
+            for attempt in 1 2 3; do
+              if gh release create "$TAG" \
+                   --title "PySimplePMT ${VERSION}" \
+                   --notes-file "$notes_file" \
+                   $prerelease; then
+                break
+              fi
+              echo "Release creation attempt ${attempt} failed; retrying..." >&2
+              sleep $((attempt * 10))
+            done
+          fi
+
+          gh release view "$TAG" >/dev/null
+
+          # Upload each asset separately so one flaky transfer cannot lose
+          # the rest, retrying and clobbering any partial upload
+          upload() {
+            local file="$1"
+            for attempt in 1 2 3 4; do
+              if gh release upload "$TAG" "$file" --clobber; then
+                echo "Uploaded $(basename "$file")"
+                return 0
+              fi
+              echo "Upload of $(basename "$file") attempt ${attempt} failed; retrying..." >&2
+              sleep $((attempt * 15))
+            done
+            echo "ERROR: could not upload $(basename "$file")" >&2
+            return 1
+          }
+
+          for asset in dist/*.deb dist/SHA256SUMS dependency-manifest.txt; do
+            upload "$asset"
+          done
+
+      # A release missing its package is worse than a failed build, because
+      # it looks finished. Fail loudly if anything did not make it up.
+      - name: Verify the release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "Assets attached to ${TAG}:"
+          gh release view "$TAG" --json assets \
+            --jq '.assets[] | "  \(.name)  \(.size) bytes"'
+
+          for required in ".deb" "SHA256SUMS" "dependency-manifest.txt"; do
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' \
+                 | grep -q -- "$required"; then
+              echo "ERROR: ${required} is missing from the release" >&2
+              exit 1
+            fi
+          done
+          echo "All expected assets are present."
