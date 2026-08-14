@@ -180,11 +180,22 @@ jobs:
           fi
 
           prerelease=""
+          prerelease_flag="--prerelease=false"
           case "$VERSION" in
-            *-*) prerelease="--prerelease" ;;
+            *-*)
+              prerelease="--prerelease"
+              prerelease_flag="--prerelease=true"
+              ;;
           esac
 
-          # Create the release if this tag does not already have one
+          # Create the release if this tag does not already have one.
+          #
+          # "Already exists" includes a release GitHub has demoted to a draft,
+          # which is what it does when the tag behind a published release is
+          # deleted and re-pushed. gh sees the draft and reports success, so
+          # this branch is reached with an invisible release - the state that
+          # once produced a fully green run and no release on the releases
+          # page. Publishing is forced below rather than assumed here.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release for $TAG already exists; reusing it."
           else
@@ -222,6 +233,18 @@ jobs:
             upload "$asset"
           done
 
+          # Assets are attached, so the release is complete: take it out of
+          # draft unconditionally. This is what turns a reused draft into a
+          # visible release, and it is a no-op for one just created. The title
+          # and notes are rewritten in the same call so a release carried over
+          # from an earlier attempt does not keep that attempt's text.
+          echo "Publishing ${TAG}"
+          gh release edit "$TAG" \
+            --title "PySimplePMT ${VERSION}" \
+            --notes-file "$notes_file" \
+            --draft=false \
+            "$prerelease_flag"
+
       # A release missing its package is worse than a failed build, because
       # it looks finished. Fail loudly if anything did not make it up.
       - name: Verify the release assets
@@ -243,3 +266,25 @@ jobs:
             fi
           done
           echo "All expected assets are present."
+
+          # A draft release is invisible to everyone but the repository's own
+          # maintainers, so a complete set of assets is not on its own proof
+          # that anything was published. gh reads drafts happily, which is how
+          # a green run previously reported success against a release nobody
+          # could download.
+          if [ "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" != "false" ]; then
+            echo "ERROR: ${TAG} is still a draft and is not publicly visible" >&2
+            exit 1
+          fi
+
+          # Confirmed a second time through the by-tag endpoint, which is how
+          # an installer or a download script finds a release. Authenticated
+          # so it draws on the token's rate limit rather than the 60 requests
+          # an hour shared by everything running from the runner's address,
+          # which would otherwise fail a perfectly good release.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+               --jq '.html_url'; then
+            echo "ERROR: ${TAG} cannot be resolved by tag" >&2
+            exit 1
+          fi
+          echo "Release ${TAG} is published and visible."
