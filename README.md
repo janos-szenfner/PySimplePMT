@@ -14,7 +14,8 @@ This is a complete implementation of a project management tool with:
 ## Features
 
 - **Interactive Gantt Chart Visualization**: Visual representation of tasks and milestones with dependency arrows, using Plotly for zoom, pan, and hover tooltips
-- **Drag-and-Drop Task List**: Reorder tasks by dragging a row, or from the right-click menu (Move to top / up / down / bottom)
+- **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
+- **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
 - **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
@@ -71,14 +72,14 @@ gantt_app/
 - **Factory Methods**: create_task(), create_milestone() for easy object creation
 
 ### Task List View (`views/task_list.py`)
-- **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and the row it would land on is highlighted while dragging
+- **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
 - **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top, Move up, Move down, Move to bottom, then Edit and Delete; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
 - **EditTaskDialog**: Comprehensive task editing interface with all fields visible
 - **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone
 - **Hierarchical Display**: Sub-tasks are visually indented under their parent tasks with tree structure
 - **Features**:
-  - Double-click to edit tasks
+  - Double-click a row to expand or collapse its sub-tasks; edit from the right-click menu
   - Create tasks with all fields visible at once (no more one-by-one input)
   - Circular dependency prevention (including parent-child relationships)
   - Milestone toggle with automatic end_date handling
@@ -95,7 +96,9 @@ gantt_app/
 - **Dependency Lines**: Red dotted lines connecting dependent tasks
 - **Critical Path**: Highlighted in orange
 - **Hover Tooltips**: Detailed information on hover (name, dates, duration, progress, dependencies)
-- **Zoom & Pan**: Built-in Plotly interactivity
+- **Zoom**: Zoom in, zoom out and Fit buttons beneath the chart; the view scrolls at higher zoom levels
+- **Summary Bars**: A task with sub-tasks is drawn as a spanning bracket rather than a solid bar
+- **Row Order**: Chart rows follow the task list, so a reorder is visible in both panes
 - **Labels**: Task names displayed next to milestones
 - **Date Formatting**: Proper date display with tick formatting
 - **Empty State**: Helpful message when no tasks exist
@@ -377,7 +380,7 @@ pysimplepmt --log-file      # print the log file path
     - The log is also written to a file; see the Logging section for its location
 
 ### Mouse and Keyboard
-- **Double-click** a task to edit it
+- **Double-click** a row to expand or collapse its sub-tasks
 - **Drag** a row to reorder it within its siblings
 - **Right-click** a row (two-finger click on macOS) to move, edit or delete it
 - Use **View** dropdown menu and select "Toggle Theme" to switch between light/dark modes

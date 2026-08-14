@@ -745,8 +745,9 @@ class DragDropTaskList(ctk.CTkFrame):
     GRID_SELECT_BG = '#cfe2f3'
     GRID_ROW_HEIGHT = 26
 
-    #: Row colour marking where a dragged task would land.
-    DROP_TARGET_BG = '#ffe9a8'
+    #: The line marking where a dragged task would land.
+    DROP_LINE_COLOR = '#1f6aa5'
+    DROP_LINE_THICKNESS = 2
 
     #: How far the pointer must travel before a press counts as a drag,
     #: so a click that wobbles by a pixel still selects rather than moves.
@@ -830,11 +831,13 @@ class DragDropTaskList(ctk.CTkFrame):
         self.dragged_task_id = None
         self.drag_item = None
 
-        # Where the press started, whether it has become a drag, and the row
-        # currently highlighted as the drop position
+        # Where the press started, whether it has become a drag, the row the
+        # drop would land at, and which of its edges the line sits on
         self._drag_origin = None
         self._dragging = False
         self._drop_target = None
+        self._drop_above = True
+        self._drop_line_widget = None
 
         # Create UI
         self._create_ui()
@@ -852,11 +855,17 @@ class DragDropTaskList(ctk.CTkFrame):
         tree_frame = ctk.CTkFrame(self)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
+        # 'tree headings' rather than 'headings': column #0 is what carries
+        # the expander, so hiding it left a task with sub-tasks looking
+        # exactly like one without, and gave nothing to click to fold a
+        # branch away. The names used to be prefixed with '|--' to stand in
+        # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
             'ID', 'Name', 'Type', 'Duration', 'Start', 'End', 'Progress', 'Dependencies', 'Milestone'
-        ), show='headings')
+        ), show='tree headings')
 
         # Configure columns
+        self.tree.heading('#0', text='', anchor=tk.W)
         self.tree.heading('ID', text='ID', anchor=tk.W)
         self.tree.heading('Name', text='Name', anchor=tk.W)
         self.tree.heading('Type', text='Type', anchor=tk.W)
@@ -867,7 +876,8 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Dependencies', text='Dependencies', anchor=tk.W)
         self.tree.heading('Milestone', text='Milestone', anchor=tk.W)
         
-        # Column widths
+        # Column widths. #0 holds only the expander, so it stays narrow
+        self.tree.column('#0', width=34, minwidth=34, stretch=False)
         self.tree.column('ID', width=80, stretch=False)
         self.tree.column('Name', width=200, stretch=True)
         self.tree.column('Type', width=80, stretch=False)
@@ -912,10 +922,6 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<B1-Motion>', self.on_drag)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
 
-        # Rows being dragged over are marked with a tag rather than by
-        # selecting them, so the selection still shows what is being moved
-        self.tree.tag_configure('droptarget', background=self.DROP_TARGET_BG)
-
         # Right-click menu, which offers the same moves as dragging
         self.context_menu = TaskContextMenu(
             self.tree,
@@ -926,10 +932,26 @@ class DragDropTaskList(ctk.CTkFrame):
         )
 
     def on_double_click(self, event):
-        """Handle double click to edit task."""
-        item = self.tree.selection()[0] if self.tree.selection() else None
-        if item:
-            self.edit_task(item)
+        """
+        Fold a task's sub-tasks away, or open them up again.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Double-click used to open the edit dialog. Editing is on the context
+        menu now, and the gesture does what it does in every other tree:
+        expands and collapses.
+
+        'break' stops ttk's own double-click handler running afterwards,
+        which would toggle the row a second time and undo this.
+        """
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return None
+
+        if self.tree.get_children(item):
+            self.tree.item(item, open=not self.tree.item(item, 'open'))
+
+        return 'break'
 
     def edit_task(self, task_id: str):
         """
@@ -1004,11 +1026,18 @@ class DragDropTaskList(ctk.CTkFrame):
 
 
     def on_select(self, event):
-        """Handle task selection."""
+        """
+        Handle task selection.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The row's iid is the task ID. This used to read it out of the item's
+        'text' instead, which only worked while column #0 was hidden and
+        being used to stash the ID.
+        """
         item = self.tree.selection()[0] if self.tree.selection() else None
         if item:
-            task_id = self.tree.item(item, 'text')
-            task = self.project.get_task_by_id(task_id)
+            task = self.project.get_task_by_id(item)
             if task and self.on_task_select:
                 self.on_task_select(task)
     
@@ -1049,7 +1078,7 @@ class DragDropTaskList(ctk.CTkFrame):
         at all.
 
         Rows that are not valid drops are deliberately left unmarked, so the
-        highlight only appears where releasing would actually do something.
+        line only appears where releasing would actually do something.
         """
         if self.dragged_task_id is None or self._drag_origin is None:
             return
@@ -1063,31 +1092,83 @@ class DragDropTaskList(ctk.CTkFrame):
             except tk.TclError:
                 pass
 
-        self._mark_drop_target(self.tree.identify_row(event.y))
+        self._mark_drop_target(self.tree.identify_row(event.y), event.y)
 
-    def _mark_drop_target(self, item):
-        """Highlight a row as the pending drop position, clearing any other."""
+    def _mark_drop_target(self, item, pointer_y=None):
+        """
+        Show where the dragged row would land.
+
+        PARAMETERS:
+        -----------
+        item : str
+            The row under the pointer, or '' for none.
+        pointer_y : int, optional
+            Pointer position, used to decide which edge of the row the line
+            sits on.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A drop lands *at* the target's position, so the line is drawn on the
+        edge the row will be inserted against: above the target when the
+        pointer is in its top half, below it otherwise. Shading the whole row
+        instead, as this first did, said which row was involved but not where
+        the dragged one would end up.
+        """
         if item and not self._is_valid_drop(item):
             item = None
 
-        if (item or None) == self._drop_target:
-            return
-
-        self._set_drop_tag(self._drop_target, False)
         self._drop_target = item or None
-        self._set_drop_tag(self._drop_target, True)
 
-    def _set_drop_tag(self, item, on):
-        """Add or remove the drop highlight tag on a row."""
-        if not item:
+        if self._drop_target is None:
+            self._hide_drop_line()
             return
+
+        self._show_drop_line(self._drop_target, pointer_y)
+
+    def _drop_line(self):
+        """The line widget, created on first use."""
+        if self._drop_line_widget is None:
+            self._drop_line_widget = tk.Frame(
+                self.tree, height=self.DROP_LINE_THICKNESS,
+                background=self.DROP_LINE_COLOR,
+                borderwidth=0, highlightthickness=0,
+            )
+        return self._drop_line_widget
+
+    def _show_drop_line(self, item, pointer_y=None):
+        """
+        Put the indicator on the edge of a row the drop would insert against.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        place() rather than a canvas overlay: a Treeview will host a placed
+        child directly, which keeps the line inside the scrolling viewport
+        without a second widget to keep in step.
+        """
         try:
-            tags = [t for t in self.tree.item(item, 'tags') if t != 'droptarget']
-            if on:
-                tags.append('droptarget')
-            self.tree.item(item, tags=tags)
+            box = self.tree.bbox(item)
         except tk.TclError:
-            pass
+            box = None
+
+        if not box:
+            # The row is scrolled out of view
+            self._hide_drop_line()
+            return
+
+        x, y, width, height = box
+        above = pointer_y is None or pointer_y < y + height / 2
+        edge = y if above else y + height
+        self._drop_above = above
+
+        line = self._drop_line()
+        line.place(x=x, y=max(0, edge - self.DROP_LINE_THICKNESS // 2),
+                   width=width, height=self.DROP_LINE_THICKNESS)
+        line.lift()
+
+    def _hide_drop_line(self):
+        """Take the indicator off screen."""
+        if self._drop_line_widget is not None:
+            self._drop_line_widget.place_forget()
 
     def _is_valid_drop(self, item):
         """
@@ -1110,8 +1191,9 @@ class DragDropTaskList(ctk.CTkFrame):
 
     def _end_drag(self):
         """Clear every trace of a drag, whether it completed or not."""
-        self._set_drop_tag(self._drop_target, False)
+        self._hide_drop_line()
         self._drop_target = None
+        self._drop_above = True
         self.dragged_task_id = None
         self.drag_item = None
         self._drag_origin = None
@@ -1414,19 +1496,16 @@ class DragDropTaskList(ctk.CTkFrame):
         # Format task type
         type_str = task.task_type
         
-        # Format name with indentation for subtasks
-        display_name = task.name
-        if indent_level > 0:
-            display_name = ('  ' * indent_level) + '├── ' + display_name
-        
+        # Column #0 draws the indentation and the expander, so the name is
+        # no longer prefixed with '|--' to fake it
         # Insert into tree
         item_id = self.tree.insert(parent_item, tk.END,
                                  iid=task.id,
-                                 text=task.id,
+                                 text='',
                                  open=True,
                                  values=(
                                      task.id,  # IDs are short sequential numbers
-                                     display_name,
+                                     task.name,
                                      type_str,
                                      duration_str,
                                      start_str,
@@ -1477,9 +1556,16 @@ class DragDropTaskList(ctk.CTkFrame):
             self.on_project_changed()
     
     def select_task(self, task_id: str):
-        """Select a task in the list."""
-        for item in self.tree.get_children():
-            if self.tree.item(item, 'text') == task_id:
-                self.tree.selection_set(item)
-                self.tree.see(item)
-                break
+        """
+        Select a task in the list.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The row's iid is the task ID, so this is a direct lookup. Scanning
+        get_children() compared against the item's 'text' and only looked at
+        the top level, so selecting a sub-task silently did nothing.
+        """
+        if not self.tree.exists(task_id):
+            return
+        self.tree.selection_set(task_id)
+        self.tree.see(task_id)

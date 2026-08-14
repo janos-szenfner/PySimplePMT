@@ -25,7 +25,9 @@ from gantt_app.models import Project
 from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
 from PIL import ImageTk
 
-from gantt_app.utils.chart_render import render_image, preferred_width
+from gantt_app.utils.chart_render import (
+    render_image, preferred_width, MIN_WIDTH
+)
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -40,6 +42,17 @@ RESIZE_THRESHOLD_PX = 24
 #: Supersampling for the on-screen chart. Every extra step multiplies both
 #: the render time and the Tk image memory, so it is lower than the exports.
 SCREEN_SCALE = 1.0
+
+#: How far one press of the zoom buttons moves.
+ZOOM_STEP = 1.25
+
+#: Zoom limits. Beyond these the chart is either unreadable or large enough
+#: to hit the renderer's pixel budget, which would silently compress it back.
+ZOOM_MIN = 0.25
+ZOOM_MAX = 8.0
+
+#: Floor for a zoomed-out chart, below which the labels collide.
+MIN_ZOOMED_WIDTH = 320
 
 
 class GanttChart(ctk.CTkFrame):
@@ -81,6 +94,15 @@ class GanttChart(ctk.CTkFrame):
         # HTML export and for anything that wants Plotly's own output
         self.figure = go.Figure()
 
+        # How far the chart is zoomed in. 1.0 fits the available width; the
+        # buttons below the chart step it, and Fit returns to 1.0
+        self._zoom = 1.0
+
+        # The controls go in first so the chart cannot squeeze them out when
+        # a tall plan fills the pane
+        self._zoom_bar = self._build_zoom_bar()
+        self._zoom_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=(0, 4))
+
         # Create a frame to hold the chart
         self.chart_frame = ctk.CTkFrame(self)
         self.chart_frame.pack(fill=tk.BOTH, expand=True)
@@ -98,6 +120,76 @@ class GanttChart(ctk.CTkFrame):
 
         # Bind to configure events for resizing
         self.bind('<Configure>', self.on_resize)
+
+    def _build_zoom_bar(self):
+        """
+        Build the zoom controls that sit under the chart.
+
+        RETURNS:
+        --------
+        ctk.CTkFrame
+            A strip holding zoom out, zoom in, Fit and the current level.
+        """
+        bar = ctk.CTkFrame(self)
+
+        ctk.CTkButton(bar, text="−", width=36,
+                      command=self.zoom_out).pack(side=tk.LEFT, padx=(6, 2),
+                                                  pady=4)
+        ctk.CTkButton(bar, text="+", width=36,
+                      command=self.zoom_in).pack(side=tk.LEFT, padx=2, pady=4)
+        ctk.CTkButton(bar, text="Fit", width=48,
+                      command=self.zoom_reset).pack(side=tk.LEFT, padx=(6, 2),
+                                                    pady=4)
+
+        self._zoom_label = ctk.CTkLabel(bar, text="100%", width=52)
+        self._zoom_label.pack(side=tk.LEFT, padx=6)
+
+        return bar
+
+    def zoom_in(self):
+        """Show a shorter span across the same width."""
+        self.set_zoom(self._zoom * ZOOM_STEP)
+
+    def zoom_out(self):
+        """Show a longer span across the same width."""
+        self.set_zoom(self._zoom / ZOOM_STEP)
+
+    def zoom_reset(self):
+        """Return to fitting the available width."""
+        self.set_zoom(1.0)
+
+    def set_zoom(self, zoom: float):
+        """
+        Set the zoom level and redraw.
+
+        PARAMETERS:
+        -----------
+        zoom : float
+            Multiplier on the rendered width. Clamped to ZOOM_MIN..ZOOM_MAX.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Zooming widens the image rather than scaling it after the fact, so
+        the bars stay sharp and the extra width is reached with the
+        horizontal scrollbar the chart already has.
+
+        A redraw at the same level is skipped: the buttons are easy to hold
+        down at a limit, and each redraw rasterises a multi-megapixel image.
+        """
+        zoom = max(ZOOM_MIN, min(float(zoom), ZOOM_MAX))
+        if abs(zoom - self._zoom) < 1e-6:
+            return
+
+        self._zoom = zoom
+        self._update_zoom_label()
+        self.draw_chart()
+
+    def _update_zoom_label(self):
+        """Show the current level beside the buttons."""
+        try:
+            self._zoom_label.configure(text=f"{self._zoom * 100:.0f}%")
+        except (tk.TclError, AttributeError):
+            pass
 
     def on_resize(self, event=None):
         """
@@ -177,15 +269,21 @@ class GanttChart(ctk.CTkFrame):
         self._last_render_width = available
 
         # Draw wide enough that a long plan stays readable and scrolls,
-        # rather than squeezing every bar into the visible pane
+        # rather than squeezing every bar into the visible pane, then apply
+        # the zoom on top. Zooming out below the pane width is allowed here -
+        # preferred_width's floor is about legibility at 100%, and holding it
+        # would make the zoom-out button do nothing on a short plan.
         width = preferred_width(self.project, available)
+        if self._zoom != 1.0:
+            width = max(int(width * self._zoom), MIN_ZOOMED_WIDTH)
 
         try:
             image = render_image(
                 self.project,
                 settings=self._figure_settings(),
                 width=width,
-                scale=SCREEN_SCALE
+                scale=SCREEN_SCALE,
+                min_width=MIN_ZOOMED_WIDTH if self._zoom < 1.0 else MIN_WIDTH
             )
         except Exception:
             logger.exception("Could not draw the Gantt chart")

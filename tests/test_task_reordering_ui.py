@@ -89,6 +89,17 @@ class TaskListTestCase(unittest.TestCase):
         """Make identify_row resolve y coordinates to given rows."""
         self.task_list.tree.identify_row = lambda y: mapping.get(y, '')
 
+    def rows_at(self, boxes):
+        """
+        Give named rows a geometry, as (x, y, width, height).
+
+        A withdrawn window has no laid-out rows, so Treeview.bbox returns
+        empty and the drop line has nowhere to go. Supplying the rectangles
+        keeps the placement arithmetic under test without needing a mapped,
+        on-screen window.
+        """
+        self.task_list.tree.bbox = lambda item, column=None: boxes.get(item, '')
+
 
 class TestRowOrder(TaskListTestCase):
     """Rows follow the project's order rather than the task dates."""
@@ -116,6 +127,113 @@ class TestRowOrder(TaskListTestCase):
         self.task_list.move_task("003", 'top')
 
         self.assertEqual(self.task_list.tree.selection(), ("003",))
+
+
+class TestHierarchyDisplay(TaskListTestCase):
+    """
+    A task with sub-tasks is visibly different from one without.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The tree was built show='headings', which hides column #0 - the column
+    that draws the expander. A parent looked exactly like a leaf and there
+    was nothing to click to fold a branch away, so the names were prefixed
+    with '|--' to stand in for the indentation.
+    """
+
+    def test_the_tree_column_is_shown(self):
+        """Column #0 is displayed, which is what draws the expander."""
+        self.assertIn('tree', str(self.task_list.tree.cget('show')))
+
+    def test_the_tree_column_is_narrow(self):
+        """It carries only the expander, so it does not eat the row."""
+        self.assertLessEqual(self.task_list.tree.column('#0', 'width'), 60)
+
+    def test_a_parent_reports_children(self):
+        """The sub-tasks hang off their parent, so ttk draws an expander."""
+        self.assertEqual(list(self.task_list.tree.get_children("002")),
+                         ["004", "005"])
+
+    def test_a_leaf_reports_none(self):
+        """A task without sub-tasks gets no expander."""
+        self.assertEqual(list(self.task_list.tree.get_children("001")), [])
+
+    def test_names_are_not_prefixed(self):
+        """The name column holds the name, with no drawn-in tree characters."""
+        values = self.task_list.tree.item("004", 'values')
+
+        self.assertEqual(values[1], "Beta one")
+
+    def test_selecting_a_subtask_works(self):
+        """
+        select_task reaches a nested row.
+
+        It used to scan only the top level and compare against the item's
+        'text', so selecting a sub-task quietly did nothing.
+        """
+        self.task_list.select_task("005")
+
+        self.assertEqual(self.task_list.tree.selection(), ("005",))
+
+
+class TestDoubleClick(TaskListTestCase):
+    """Double-click folds a branch instead of opening the edit dialog."""
+
+    def double_click(self, item):
+        """Double-click the given row."""
+        self.task_list.tree.identify_row = lambda y: item
+        return self.task_list.on_double_click(SimpleNamespace(x=5, y=0))
+
+    def test_double_click_collapses_a_parent(self):
+        """An open parent closes."""
+        self.assertTrue(self.task_list.tree.item("002", 'open'))
+
+        self.double_click("002")
+
+        self.assertFalse(self.task_list.tree.item("002", 'open'))
+
+    def test_double_click_expands_a_closed_parent(self):
+        """A closed parent opens again."""
+        self.task_list.tree.item("002", open=False)
+
+        self.double_click("002")
+
+        self.assertTrue(self.task_list.tree.item("002", 'open'))
+
+    def test_double_click_does_not_open_the_edit_dialog(self):
+        """Editing moved to the context menu."""
+        opened = []
+        self.task_list.on_task_edit = opened.append
+
+        self.double_click("002")
+        self.double_click("001")
+
+        self.assertEqual(opened, [])
+
+    def test_double_click_on_a_leaf_does_nothing(self):
+        """A task without sub-tasks has nothing to fold."""
+        before = self.rows()
+
+        self.double_click("001")
+
+        self.assertEqual(self.rows(), before)
+
+    def test_the_default_handler_is_suppressed(self):
+        """
+        'break' stops ttk's own double-click running afterwards.
+
+        Without it the built-in handler toggles the row a second time and
+        the branch snaps straight back.
+        """
+        self.assertEqual(self.double_click("002"), 'break')
+
+    def test_double_click_off_the_rows_is_ignored(self):
+        """Below the last row there is nothing to toggle."""
+        self.task_list.tree.identify_row = lambda y: ''
+
+        result = self.task_list.on_double_click(SimpleNamespace(x=5, y=900))
+
+        self.assertIsNone(result)
 
 
 class TestDragGesture(TaskListTestCase):
@@ -163,24 +281,75 @@ class TestDragGesture(TaskListTestCase):
         self.assertTrue(self.task_list._dragging)
         self.assertEqual(self.task_list._drop_target, "001")
 
-    def test_the_drop_row_is_highlighted(self):
-        """The row under the pointer is marked while dragging over it."""
+    def test_a_line_marks_where_the_row_would_land(self):
+        """A visible indicator is placed while dragging over a valid row."""
         self.at({0: "003", 100: "001"})
+        self.rows_at({"001": (0, 100, 300, 26)})
 
         self.press(0)
         self.drag(100)
 
-        self.assertIn('droptarget', self.task_list.tree.item("001", 'tags'))
+        line = self.task_list._drop_line_widget
+        self.assertIsNotNone(line)
+        self.assertTrue(line.winfo_manager())
 
-    def test_an_invalid_drop_row_is_not_highlighted(self):
+    def test_the_line_is_thin_and_blue(self):
+        """The indicator is a thin blue rule, not a shaded row."""
+        self.at({0: "003", 100: "001"})
+        self.rows_at({"001": (0, 100, 300, 26)})
+
+        self.press(0)
+        self.drag(100)
+
+        line = self.task_list._drop_line_widget
+        self.assertEqual(line.cget('background'),
+                         self.task_list.DROP_LINE_COLOR)
+        self.assertEqual(int(line.cget('height')),
+                         self.task_list.DROP_LINE_THICKNESS)
+
+    def test_the_line_sits_above_a_row_approached_from_its_top(self):
+        """Pointing at the upper half puts the line on the row's top edge."""
+        self.at({0: "003", 104: "001"})
+        self.rows_at({"001": (0, 100, 300, 26)})
+
+        self.press(0)
+        self.drag(104)          # 4px into a 26px row
+
+        self.assertTrue(self.task_list._drop_above)
+
+    def test_the_line_sits_below_a_row_approached_from_its_bottom(self):
+        """Pointing at the lower half puts the line on the row's bottom edge."""
+        self.at({0: "003", 120: "001"})
+        self.rows_at({"001": (0, 100, 300, 26)})
+
+        self.press(0)
+        self.drag(120)          # 20px into a 26px row
+
+        self.assertFalse(self.task_list._drop_above)
+
+    def test_the_line_spans_the_row(self):
+        """The rule is as wide as the row it marks."""
+        self.at({0: "003", 100: "001"})
+        self.rows_at({"001": (7, 100, 280, 26)})
+
+        self.press(0)
+        self.drag(100)
+
+        line = self.task_list._drop_line_widget
+        self.assertEqual(line.place_info()['x'], '7')
+        self.assertEqual(line.place_info()['width'], '280')
+
+    def test_an_invalid_drop_row_gets_no_line(self):
         """Dragging a sub-task over a root task offers no drop."""
         self.at({0: "004", 100: "001"})
+        self.rows_at({"001": (0, 100, 300, 26)})
 
         self.press(0)
         self.drag(100)
 
         self.assertIsNone(self.task_list._drop_target)
-        self.assertNotIn('droptarget', self.task_list.tree.item("001", 'tags'))
+        line = self.task_list._drop_line_widget
+        self.assertTrue(line is None or not line.winfo_manager())
 
     def test_dropping_reorders_the_rows(self):
         """A completed drag moves the row to the drop position."""
@@ -203,7 +372,8 @@ class TestDragGesture(TaskListTestCase):
         self.assertIsNone(self.task_list.dragged_task_id)
         self.assertIsNone(self.task_list._drop_target)
         self.assertFalse(self.task_list._dragging)
-        self.assertNotIn('droptarget', self.task_list.tree.item("001", 'tags'))
+        line = self.task_list._drop_line_widget
+        self.assertTrue(line is None or not line.winfo_manager())
 
     def test_releasing_away_from_any_row_moves_nothing(self):
         """Dropping on empty space leaves the order alone."""

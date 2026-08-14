@@ -109,10 +109,24 @@ def _hover_text(task: Task, project: Project) -> str:
 
 def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
                positions: Dict[str, int]) -> None:
-    """Draw every non-milestone task as a horizontal bar."""
+    """
+    Draw every non-milestone task as a horizontal bar.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A task with sub-tasks brackets the work beneath it rather than being work
+    of its own, so it is drawn thinner and fully opaque. The static renderer
+    gives it a proper tapered bracket; Plotly has no shape for that inside a
+    bar trace, so the distinction is carried by weight instead. The point is
+    only that a summary row cannot be mistaken for real work.
+    """
+    summary_ids = project.get_summary_task_ids()
+
     for task in tasks:
         if task.is_milestone:
             continue
+
+        is_summary = task.id in summary_ids
 
         figure.add_trace(go.Bar(
             x=[_duration_days(task) * 86400000],  # bar length in milliseconds
@@ -120,10 +134,13 @@ def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
             base=[task.start_date],
             orientation='h',
             name=task.name,
-            marker=dict(color=task.color, line=dict(color='black', width=1)),
+            width=0.35 if is_summary else 0.8,
+            marker=dict(color=task.color,
+                        line=dict(color='black',
+                                  width=2 if is_summary else 1)),
             hovertemplate=_hover_text(task, project) + '<extra></extra>',
             showlegend=False,
-            opacity=0.85
+            opacity=1.0 if is_summary else 0.85
         ))
 
 
@@ -267,7 +284,9 @@ def build_gantt_figure(project: Project,
     if not project.tasks:
         return build_empty_figure(resolved, width=width)
 
-    tasks = sorted(project.tasks, key=lambda t: t.start_date)
+    # Rows follow the task list, not the dates, so this export matches what
+    # the window shows - see the same note in chart_render.layout_chart
+    tasks = list(project.tasks)
     positions = {task.id: index for index, task in enumerate(tasks)}
 
     figure = go.Figure()

@@ -54,6 +54,9 @@ MARGIN_TOP = 70
 MARGIN_BOTTOM = 70
 MIN_WIDTH = 900
 MILESTONE_RADIUS = 9
+
+#: How far the tapered ends of a summary bracket reach back along the span.
+SUMMARY_FOOT = 7
 LABEL_CHARS = 28
 
 
@@ -65,6 +68,8 @@ class ChartLayout:
     height: int
     settings: Dict[str, Any]
     bars: List[Dict[str, Any]] = field(default_factory=list)
+    #: Tasks that have sub-tasks, drawn as a spanning bracket
+    summaries: List[Dict[str, Any]] = field(default_factory=list)
     milestones: List[Dict[str, Any]] = field(default_factory=list)
     dependencies: List[Tuple[float, float, float, float]] = field(default_factory=list)
     row_labels: List[Tuple[float, str]] = field(default_factory=list)
@@ -76,6 +81,48 @@ class ChartLayout:
 def _shorten(text: str, limit: int = LABEL_CHARS) -> str:
     """Trim a label to fit the left margin."""
     return text if len(text) <= limit else text[:limit - 1] + '...'
+
+
+def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
+    """
+    Corner points of the bracket drawn for a task that has sub-tasks.
+
+    PARAMETERS:
+    -----------
+    summary : Dict[str, Any]
+        A `ChartLayout.summaries` entry.
+
+    RETURNS:
+    --------
+    List[Tuple[float, float]]
+        A closed polygon: a thin spine across the span with a tapered point
+        dropping below each end.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    This is the shape every Gantt tool uses for a summary row, and it reads
+    as "this row brackets the work below it" rather than "this row is work",
+    which is what a plain bar said. Both emitters share it so the on-screen
+    chart and the exports cannot drift apart.
+
+    The end points are clamped for a short summary, so a bracket spanning
+    only a day or two collapses to a wedge rather than crossing over itself.
+    """
+    x0, x1 = summary['x0'], summary['x1']
+    y0, y1 = summary['y0'], summary['y1']
+    height = y1 - y0
+
+    spine = y0 + height * 0.45          # the bar itself stays thin
+    foot = min(SUMMARY_FOOT, max((x1 - x0) / 2, 1))
+
+    return [
+        (x0, y0),
+        (x1, y0),
+        (x1, y1),
+        (x1 - foot, spine),
+        (x0 + foot, spine),
+        (x0, y1),
+    ]
 
 
 def _tick_step(days: int) -> int:
@@ -138,7 +185,8 @@ def preferred_width(project: Project, available: int = 0) -> int:
 
 
 def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
-                 width: int = 1400) -> ChartLayout:
+                 width: int = 1400,
+                 min_width: int = MIN_WIDTH) -> ChartLayout:
     """
     Compute the geometry of the chart.
 
@@ -150,6 +198,10 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         Appearance overrides, matching chart_figure.DEFAULT_SETTINGS.
     width : int
         Target image width in pixels.
+    min_width : int
+        Floor for that width. The default keeps a chart readable; the
+        on-screen view lowers it when the user has deliberately zoomed out,
+        which would otherwise stop having any effect at the default floor.
 
     RETURNS:
     --------
@@ -157,9 +209,14 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         Positions for every bar, milestone, dependency line and label.
     """
     resolved = _merged_settings(settings)
-    width = max(int(width), MIN_WIDTH)
+    width = max(int(width), int(min_width))
 
-    tasks = sorted(project.tasks, key=lambda t: t.start_date)
+    # Rows follow the task list rather than the dates. Sorting here meant a
+    # row moved by hand in the list did not move in the chart, so the two
+    # panes disagreed and a reorder looked like it had done nothing. The task
+    # list is already in hierarchy order, which keeps a parent beside its
+    # sub-tasks here too.
+    tasks = list(project.tasks)
     title = f"Gantt Chart: {project.name or 'New Project'}"
 
     if not tasks:
@@ -184,7 +241,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         # what. Give back the remaining pixels by narrowing the chart, which
         # the horizontal scrollbar already copes with.
         if width * height > MAX_PIXELS:
-            width = max(MIN_WIDTH, MAX_PIXELS // max(height, 1))
+            width = max(int(min_width), MAX_PIXELS // max(height, 1))
 
         logger.info("Compressed chart to %dx%d (rows %dpx) for %d tasks to "
                     "stay within the pixel budget",
@@ -212,6 +269,9 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     positions = {task.id: index for index, task in enumerate(tasks)}
     critical = {t.id for t in project.get_critical_path()}
+    # A task with sub-tasks spans the work beneath it rather than being work
+    # of its own, so it is drawn as a bracket instead of a solid bar
+    summary_ids = project.get_summary_task_ids()
 
     for index, task in enumerate(tasks):
         centre = y_for(index)
@@ -231,14 +291,26 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         start_x = x_for(task.start_date)
         # A task is inclusive of its end date, so the bar covers that whole day
         end_x = max(x_for(end + timedelta(days=1)), start_x + 2)
+        colour = (resolved['critical_path_color'] if task.id in critical
+                  else task.color)
+
+        if task.id in summary_ids:
+            layout.summaries.append({
+                'x0': start_x,
+                'x1': end_x,
+                'y0': centre - bar_height / 2,
+                'y1': centre + bar_height / 2,
+                'color': colour,
+                'label': task.name,
+            })
+            continue
 
         layout.bars.append({
             'x0': start_x,
             'x1': end_x,
             'y0': centre - bar_height / 2,
             'y1': centre + bar_height / 2,
-            'color': (resolved['critical_path_color'] if task.id in critical
-                      else task.color),
+            'color': colour,
             'progress': max(0, min(100, task.progress)),
             'label': task.name,
         })
@@ -346,6 +418,21 @@ def render_svg(project: Project, settings: Optional[Dict[str, Any]] = None,
             f'<text x="{bar["x1"] + 6:.1f}" y="{(bar["y0"] + h / 2 + font_size / 3):.1f}" '
             f'font-family="sans-serif" font-size="{font_size - 2}" '
             f'fill="{s["text_color"]}">{escape(_shorten(bar["label"], 40))}</text>'
+        )
+
+    for summary in layout.summaries:
+        points = _summary_outline(summary)
+        coords = ' '.join(f'{px:.1f},{py:.1f}' for px, py in points)
+        parts.append(
+            f'<polygon points="{coords}" fill="{summary["color"]}" '
+            f'stroke="#000000" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{summary["x1"] + 6:.1f}" '
+            f'y="{(summary["y0"] + (summary["y1"] - summary["y0"]) / 2 + font_size / 3):.1f}" '
+            f'font-family="sans-serif" font-size="{font_size - 2}" '
+            f'font-weight="bold" fill="{s["text_color"]}"'
+            f'>{escape(_shorten(summary["label"], 40))}</text>'
         )
 
     for milestone in layout.milestones:
@@ -480,7 +567,8 @@ def _safe_scale(layout: 'ChartLayout', scale: float) -> float:
 
 
 def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
-                 width: int = 1400, scale: float = 2.0) -> Image.Image:
+                 width: int = 1400, scale: float = 2.0,
+                 min_width: int = MIN_WIDTH) -> Image.Image:
     """
     Render the chart into a PIL image.
 
@@ -490,13 +578,15 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         Supersampling factor. The chart is drawn large and reduced with a
         high quality filter, which is what keeps text and bar edges smooth
         without needing an anti-aliasing capable drawing backend.
+    min_width : int
+        Floor for the rendered width; see layout_chart.
 
     RETURNS:
     --------
     Image.Image
         The finished RGB image.
     """
-    layout = layout_chart(project, settings, width)
+    layout = layout_chart(project, settings, width, min_width=min_width)
     s = layout.settings
     scale = _safe_scale(layout, scale)
 
@@ -546,6 +636,14 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                            fill=(0, 0, 0, 64))
         draw.text((box[2] + sx(6), (box[1] + box[3]) / 2),
                   _shorten(bar['label'], 40), font=small_font,
+                  fill=s['text_color'], anchor='lm')
+
+    for summary in layout.summaries:
+        draw.polygon([(sx(px), sx(py)) for px, py in _summary_outline(summary)],
+                     fill=summary['color'], outline='#000000')
+        draw.text((sx(summary['x1']) + sx(6),
+                   (sx(summary['y0']) + sx(summary['y1'])) / 2),
+                  _shorten(summary['label'], 40), font=small_font,
                   fill=s['text_color'], anchor='lm')
 
     for milestone in layout.milestones:
