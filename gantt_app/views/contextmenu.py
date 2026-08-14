@@ -41,6 +41,9 @@ LEVEL_ACTIONS = (
     ("Outdent", 'outdent'),
 )
 
+#: What the Create submenu offers, as the task_type each entry builds.
+CREATE_TYPES = ("Task", "Sub-Task", "Milestone")
+
 #: Entries following the moves, after a separator.
 TASK_ACTIONS = ("Edit", "Delete")
 
@@ -82,7 +85,9 @@ class TaskContextMenu:
 
     def __init__(self, tree, project_getter, on_move,
                  on_indent=None, on_outdent=None,
-                 on_edit=None, on_delete=None):
+                 on_edit=None, on_delete=None,
+                 on_create=None, on_undo=None, on_redo=None,
+                 can_undo=None, can_redo=None):
         self.tree = tree
         self._project_getter = project_getter
         self._on_move = on_move
@@ -90,7 +95,13 @@ class TaskContextMenu:
         self._on_outdent = on_outdent
         self._on_edit = on_edit
         self._on_delete = on_delete
+        self._on_create = on_create
+        self._on_undo = on_undo
+        self._on_redo = on_redo
+        self._can_undo = can_undo
+        self._can_redo = can_redo
         self._menu = None
+        self._windowing = 'x11'
 
         self._bind()
 
@@ -100,6 +111,8 @@ class TaskContextMenu:
             windowing = self.tree.tk.call('tk', 'windowingsystem')
         except tk.TclError:
             windowing = 'x11'
+
+        self._windowing = windowing
 
         if windowing == 'aqua':
             # macOS: the right button and a two-finger trackpad click both
@@ -141,14 +154,33 @@ class TaskContextMenu:
         self._close()
         self._menu = self._build(project, task_id)
 
+        # Clicking away, or pressing Escape, takes the menu down. Losing
+        # focus is what a click elsewhere produces, and unposting on it is
+        # what makes the menu dismissable without choosing something.
+        self._menu.bind('<FocusOut>', lambda _e: self._unpost(), add='+')
+        self._menu.bind('<Escape>', lambda _e: self._unpost(), add='+')
+
         try:
             self._menu.tk_popup(event.x_root, event.y_root)
         finally:
-            # Without this the pointer stays grabbed by the menu on X11 and
-            # the rest of the window stops responding to clicks
-            self._menu.grab_release()
+            # Only X11 and Windows need the grab dropped by hand. On macOS
+            # the menu is a native one that manages its own grab, and
+            # releasing it here took away the grab it uses to notice a click
+            # outside itself - so the menu stayed on screen until an entry
+            # was chosen, which is exactly what it must not do.
+            if self._windowing != 'aqua':
+                self._menu.grab_release()
 
         return 'break'
+
+    def _unpost(self):
+        """Take the menu down without running anything."""
+        if self._menu is None:
+            return
+        try:
+            self._menu.unpost()
+        except tk.TclError:
+            pass
 
     def _build(self, project, task_id):
         """
@@ -211,6 +243,18 @@ class TaskContextMenu:
 
         menu.add_separator()
 
+        create = tk.Menu(menu, tearoff=0)
+        for task_type in CREATE_TYPES:
+            create.add_command(
+                label=task_type,
+                state=tk.NORMAL if self._on_create else tk.DISABLED,
+                command=lambda t=task_type: self._invoke_create(task_id, t),
+            )
+        menu.add_cascade(label="Create", menu=create)
+        # Held on the menu: a submenu that only the local name refers to is
+        # collected once this method returns, and the entry stops working
+        menu._create_submenu = create
+
         menu.add_command(
             label="Edit",
             state=tk.NORMAL if self._on_edit else tk.DISABLED,
@@ -220,6 +264,21 @@ class TaskContextMenu:
             label="Delete",
             state=tk.NORMAL if self._on_delete else tk.DISABLED,
             command=lambda: self._invoke_delete(task_id),
+        )
+
+        menu.add_separator()
+
+        menu.add_command(
+            label="Undo",
+            state=tk.NORMAL if (self._can_undo and self._can_undo())
+            else tk.DISABLED,
+            command=self._invoke_undo,
+        )
+        menu.add_command(
+            label="Redo",
+            state=tk.NORMAL if (self._can_redo and self._can_redo())
+            else tk.DISABLED,
+            command=self._invoke_redo,
         )
 
         return menu
@@ -243,6 +302,34 @@ class TaskContextMenu:
             handler(task_id)
         except Exception:
             logger.exception("Could not %s task %s", action, task_id)
+
+    def _invoke_create(self, task_id, task_type):
+        """Create a new task of the chosen type at the clicked row."""
+        if not self._on_create:
+            return
+        logger.info("Context menu: create a %s at %s", task_type, task_id)
+        try:
+            self._on_create(task_type, task_id)
+        except Exception:
+            logger.exception("Could not create a %s at %s", task_type, task_id)
+
+    def _invoke_undo(self):
+        """Undo the last change."""
+        if not self._on_undo:
+            return
+        try:
+            self._on_undo()
+        except Exception:
+            logger.exception("Could not undo")
+
+    def _invoke_redo(self):
+        """Redo the last undone change."""
+        if not self._on_redo:
+            return
+        try:
+            self._on_redo()
+        except Exception:
+            logger.exception("Could not redo")
 
     def _invoke_edit(self, task_id):
         """Open the edit window for the clicked task."""

@@ -931,6 +931,11 @@ class DragDropTaskList(ctk.CTkFrame):
             on_outdent=self.outdent_task,
             on_edit=self.edit_task,
             on_delete=self.delete_task,
+            on_create=self.create_task,
+            on_undo=self.undo,
+            on_redo=self.redo,
+            can_undo=self.can_undo,
+            can_redo=self.can_redo,
         )
 
     def on_double_click(self, event):
@@ -1255,6 +1260,169 @@ class DragDropTaskList(ctk.CTkFrame):
             lambda: self.project.move_task_before(task_id, target_id), task_id
         )
 
+    def _manager(self):
+        """The undo/redo manager, or None when there is no tracker."""
+        tracker = self.project_tracker
+        return getattr(tracker, 'manager', None) if tracker else None
+
+    def can_undo(self) -> bool:
+        """Whether there is anything to undo."""
+        manager = self._manager()
+        return bool(manager and manager.can_undo())
+
+    def can_redo(self) -> bool:
+        """Whether there is anything to redo."""
+        manager = self._manager()
+        return bool(manager and manager.can_redo())
+
+    def undo(self):
+        """Undo the last change and refresh."""
+        manager = self._manager()
+        if manager and manager.can_undo() and manager.undo():
+            logger.info("Undo from the context menu")
+            self._after_history_change()
+
+    def redo(self):
+        """Redo the last undone change and refresh."""
+        manager = self._manager()
+        if manager and manager.can_redo() and manager.redo():
+            logger.info("Redo from the context menu")
+            self._after_history_change()
+
+    def _after_history_change(self):
+        """
+        Refresh once an undo or redo has been applied.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        on_project_changed reaches the chart and the toolbar's Undo and Redo
+        entries, so the two routes to the history - this menu and the
+        toolbar's Edit menu - leave the window in the same state.
+        """
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    def create_task(self, task_type: str, anchor_id: str):
+        """
+        Open the create dialog for a new task placed at a row.
+
+        PARAMETERS:
+        -----------
+        task_type : str
+            'Task', 'Sub-Task' or 'Milestone'.
+        anchor_id : str
+            The row the context menu was opened on.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A sub-task is created under the clicked row, which is what makes it
+        a sub-task. A task or milestone is created beside it and dropped in
+        directly below, rather than at the end of the plan: the menu was
+        opened on a particular row, so that is where the new one belongs.
+        """
+        anchor = self.project.get_task_by_id(anchor_id)
+        if anchor is None:
+            return
+
+        # A sub-task goes inside the clicked row; a task or milestone goes
+        # beside it, which is what "under this row" means for those
+        if task_type == "Sub-Task":
+            parent_id = anchor.id
+        else:
+            parent_id = anchor.parent_task_id
+
+        parent = self.project.get_task_by_id(parent_id) if parent_id else None
+
+        logger.info("Creating a %s at %s", task_type, anchor_id)
+
+        dialog = CreateTaskDialog(
+            self.winfo_toplevel(), self.project,
+            task_type=task_type,
+            parent_task=parent,
+            on_save=lambda task: self._save_created(task, anchor_id, parent_id),
+            project_tracker=self.project_tracker,
+        )
+        dialog.wait_window()
+
+    def _save_created(self, task: Task, anchor_id: str, parent_id):
+        """
+        Add a newly created task and put it where the menu was opened.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The level is set here rather than left to the dialog, which only
+        honours a parent when it is building a sub-task. Choosing Task from
+        a sub-task's menu should give another task beside it, not one that
+        jumps out to the top of the plan.
+
+        add_task appends, so a sibling is then moved up behind the row it
+        was created from. A sub-task needs no move: rebuilding from the
+        hierarchy already places it under its parent.
+        """
+        before = self.project.structure_snapshot()
+
+        task.parent_task_id = parent_id
+        task.task_type = "Sub-Task" if parent_id else "Task"
+
+        self.project.add_task(task)
+        anchor = self.project.get_task_by_id(anchor_id)
+
+        if anchor is not None and task.parent_task_id == anchor.parent_task_id:
+            # A sibling: slot it in directly after the row it came from
+            self.project.move_task_before(task.id, anchor_id)
+            self.project.move_task(task.id, 'down')
+
+        if self.project_tracker:
+            self.project_tracker.restructure_tasks(
+                before, self.project.structure_snapshot(), "Create Task"
+            )
+
+        self.update_task_list()
+        try:
+            self.tree.selection_set(task.id)
+            self.tree.see(task.id)
+        except tk.TclError:
+            pass
+
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    def _report_dropped_links(self, dropped):
+        """
+        Tell the user about links a move made impossible.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Indenting a task under its own predecessor is the ordinary way a
+        phase gets built, and the link has to go: a task cannot wait for
+        something it is part of. Dropping it quietly would leave the plan
+        different from what the user thinks it is, so it is named. The
+        dialog only appears when something actually went, which is rare.
+        """
+        if not dropped:
+            return
+
+        described = []
+        for successor_id, predecessor_id in dropped:
+            successor = self.project.get_task_by_id(successor_id)
+            predecessor = self.project.get_task_by_id(predecessor_id)
+            described.append(
+                f"  {successor.name if successor else successor_id}"
+                f"  ->  {predecessor.name if predecessor else predecessor_id}"
+            )
+
+        logger.info("Dropped %d link(s) made impossible by the move: %s",
+                    len(dropped), dropped)
+        messagebox.showinfo(
+            "Dependency Removed",
+            "A task cannot wait for something it is now part of, so "
+            f"{'this link was' if len(dropped) == 1 else 'these links were'} "
+            "removed:\n\n" + "\n".join(described)
+            + "\n\nUndo puts everything back.",
+            parent=self.winfo_toplevel(),
+        )
+
     def indent_task(self, task_id: str):
         """Make a task a sub-task of the row above it."""
         self._apply_restructure(lambda: self.project.indent_task(task_id),
@@ -1295,12 +1463,14 @@ class DragDropTaskList(ctk.CTkFrame):
         if not change():
             return
 
+        after = self.project.structure_snapshot()
+
         if self.project_tracker:
-            self.project_tracker.restructure_tasks(
-                before, self.project.structure_snapshot(), label
-            )
+            self.project_tracker.restructure_tasks(before, after, label)
 
         self.update_task_list()
+
+        self._report_dropped_links(self.project.dropped_links(before, after))
 
         try:
             parent = self.tree.parent(task_id)

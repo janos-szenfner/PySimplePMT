@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from gantt_app.models import Project, Task, DEPENDENCY_TYPE_LABELS
-from gantt_app.help.dependencyhelp import HELP_SECTIONS, SOURCE_URL
+from gantt_app.help.dependencyhelp import HELP_SECTIONS
 
 
 def all_text():
@@ -68,9 +68,16 @@ class TestHelpContent(unittest.TestCase):
         self.assertIn("later", text)
         self.assertIn("gap", text)
 
-    def test_the_source_is_named(self):
-        """The wider background is credited with a link."""
-        self.assertTrue(SOURCE_URL.startswith("https://"))
+    def test_no_external_links_are_shown(self):
+        """
+        The reference stands on its own.
+
+        It described standard scheduling concepts in this application's own
+        terms, so pointing readers at someone else's page added nothing.
+        """
+        text = all_text()
+
+        self.assertNotIn("http", text)
 
     def test_every_section_has_content(self):
         """No heading is left with nothing under it."""

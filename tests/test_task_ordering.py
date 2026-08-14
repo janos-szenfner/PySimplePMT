@@ -274,9 +274,22 @@ class TestIndent(unittest.TestCase):
         self.assertFalse(self.project.can_indent("B"))
         self.assertFalse(self.project.indent_task("B"))
 
-    def test_indenting_under_a_predecessor_is_refused(self):
+    def test_indenting_under_a_predecessor_is_allowed(self):
         """
-        A task cannot go under something it waits for.
+        A task can go under something it waits for.
+
+        This is the ordinary way a phase gets built out of the work that
+        follows it. Refusing it left Indent greyed out on nearly every row
+        of a normal plan, where each task follows the one above.
+        """
+        self.project.get_task_by_id("B").add_dependency("A", 'FS', 'Hard')
+
+        self.assertTrue(self.project.can_indent("B"))
+        self.assertTrue(self.project.indent_task("B"))
+
+    def test_the_link_to_the_new_parent_is_dropped(self):
+        """
+        A task cannot wait for something it is now part of.
 
         A summary takes its finish from its children, so a child that must
         also start after that summary finishes has no possible date: every
@@ -285,43 +298,51 @@ class TestIndent(unittest.TestCase):
         """
         self.project.get_task_by_id("B").add_dependency("A", 'FS', 'Hard')
 
-        self.assertFalse(self.project.can_indent("B"))
-        self.assertFalse(self.project.indent_task("B"))
+        self.project.indent_task("B")
 
-    def test_an_indirect_predecessor_is_refused_too(self):
-        """
-        The wait is followed through the chain, not just one link.
+        self.assertEqual(self.project.get_task_by_id("B").dependency_ids, [])
 
-        Order is A, B, C, so indenting C would put it under B. C waits on A,
-        and A waits on B, so C waits on B at one remove.
-        """
-        self.project.get_task_by_id("C").add_dependency("A", 'FS', 'Hard')
-        self.project.get_task_by_id("A").add_dependency("B", 'FS', 'Hard')
+    def test_an_unrelated_link_survives_the_indent(self):
+        """Only links onto the new ancestors go."""
+        self.project.get_task_by_id("B").add_dependency("C", 'FS', 'Hard')
 
-        self.assertFalse(self.project.can_indent("C"))
+        self.project.indent_task("B")
 
-    def test_a_dependent_subtask_blocks_the_indent(self):
-        """A wait anywhere in the branch counts, not only on the task."""
+        self.assertEqual(self.project.get_task_by_id("B").dependency_ids,
+                         ["C"])
+
+    def test_a_subtask_link_to_the_new_parent_is_dropped_too(self):
+        """The whole branch is checked, not only the task itself."""
         self.project.add_task(Task(
             id="B1", name="B1", start_date=datetime(2026, 1, 1),
             task_type="Sub-Task", parent_task_id="B",
         ))
         self.project.get_task_by_id("B1").add_dependency("A", 'FS', 'Hard')
 
-        self.assertFalse(self.project.can_indent("B"))
+        self.project.indent_task("B")
 
-    def test_an_unrelated_link_still_allows_indenting(self):
-        """Only a wait on the prospective parent is a problem."""
-        self.project.get_task_by_id("B").add_dependency("C", 'FS', 'Hard')
+        self.assertEqual(self.project.get_task_by_id("B1").dependency_ids, [])
 
-        self.assertTrue(self.project.can_indent("B"))
+    def test_the_plan_still_settles_afterwards(self):
+        """
+        The point of dropping the link.
 
-    def test_a_cycle_in_the_links_does_not_hang_the_check(self):
+        Left in place it makes the schedule unsatisfiable, and rescheduling
+        gives up after its pass limit instead of settling.
+        """
+        self.project.get_task_by_id("B").add_dependency("A", 'FS', 'Hard')
+        self.project.indent_task("B")
+
+        self.project.reschedule()
+
+        self.assertFalse(self.project.reschedule())
+
+    def test_a_cycle_in_the_links_does_not_hang(self):
         """The walk is guarded, so a corrupt file cannot lock it up."""
         self.project.get_task_by_id("B").add_dependency("C", 'FS', 'Hard')
         self.project.get_task_by_id("C").add_dependency("B", 'FS', 'Hard')
 
-        self.project.can_indent("C")        # must return
+        self.project.indent_task("C")       # must return
 
     def test_the_row_stays_in_place(self):
         """A task indented under the row above does not jump elsewhere."""

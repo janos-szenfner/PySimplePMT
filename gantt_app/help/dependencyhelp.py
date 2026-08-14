@@ -14,10 +14,7 @@ DEVELOPMENT NOTES:
 The text is written here rather than fetched, so the window works with no
 network and nothing to download - the same rule the rest of the application
 follows. It describes the standard scheduling concepts in this application's
-own terms, using the names its own controls use, and names its source for a
-reader who wants the wider background:
-
-    https://teamhood.com/project-management-resources/gantt-chart-dependencies/
+own terms, using the names its own controls use.
 
 Content is a plain data structure rather than markup so it stays readable in
 the source and can be re-presented elsewhere - a printed sheet, a web page -
@@ -33,12 +30,6 @@ from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
 
-
-#: Where the underlying concepts are described more broadly.
-SOURCE_URL = (
-    "https://teamhood.com/project-management-resources/"
-    "gantt-chart-dependencies/"
-)
 
 #: The reference text, as (heading, [paragraph, ...]).
 #:
@@ -310,11 +301,6 @@ class DependencyHelpWindow(ctk.CTkToplevel):
             'body', font=('TkDefaultFont', 11), spacing1=2, spacing3=8,
             lmargin1=4, lmargin2=4,
         )
-        self.text.tag_configure(
-            'source', font=('TkDefaultFont', 10), foreground='#6b7280',
-            spacing1=18, lmargin1=4, lmargin2=4,
-        )
-
         buttons = ctk.CTkFrame(self, fg_color='transparent')
         buttons.grid(row=1, column=0, sticky=tk.EW, padx=12, pady=(0, 12))
         ctk.CTkButton(buttons, text="Close", width=90,
@@ -329,14 +315,6 @@ class DependencyHelpWindow(ctk.CTkToplevel):
             self.text.insert(tk.END, heading + '\n', 'heading')
             for paragraph in paragraphs:
                 self.text.insert(tk.END, paragraph + '\n', 'body')
-
-        self.text.insert(
-            tk.END,
-            "\nThese are the standard scheduling relationships used by "
-            "project planning tools. For wider background, see:\n"
-            + SOURCE_URL + "\n",
-            'source',
-        )
 
         # Readable and selectable, but not editable
         self.text.configure(state=tk.DISABLED)

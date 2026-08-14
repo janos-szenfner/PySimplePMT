@@ -785,8 +785,6 @@ class Project:
         above = siblings[index - 1]
         if above.is_milestone:
             return None
-        if self._branch_depends_on(task_id, above.id):
-            return None
         return above
 
     def _descendant_ids(self, task_id: str) -> Set[str]:
@@ -802,42 +800,59 @@ class Project:
                     stack.append(child.id)
         return found
 
-    def _branch_depends_on(self, task_id: str, target_id: str) -> bool:
+    def _ancestor_ids(self, task_id: str) -> Set[str]:
+        """Every task this one sits under, walking up to the root."""
+        found: Set[str] = set()
+        current = self.get_task_by_id(task_id)
+        while current is not None and current.parent_task_id:
+            if current.parent_task_id in found:
+                break                       # a parent cycle in a bad file
+            found.add(current.parent_task_id)
+            current = self.get_task_by_id(current.parent_task_id)
+        return found
+
+    def strip_ancestor_links(self, task_id: str) -> List[tuple]:
         """
-        Whether a task or anything under it depends on the target.
+        Drop links from a branch onto the tasks it now sits under.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task that just moved. Its descendants are covered too.
+
+        RETURNS:
+        --------
+        List[tuple]
+            The (successor_id, predecessor_id) links that were removed.
 
         DEVELOPMENT NOTES:
         ------------------
-        This is what stops a task being indented under something it waits
-        for. A summary takes its finish from its children, so a child that
-        must also start after that summary finishes has no possible date:
-        every pass pushes the child out, which pushes the summary's finish
-        out with it, and the schedule never settles. Planners reject the
-        link for the same reason.
+        A task cannot wait for something it is part of. A summary takes its
+        finish from its children, so a child that must also start after that
+        summary finishes has no possible date: every scheduling pass pushes
+        the child out, which pushes the summary out with it, and the plan
+        never settles.
 
-        The walk follows dependencies transitively, so an indirect wait is
-        caught as well, and is guarded against a cycle in the links.
+        Indenting a task under its own predecessor is a natural thing to do -
+        it is how a phase gets built out of the work that follows it - and
+        refusing it left Indent greyed out on nearly every row of a normal
+        plan. Dropping the link that has become meaningless is what planners
+        do, and it is reported rather than done quietly.
         """
         branch = {task_id} | self._descendant_ids(task_id)
+        removed = []
 
-        seen: Set[str] = set()
-        stack = list(branch)
-        while stack:
-            current_id = stack.pop()
-            if current_id in seen:
+        for member_id in branch:
+            member = self.get_task_by_id(member_id)
+            if member is None:
                 continue
-            seen.add(current_id)
+            forbidden = self._ancestor_ids(member_id)
+            for dep_id in list(member.dependency_ids):
+                if dep_id in forbidden:
+                    member.remove_dependency(dep_id)
+                    removed.append((member_id, dep_id))
 
-            current = self.get_task_by_id(current_id)
-            if current is None:
-                continue
-            for dep_id in current.dependency_ids:
-                if dep_id == target_id:
-                    return True
-                if dep_id not in seen:
-                    stack.append(dep_id)
-
-        return False
+        return removed
 
     def can_indent(self, task_id: str) -> bool:
         """Whether the task can be moved a level deeper."""
@@ -871,6 +886,11 @@ class Project:
         No repositioning is needed. The task already sits immediately after
         the sibling it is going under, so rebuilding the list from the
         hierarchy puts it at the end of that sibling's children.
+
+        A link from the branch onto whatever it now sits under is dropped -
+        see strip_ancestor_links. Indenting a task under its own predecessor
+        is the ordinary way a phase gets built, so the link has to give way
+        rather than the indent being refused.
         """
         new_parent = self.indent_target(task_id)
         if new_parent is None:
@@ -881,6 +901,7 @@ class Project:
         task.task_type = "Sub-Task"
 
         self.tasks = self._flatten(self._children_by_parent())
+        self.strip_ancestor_links(task_id)
         return True
 
     def outdent_task(self, task_id: str) -> bool:
@@ -920,32 +941,66 @@ class Project:
 
     def structure_snapshot(self):
         """
-        Capture the order and the hierarchy, for undo.
+        Capture the order, the hierarchy and the links, for undo.
 
         RETURNS:
         --------
-        Tuple[List[Task], Dict[str, Tuple[Optional[str], str]]]
-            The task list, and each task's parent and type by ID.
+        Tuple[List[Task], Dict[str, tuple], Dict[str, list]]
+            The task list, each task's parent and type by ID, and a copy of
+            each task's dependency links.
 
         DEVELOPMENT NOTES:
         ------------------
         Indenting changes parent_task_id and task_type on the Task objects
         themselves, which restoring an ordering alone would not put back -
         both lists hold the same objects.
+
+        Links are captured too because indenting drops any that the move has
+        made impossible; without them undo would put the task back where it
+        was and leave the dependency gone for good.
         """
         return (
             list(self.tasks),
             {t.id: (t.parent_task_id, t.task_type) for t in self.tasks},
+            {t.id: [Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+                    for d in t.dependencies]
+             for t in self.tasks},
         )
 
     def restore_structure(self, snapshot) -> None:
-        """Put back an order and hierarchy taken by structure_snapshot."""
-        order, parents = snapshot
+        """Put back an order, hierarchy and links from structure_snapshot."""
+        order, parents, links = snapshot
         self.tasks = list(order)
         for task in self.tasks:
             if task.id in parents:
                 task.parent_task_id, task.task_type = parents[task.id]
+            if task.id in links:
+                task.dependencies = [
+                    Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+                    for d in links[task.id]
+                ]
         self._update_dates()
+
+    @staticmethod
+    def dropped_links(before, after) -> List[tuple]:
+        """
+        The links present in one structure snapshot and gone from another.
+
+        RETURNS:
+        --------
+        List[tuple]
+            (successor_id, predecessor_id) for each link that disappeared.
+        """
+        _order, _parents, old_links = before
+        _order2, _parents2, new_links = after
+
+        lost = []
+        for task_id, links in old_links.items():
+            kept = {d.task_id for d in new_links.get(task_id, [])}
+            for link in links:
+                if link.task_id not in kept:
+                    lost.append((task_id, link.task_id))
+        return lost
 
     def move_task_before(self, task_id: str, target_id: str) -> bool:
         """

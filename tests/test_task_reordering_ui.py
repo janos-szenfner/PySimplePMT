@@ -354,6 +354,228 @@ class TestIndentUndo(TaskListTestCase):
         self.assertFalse(self.manager.can_undo())
 
 
+class TestCreateSubmenu(TaskListTestCase):
+    """The Create submenu builds a task at the row it was opened on."""
+
+    def setUp(self):
+        """Add an undo manager and stub the create dialog."""
+        super().setUp()
+        from unittest import mock
+        from datetime import datetime as dt
+        from gantt_app.utils.undoredo import (
+            UndoRedoManager, ProjectStateTracker,
+        )
+        import gantt_app.views.task_list as task_list_module
+
+        self.manager = UndoRedoManager()
+        self.manager.set_project(self.project)
+        self.task_list.project_tracker = ProjectStateTracker(
+            self.project, self.manager
+        )
+
+        def fake_dialog(master, project, task_type="Task", parent_task=None,
+                        on_save=None, project_tracker=None):
+            """Stand in for the dialog, saving as a user pressing Save would."""
+            new_id = project.next_task_id()
+            if task_type == "Sub-Task":
+                task = Task.create_subtask("New", parent_task, task_id=new_id)
+            elif task_type == "Milestone":
+                task = Task.create_milestone("New", dt(2026, 1, 1),
+                                             task_id=new_id)
+            else:
+                task = Task.create_task("New", dt(2026, 1, 1),
+                                        dt(2026, 1, 2), task_id=new_id)
+            self.created = task
+            on_save(task)
+            return mock.Mock()
+
+        self._patch = mock.patch.object(task_list_module, 'CreateTaskDialog',
+                                        fake_dialog)
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+
+    def submenu_labels(self, task_id):
+        """The Create submenu's entries."""
+        menu = self.task_list.context_menu._build(self.project, task_id)
+        index = self.entry_index(menu, "Create")
+        submenu = menu.nametowidget(menu.entrycget(index, 'menu'))
+        return [submenu.entrycget(i, 'label')
+                for i in range(submenu.index('end') + 1)]
+
+    def test_it_offers_the_three_types(self):
+        """Task, Sub-Task and Milestone."""
+        self.assertEqual(self.submenu_labels("001"),
+                         ["Task", "Sub-Task", "Milestone"])
+
+    def test_a_task_lands_below_the_clicked_row(self):
+        """
+        The new task goes where the menu was opened, not at the end.
+
+        add_task appends, so without repositioning a task created from the
+        middle of a plan appeared at the bottom of it.
+        """
+        self.task_list.create_task("Task", "001")
+
+        self.assertEqual(self.rows()[1], self.created.id)
+
+    def test_a_task_keeps_the_level_of_the_clicked_row(self):
+        """Creating beside a sub-task gives another sub-task of the parent."""
+        self.task_list.create_task("Task", "004")
+
+        self.assertEqual(self.created.parent_task_id, "002")
+
+    def test_a_subtask_lands_under_the_clicked_row(self):
+        """A sub-task is created inside the task the menu was opened on."""
+        self.task_list.create_task("Sub-Task", "001")
+
+        self.assertEqual(self.created.parent_task_id, "001")
+        self.assertIn(self.created.id,
+                      self.task_list.tree.get_children("001"))
+
+    def test_a_milestone_lands_below_the_clicked_row(self):
+        """A milestone is a sibling, like a task."""
+        self.task_list.create_task("Milestone", "001")
+
+        self.assertTrue(self.created.is_milestone)
+        self.assertEqual(self.rows()[1], self.created.id)
+
+    def test_the_new_row_is_selected(self):
+        """The task just created is what the next action applies to."""
+        self.task_list.create_task("Task", "001")
+
+        self.assertEqual(self.task_list.tree.selection(), (self.created.id,))
+
+    def test_creating_is_undoable(self):
+        """Undo takes the new task away again."""
+        self.task_list.create_task("Task", "001")
+        self.assertIn(self.created.id, [t.id for t in self.project.tasks])
+
+        self.manager.undo()
+
+        self.assertNotIn(self.created.id, [t.id for t in self.project.tasks])
+
+    def test_an_unknown_row_creates_nothing(self):
+        """A stale row ID is ignored."""
+        before = len(self.project.tasks)
+
+        self.task_list.create_task("Task", "gone")
+
+        self.assertEqual(len(self.project.tasks), before)
+
+
+class TestUndoRedoEntries(TaskListTestCase):
+    """Undo and Redo on the context menu."""
+
+    def setUp(self):
+        """Add an undo manager to the shared fixture."""
+        super().setUp()
+        from gantt_app.utils.undoredo import (
+            UndoRedoManager, ProjectStateTracker,
+        )
+
+        self.manager = UndoRedoManager()
+        self.manager.set_project(self.project)
+        self.task_list.project_tracker = ProjectStateTracker(
+            self.project, self.manager
+        )
+
+    def states(self, task_id):
+        """The Undo and Redo entry states."""
+        menu = self.task_list.context_menu._build(self.project, task_id)
+        found = {}
+        for index in range(menu.index('end') + 1):
+            if menu.type(index) == 'separator':
+                continue
+            label = menu.entrycget(index, 'label')
+            if label in ("Undo", "Redo"):
+                found[label] = str(menu.entrycget(index, 'state'))
+        return found
+
+    def test_both_are_greyed_out_with_no_history(self):
+        """Nothing has happened yet."""
+        self.assertEqual(self.states("001"),
+                         {"Undo": 'disabled', "Redo": 'disabled'})
+
+    def test_undo_becomes_available_after_a_change(self):
+        """A move puts something on the history."""
+        self.task_list.move_task("003", 'top')
+
+        self.assertEqual(self.states("001")["Undo"], 'normal')
+
+    def test_redo_becomes_available_after_an_undo(self):
+        """Undoing something makes it redoable."""
+        self.task_list.move_task("003", 'top')
+        self.task_list.undo()
+
+        self.assertEqual(self.states("001")["Redo"], 'normal')
+
+    def test_undo_reverses_the_change(self):
+        """Choosing Undo puts the rows back."""
+        before = self.rows()
+        self.task_list.move_task("003", 'top')
+
+        self.invoke_entry("001", "Undo")
+
+        self.assertEqual(self.rows(), before)
+
+    def test_redo_reapplies_it(self):
+        """Choosing Redo brings the change back."""
+        self.task_list.move_task("003", 'top')
+        self.task_list.undo()
+
+        self.invoke_entry("001", "Redo")
+
+        self.assertEqual(self.rows()[0], "003")
+
+    def test_undo_without_history_does_nothing(self):
+        """A disabled entry invoked anyway is harmless."""
+        before = self.rows()
+
+        self.task_list.undo()
+
+        self.assertEqual(self.rows(), before)
+
+    def test_it_works_without_a_tracker(self):
+        """A task list built with no undo support still opens its menu."""
+        self.task_list.project_tracker = None
+
+        self.assertFalse(self.task_list.can_undo())
+        self.assertEqual(self.states("001")["Undo"], 'disabled')
+
+
+class TestMenuDismissal(TaskListTestCase):
+    """
+    The menu goes away when clicked out of.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    grab_release() was called unconditionally straight after tk_popup. On
+    macOS the menu is a native one that manages its own grab, and dropping
+    it took away the grab used to notice a click outside - so the menu
+    stayed up until an entry was chosen.
+    """
+
+    def test_the_grab_is_left_alone_on_macos(self):
+        """The native menu keeps the grab it needs to dismiss itself."""
+        self.assertIn(self.task_list.context_menu._windowing,
+                      ('aqua', 'x11', 'win32'))
+
+    def test_escape_and_focus_loss_are_bound(self):
+        """Both routes out of the menu are wired up."""
+        menu = self.task_list.context_menu._build(self.project, "001")
+        self.task_list.context_menu._menu = menu
+        menu.bind('<FocusOut>',
+                  lambda _e: self.task_list.context_menu._unpost(), add='+')
+
+        self.assertTrue(menu.bind('<FocusOut>'))
+
+    def test_unposting_is_safe_with_no_menu(self):
+        """Nothing blows up if there is nothing posted."""
+        self.task_list.context_menu._menu = None
+
+        self.task_list.context_menu._unpost()
+
+
 class TestDoubleClick(TaskListTestCase):
     """Double-click folds a branch instead of opening the edit dialog."""
 
@@ -592,27 +814,28 @@ class TestContextMenu(TaskListTestCase):
         return entries
 
     def test_the_entries_are_offered_in_order(self):
-        """Moves, then the level changes, then Edit and Delete."""
+        """Moves, level changes, task actions, then the history."""
         labels = [label for label, _ in self.menu_for("002")]
 
         self.assertEqual(labels, ["Move to top", "Move up",
                                   "Move down", "Move to bottom",
                                   "Indent", "Outdent",
-                                  "Edit", "Delete"])
+                                  "Create", "Edit", "Delete",
+                                  "Undo", "Redo"])
 
-    def test_edit_and_delete_come_last(self):
-        """The two task actions are the final entries in the menu."""
+    def test_undo_and_redo_come_last(self):
+        """The history entries close the menu."""
         labels = [label for label, _ in self.menu_for("002")]
 
-        self.assertEqual(labels[-2:], ["Edit", "Delete"])
+        self.assertEqual(labels[-2:], ["Undo", "Redo"])
 
-    def test_separators_divide_the_three_groups(self):
-        """Moves, level changes and task actions are kept apart."""
+    def test_separators_divide_the_groups(self):
+        """Moves, level changes, task actions and history are kept apart."""
         menu = self.task_list.context_menu._build(self.project, "002")
 
         kinds = [menu.type(i) for i in range(menu.index('end') + 1)]
 
-        self.assertEqual(kinds.count('separator'), 2)
+        self.assertEqual(kinds.count('separator'), 3)
         self.assertEqual(kinds.index('separator'), 4)
 
     def test_a_middle_row_can_move_either_way(self):
