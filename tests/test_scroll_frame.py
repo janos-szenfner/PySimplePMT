@@ -105,21 +105,37 @@ class TestWhatItHolds(ScrollFrameTestCase):
 
 
 class TestTheScrollbar(ScrollFrameTestCase):
-    """It appears when there is something to scroll, and not before."""
+    """
+    It appears when there is something to scroll, and not before.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Driven through _scrolled, which is what the canvas calls with the slice
+    of the form on show. A window that is never mapped has no real height to
+    compare a form against - under xvfb the canvas stands at one pixel, so
+    two rows overflow it and a form that fits on any desktop looked here as
+    though it did not.
+    """
 
     def test_a_form_that_fits_shows_no_scrollbar(self):
-        """Nothing to scroll, nothing to show."""
-        self.fill(2)
+        """All of it on show, so nothing to show a scrollbar for."""
+        self.frame._scrolled('0.0', '1.0')
 
         self.assertEqual(self.frame.scrollbar.winfo_manager(), "")
 
     def test_a_form_that_does_not_fit_shows_one(self):
-        """A form taller than its window gets a scrollbar beside it."""
-        self.fill(30)
-        self.root.update_idletasks()
+        """Half of it on show gets a scrollbar beside it."""
+        self.frame._scrolled('0.0', '0.5')
 
         self.assertEqual(self.frame.scrollbar.winfo_manager(), "grid")
         self.assertEqual(int(self.frame.scrollbar.grid_info()['column']), 1)
+
+    def test_it_goes_away_again(self):
+        """A form that stops needing one stops showing one."""
+        self.frame._scrolled('0.0', '0.5')
+        self.frame._scrolled('0.0', '1.0')
+
+        self.assertEqual(self.frame.scrollbar.winfo_manager(), "")
 
     def test_the_region_follows_the_form(self):
         """
@@ -171,14 +187,64 @@ class TestTheWheel(ScrollFrameTestCase):
 
         self.assertFalse(self.bound())
 
+    def wheel_event(self, **fields):
+        """
+        A wheel event as one platform or another delivers it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Built rather than generated: <MouseWheel> cannot be fired at a window
+        that was never mapped, and what matters here is how a delta is read,
+        not how it arrived.
+        """
+        event = tk.Event()
+        for name, value in fields.items():
+            setattr(event, name, value)
+        return event
+
+    def scrolls(self, event):
+        """What _wheel asks the canvas to do with an event."""
+        asked = []
+        self.frame._scrollable = lambda: True
+        self.frame.canvas.yview_scroll = (
+            lambda steps, what: asked.append((steps, what))
+        )
+        self.frame._wheel(event)
+        return asked
+
+    def test_a_windows_notch_moves_one_step(self):
+        """Windows sends multiples of 120, one notch at a time."""
+        self.assertEqual(self.scrolls(self.wheel_event(delta=-120)),
+                         [(1, 'units')])
+
+    def test_a_macos_delta_moves_one_step(self):
+        """macOS sends small numbers, whose sign is all that is read."""
+        self.assertEqual(self.scrolls(self.wheel_event(delta=2)),
+                         [(-1, 'units')])
+
+    def test_x11_buttons_move_either_way(self):
+        """X11 sends Button-4 for up and Button-5 for down, with no delta."""
+        self.assertEqual(self.scrolls(self.wheel_event(delta=0, num=4)),
+                         [(-1, 'units')])
+        self.assertEqual(self.scrolls(self.wheel_event(delta=0, num=5)),
+                         [(1, 'units')])
+
     def test_a_form_that_fits_does_not_move(self):
-        """The wheel over a form with nothing to scroll leaves it alone."""
-        self.fill(2)
-        before = self.frame.canvas.yview()
+        """
+        The wheel over a form with nothing to scroll leaves it alone.
 
-        self.frame._wheel(tk.Event())
+        The verdict is supplied rather than measured: an unmapped window has
+        no height to hold a form against.
+        """
+        asked = []
+        self.frame._scrollable = lambda: False
+        self.frame.canvas.yview_scroll = (
+            lambda steps, what: asked.append((steps, what))
+        )
 
-        self.assertEqual(self.frame.canvas.yview(), before)
+        self.frame._wheel(self.wheel_event(delta=-120))
+
+        self.assertEqual(asked, [])
 
 
 if __name__ == '__main__':

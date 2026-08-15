@@ -223,16 +223,21 @@ class ScrollFrame(ctk.CTkFrame):
         Deltas are read the way the chart reads them - see
         gantt_chart._bind_scrolling: X11 sends Button-4 and Button-5 with no
         delta, Windows sends multiples of 120, macOS sends small numbers.
+
+        Both fields are read through getattr. Tk fills in whichever the
+        platform does not use, but an event this is handed rather than one it
+        was bound to carries only what its sender put in it.
         """
         if not self._scrollable():
             return None
 
-        if event.delta:
-            steps = -1 if event.delta > 0 else 1
-            if abs(event.delta) >= 120:
-                steps = int(-event.delta / 120)
+        delta = getattr(event, 'delta', 0)
+        if delta:
+            steps = -1 if delta > 0 else 1
+            if abs(delta) >= 120:
+                steps = int(-delta / 120)
         else:
-            steps = -1 if event.num == 4 else 1
+            steps = -1 if getattr(event, 'num', 5) == 4 else 1
 
         self.canvas.yview_scroll(steps, 'units')
         return 'break'
