@@ -90,6 +90,19 @@ class TaskFormDialog(ctk.CTkToplevel):
     MINSIZE = (560, 480)
     DATE_FORMAT = '%Y-%m-%d'
 
+    #: Width of the buttons along the bottom.
+    #:
+    #: Given explicitly because CTkButton defaults to 140 and only the two
+    #: with the longest labels had been set: Close came out wider than
+    #: Save & Close, so the row's widths ran backwards against the length of
+    #: what was written on them.
+    #:
+    #: Three at ACTION_WIDTH plus one at DELETE_WIDTH, with their padding and
+    #: the frame's, come to 540 - inside MINSIZE, so nothing is clipped when
+    #: the dialog is squeezed as far as it goes.
+    ACTION_WIDTH = 120
+    DELETE_WIDTH = 100
+
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
         'Milestone': "#e74c3c",
@@ -348,12 +361,11 @@ class TaskFormDialog(ctk.CTkToplevel):
 
         self._build_leading_buttons(frame)
 
-        ctk.CTkButton(frame, text="Save & New", width=110,
-                      command=self.save_and_new).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(frame, text="Save & Close", width=120,
-                      command=self.save).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(frame, text="Close",
-                      command=self.cancel).pack(side=tk.RIGHT, padx=5)
+        for label, command in (("Save & New", self.save_and_new),
+                               ("Save & Close", self.save),
+                               ("Close", self.cancel)):
+            ctk.CTkButton(frame, text=label, width=self.ACTION_WIDTH,
+                          command=command).pack(side=tk.RIGHT, padx=5)
 
     def _build_leading_buttons(self, frame):
         """Buttons on the left of the row. Nothing by default."""
@@ -568,8 +580,8 @@ class EditTaskDialog(TaskFormDialog):
 
     def _build_leading_buttons(self, frame):
         """Delete, set apart on the left."""
-        ctk.CTkButton(frame, text="Delete", fg_color="#e74c3c",
-                      hover_color="#c0392b",
+        ctk.CTkButton(frame, text="Delete", width=self.DELETE_WIDTH,
+                      fg_color="#e74c3c", hover_color="#c0392b",
                       command=self.delete).pack(side=tk.LEFT, padx=5)
 
     # ---- saving --------------------------------------------------------

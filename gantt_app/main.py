@@ -24,6 +24,47 @@ from gantt_app.utils.log import (
 logger = get_logger(__name__)
 
 
+def set_appearance_from_system() -> str:
+    """
+    Match the desktop's light or dark setting, once.
+
+    RETURNS:
+    --------
+    str
+        The mode chosen, 'light' or 'dark'.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The obvious call here is set_appearance_mode("system"), and that is what
+    this used to be. It is a trap. Left in that mode CustomTkinter starts a
+    tracker that re-reads the system setting every thirty milliseconds - over
+    thirty times a second, for the lifetime of the application.
+
+    On macOS each read is a library call and merely wasteful. On Linux
+    darkdetect answers by running `gsettings` through subprocess, and falls
+    back to a second call when the first comes back empty: thirty to sixty
+    processes spawned every second, for a setting that changes about twice a
+    day. It made the whole window sluggish, worst wherever there was most to
+    redraw, and it is why typing in a dialog felt heavy.
+
+    Reading it once at startup costs one call. The theme can still be changed
+    from View > Toggle Theme, which sets an explicit mode and leaves the
+    tracker asleep.
+    """
+    mode = 'light'
+    try:
+        import darkdetect
+        if str(darkdetect.theme() or '').lower() == 'dark':
+            mode = 'dark'
+    except Exception:
+        # No detector, or it refused to answer - light is the safe default
+        logger.debug("Could not detect the system theme; using light")
+
+    ctk.set_appearance_mode(mode)
+    logger.info("Appearance set to %s from the system setting", mode)
+    return mode
+
+
 class GanttApp(ctk.CTk):
     """
     Main application class for the Gantt Project Management Tool.
@@ -40,7 +81,7 @@ class GanttApp(ctk.CTk):
         self.minsize(1200, 800)
         
         # Set appearance
-        ctk.set_appearance_mode("system")  # "system", "dark", or "light"
+        set_appearance_from_system()
         ctk.set_default_color_theme("blue")
         
         # Create project

@@ -525,5 +525,129 @@ class TestDependencyTabIsLazy(DialogTestCase):
         self.assertEqual(self.task.dependency_ids, [])
 
 
+class TestButtonWidths(DialogTestCase):
+    """
+    The bottom row is evenly sized and fits the smallest window.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    CTkButton defaults to 140 and only the two longest labels had a width
+    set, so Close came out wider than Save & Close and the row's widths ran
+    backwards against the length of what was written on them.
+    """
+
+    def widths(self, dialog):
+        """Each bottom button's requested width, by label."""
+        import customtkinter as ctk
+
+        dialog.update_idletasks()
+        frame = dialog.winfo_children()[-1]
+        return {str(w.cget('text')): w.winfo_reqwidth()
+                for w in frame.winfo_children()
+                if isinstance(w, ctk.CTkButton)}
+
+    def edit_dialog(self):
+        """An edit dialog over the fixture task."""
+        from gantt_app.views.task_list import EditTaskDialog
+
+        return EditTaskDialog(self.root, self.task, self.project,
+                              on_save=lambda t: None,
+                              on_delete=lambda i: None)
+
+    def create_dialog(self):
+        """A create dialog."""
+        from gantt_app.views.task_list import CreateTaskDialog
+
+        return CreateTaskDialog(self.root, self.project,
+                                on_save=lambda t: None)
+
+    def test_the_save_buttons_match(self):
+        """The three actions on the right are one width."""
+        widths = self.widths(self.edit_dialog())
+
+        self.assertEqual(widths["Close"], widths["Save & Close"])
+        self.assertEqual(widths["Close"], widths["Save & New"])
+
+    def test_close_is_not_the_widest(self):
+        """
+        The shortest label had the widest button.
+
+        Close was left at the CTkButton default of 140 while Save & Close,
+        which is twice the text, was set to 120.
+        """
+        widths = self.widths(self.edit_dialog())
+
+        self.assertLessEqual(widths["Close"], widths["Save & Close"])
+
+    def test_the_create_dialog_matches_too(self):
+        """Both dialogs use the same widths."""
+        edit = self.widths(self.edit_dialog())
+        create = self.widths(self.create_dialog())
+
+        self.assertEqual(create["Close"], edit["Close"])
+        self.assertEqual(create["Save & Close"], edit["Save & Close"])
+
+    def test_the_row_fits_the_minimum_window(self):
+        """
+        Nothing is clipped when the dialog is squeezed as far as it goes.
+
+        Widening the buttons to match is only an improvement if they all
+        still fit.
+        """
+        dialog = self.edit_dialog()
+        widths = self.widths(dialog)
+
+        # each button carries padx=5 either side, the frame padx=20
+        needed = sum(widths.values()) + 10 * len(widths) + 40
+
+        self.assertLessEqual(needed, dialog.MINSIZE[0])
+
+
+class TestAppearanceIsPinned(unittest.TestCase):
+    """
+    The system theme is read once, not polled.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    set_appearance_mode("system") leaves CustomTkinter re-reading the setting
+    every 30ms. On Linux darkdetect answers that by running gsettings through
+    subprocess, so it was spawning thirty-odd processes a second, each one
+    blocking the event loop it was called from.
+    """
+
+    def test_it_sets_an_explicit_mode(self):
+        """Never 'system', which is the mode that polls."""
+        from unittest import mock
+        from gantt_app.main import set_appearance_from_system
+
+        with mock.patch('customtkinter.set_appearance_mode') as setter:
+            set_appearance_from_system()
+
+        self.assertIn(setter.call_args[0][0], ('light', 'dark'))
+
+    def test_it_follows_a_dark_desktop(self):
+        """A dark system setting gives a dark window."""
+        from unittest import mock
+        from gantt_app.main import set_appearance_from_system
+
+        with mock.patch('darkdetect.theme', return_value='Dark'), \
+                mock.patch('customtkinter.set_appearance_mode') as setter:
+            set_appearance_from_system()
+
+        self.assertEqual(setter.call_args[0][0], 'dark')
+
+    def test_a_detector_that_fails_falls_back_to_light(self):
+        """A missing or broken detector must not stop the app starting."""
+        from unittest import mock
+        from gantt_app.main import set_appearance_from_system
+
+        with mock.patch('darkdetect.theme', side_effect=OSError("no")), \
+                mock.patch('customtkinter.set_appearance_mode') as setter:
+            mode = set_appearance_from_system()
+
+        self.assertEqual(mode, 'light')
+        self.assertEqual(setter.call_args[0][0], 'light')
+
+
 if __name__ == '__main__':
     unittest.main()
