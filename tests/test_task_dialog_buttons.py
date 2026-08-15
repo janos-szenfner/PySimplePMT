@@ -44,6 +44,8 @@ class DialogTestCase(unittest.TestCase):
         self.task = Task(id="001", name="Alpha", start_date=base,
                          end_date=base + timedelta(days=2))
         self.project.add_task(self.task)
+        self.project.add_task(Task(id="002", name="Beta", start_date=base,
+                                   end_date=base + timedelta(days=2)))
 
     def tearDown(self):
         """Tear the root window down."""
@@ -379,6 +381,148 @@ class TestDateEntry(DialogTestCase):
 
         self.assertEqual(widget.get(), "2026-04-01")
         self.assertEqual(str(widget.entry.cget('state')), 'disabled')
+
+
+class TestCalendarIcon(unittest.TestCase):
+    """The glyph on the button that opens the month view."""
+
+    def test_it_is_drawn_not_a_font_glyph(self):
+        """
+        The icon is painted, so it needs no emoji font.
+
+        It used to be the '\U0001f4c5' character. A stock Linux desktop often
+        has no font carrying it, and the button came out blank - a plain blue
+        rectangle with nothing on it.
+        """
+        from gantt_app.views.datepicker import _draw_calendar
+
+        image = _draw_calendar(16)
+
+        self.assertEqual(image.size, (16, 16))
+        self.assertEqual(image.mode, 'RGBA')
+
+    def test_it_actually_has_something_on_it(self):
+        """A blank icon would pass a size check but show nothing."""
+        from gantt_app.views.datepicker import _draw_calendar
+
+        image = _draw_calendar(16)
+        inked = sum(1 for pixel in image.getdata() if pixel[3] > 60)
+
+        self.assertGreater(inked, 40)
+        self.assertLess(inked, 16 * 16)
+
+    def test_the_drawing_is_reused(self):
+        """Painting happens once, however many boxes ask for it."""
+        from gantt_app.views import datepicker
+
+        datepicker._ICON_IMAGE = None
+        datepicker.calendar_icon()
+        first = datepicker._ICON_IMAGE
+        datepicker.calendar_icon()
+
+        self.assertIs(datepicker._ICON_IMAGE, first)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestIconWrapping(DialogTestCase):
+    """
+    A fresh wrapper is made per box, over the one cached drawing.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A Tk image belongs to the interpreter that made it and stops existing
+    when that window goes. Caching the CTkImage rather than the picture made
+    every dialog after the first fail with 'image "pyimage1" doesn\'t exist'.
+    """
+
+    def test_the_button_carries_the_icon(self):
+        """The box shows a picture, not a character."""
+        from gantt_app.views.datepicker import DateEntry
+
+        entry = DateEntry(self.root)
+
+        self.assertEqual(entry.button.cget('text'), '')
+        self.assertIsNotNone(entry.button.cget('image'))
+
+    def test_a_second_window_still_gets_one(self):
+        """The cached drawing outlives the window that first asked for it."""
+        import customtkinter as ctk
+        from gantt_app.views.datepicker import DateEntry
+
+        DateEntry(self.root)
+        self.root.destroy()
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        entry = DateEntry(self.root)
+
+        self.assertIsNotNone(entry.button.cget('image'))
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestDependencyTabIsLazy(DialogTestCase):
+    """
+    The Dependency tab is filled in when it is first opened.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    It cost about ten of the twenty-six milliseconds a dialog took to open,
+    and most edits are a name or a date and never go near it.
+    """
+
+    def dialog(self):
+        """An edit dialog over the fixture task."""
+        from gantt_app.views.task_list import EditTaskDialog
+
+        return EditTaskDialog(self.root, self.task, self.project,
+                              on_save=lambda t: None,
+                              on_delete=lambda i: None)
+
+    def test_it_is_not_built_on_open(self):
+        """Opening the dialog does not pay for it."""
+        self.assertIsNone(self.dialog()._dependency_editor)
+
+    def test_opening_the_tab_builds_it(self):
+        """Looking at the tab is what brings it into being."""
+        dialog = self.dialog()
+
+        dialog.tabs.set("Dependency")
+        dialog._on_tab_changed()
+
+        self.assertIsNotNone(dialog._dependency_editor)
+
+    def test_asking_for_it_builds_it(self):
+        """Reaching for the links is asking for the editor."""
+        dialog = self.dialog()
+
+        editor = dialog.dependency_editor
+
+        self.assertIsNotNone(editor)
+        self.assertIs(dialog._dependency_editor, editor)
+
+    def test_saving_without_opening_leaves_the_links_alone(self):
+        """
+        An untouched tab means untouched links.
+
+        Reading an editor that was never built would have replaced the task's
+        real links with whatever an empty one returned.
+        """
+        self.task.add_dependency("002", 'FS', 'Hard')
+        dialog = self.dialog()
+
+        dialog.save()
+
+        self.assertEqual(self.task.dependency_ids, ["002"])
+
+    def test_changes_made_on_the_tab_are_saved(self):
+        """Once opened, it behaves as it always did."""
+        self.task.add_dependency("002", 'FS', 'Hard')
+        dialog = self.dialog()
+        dialog.dependency_editor.links = []
+
+        dialog.save()
+
+        self.assertEqual(self.task.dependency_ids, [])
 
 
 if __name__ == '__main__':

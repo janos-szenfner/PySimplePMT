@@ -81,7 +81,7 @@ class TestDialogCallbackGuards(unittest.TestCase):
 
     def test_edit_dialog_survives_a_missing_date_field(self):
         """An editor without the date widgets is also handled."""
-        stub = self._stub(dependency_editor=object())
+        stub = self._stub(_dependency_editor=object())
 
         try:
             EditTaskDialog._on_dependencies_changed(stub)

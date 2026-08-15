@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Optional
 
 import customtkinter as ctk
+from PIL import Image, ImageDraw
 
 from gantt_app.utils.log import get_logger
 
@@ -41,6 +42,81 @@ DATE_FORMAT = '%Y-%m-%d'
 
 #: Day-of-week headings, starting on Monday.
 WEEKDAYS = ('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su')
+
+#: The drawn glyph, kept so it is only painted once.
+#:
+#: The picture is cached, not the CTkImage wrapping it: a Tk image belongs to
+#: the interpreter that made it and stops existing when that window is torn
+#: down, so a shared one would go stale. Painting is the part worth keeping;
+#: wrapping it again costs almost nothing.
+_ICON_IMAGE = None
+
+
+def _draw_calendar(size: int):
+    """
+    Paint a calendar glyph.
+
+    RETURNS:
+    --------
+    Image.Image
+        The glyph in white on transparent, ready to sit on a coloured button.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Drawn rather than set as the emoji this used to be. An emoji needs a font
+    that has it, and a stock Linux desktop often has none - the button came
+    out blank, a plain blue rectangle with nothing on it. Drawing depends on
+    no font at all.
+
+    Pillow is already required for the chart exports, so this costs no new
+    dependency. It is painted at four times the size and reduced, which keeps
+    the edges clean on a HiDPI screen.
+    """
+    scale = 4
+    edge = size * scale
+    image = Image.new('RGBA', (edge, edge), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    white = (255, 255, 255, 255)
+    line = max(1, scale)
+
+    # The body, with the header bar filled in
+    top = int(edge * 0.18)
+    draw.rounded_rectangle([line, top, edge - line - 1, edge - line - 1],
+                           radius=scale * 2, outline=white, width=line)
+    draw.rounded_rectangle([line, top, edge - line - 1, top + int(edge * 0.20)],
+                           radius=scale * 2, fill=white)
+
+    # The two rings above it
+    for x in (int(edge * 0.30), int(edge * 0.68)):
+        draw.line([(x, int(edge * 0.06)), (x, int(edge * 0.24))],
+                  fill=white, width=line)
+
+    # A couple of rows of days. Positions are whole multiples of the scale
+    # so each mark lands on one pixel of the reduced image rather than
+    # straddling two and coming out a different weight from its neighbours.
+    for row in range(2):
+        y = (8 + row * 3) * scale
+        for column in range(3):
+            x = (4 + column * 3) * scale
+            draw.rectangle([x, y, x + line - 1, y + line - 1], fill=white)
+
+    return image.resize((size, size), Image.LANCZOS)
+
+
+def calendar_icon(size: int = 16):
+    """
+    The calendar glyph for the button that opens the month view.
+
+    RETURNS:
+    --------
+    ctk.CTkImage
+        A fresh wrapper around the cached drawing.
+    """
+    global _ICON_IMAGE
+    if _ICON_IMAGE is None:
+        _ICON_IMAGE = _draw_calendar(size)
+    return ctk.CTkImage(light_image=_ICON_IMAGE, size=(size, size))
 
 
 class DateEntry(ctk.CTkFrame):
@@ -62,8 +138,6 @@ class DateEntry(ctk.CTkFrame):
     two a chance to disagree.
     """
 
-    BUTTON_TEXT = '📅'
-
     def __init__(self, master, date: Optional[datetime] = None, **kwargs):
         super().__init__(master, fg_color='transparent', **kwargs)
 
@@ -72,8 +146,8 @@ class DateEntry(ctk.CTkFrame):
         self.entry = ctk.CTkEntry(self)
         self.entry.grid(row=0, column=0, sticky=tk.EW)
 
-        self.button = ctk.CTkButton(self, text=self.BUTTON_TEXT, width=36,
-                                    command=self.open_calendar)
+        self.button = ctk.CTkButton(self, text='', image=calendar_icon(),
+                                    width=36, command=self.open_calendar)
         self.button.grid(row=0, column=1, padx=(6, 0))
 
         if date is not None:
@@ -183,6 +257,8 @@ class CalendarPopup(ctk.CTkToplevel):
     CELL = 34
     SELECTED_COLOR = '#1f6aa5'
     TODAY_BORDER = '#e74c3c'
+    CELL_BG = '#ffffff'
+    HOVER_BG = '#cfe2f3'
 
     def __init__(self, master, date: datetime, on_pick):
         super().__init__(master)
@@ -232,7 +308,21 @@ class CalendarPopup(ctk.CTkToplevel):
                       command=self.close).pack(side=tk.RIGHT)
 
     def _draw_month(self):
-        """Redraw the day buttons for the month on show."""
+        """
+        Redraw the day cells for the month on show.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The cells are tk.Labels with their own bindings rather than
+        CTkButtons. Thirty-one CTkButtons cost about 4.3ms to build against
+        0.3ms for the same number of labels, and this runs again on every
+        press of the month arrows - the popup took 18ms to open and each step
+        through the months another 4.6ms, which is what made it feel sticky.
+
+        Nothing is lost by it: every colour here is set explicitly anyway, so
+        there was no CustomTkinter styling being relied on, and hover is two
+        bindings.
+        """
         for child in self._grid.winfo_children():
             child.destroy()
 
@@ -253,24 +343,40 @@ class CalendarPopup(ctk.CTkToplevel):
 
                 date = datetime(self._year, self._month, day)
                 selected = date.date() == self._selected.date()
+                is_today = date.date() == today
 
-                button = ctk.CTkButton(
-                    self._grid, text=str(day), width=self.CELL,
-                    height=self.CELL - 6,
-                    fg_color=self.SELECTED_COLOR if selected else 'transparent',
-                    text_color=('#ffffff' if selected else '#1a1a1a'),
-                    border_width=2 if date.date() == today else 0,
-                    border_color=self.TODAY_BORDER,
-                    hover_color='#cfe2f3',
-                    command=lambda d=date: self.pick(d),
+                cell = tk.Label(
+                    self._grid, text=str(day), width=3,
+                    background=(self.SELECTED_COLOR if selected
+                                else self.CELL_BG),
+                    foreground='#ffffff' if selected else '#1a1a1a',
+                    relief=tk.SOLID if is_today else tk.FLAT,
+                    borderwidth=1 if is_today else 0,
+                    cursor='hand2', padx=2, pady=3,
                 )
-                button.grid(row=row, column=column, padx=1, pady=1)
-                self.day_buttons[day] = button
+                cell.grid(row=row, column=column, padx=1, pady=1)
+                cell.bind('<Button-1>', lambda _e, d=date: self.pick(d))
+                if not selected:
+                    cell.bind('<Enter>',
+                              lambda _e, c=cell: c.configure(
+                                  background=self.HOVER_BG))
+                    cell.bind('<Leave>',
+                              lambda _e, c=cell: c.configure(
+                                  background=self.CELL_BG))
+                self.day_buttons[day] = cell
 
     def _place_near(self, widget):
-        """Open just below the box that asked for it."""
+        """
+        Open just below the box that asked for it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Only the widget's own position is needed, and it already has one.
+        This used to call update_idletasks first, which forces a full layout
+        pass of the popup being built purely to learn a size nothing here
+        reads - most of the time it took to open.
+        """
         try:
-            self.update_idletasks()
             x = widget.winfo_rootx()
             y = widget.winfo_rooty() + widget.winfo_height() + 4
             self.geometry(f"+{x}+{y}")
