@@ -188,13 +188,19 @@ class TestDependencyEditorLayout(unittest.TestCase):
         self.assertLessEqual(right_edge, dialog.winfo_width())
 
     def test_the_add_controls_are_stacked(self):
-        """The predecessor menu and the Add button are on separate rows."""
+        """
+        The predecessor menu and the Add button are on separate rows.
+
+        Read from the grid rather than from screen coordinates: those need
+        the dialog mapped and laid out at its final size, which is not true
+        under a headless display, and the comparison then means nothing.
+        """
         dialog = self._dialog()
         editor = dialog.dependency_editor
         button = self._add_button(editor)
 
-        self.assertGreater(button.winfo_rooty(),
-                           editor.candidate_menu.winfo_rooty())
+        self.assertGreater(int(button.grid_info()['row']),
+                           int(editor.candidate_menu.grid_info()['row']))
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")

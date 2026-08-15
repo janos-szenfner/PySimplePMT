@@ -58,14 +58,34 @@ class DialogTestCase(unittest.TestCase):
 
         Only the bottom row: the Dependency tab has buttons of its own, and
         the date pickers each carry a calendar button.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Worked out from how each button is packed rather than from where it
+        ended up. Sorting on winfo_x needs the row laid out at its final
+        width, which it is not until the window has been mapped and sized -
+        under xvfb the positions came back meaningless and the order looked
+        wrong when it was not.
+
+        pack puts LEFT children on in creation order, and RIGHT children on
+        from the right edge inwards, so reversing the RIGHT ones gives what
+        a reader sees.
         """
         import customtkinter as ctk
+        import tkinter as tk
 
         frame = dialog.winfo_children()[-1]
-        found = [(w.winfo_x(), str(w.cget('text')))
-                 for w in frame.winfo_children()
-                 if isinstance(w, ctk.CTkButton)]
-        return [text for _x, text in sorted(found)]
+        buttons = [w for w in frame.winfo_children()
+                   if isinstance(w, ctk.CTkButton)]
+
+        left, right = [], []
+        for button in buttons:
+            side = str(button.pack_info().get('side', tk.LEFT))
+            (right if side == tk.RIGHT else left).append(
+                str(button.cget('text'))
+            )
+
+        return left + right[::-1]
 
 
 class TestEditDialogButtons(DialogTestCase):
