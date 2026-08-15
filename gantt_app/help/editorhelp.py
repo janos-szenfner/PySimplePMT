@@ -1,173 +1,148 @@
 """
-Help window for the task editor dialog.
+The reference window behind the task editor's Help button.
 
-Provides information about the task editor functionality.
+WHY THIS MODULE EXISTS:
+======================
+The editor asks for a type, two dates, a milestone flag and a percentage, and
+what those mean to the chart is not obvious from the form: whether a task
+needs an end date, why ticking Milestone empties one, what a sub-task does to
+its parent's dates. The form has no room to say, and the answers do not change
+often enough to belong on it.
+
+The window follows the Dependency tab's, which answers the same kind of
+question about links.
+
+DEVELOPMENT NOTES:
+------------------
+Content only. The window itself is ReferenceWindow, shared with the
+dependency reference - see gantt_app/help/reference.py.
+
+The sections follow the order of the fields on the General tab, so someone
+looking at a box on the form finds it in the same place here.
 """
 
-import tkinter as tk
-from tkinter import ttk
-
-import customtkinter as ctk
-
-from gantt_app.utils.log import get_logger
-
-logger = get_logger(__name__)
+from gantt_app.help.reference import ReferenceWindow
 
 
-#: The editor help text, as (heading, [paragraph, ...]).
+#: The reference text, as (heading, [paragraph, ...]).
+#:
+#: Written for this application: the names match the fields on the General
+#: tab, and the worked examples use its inclusive end dates.
 HELP_SECTIONS = (
     (
-        "Task Types:",
+        "Tasks",
         [
-            "Tasks: Tasks are the core work items of your project. Each task has a name, a start date, a duration, and appears as a horizontal bar on the chart. The length of the bar is proportional to its duration. Tasks can run sequentially or in parallel, and their bars may overlap on the timeline when independent work streams happen simultaneously.",
+            "A task is a piece of work with a start and an end. It is drawn "
+            "on the chart as a horizontal bar whose length is its duration, "
+            "so the plan can be read at a glance.",
+
+            "Tasks may run one after another or side by side. Nothing stops "
+            "two bars overlapping - independent work happening at the same "
+            "time is what that looks like. Use the Dependency tab when one "
+            "task genuinely has to wait for another, rather than typing dates "
+            "that happen to fall in the right order.",
+        ],
+    ),
+    (
+        "Sub-tasks",
+        [
+            "A sub-task is a task belonging to another one. Its parent is "
+            "shown on the form and cannot be changed here; use Indent and "
+            "Outdent on the right-click menu to move a task in or out.",
+
+            "A task with sub-tasks brackets them rather than holding work of "
+            "its own. Its dates come from its children - the earliest start "
+            "and the latest finish - and its progress is their average, "
+            "weighted by how long each one lasts, so editing the dates of a "
+            "task that has sub-tasks has no lasting effect.",
         ],
     ),
     (
         "Milestones",
         [
-            "Milestones mark significant checkpoints in a project — moments of achievement rather than spans of work. They have zero duration and are typically shown as a diamond or marker on the timeline. Common milestones include \"Design approved,\" \"MVP released,\" or \"Client sign-off.\" They are essential for tracking project health and communicating progress to stakeholders.",
+            "A milestone marks a moment rather than a span of work: design "
+            "approved, MVP released, client sign-off. It takes no time, so it "
+            "has no end date, and ticking Is Milestone empties that box and "
+            "greys it out. Un-ticking gives it back.",
+
+            "Because a milestone occupies no day, a task that follows one on "
+            "the 15th starts on the 15th, not the 16th.",
+
+            "Milestones are drawn as a marker instead of a bar, which is what "
+            "makes them stand out when the plan is shown to somebody who did "
+            "not write it.",
         ],
     ),
     (
-        "Timeline / Time Scale",
+        "Start date, end date and duration",
         [
-            "The horizontal axis of a Gantt chart is the timeline. It can be scaled daily, weekly, or monthly depending on project length. A zoom level lets you drill into detail or pull back for a high-level overview. Most tools also display a \"today marker\" — a vertical line showing the current date — making it easy to see how actual progress compares to the plan.",
+            "Dates are written as YYYY-MM-DD - 2026-08-15. The button beside "
+            "each box opens a calendar, which fills it in correctly whatever "
+            "the local date convention is.",
+
+            "End dates cover the whole of their day. A task running from the "
+            "1st to the 5th lasts five days, and the Duration field counts it "
+            "that way.",
+
+            "The form points out a date it cannot read, or a required one "
+            "left empty, as you type. It says so beneath the fields rather "
+            "than waiting for Save, so a mistyped date is caught while you "
+            "are still looking at it.",
         ],
     ),
     (
         "% Completion",
         [
-            "Progress tracking is built into Gantt charts through percentage completion (0%–100%). A partially completed bar is visually shaded or filled to show how much work is done. At a glance, you can see which tasks are on track, ahead, or behind schedule relative to the today marker. Aggregate completion across all tasks gives a quick project-health snapshot.",
+            "Progress runs from 0 to 100 and shades that much of the task's "
+            "bar, so how far along a task is can be read against the line "
+            "marking today: a bar less shaded than it should be by now is "
+            "behind.",
+
+            "Progress on a task with sub-tasks is not entered - it is the "
+            "average of theirs, weighted by duration.",
+        ],
+    ),
+    (
+        "Colour",
+        [
+            "Colour carries no meaning to the application: nothing is "
+            "scheduled, grouped or exported differently because of it. It is "
+            "there to let a reader tell work streams apart - one colour per "
+            "team, per phase, or per whatever the plan is organised around.",
+
+            "New rows start on a colour chosen by what they are, so tasks, "
+            "sub-tasks and milestones are already distinguishable before "
+            "anybody picks anything.",
+        ],
+    ),
+    (
+        "The timeline",
+        [
+            "The chart's horizontal axis can be shown by day, week or month, "
+            "and the zoom controls move between them: in for the detail of a "
+            "fortnight, out for the shape of a year.",
+
+            "A vertical line marks today, which is what the shading on each "
+            "bar is read against.",
         ],
     ),
 )
 
 
-class EditorHelpWindow(ctk.CTkToplevel):
+class EditorHelpWindow(ReferenceWindow):
     """
-    A scrollable reference window with task editor help.
-
-    PARAMETERS:
-    -----------
-    master : widget
-        The window to open over.
+    A scrollable reference on the task editor's fields.
 
     DEVELOPMENT NOTES:
     ------------------
-    Deliberately not modal so it can be read while using the editor.
-
-    Only one is kept open at a time - see `show` - to avoid stacking
-    identical windows.
-
-    The body is a tk.Text rather than a label so it scrolls, wraps and can be
-    selected and copied. It is disabled after filling, which leaves it
-    readable and selectable but not editable.
+    Everything but the words is in ReferenceWindow, which the Dependency
+    tab's Help button shares. Not modal, so it can be read while the editor
+    is open behind it - which is the whole point of a Help button on a form.
     """
 
-    #: The window currently open, if any.
+    TITLE = "Task Editor - Help"
+    GEOMETRY = "720x640"
+    SECTIONS = HELP_SECTIONS
+
+    #: This window's own; the dependency reference keeps a separate one.
     _open_window = None
-
-    #: Colours, kept close to the application's palette.
-    HEADING_COLOR = '#1f6aa5'
-    BODY_COLOR = '#1a1a1a'
-    BACKGROUND = '#ffffff'
-
-    def __init__(self, master=None):
-        super().__init__(master)
-
-        self.title("Editor Help - Gantt Project Manager")
-        self.geometry("640x480")
-        self.minsize(480, 360)
-        if master is not None:
-            self.transient(master)
-        self.protocol("WM_DELETE_WINDOW", self.close)
-
-        self._build_ui()
-        self._fill()
-
-    @classmethod
-    def show(cls, master):
-        """
-        Open the editor help window, or bring the existing one to the front.
-
-        PARAMETERS:
-        -----------
-        master : widget
-            The window to open over.
-        """
-        if cls._open_window is not None and cls._open_window.winfo_exists():
-            # Bring existing window to front
-            try:
-                cls._open_window.lift()
-                cls._open_window.focus_force()
-            except tk.TclError:
-                cls._open_window = None
-            return
-
-        try:
-            window = cls(master)
-            cls._open_window = window
-            window.lift()
-            logger.info("Opened editor help window")
-        except Exception:
-            logger.exception("Could not open the editor help window")
-
-    def close(self):
-        """Close this help window."""
-        if EditorHelpWindow._open_window is self:
-            EditorHelpWindow._open_window = None
-        try:
-            self.destroy()
-        except tk.TclError:
-            pass
-
-    def _build_ui(self):
-        """Build the user interface."""
-        # Main frame
-        main_frame = ctk.CTkFrame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Text widget for help content
-        self.text_widget = tk.Text(
-            main_frame,
-            wrap=tk.WORD,
-            background=self.BACKGROUND,
-            padx=10,
-            pady=10,
-            state=tk.DISABLED
-        )
-        self.text_widget.pack(fill=tk.BOTH, expand=True)
-
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(main_frame, command=self.text_widget.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.text_widget.configure(yscrollcommand=scrollbar.set)
-
-        # Close button
-        close_frame = ctk.CTkFrame(self)
-        close_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        ctk.CTkButton(
-            close_frame, text="Close", width=80,
-            command=self.close
-        ).pack(side=tk.RIGHT, padx=5, pady=5)
-
-    def _fill(self):
-        """Fill the text widget with the help content."""
-        self.text_widget.configure(state=tk.NORMAL)
-        self.text_widget.delete(1.0, tk.END)
-
-        for heading, paragraphs in HELP_SECTIONS:
-            # Add heading
-            self.text_widget.insert(tk.END, heading + "\n", 'heading')
-            self.text_widget.insert(tk.END, "\n")
-
-            # Add paragraphs
-            for para in paragraphs:
-                self.text_widget.insert(tk.END, para + "\n\n")
-
-        # Configure text tags
-        self.text_widget.tag_configure('heading', 
-                                      foreground=self.HEADING_COLOR,
-                                      font=('Arial', 12, 'bold'))
-        self.text_widget.configure(state=tk.DISABLED)

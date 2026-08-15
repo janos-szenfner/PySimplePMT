@@ -399,7 +399,7 @@ class Toolbar(ctk.CTkFrame):
 
     def add_task(self):
         """Add a new task to the project with undo support."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
         
         # Open create task dialog
         dialog = CreateTaskDialog(
@@ -430,7 +430,7 @@ class Toolbar(ctk.CTkFrame):
     
     def add_milestone(self):
         """Add a new milestone to the project with undo support."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
         
         # Open create milestone dialog
         dialog = CreateTaskDialog(
@@ -443,7 +443,7 @@ class Toolbar(ctk.CTkFrame):
     def add_subtask(self):
         """Add a new subtask to the project with undo support."""
         from gantt_app.models import Task
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
         
         # Any task can be a parent, including an existing sub-task, so that
         # hierarchies deeper than two levels can be built

@@ -95,7 +95,7 @@ class TestEditDialogButtons(DialogTestCase):
 
     def dialog(self, **kwargs):
         """An edit dialog over the fixture task."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.task, self.project,
                                 on_save=lambda t: None,
@@ -165,7 +165,7 @@ class TestEditDialogButtons(DialogTestCase):
         dialog.start_date_entry.delete(0, 'end')
         dialog.start_date_entry.insert(0, "nonsense")
 
-        with mock.patch('gantt_app.views.task_list.messagebox.showerror'):
+        with mock.patch('gantt_app.views.taskform.messagebox.showerror'):
             dialog.save_and_new()
 
         self.assertEqual(opened, [])
@@ -177,7 +177,7 @@ class TestEditDialogButtons(DialogTestCase):
         dialog.start_date_entry.delete(0, 'end')
         dialog.start_date_entry.insert(0, "nonsense")
 
-        with mock.patch('gantt_app.views.task_list.messagebox.showerror') as err:
+        with mock.patch('gantt_app.views.taskform.messagebox.showerror') as err:
             dialog.save()
 
         self.assertTrue(err.called)
@@ -189,7 +189,7 @@ class TestCreateDialogButtons(DialogTestCase):
 
     def dialog(self, on_save=None):
         """A create dialog collecting saved tasks."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
 
         dialog = CreateTaskDialog(self.root, self.project,
                                   on_save=on_save or (lambda t: None))
@@ -257,7 +257,7 @@ class TestCreateDialogButtons(DialogTestCase):
         dialog.start_date_entry.delete(0, 'end')
         dialog.start_date_entry.insert(0, "nonsense")
 
-        with mock.patch('gantt_app.views.task_list.messagebox.showerror'):
+        with mock.patch('gantt_app.views.taskform.messagebox.showerror'):
             dialog.save_and_new()
 
         self.assertEqual(dialog.name_entry.get(), "Kept")
@@ -472,7 +472,7 @@ class TestDependencyTabIsLazy(DialogTestCase):
 
     def dialog(self):
         """An edit dialog over the fixture task."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         return EditTaskDialog(self.root, self.task, self.project,
                               on_save=lambda t: None,
@@ -548,7 +548,7 @@ class TestButtonWidths(DialogTestCase):
 
     def edit_dialog(self):
         """An edit dialog over the fixture task."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         return EditTaskDialog(self.root, self.task, self.project,
                               on_save=lambda t: None,
@@ -556,7 +556,7 @@ class TestButtonWidths(DialogTestCase):
 
     def create_dialog(self):
         """A create dialog."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
 
         return CreateTaskDialog(self.root, self.project,
                                 on_save=lambda t: None)

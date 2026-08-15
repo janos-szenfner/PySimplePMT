@@ -183,7 +183,7 @@ class TestDialogColourPicking(unittest.TestCase):
 
     def test_the_edit_dialog_shows_the_tasks_colour(self):
         """The palette opens on whatever the task already is."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.task, self.project,
                                 on_save=lambda t: None,
@@ -193,7 +193,7 @@ class TestDialogColourPicking(unittest.TestCase):
 
     def test_saving_stores_the_picked_colour(self):
         """What the palette shows is what the task gets."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.task, self.project,
                                 on_save=lambda t: None,
@@ -206,7 +206,7 @@ class TestDialogColourPicking(unittest.TestCase):
 
     def test_the_create_dialog_defaults_by_type(self):
         """Each kind of task starts on its own colour."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
 
         expected = {"Task": '#3498db', "Milestone": '#e74c3c'}
         for task_type, colour in expected.items():
@@ -219,7 +219,7 @@ class TestDialogColourPicking(unittest.TestCase):
 
     def test_no_hex_entry_is_left(self):
         """The text box the palette replaced is gone."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.task, self.project,
                                 on_save=lambda t: None,

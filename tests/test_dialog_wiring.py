@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 from gantt_app.models import Project, Task
 from gantt_app.views.dependency_editor import DependencyEditor
-from gantt_app.views.task_list import CreateTaskDialog, EditTaskDialog
+from gantt_app.views.taskdialogs import CreateTaskDialog, EditTaskDialog
 
 
 class TestConstructionOrder(unittest.TestCase):

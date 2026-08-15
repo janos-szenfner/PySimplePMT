@@ -12,7 +12,8 @@ from typing import Optional
 import customtkinter as ctk
 
 from gantt_app.models import Project, Task
-from gantt_app.views.task_list import DragDropTaskList, EditTaskDialog
+from gantt_app.views.task_list import DragDropTaskList
+from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project

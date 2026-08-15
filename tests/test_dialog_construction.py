@@ -71,7 +71,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_create_task_dialog_builds(self):
         """Creating a task opens a complete form."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
 
         dialog = CreateTaskDialog(self.root, self.project,
                                   on_save=lambda task: None)
@@ -81,7 +81,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_create_milestone_dialog_builds(self):
         """Creating a milestone opens a complete form."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
 
         dialog = CreateTaskDialog(self.root, self.project,
                                   task_type="Milestone",
@@ -92,7 +92,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_create_subtask_dialog_builds(self):
         """Creating a sub-task under a parent opens a complete form."""
-        from gantt_app.views.task_list import CreateTaskDialog
+        from gantt_app.views.taskdialogs import CreateTaskDialog
 
         dialog = CreateTaskDialog(self.root, self.project,
                                   task_type="Sub-Task",
@@ -103,7 +103,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_edit_task_dialog_builds(self):
         """Editing an existing task opens a complete form."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.other, self.project,
                                 on_save=lambda task: None,
@@ -168,7 +168,7 @@ class TestDependencyEditorLayout(unittest.TestCase):
 
     def _dialog(self):
         """Open an edit dialog squeezed to its minimum size."""
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.project.tasks[0], self.project,
                                 on_save=lambda task: None,

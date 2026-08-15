@@ -25,7 +25,8 @@ This is a complete implementation of a project management tool with:
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Critical Path**: Automatic calculation and visualization of the critical path
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in days and Hard/Rubber link hardness
-- **Built-in Help**: A Help button on the Dependency tab opens a full reference on link types, lead/lag, hardness and how the plan reschedules
+- **Built-in Help**: A Help button on the task editor and on the Dependency tab opens a full reference - the fields of the form in one, link types, lead/lag and hardness in the other
+- **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Summary Roll-Up**: A task with sub-tasks spans them and shows their duration-weighted progress
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
@@ -42,7 +43,11 @@ gantt_app/
 │
 ├── views/
 │   ├── __init__.py
-│   ├── task_list.py       # Drag-to-reorder task list with EditTaskDialog
+│   ├── task_list.py       # Drag-to-reorder task list
+│   ├── taskform.py        # The task form shared by creating and editing
+│   ├── taskdialogs.py     # The Create Task and Edit Task dialogs
+│   ├── formcheck.py       # Checks the task form as it is filled in
+│   ├── scrollframe.py     # Scrolling container the task form is built in
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
 │   ├── colorpalette.py    # Colour swatches shared by the task dialogs
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
@@ -55,6 +60,8 @@ gantt_app/
 │
 ├── help/
 │   ├── __init__.py
+│   ├── reference.py       # The window both Help buttons open
+│   ├── editorhelp.py      # Task editor reference behind its Help button
 │   └── dependencyhelp.py  # Dependency reference behind the Help button
 │
 ├── utils/

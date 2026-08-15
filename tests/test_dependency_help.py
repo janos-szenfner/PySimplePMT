@@ -204,7 +204,7 @@ class TestDependencyTabHasNoProse(unittest.TestCase):
     def setUp(self):
         """Open an edit dialog over a small project."""
         import customtkinter as ctk
-        from gantt_app.views.task_list import EditTaskDialog
+        from gantt_app.views.taskdialogs import EditTaskDialog
 
         self.root = ctk.CTk()
         self.root.withdraw()

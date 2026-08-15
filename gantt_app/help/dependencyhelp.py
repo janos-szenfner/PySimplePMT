@@ -21,14 +21,7 @@ the source and can be re-presented elsewhere - a printed sheet, a web page -
 without unpicking formatting.
 """
 
-import tkinter as tk
-from tkinter import ttk
-
-import customtkinter as ctk
-
-from gantt_app.utils.log import get_logger
-
-logger = get_logger(__name__)
+from gantt_app.help.reference import ReferenceWindow
 
 
 #: The reference text, as (heading, [paragraph, ...]).
@@ -202,128 +195,21 @@ HELP_SECTIONS = (
 )
 
 
-class DependencyHelpWindow(ctk.CTkToplevel):
+class DependencyHelpWindow(ReferenceWindow):
     """
     A scrollable reference on dependency links.
 
-    PARAMETERS:
-    -----------
-    master : widget
-        The window to open over.
-
     DEVELOPMENT NOTES:
     ------------------
-    Deliberately not modal. It is meant to be read beside the Dependency tab
-    while links are being set up, so grabbing the pointer would defeat it.
-
-    Only one is kept open at a time - see `show` - because the Help button
-    sits next to controls people click repeatedly and stacking up identical
-    windows helps nobody.
-
-    The body is a tk.Text rather than a label so it scrolls, wraps and can be
-    selected and copied. It is disabled after filling, which leaves it
-    readable and selectable but not editable.
+    Everything but the words is in ReferenceWindow, which the editor's Help
+    button shares. Only one of these is kept open at a time - see `show` -
+    because the Help button sits next to controls people click repeatedly and
+    stacking up identical windows helps nobody.
     """
 
-    #: The window currently open, if any.
+    TITLE = "Dependencies - Help"
+    GEOMETRY = "720x640"
+    SECTIONS = HELP_SECTIONS
+
+    #: This window's own; the editor's reference keeps a separate one.
     _open_window = None
-
-    #: Colours, kept close to the task list's palette.
-    HEADING_COLOR = '#1f6aa5'
-    BODY_COLOR = '#1a1a1a'
-    BACKGROUND = '#ffffff'
-
-    def __init__(self, master=None):
-        super().__init__(master)
-
-        self.title("Dependencies - Help")
-        self.geometry("720x640")
-        self.minsize(480, 360)
-        if master is not None:
-            self.transient(master)
-        self.protocol("WM_DELETE_WINDOW", self.close)
-
-        self._build_ui()
-        self._fill()
-
-    @classmethod
-    def show(cls, master=None):
-        """
-        Open the window, or raise the one already open.
-
-        RETURNS:
-        --------
-        DependencyHelpWindow
-            The visible window.
-        """
-        existing = cls._open_window
-        if existing is not None:
-            try:
-                if existing.winfo_exists():
-                    existing.deiconify()
-                    existing.lift()
-                    existing.focus_set()
-                    return existing
-            except tk.TclError:
-                pass
-
-        cls._open_window = cls(master)
-        return cls._open_window
-
-    def _build_ui(self):
-        """Lay out the text area, its scrollbar and the close button."""
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        frame = ctk.CTkFrame(self)
-        frame.grid(row=0, column=0, sticky=tk.NSEW, padx=12, pady=(12, 6))
-        frame.grid_rowconfigure(0, weight=1)
-        frame.grid_columnconfigure(0, weight=1)
-
-        self.text = tk.Text(
-            frame, wrap=tk.WORD, relief=tk.FLAT, borderwidth=0,
-            padx=18, pady=14, background=self.BACKGROUND,
-            foreground=self.BODY_COLOR, highlightthickness=0,
-            cursor='arrow',
-        )
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL,
-                                  command=self.text.yview)
-        self.text.configure(yscrollcommand=scrollbar.set)
-
-        self.text.grid(row=0, column=0, sticky=tk.NSEW)
-        scrollbar.grid(row=0, column=1, sticky=tk.NS)
-
-        self.text.tag_configure(
-            'heading', foreground=self.HEADING_COLOR,
-            font=('TkDefaultFont', 13, 'bold'), spacing1=14, spacing3=6,
-        )
-        self.text.tag_configure(
-            'body', font=('TkDefaultFont', 11), spacing1=2, spacing3=8,
-            lmargin1=4, lmargin2=4,
-        )
-        buttons = ctk.CTkFrame(self, fg_color='transparent')
-        buttons.grid(row=1, column=0, sticky=tk.EW, padx=12, pady=(0, 12))
-        ctk.CTkButton(buttons, text="Close", width=90,
-                      command=self.close).pack(side=tk.RIGHT)
-
-    def _fill(self):
-        """Write the reference text into the body."""
-        self.text.configure(state=tk.NORMAL)
-        self.text.delete('1.0', tk.END)
-
-        for heading, paragraphs in HELP_SECTIONS:
-            self.text.insert(tk.END, heading + '\n', 'heading')
-            for paragraph in paragraphs:
-                self.text.insert(tk.END, paragraph + '\n', 'body')
-
-        # Readable and selectable, but not editable
-        self.text.configure(state=tk.DISABLED)
-
-    def close(self):
-        """Close the window and forget it."""
-        if type(self)._open_window is self:
-            type(self)._open_window = None
-        try:
-            self.destroy()
-        except tk.TclError:
-            pass
