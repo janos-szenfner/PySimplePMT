@@ -104,9 +104,9 @@ class TestEditDialogButtons(DialogTestCase):
         return dialog
 
     def test_the_buttons_read_in_order(self):
-        """Delete sits apart, then Close, Save & Close, Save & New."""
+        """Help, Delete sit apart, then Close, Save & Close, Save & New."""
         self.assertEqual(self.button_row(self.dialog()),
-                         ["Delete", "Close", "Save & Close", "Save & New"])
+                         ["Help", "Delete", "Close", "Save & Close", "Save & New"])
 
     def test_there_is_no_cancel(self):
         """Close replaced it; nothing is written until a Save is pressed."""
@@ -197,9 +197,9 @@ class TestCreateDialogButtons(DialogTestCase):
         return dialog
 
     def test_the_buttons_read_in_order(self):
-        """No Delete here - the task does not exist yet."""
+        """Help, no Delete here - the task does not exist yet."""
         self.assertEqual(self.button_row(self.dialog()),
-                         ["Close", "Save & Close", "Save & New"])
+                         ["Help", "Close", "Save & Close", "Save & New"])
 
     def test_save_and_new_keeps_the_dialog_open(self):
         """

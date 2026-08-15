@@ -87,7 +87,7 @@ class TaskFormDialog(ctk.CTkToplevel):
     """
 
     GEOMETRY = "620x680"
-    MINSIZE = (560, 480)
+    MINSIZE = (680, 480)
     DATE_FORMAT = '%Y-%m-%d'
 
     #: Width of the buttons along the bottom.
@@ -97,8 +97,8 @@ class TaskFormDialog(ctk.CTkToplevel):
     #: Save & Close, so the row's widths ran backwards against the length of
     #: what was written on them.
     #:
-    #: Three at ACTION_WIDTH plus one at DELETE_WIDTH, with their padding and
-    #: the frame's, come to 540 - inside MINSIZE, so nothing is clipped when
+    #: Four at ACTION_WIDTH plus one at DELETE_WIDTH, with their padding and
+    #: the frame's, come to 670 - inside MINSIZE, so nothing is clipped when
     #: the dialog is squeezed as far as it goes.
     ACTION_WIDTH = 120
     DELETE_WIDTH = 100
@@ -220,18 +220,52 @@ class TaskFormDialog(ctk.CTkToplevel):
         self._build_buttons()
 
     def _build_general(self, frame):
-        """Lay out the General tab, top to bottom."""
+        """
+        Lay out the General tab with fields grouped by function.
+        
+        DEVELOPMENT NOTES:
+        ------------------
+        Fields are organized in logical groups:
+        1. Basic Information: name, ID, type, parent
+        2. Scheduling: dates, duration, milestone flag
+        3. Progress: completion percentage
+        4. Appearance: color
+        
+        This grouping makes the dialog more intuitive to use
+        without adding any performance overhead.
+        """
+        # Basic Information group
         self.name_entry = ctk.CTkEntry(frame)
         self._field(frame, "Task Name:", self.name_entry)
         self.name_entry.insert(0, self.seed_name())
-
         self._build_identity(frame)
         self._build_type(frame)
         self._build_parent(frame)
-        self._build_duration(frame)
+
+        # Separator between Basic Information and Scheduling
+        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
+            row=self._next_row(), column=0, columnspan=2, sticky=tk.EW, pady=10
+        )
+
+        # Scheduling group
         self._build_dates(frame)
+        self._build_duration(frame)
         self._build_milestone(frame)
+
+        # Separator between Scheduling and Progress
+        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
+            row=self._next_row(), column=0, columnspan=2, sticky=tk.EW, pady=10
+        )
+
+        # Progress group
         self._build_progress(frame)
+
+        # Separator between Progress and Appearance
+        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
+            row=self._next_row(), column=0, columnspan=2, sticky=tk.EW, pady=10
+        )
+
+        # Appearance group
         self._build_color(frame)
 
     def _build_identity(self, frame):
@@ -368,11 +402,22 @@ class TaskFormDialog(ctk.CTkToplevel):
                           command=command).pack(side=tk.RIGHT, padx=5)
 
     def _build_leading_buttons(self, frame):
-        """Buttons on the left of the row. Nothing by default."""
+        """Buttons on the left of the row. Help button by default."""
+        ctk.CTkButton(frame, text="Help", width=self.ACTION_WIDTH,
+                      command=self._show_editor_help).pack(side=tk.LEFT, padx=5)
 
     # ------------------------------------------------------------------
     # Behaviour
     # ------------------------------------------------------------------
+
+    def _show_editor_help(self):
+        """Open the editor help window."""
+        try:
+            from gantt_app.help.editorhelp import EditorHelpWindow
+            EditorHelpWindow.show(self)
+            logger.info("Editor help window opened")
+        except Exception:
+            logger.exception("Could not open the editor help window")
 
     def toggle_milestone(self):
         """Switch the end date off for a milestone, and back on for a task."""
@@ -579,7 +624,8 @@ class EditTaskDialog(TaskFormDialog):
                     sticky=tk.W)
 
     def _build_leading_buttons(self, frame):
-        """Delete, set apart on the left."""
+        """Delete and Help, set apart on the left."""
+        super()._build_leading_buttons(frame)
         ctk.CTkButton(frame, text="Delete", width=self.DELETE_WIDTH,
                       fg_color="#e74c3c", hover_color="#c0392b",
                       command=self.delete).pack(side=tk.LEFT, padx=5)
