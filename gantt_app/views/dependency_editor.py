@@ -216,23 +216,10 @@ class DependencyEditor(ctk.CTkFrame):
         for other in self.project.tasks:
             if other.id == self.task.id or other.id in taken:
                 continue
-            if self._is_descendant(other.id, self.task.id):
+            if self.project.is_descendant(other.id, self.task.id):
                 continue
             candidates.append(other)
         return sorted(candidates, key=lambda t: t.start_date)
-
-    def _is_descendant(self, task_id: str, ancestor_id: str) -> bool:
-        """Check whether a task sits under an ancestor in the hierarchy."""
-        seen = set()
-        current = self.project.get_task_by_id(task_id)
-        while current is not None and current.id not in seen:
-            seen.add(current.id)
-            if current.id == ancestor_id:
-                return True
-            if not current.parent_task_id:
-                return False
-            current = self.project.get_task_by_id(current.parent_task_id)
-        return False
 
     def _label_for(self, task: Task) -> str:
         """Format a task for the chooser."""

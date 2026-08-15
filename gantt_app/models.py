@@ -800,6 +800,35 @@ class Project:
                     stack.append(child.id)
         return found
 
+    def is_descendant(self, task_id: str, ancestor_id: str) -> bool:
+        """
+        Whether a task sits at or below another in the hierarchy.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being tested.
+        ancestor_id : str
+            The task it might sit under.
+
+        RETURNS:
+        --------
+        bool
+            True when they are the same task, or task_id is a sub-task of
+            ancestor_id at any depth.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what keeps a task from depending on itself or on its own
+        sub-tasks, which is a cycle however it is drawn. It lives here rather
+        than on the widgets that ask: there were three copies, two of them
+        dead, and the live pair walked the same chain in slightly different
+        ways - one guarded against a parent cycle and the other did not.
+        """
+        if task_id == ancestor_id:
+            return True
+        return ancestor_id in self._ancestor_ids(task_id)
+
     def _ancestor_ids(self, task_id: str) -> Set[str]:
         """Every task this one sits under, walking up to the root."""
         found: Set[str] = set()

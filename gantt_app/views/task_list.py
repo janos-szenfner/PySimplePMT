@@ -41,290 +41,517 @@ from gantt_app.utils.log import get_logger
 logger = get_logger(__name__)
 
 
-class EditTaskDialog(ctk.CTkToplevel):
+class TaskFormDialog(ctk.CTkToplevel):
     """
-    Dialog for editing task properties.
+    The task form shared by creating and editing.
+
+    WHY THIS CLASS EXISTS:
+    ======================
+    Creating a task and editing one show the same form: a name, a type, a
+    parent, two dates, a milestone flag, progress, a colour and a Dependency
+    tab. That form was written out twice, in two four-hundred-line classes
+    whose toggle_milestone, update_progress_label and center_window were
+    byte-identical and whose _create_form differed only in what it seeded the
+    fields from.
+
+    Every change had to be made twice as a result, and the one time it was
+    not, the create dialog kept a reference to a variable the edit dialog had
+    already dropped and crashed on every Add Task until it was noticed.
+
+    PARAMETERS:
+    -----------
+    master : widget
+        Window to open over.
+    project : Project
+        The plan being edited; used for parent lookups and the Dependency tab.
+    title : str
+        Window title.
+    on_save : Optional[Callable]
+        Called with the task once it has been written.
+    project_tracker : Optional[ProjectStateTracker]
+        Undo support, when there is any.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Subclasses set their seed attributes and then call _create_form() and
+    center_window() themselves, rather than the base calling them. A Tk widget
+    is only half-built until its own __init__ has run, so a base class that
+    built the form would be reading attributes the subclass had not set yet.
+
+    Rows are placed by a running counter rather than by hand-counted indices.
+    The create dialog worked its out with
+
+        row_offset = 3 if parent or type == "Sub-Task" or not milestone else 2
+
+    which had to be re-derived by anyone adding a field.
     """
-    
-    def __init__(self, master, task: Task, project: Project,
-                 on_save: Callable[[Task], None], on_delete: Callable[[str], None],
-                 project_tracker: ProjectStateTracker = None,
-                 on_new: Callable[[], None] = None):
+
+    GEOMETRY = "620x680"
+    MINSIZE = (560, 480)
+    DATE_FORMAT = '%Y-%m-%d'
+
+    #: Colour a new row starts on, by what is being created.
+    DEFAULT_COLORS = {
+        'Milestone': "#e74c3c",
+        'Sub-Task': "#9b59b6",
+        'Task': "#3498db",
+    }
+
+    def __init__(self, master, project: Project, title: str,
+                 on_save: Callable[[Task], None] = None,
+                 project_tracker: ProjectStateTracker = None):
         super().__init__(master)
 
-        self.task = task
         self.project = project
         self.on_save = on_save
-        self.on_delete = on_delete
         self.project_tracker = project_tracker
-        # Called by Save & New once the edit is saved; without it that
-        # button just saves and closes
-        self.on_new = on_new
-        
-        self.title(f"Edit Task: {task.name}")
-        self.geometry("620x640")
+
+        self.title(title)
+        self.geometry(self.GEOMETRY)
         # The Dependency tab needs this much to keep its Add button on screen
-        self.minsize(560, 480)
+        self.minsize(*self.MINSIZE)
         self.transient(master)
         # Deferred: grabbing before the window is mapped fails on X11
         grab_when_visible(self)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
-        
-        # Create form
-        self._create_form()
-        
-        # Center window
-        self.center_window()
-    
-    def _create_form(self):
+
+        self._row = 0
+
+    # ------------------------------------------------------------------
+    # What the fields start on
+    # ------------------------------------------------------------------
+
+    def form_template(self) -> Task:
         """
-        Create the edit form widgets.
+        The task whose values the fields open on.
+
+        RETURNS:
+        --------
+        Task
+            For an edit that is the task itself; for a creation it is a
+            stand-in carrying the defaults.
 
         DEVELOPMENT NOTES:
         ------------------
-        The form is split across a General tab and a Dependency tab. Links
-        now carry a type and a hardness, which needs a grid rather than the
-        single column of checkboxes the fields used to share space with.
+        One object rather than a field-by-field set of hooks. Every field but
+        the name comes off it, and so does the Dependency tab - the create
+        dialog was already building a stand-in task for that tab, so this is
+        the same object doing both jobs instead of two that had to agree.
         """
+        raise NotImplementedError
+
+    def seed_name(self) -> str:
+        """
+        Text for the name box.
+
+        Not taken from the template: a Task must be named to exist, so the
+        stand-in has one, while a new task starts with the box empty.
+        """
+        return ""
+
+    def seed_type_locked(self) -> bool:
+        """Whether the type menu is fixed."""
+        return False
+
+    def seed_has_end(self) -> bool:
+        """Whether an end date box is shown at all."""
+        return True
+
+    def seed_parent(self) -> Optional[Task]:
+        """The parent named on the form, if any."""
+        parent_id = self.template.parent_task_id
+        return self.project.get_task_by_id(parent_id) if parent_id else None
+
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
+
+    def _next_row(self) -> int:
+        """The next free row in the field grid."""
+        row = self._row
+        self._row += 1
+        return row
+
+    def _field(self, parent, label: str, widget=None,
+               sticky=tk.EW, label_sticky=tk.W) -> int:
+        """Put a labelled widget on the next row and return that row."""
+        row = self._next_row()
+        ctk.CTkLabel(parent, text=label).grid(
+            row=row, column=0, sticky=label_sticky, pady=5)
+        if widget is not None:
+            widget.grid(row=row, column=1, sticky=sticky, pady=5)
+        return row
+
+    def _create_form(self):
+        """
+        Build the whole dialog: both tabs and the button row.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The button row is packed last and stays the final child of the
+        window, which is how it is found again.
+        """
+        self.template = self.form_template()
+
         self.tabs = ctk.CTkTabview(self)
         self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 5))
         self.tabs.add("General")
         self.tabs.add("Dependency")
 
-        # Main frame
         main_frame = ctk.CTkScrollableFrame(self.tabs.tab("General"))
         main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Configure grid columns
         main_frame.columnconfigure(1, weight=1)
-        
-        # Name
-        ctk.CTkLabel(main_frame, text="Task Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.name_entry = ctk.CTkEntry(main_frame)
-        self.name_entry.grid(row=0, column=1, sticky=tk.EW, pady=5)
-        self.name_entry.insert(0, self.task.name)
-        
-        # ID
-        ctk.CTkLabel(main_frame, text="ID:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.id_label = ctk.CTkLabel(main_frame, text=self.task.id)
-        self.id_label.grid(row=1, column=1, sticky=tk.W, pady=5)
-        
-        # Task Type
-        ctk.CTkLabel(main_frame, text="Type:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.task_type_var = ctk.StringVar(value=self.task.task_type)
+
+        self._build_general(main_frame)
+        self._build_dependency_tab()
+        self._build_buttons()
+
+    def _build_general(self, frame):
+        """Lay out the General tab, top to bottom."""
+        self.name_entry = ctk.CTkEntry(frame)
+        self._field(frame, "Task Name:", self.name_entry)
+        self.name_entry.insert(0, self.seed_name())
+
+        self._build_identity(frame)
+        self._build_type(frame)
+        self._build_parent(frame)
+        self._build_duration(frame)
+        self._build_dates(frame)
+        self._build_milestone(frame)
+        self._build_progress(frame)
+        self._build_color(frame)
+
+    def _build_identity(self, frame):
+        """Show the task ID. Only an existing task has one."""
+
+    def _build_type(self, frame):
+        """The Task / Sub-Task menu."""
+        self.task_type_var = ctk.StringVar(value=self.template.task_type)
         self.task_type_menu = ctk.CTkOptionMenu(
-            main_frame, variable=self.task_type_var,
-            values=["Task", "Sub-Task"], state=tk.DISABLED if self.task.parent_task_id else tk.NORMAL
+            frame, variable=self.task_type_var, values=["Task", "Sub-Task"],
+            state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
-        self.task_type_menu.grid(row=2, column=1, sticky=tk.EW, pady=5)
-        
-        # Parent Task (for subtasks)
-        if self.task.task_type == "Sub-Task" and self.task.parent_task_id:
-            ctk.CTkLabel(main_frame, text="Parent Task:").grid(row=3, column=0, sticky=tk.W, pady=5)
-            parent_task = self.project.get_task_by_id(self.task.parent_task_id)
-            parent_name = parent_task.name if parent_task else "Unknown"
-            self.parent_label = ctk.CTkLabel(main_frame, text=parent_name)
-            self.parent_label.grid(row=3, column=1, sticky=tk.W, pady=5)
-        
-        # Duration (Days) - calculated field, displayed but not editable
-        duration = self.task.duration_days
-        duration_str = str(duration) if duration is not None else "N/A"
-        ctk.CTkLabel(main_frame, text="Duration (Days):").grid(row=4, column=0, sticky=tk.W, pady=5)
-        self.duration_label = ctk.CTkLabel(main_frame, text=duration_str)
-        self.duration_label.grid(row=4, column=1, sticky=tk.W, pady=5)
-        
-        # Start Date
-        ctk.CTkLabel(main_frame, text="Start Date:").grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.start_date_entry = DateEntry(main_frame, date=self.task.start_date)
-        self.start_date_entry.grid(row=5, column=1, sticky=tk.EW, pady=5)
-        
-        # End Date
-        ctk.CTkLabel(main_frame, text="End Date:").grid(row=6, column=0, sticky=tk.W, pady=5)
-        self.end_date_entry = DateEntry(main_frame, date=self.task.end_date)
-        self.end_date_entry.grid(row=6, column=1, sticky=tk.EW, pady=5)
-        # Disable end date for milestones
-        if self.task.is_milestone:
+        self._field(frame, "Type:", self.task_type_menu)
+
+    def _build_parent(self, frame):
+        """Name the parent, or offer a choice of one."""
+        parent = self.seed_parent()
+        if parent is not None:
+            self.parent_label = ctk.CTkLabel(frame, text=parent.name)
+            self._field(frame, "Parent Task:", self.parent_label,
+                        sticky=tk.W)
+
+    def _build_duration(self, frame):
+        """Show the duration. Only meaningful once dates exist."""
+
+    def _build_dates(self, frame):
+        """The start and end boxes, each with a calendar behind it."""
+        self.start_date_entry = DateEntry(frame,
+                                          date=self.template.start_date)
+        self._field(frame, "Start Date:", self.start_date_entry)
+
+        if not self.seed_has_end():
+            self.end_date_entry = None
+            return
+
+        self.end_date_entry = DateEntry(frame, date=self.template.end_date)
+        self._field(frame, "End Date:", self.end_date_entry)
+        if self.template.is_milestone:
             self.end_date_entry.configure(state=tk.DISABLED)
-        
-        # Is Milestone
-        self.is_milestone_var = ctk.BooleanVar(value=self.task.is_milestone)
+
+    def _build_milestone(self, frame):
+        """The milestone tick box."""
+        self.is_milestone_var = ctk.BooleanVar(
+            value=self.template.is_milestone)
         self.milestone_check = ctk.CTkCheckBox(
-            main_frame, text="Is Milestone", 
-            variable=self.is_milestone_var, command=self.toggle_milestone
+            frame, text="", variable=self.is_milestone_var,
+            command=self.toggle_milestone,
         )
-        self.milestone_check.grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
-        
-        # Progress
-        ctk.CTkLabel(main_frame, text="Progress (%):").grid(row=8, column=0, sticky=tk.W, pady=5)
-        self.progress_slider = ctk.CTkSlider(main_frame, from_=0, to=100)
-        self.progress_slider.grid(row=8, column=1, sticky=tk.EW, pady=5)
-        self.progress_slider.set(self.task.progress)
-        
-        self.progress_label = ctk.CTkLabel(main_frame, text=f"{self.task.progress}%")
-        self.progress_label.grid(row=8, column=2, padx=10, pady=5)
-        
+        self._field(frame, "Is Milestone:", self.milestone_check, sticky=tk.W)
+
+    def _build_progress(self, frame):
+        """The progress slider and its percentage."""
+        progress = self.template.progress
+        self.progress_slider = ctk.CTkSlider(frame, from_=0, to=100)
+        row = self._field(frame, "Progress (%):", self.progress_slider)
+        self.progress_slider.set(progress)
+
+        self.progress_label = ctk.CTkLabel(frame, text=f"{progress}%")
+        self.progress_label.grid(row=row, column=2, padx=10, pady=5)
+
         self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
-        self.progress_slider.bind("<ButtonRelease-1>", self.update_progress_label)
-        
-        # Color, chosen from swatches rather than typed as a hex code
-        ctk.CTkLabel(main_frame, text="Color:").grid(row=9, column=0, sticky=tk.NW, pady=5)
-        self.color_palette = ColorPalette(main_frame, color=self.task.color)
-        self.color_palette.grid(row=9, column=1, sticky=tk.W, pady=5)
-        
-        # Dependencies live on their own tab
+        self.progress_slider.bind("<ButtonRelease-1>",
+                                  self.update_progress_label)
+
+    def _build_color(self, frame):
+        """The colour swatches."""
+        self.color_palette = ColorPalette(frame, color=self.template.color)
+        self._field(frame, "Color:", self.color_palette,
+                    sticky=tk.W, label_sticky=tk.NW)
+
+    def _build_dependency_tab(self):
+        """The Dependency tab, which is the same for both dialogs."""
         self.dependency_editor = DependencyEditor(
-            self.tabs.tab("Dependency"), self.project, self.task,
-            on_changed=self._on_dependencies_changed
+            self.tabs.tab("Dependency"), self.project, self.template,
+            on_changed=self._on_dependencies_changed,
         )
         self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Buttons. Delete sits on its own at the far left, away from the two
-        # Save buttons: it is the one action here that cannot be taken back
-        # by pressing the button beside it.
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(fill=tk.X, padx=20, pady=10)
-
-        ctk.CTkButton(button_frame, text="Delete", fg_color="#e74c3c",
-                      hover_color="#c0392b",
-                      command=self.delete).pack(side=tk.LEFT, padx=5)
-
-        # Packed right to left, so this reads Close, Save & Close, Save & New
-        ctk.CTkButton(button_frame, text="Save & New", width=110,
-                      command=self.save_and_new).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Save & Close", width=120,
-                      command=self.save).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Close",
-                      command=self.cancel).pack(side=tk.RIGHT, padx=5)
-    
-    def _on_dependencies_changed(self):
+    def _build_buttons(self):
         """
-        Update the start date to match the current dependency links.
+        The button row.
 
         DEVELOPMENT NOTES:
         ------------------
-        This is what makes choosing a predecessor fill in the start date. A
+        Packed right to left, so it reads Close, Save & Close, Save & New.
+        Anything a subclass adds goes on the left, away from these: the edit
+        dialog's Delete is the one action here that the button beside it
+        cannot take back.
+        """
+        frame = ctk.CTkFrame(self)
+        frame.pack(fill=tk.X, padx=20, pady=10)
+
+        self._build_leading_buttons(frame)
+
+        ctk.CTkButton(frame, text="Save & New", width=110,
+                      command=self.save_and_new).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(frame, text="Save & Close", width=120,
+                      command=self.save).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(frame, text="Close",
+                      command=self.cancel).pack(side=tk.RIGHT, padx=5)
+
+    def _build_leading_buttons(self, frame):
+        """Buttons on the left of the row. Nothing by default."""
+
+    # ------------------------------------------------------------------
+    # Behaviour
+    # ------------------------------------------------------------------
+
+    def toggle_milestone(self):
+        """Switch the end date off for a milestone, and back on for a task."""
+        if not self.end_date_entry:
+            return
+        self.end_date_entry.configure(
+            state=tk.DISABLED if self.is_milestone_var.get() else tk.NORMAL
+        )
+
+    def update_progress_label(self, event=None):
+        """Keep the percentage beside the slider in step with it."""
+        self.progress_label.configure(
+            text=f"{int(self.progress_slider.get())}%"
+        )
+
+    def _read_date(self, entry) -> Optional[datetime]:
+        """Parse a date box, or None when it is empty or will not parse."""
+        if entry is None:
+            return None
+        try:
+            text = entry.get().strip()
+        except tk.TclError:
+            return None
+        if not text:
+            return None
+        try:
+            return datetime.strptime(text, self.DATE_FORMAT)
+        except ValueError:
+            return None
+
+    def _write_date(self, entry, value: datetime):
+        """Put a date in a box, through a disabled one if need be."""
+        if entry is None:
+            return
+        entry.set_date(value)
+
+    def _on_dependencies_changed(self):
+        """
+        Move the dates to satisfy the chosen links.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what makes choosing a predecessor fill the start date in. A
         Hard link pins it; a Rubber link only moves it when the current date
-        would start too early.
+        would start too early. The task keeps its length, so the end moves
+        with the start.
+
+        Both dialogs used to do this with their own copy, differing only in
+        where the length came from - one read the task, the other the boxes.
+        Reading the boxes works for both, and is what the user is looking at.
         """
         editor = getattr(self, 'dependency_editor', None)
         if editor is None or not hasattr(self, 'start_date_entry'):
             # Called while the dialog is still being built
             return
-        try:
-            current = datetime.strptime(self.start_date_entry.get(), '%Y-%m-%d')
-        except (ValueError, tk.TclError):
+
+        current = self._read_date(self.start_date_entry)
+        if current is None:
             return
 
         required = editor.required_start_date(current)
         if required is None or required == current:
             return
 
-        duration = None
-        if self.task.end_date and self.task.start_date:
-            duration = self.task.end_date - self.task.start_date
+        end = self._read_date(self.end_date_entry)
+        duration = (end - current) if end is not None else None
 
-        self.start_date_entry.delete(0, tk.END)
-        self.start_date_entry.insert(0, required.strftime('%Y-%m-%d'))
+        self._write_date(self.start_date_entry, required)
 
-        # Keep the length of the task, shifting the end with the start
         if duration is not None and not self.is_milestone_var.get():
-            self.end_date_entry.configure(state=tk.NORMAL)
-            self.end_date_entry.delete(0, tk.END)
-            self.end_date_entry.insert(0, (required + duration).strftime('%Y-%m-%d'))
+            self._write_date(self.end_date_entry, required + duration)
 
         logger.debug("Start date moved to %s by a dependency",
-                     required.strftime('%Y-%m-%d'))
+                     required.strftime(self.DATE_FORMAT))
 
-    def toggle_milestone(self):
-        """Toggle milestone mode."""
-        is_milestone = self.is_milestone_var.get()
-        
-        if is_milestone:
-            # Disable end date for milestones
-            if self.end_date_entry:
-                self.end_date_entry.configure(state=tk.DISABLED)
-        else:
-            # Enable end date for regular tasks
-            if self.end_date_entry:
-                self.end_date_entry.configure(state=tk.NORMAL)
-    
-    def update_progress_label(self, event=None):
-        """Update progress label when slider moves."""
-        value = int(self.progress_slider.get())
-        self.progress_label.configure(text=f"{value}%")
-    
     def save(self):
-        """Save the changes and close the dialog."""
+        """Write the form and close."""
         if self._apply():
             self.destroy()
 
     def save_and_new(self):
         """
-        Save the changes, then open an empty form for another task.
+        Write the form, then set up for another task.
 
         DEVELOPMENT NOTES:
         ------------------
-        The new form is opened by whoever opened this dialog, through on_new,
-        rather than built here. Adding a task means placing it in the plan and
-        recording it for undo, which is the task list's job; this dialog only
-        knows how to edit the one task it was given.
-
-        Nothing opens if the save failed, so a bad date leaves the form up
-        with its error rather than being replaced by a blank one.
+        Nothing happens if the save failed, so a rejected date leaves the
+        form up with its reason rather than being cleared or replaced.
         """
-        if not self._apply():
-            return
+        if self._apply():
+            self._start_another()
 
-        self.destroy()
-        if self.on_new:
-            self.on_new()
+    def _start_another(self):
+        """What Save & New does once the save succeeded."""
+        raise NotImplementedError
 
     def _apply(self) -> bool:
         """
-        Write the form back onto the task.
+        Write the form onto a task.
 
         RETURNS:
         --------
         bool
-            True when the task was saved, False when the form would not
-            parse - which leaves the dialog open showing why.
+            True when it was saved, False when the form would not parse -
+            which leaves the dialog open showing why.
         """
+        raise NotImplementedError
+
+    def _report_invalid(self, error):
+        """Say why the form was rejected, without closing it."""
+        messagebox.showerror(
+            "Invalid Entry",
+            f"{error}\n\nDates are written as YYYY-MM-DD; the calendar "
+            "button beside the box fills one in.",
+            parent=self,
+        )
+
+    def cancel(self):
+        """Close without saving."""
+        self.destroy()
+
+    def center_window(self):
+        """Centre the window on the screen."""
+        self.update_idletasks()
+        width, height = self.winfo_width(), self.winfo_height()
+        x = (self.winfo_screenwidth() - width) // 2
+        y = (self.winfo_screenheight() - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+
+class EditTaskDialog(TaskFormDialog):
+    """Dialog for editing an existing task."""
+
+    GEOMETRY = "620x640"
+
+    def __init__(self, master, task: Task, project: Project,
+                 on_save: Callable[[Task], None], on_delete: Callable[[str], None],
+                 project_tracker: ProjectStateTracker = None,
+                 on_new: Callable[[], None] = None):
+        self.task = task
+        self.on_delete = on_delete
+        # Called by Save & New once the edit is saved; without it that
+        # button just saves and closes
+        self.on_new = on_new
+
+        super().__init__(master, project, f"Edit Task: {task.name}",
+                         on_save=on_save, project_tracker=project_tracker)
+
+        self._create_form()
+        self.center_window()
+
+    # ---- what the fields start on -------------------------------------
+
+    def form_template(self):
+        """The task itself: the form opens on its current values."""
+        return self.task
+
+    def seed_name(self):
+        """Its current name."""
+        return self.task.name
+
+    def seed_type_locked(self):
+        """A sub-task cannot change type without changing parent."""
+        return bool(self.task.parent_task_id)
+
+    # ---- the two rows only an existing task has -----------------------
+
+    def _build_identity(self, frame):
+        """Show the task's ID, which is assigned and not editable."""
+        self.id_label = ctk.CTkLabel(frame, text=self.task.id)
+        self._field(frame, "ID:", self.id_label, sticky=tk.W)
+
+    def _build_parent(self, frame):
+        """Name the parent, when there is one."""
+        parent = self.seed_parent()
+        name = parent.name if parent else "Unknown"
+        if self.task.task_type == "Sub-Task" and self.task.parent_task_id:
+            self.parent_label = ctk.CTkLabel(frame, text=name)
+            self._field(frame, "Parent Task:", self.parent_label,
+                        sticky=tk.W)
+
+    def _build_duration(self, frame):
+        """Show the duration worked out from the dates."""
+        duration = self.task.duration_days
+        self.duration_label = ctk.CTkLabel(
+            frame, text=str(duration) if duration is not None else "N/A"
+        )
+        self._field(frame, "Duration (Days):", self.duration_label,
+                    sticky=tk.W)
+
+    def _build_leading_buttons(self, frame):
+        """Delete, set apart on the left."""
+        ctk.CTkButton(frame, text="Delete", fg_color="#e74c3c",
+                      hover_color="#c0392b",
+                      command=self.delete).pack(side=tk.LEFT, padx=5)
+
+    # ---- saving --------------------------------------------------------
+
+    def _apply(self) -> bool:
+        """Write the form back onto the task."""
         try:
-            # Store old task for undo
             old_task = copy.copy(self.task)
-            
-            # Update task properties
+
             self.task.name = self.name_entry.get()
-            
-            # Update task type (only if not a subtask with a parent)
-            # Subtasks cannot change their type or parent
+
+            # A sub-task cannot change its type or parent from here
             if not self.task.parent_task_id:
                 self.task.task_type = self.task_type_var.get()
-            
-            # Parse dates
-            start_date_str = self.start_date_entry.get()
-            self.task.start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-            
-            if not self.is_milestone_var.get():
-                if self.end_date_entry and self.end_date_entry.get():
-                    end_date_str = self.end_date_entry.get()
-                    self.task.end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-                else:
-                    self.task.end_date = None
-            else:
-                self.task.end_date = None
-            
-            self.task.is_milestone = self.is_milestone_var.get()
+
+            start = self._read_date(self.start_date_entry)
+            if start is None:
+                raise ValueError("A start date is required")
+            self.task.start_date = start
+
+            is_milestone = self.is_milestone_var.get()
+            self.task.end_date = (None if is_milestone
+                                  else self._read_date(self.end_date_entry))
+            self.task.is_milestone = is_milestone
             self.task.progress = int(self.progress_slider.get())
             self.task.color = self.color_palette.get()
-            
-            # Update dependencies from the Dependency tab
             self.task.dependencies = self.dependency_editor.get_links()
-            
-            # Use undo/redo if available
+
             if self.project_tracker:
                 new_task = copy.copy(self.task)
-                if self.project_tracker.update_task(old_task.id, 
+                if self.project_tracker.update_task(
+                    old_task.id,
                     name=new_task.name,
                     task_type=new_task.task_type,
                     start_date=new_task.start_date,
@@ -333,374 +560,230 @@ class EditTaskDialog(ctk.CTkToplevel):
                     dependencies=new_task.dependencies,
                     color=new_task.color,
                     is_milestone=new_task.is_milestone,
-                    parent_task_id=new_task.parent_task_id
+                    parent_task_id=new_task.parent_task_id,
                 ):
-                    # Call save callback
                     if self.on_save:
                         self.on_save(new_task)
                     return True
 
-            # Call save callback (fallback)
             if self.on_save:
                 self.on_save(self.task)
-
             return True
 
-        except ValueError as e:
-            # Show the reason without closing, so the entry can be corrected
-            messagebox.showerror(
-                "Invalid Date",
-                f"{e}\n\nDates are written as YYYY-MM-DD; the calendar "
-                "button beside the box fills one in.",
-                parent=self,
-            )
+        except ValueError as error:
+            self._report_invalid(error)
             return False
-    
-    def delete(self):
-        """Delete the task with undo support."""
-        if self.project_tracker:
-            if self.project_tracker.remove_task(self.task.id):
-                # Call delete callback
-                if self.on_delete:
-                    self.on_delete(self.task.id)
-        else:
-            # Fallback to direct deletion
-            if self.on_delete:
-                self.on_delete(self.task.id)
-        self.destroy()
-    
-    def cancel(self):
-        """Cancel editing."""
-        self.destroy()
-    
-    def _is_descendant(self, task_id: str, potential_ancestor_id: str, project: Project) -> bool:
+
+    def _start_another(self):
         """
-        Check if a task is a descendant of another task (through parent-child relationships).
-        
-        This is used to prevent circular dependencies when setting dependencies.
-        A task cannot depend on itself or any of its subtasks.
-        
-        PARAMETERS:
-        -----------
-        task_id : str
-            The task ID to check
-        potential_ancestor_id : str
-            The potential ancestor task ID
-        project : Project
-            The project containing the tasks
-        
-        RETURNS:
-        --------
-        bool
-            True if task_id is a descendant of potential_ancestor_id
-        
+        Close, then ask for a fresh form.
+
         DEVELOPMENT NOTES:
         ------------------
-        This recursively checks the parent hierarchy to see if task_id
-        is a subtask (directly or indirectly) of potential_ancestor_id.
+        Opened by whoever opened this dialog, through on_new, rather than
+        built here. Adding a task means placing it in the plan and recording
+        it for undo, which is the task list's job; this dialog only knows how
+        to edit the one task it was given.
         """
-        if task_id == potential_ancestor_id:
-            return True
-        
-        # Check if task_id is a direct or indirect subtask of potential_ancestor_id
-        current_id = task_id
-        while current_id:
-            parent_task = project.get_task_by_id(current_id)
-            if not parent_task or not parent_task.parent_task_id:
-                break
-            current_id = parent_task.parent_task_id
-            if current_id == potential_ancestor_id:
-                return True
-        
-        return False
-    
-    def center_window(self):
-        """Center the window on the screen."""
-        self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.destroy()
+        if self.on_new:
+            self.on_new()
+
+    def delete(self):
+        """Delete the task, with undo support."""
+        if self.project_tracker:
+            if self.project_tracker.remove_task(self.task.id):
+                if self.on_delete:
+                    self.on_delete(self.task.id)
+        elif self.on_delete:
+            self.on_delete(self.task.id)
+        self.destroy()
 
 
-class CreateTaskDialog(ctk.CTkToplevel):
-    """
-    Dialog for creating a new task, sub-task, or milestone with all fields visible at once.
-    """
-    
+class CreateTaskDialog(TaskFormDialog):
+    """Dialog for creating a task, sub-task or milestone."""
+
+    GEOMETRY = "620x720"
+
+    #: How long a new task runs by default, in days.
+    DEFAULT_LENGTH = 7
+    SUBTASK_LENGTH = 1
+
     def __init__(self, master, project: Project,
                  task_type: str = "Task", parent_task: Task = None,
                  on_save: Callable[[Task], None] = None,
                  project_tracker: ProjectStateTracker = None):
-        super().__init__(master)
-        
-        self.project = project
         self.task_type = task_type
         self.parent_task = parent_task
-        self.on_save = on_save
-        self.project_tracker = project_tracker
-        
-        # Determine if creating a milestone
         self.is_milestone = (task_type == "Milestone")
-        
-        # Set window title based on type
-        if self.is_milestone:
-            self.title("Create New Milestone")
-        elif task_type == "Sub-Task":
-            self.title("Create New Sub-Task")
-        else:
-            self.title("Create New Task")
-        
-        self.geometry("620x720")
-        self.minsize(560, 480)
-        self.transient(master)
-        # Deferred: grabbing before the window is mapped fails on X11
-        grab_when_visible(self)
-        self.protocol("WM_DELETE_WINDOW", self.cancel)
-        
-        # Create form
+
+        titles = {
+            'Milestone': "Create New Milestone",
+            'Sub-Task': "Create New Sub-Task",
+        }
+        super().__init__(master, project,
+                         titles.get(task_type, "Create New Task"),
+                         on_save=on_save, project_tracker=project_tracker)
+
         self._create_form()
-        
-        # Center window
         self.center_window()
-    
-    def _create_form(self):
-        """Create the task creation form widgets."""
-        # Main frame
-        self.tabs = ctk.CTkTabview(self)
-        self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 5))
-        self.tabs.add("General")
-        self.tabs.add("Dependency")
 
-        main_frame = ctk.CTkScrollableFrame(self.tabs.tab("General"))
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Configure grid columns
-        main_frame.columnconfigure(1, weight=1)
-        
-        # Task Name
-        ctk.CTkLabel(main_frame, text="Task Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.name_entry = ctk.CTkEntry(main_frame)
-        self.name_entry.grid(row=0, column=1, sticky=tk.EW, pady=5)
-        
-        # Task Type (only for non-milestone)
-        if not self.is_milestone:
-            ctk.CTkLabel(main_frame, text="Type:").grid(row=1, column=0, sticky=tk.W, pady=5)
-            self.task_type_var = ctk.StringVar(value=self.task_type)
-            self.task_type_menu = ctk.CTkOptionMenu(
-                main_frame, variable=self.task_type_var,
-                values=["Task", "Sub-Task"],
-                state=tk.DISABLED if self.parent_task else tk.NORMAL
-            )
-            self.task_type_menu.grid(row=1, column=1, sticky=tk.EW, pady=5)
-        
-        # Parent Task (for subtasks)
-        if self.parent_task:
-            ctk.CTkLabel(main_frame, text="Parent Task:").grid(row=2, column=0, sticky=tk.W, pady=5)
-            self.parent_label = ctk.CTkLabel(main_frame, text=self.parent_task.name)
-            self.parent_label.grid(row=2, column=1, sticky=tk.W, pady=5)
-        elif self.task_type == "Sub-Task":
-            # Need to select parent
-            ctk.CTkLabel(main_frame, text="Parent Task:").grid(row=2, column=0, sticky=tk.W, pady=5)
-            parent_names = [t.name for t in self.project.get_root_tasks()]
-            if parent_names:
-                self.parent_var = ctk.StringVar()
-                self.parent_menu = ctk.CTkOptionMenu(
-                    main_frame, variable=self.parent_var,
-                    values=parent_names
-                )
-                self.parent_menu.grid(row=2, column=1, sticky=tk.EW, pady=5)
-            else:
-                self.parent_label = ctk.CTkLabel(main_frame, text="No parent tasks available")
-                self.parent_label.grid(row=2, column=1, sticky=tk.W, pady=5)
-        
-        # Start Date
-        row_offset = 3 if self.parent_task or self.task_type == "Sub-Task" or not self.is_milestone else 2
+    # ---- what the fields start on -------------------------------------
+
+    def form_template(self):
+        """
+        A stand-in carrying the defaults for what is being created.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        It also serves as the Dependency tab's subject. A task being created
+        has no ID yet, and that tab needs something with a parent link to
+        leave invalid candidates out of the list; this is that object, so the
+        defaults on the form and the ones the tab reasons about cannot drift
+        apart.
+
+        A sub-task starts with its parent and runs a day; anything else
+        starts today and runs a week.
+        """
         if self.parent_task and not self.is_milestone:
-            # For subtasks, default to parent's start date
-            start_date_str = self.parent_task.start_date.strftime('%Y-%m-%d')
+            start = self.parent_task.start_date
+            end = start + timedelta(days=self.SUBTASK_LENGTH)
         else:
-            start_date_str = datetime.now().strftime('%Y-%m-%d')
-        
-        ctk.CTkLabel(main_frame, text="Start Date:").grid(row=row_offset, column=0, sticky=tk.W, pady=5)
-        self.start_date_entry = DateEntry(
-            main_frame, date=datetime.strptime(start_date_str, '%Y-%m-%d'))
-        self.start_date_entry.grid(row=row_offset, column=1, sticky=tk.EW, pady=5)
-        
-        # End Date (not for milestones)
-        if not self.is_milestone:
-            ctk.CTkLabel(main_frame, text="End Date:").grid(row=row_offset+1, column=0, sticky=tk.W, pady=5)
-            self.end_date_entry = DateEntry(main_frame)
-            self.end_date_entry.grid(row=row_offset+1, column=1, sticky=tk.EW, pady=5)
-            # Default end date: start + 7 days for tasks, start + 1 day for subtasks
-            if self.parent_task:
-                default_end = self.parent_task.start_date + timedelta(days=1)
-            else:
-                default_end = datetime.now() + timedelta(days=7)
-            self.end_date_entry.insert(0, default_end.strftime('%Y-%m-%d'))
-        else:
-            self.end_date_entry = None
-        
-        # Is Milestone checkbox
-        ctk.CTkLabel(main_frame, text="Is Milestone:").grid(row=row_offset+2, column=0, sticky=tk.W, pady=5)
-        self.is_milestone_var = ctk.BooleanVar(value=self.is_milestone)
-        self.milestone_check = ctk.CTkCheckBox(
-            main_frame, text="",
-            variable=self.is_milestone_var, command=self.toggle_milestone
-        )
-        self.milestone_check.grid(row=row_offset+2, column=1, sticky=tk.W, pady=5)
-        
-        # Progress
-        ctk.CTkLabel(main_frame, text="Progress (%):").grid(row=row_offset+3, column=0, sticky=tk.W, pady=5)
-        self.progress_slider = ctk.CTkSlider(main_frame, from_=0, to=100)
-        self.progress_slider.grid(row=row_offset+3, column=1, sticky=tk.EW, pady=5)
-        self.progress_slider.set(0)
-        
-        self.progress_label = ctk.CTkLabel(main_frame, text="0%")
-        self.progress_label.grid(row=row_offset+3, column=2, padx=10, pady=5)
-        
-        self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
-        self.progress_slider.bind("<ButtonRelease-1>", self.update_progress_label)
-        
-        # Color, chosen from swatches rather than typed as a hex code.
-        # It starts on the default for whatever is being created.
-        if self.is_milestone:
-            default_color = "#e74c3c"
-        elif self.task_type == "Sub-Task":
-            default_color = "#9b59b6"
-        else:
-            default_color = "#3498db"
+            start = datetime.now()
+            end = start + timedelta(days=self.DEFAULT_LENGTH)
 
-        ctk.CTkLabel(main_frame, text="Color:").grid(
-            row=row_offset+4, column=0, sticky=tk.NW, pady=5)
-        self.color_palette = ColorPalette(main_frame, color=default_color)
-        self.color_palette.grid(row=row_offset+4, column=1, sticky=tk.W, pady=5)
-
-
-        # Dependencies live on their own tab. A task being created has no
-        # ID yet, so a stand-in carries the parent link used to exclude
-        # invalid candidates.
-        probe = Task(
+        return Task(
             id='__new__',
             name=self.task_type,
-            start_date=datetime.now(),
-            task_type=self.task_type,
-            parent_task_id=self.parent_task.id if self.parent_task else None,
+            start_date=start,
+            end_date=None if self.is_milestone else end,
+            color=self.DEFAULT_COLORS.get(self.task_type,
+                                          self.DEFAULT_COLORS['Task']),
             is_milestone=self.is_milestone,
+            task_type="Task" if self.is_milestone else self.task_type,
+            parent_task_id=self.parent_task.id if self.parent_task else None,
         )
-        self.dependency_editor = DependencyEditor(
-            self.tabs.tab("Dependency"), self.project, probe,
-            on_changed=self._on_dependencies_changed
+
+    def seed_type_locked(self):
+        """A parent chosen up front fixes the type."""
+        return bool(self.parent_task)
+
+    def seed_has_end(self):
+        """A milestone has no end date at all."""
+        return not self.is_milestone
+
+    # ---- choosing a parent when none was given ------------------------
+
+    def _build_type(self, frame):
+        """The type menu, which a milestone does not offer."""
+        self.task_type_var = ctk.StringVar(value=self.template.task_type)
+        if self.is_milestone:
+            return
+        self.task_type_menu = ctk.CTkOptionMenu(
+            frame, variable=self.task_type_var, values=["Task", "Sub-Task"],
+            state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
-        self.dependency_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self._field(frame, "Type:", self.task_type_menu)
 
-        # Buttons, packed right to left so they read
-        # Close, Save & Close, Save & New
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(fill=tk.X, padx=20, pady=10)
+    def _build_parent(self, frame):
+        """Name the parent, or offer the tasks that could be one."""
+        if self.parent_task:
+            super()._build_parent(frame)
+            return
 
-        ctk.CTkButton(button_frame, text="Save & New", width=110,
-                      command=self.save_and_new).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Save & Close", width=120,
-                      command=self.save).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(button_frame, text="Close",
-                      command=self.cancel).pack(side=tk.RIGHT, padx=5)
-    
-    def toggle_milestone(self):
-        """Toggle milestone mode."""
-        is_milestone = self.is_milestone_var.get()
-        
-        if is_milestone:
-            # Disable end date for milestones
-            if self.end_date_entry:
-                self.end_date_entry.configure(state=tk.DISABLED)
+        if self.task_type != "Sub-Task":
+            return
+
+        names = [t.name for t in self.project.get_root_tasks()]
+        if names:
+            self.parent_var = ctk.StringVar()
+            self.parent_menu = ctk.CTkOptionMenu(
+                frame, variable=self.parent_var, values=names)
+            self._field(frame, "Parent Task:", self.parent_menu)
         else:
-            # Enable end date for regular tasks
-            if self.end_date_entry:
-                self.end_date_entry.configure(state=tk.NORMAL)
-    
-    def update_progress_label(self, event=None):
-        """Update progress label when slider moves."""
-        value = int(self.progress_slider.get())
-        self.progress_label.configure(text=f"{value}%")
-    
-    def _on_dependencies_changed(self):
+            self.parent_label = ctk.CTkLabel(
+                frame, text="No parent tasks available")
+            self._field(frame, "Parent Task:", self.parent_label, sticky=tk.W)
+
+    def _resolve_parent_id(self) -> Optional[str]:
+        """The ID of the parent to hang the new task off, if any."""
+        if self.parent_task:
+            return self.parent_task.id
+
+        chosen = getattr(self, 'parent_var', None)
+        name = chosen.get() if chosen else ''
+        if not name:
+            return None
+
+        match = self.project.get_task_by_id(name)
+        if match:
+            return match.id
+        return next((t.id for t in self.project.tasks if t.name == name), None)
+
+    # ---- saving --------------------------------------------------------
+
+    def _apply(self) -> bool:
+        """Build the task from the form and hand it to the save callback."""
+        try:
+            name = self.name_entry.get()
+            if not name:
+                raise ValueError("Task name cannot be empty")
+
+            start = self._read_date(self.start_date_entry)
+            if start is None:
+                raise ValueError("A start date is required")
+
+            is_milestone = self.is_milestone_var.get()
+            end = None if is_milestone else self._read_date(self.end_date_entry)
+
+            parent_task_id = self._resolve_parent_id()
+            if is_milestone:
+                task_type = "Task"
+            else:
+                task_type = self.task_type_var.get()
+            if parent_task_id:
+                task_type = "Sub-Task"
+
+            task = Task(
+                id=self.project.next_task_id(),
+                name=name,
+                start_date=start,
+                end_date=end,
+                progress=int(self.progress_slider.get()),
+                dependencies=self.dependency_editor.get_links(),
+                color=self.color_palette.get(),
+                is_milestone=is_milestone,
+                task_type=task_type,
+                parent_task_id=parent_task_id,
+            )
+            task.__post_init__()
+
+            if self.on_save:
+                self.on_save(task)
+            return True
+
+        except ValueError as error:
+            self._report_invalid(error)
+            return False
+
+    def _start_another(self):
         """
-        Move the start date to satisfy the chosen dependency links.
+        Clear the form for the next task, keeping the window open.
 
         DEVELOPMENT NOTES:
         ------------------
-        Selecting a predecessor fills the start date in straight away, so a
-        new task lands where its links require without the user working the
-        date out.
-        """
-        editor = getattr(self, 'dependency_editor', None)
-        if editor is None or not hasattr(self, 'start_date_entry'):
-            # Called while the dialog is still being built
-            return
-        try:
-            current = datetime.strptime(self.start_date_entry.get(), '%Y-%m-%d')
-        except (ValueError, tk.TclError):
-            return
-
-        required = editor.required_start_date(current)
-        if required is None or required == current:
-            return
-
-        duration = None
-        try:
-            end_text = self.end_date_entry.get()
-            if end_text:
-                duration = datetime.strptime(end_text, '%Y-%m-%d') - current
-        except (ValueError, AttributeError, tk.TclError):
-            duration = None
-
-        self.start_date_entry.delete(0, tk.END)
-        self.start_date_entry.insert(0, required.strftime('%Y-%m-%d'))
-
-        if duration is not None and not self.is_milestone:
-            self.end_date_entry.delete(0, tk.END)
-            self.end_date_entry.insert(0, (required + duration).strftime('%Y-%m-%d'))
-
-        logger.debug("New task start moved to %s by a dependency",
-                     required.strftime('%Y-%m-%d'))
-
-    def save(self):
-        """Create the task and close the dialog."""
-        if self._apply():
-            self.destroy()
-
-    def save_and_new(self):
-        """
-        Create the task, then clear the form for another one.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        The dialog stays open rather than closing and reopening. Entering a
-        run of tasks is the whole point of the button, and a window that
+        Entering a run of tasks is the point of the button, and a window that
         blinks away and back loses its position and the field the user was
         about to type in.
 
-        Nothing is cleared if the save failed, so a rejected date leaves the
-        form as it was for correcting.
+        The dates are kept: a run of tasks almost always sits in the same part
+        of the plan, so carrying them over saves setting them again. The name
+        is what changes every time, and it takes the focus.
         """
-        if self._apply():
-            self._reset_form()
+        self._reset_form()
 
     def _reset_form(self):
-        """
-        Empty the form ready for the next task.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        The dates are kept. A run of tasks entered one after another almost
-        always sits in the same part of the plan, so carrying the dates over
-        saves setting them again; the name is what changes every time, and it
-        takes the focus.
-        """
+        """Empty the form ready for the next task."""
         self.name_entry.delete(0, tk.END)
         self.progress_slider.set(0)
         self.update_progress_label()
@@ -713,134 +796,7 @@ class CreateTaskDialog(ctk.CTkToplevel):
         except tk.TclError:
             pass
 
-    def _apply(self) -> bool:
-        """
-        Build the task from the form and hand it to the save callback.
 
-        RETURNS:
-        --------
-        bool
-            True when a task was created, False when the form would not
-            parse - which leaves the dialog open showing why.
-        """
-        try:
-            # Determine final task type
-            if self.is_milestone_var.get():
-                final_task_type = "Task"  # Milestones are type "Task" with is_milestone=True
-                is_milestone = True
-            else:
-                final_task_type = self.task_type_var.get() if not self.is_milestone else self.task_type
-                is_milestone = False
-            
-            # Get name
-            name = self.name_entry.get()
-            if not name:
-                raise ValueError("Task name cannot be empty")
-            
-            # Parse start date
-            start_date_str = self.start_date_entry.get()
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-            
-            # Get end date if not milestone
-            end_date = None
-            if not is_milestone and self.end_date_entry:
-                end_date_str = self.end_date_entry.get()
-                if end_date_str:
-                    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-            
-            # Get progress
-            progress = int(self.progress_slider.get())
-            
-            # Get color
-            color = self.color_palette.get()
-            
-            # Get dependencies from the Dependency tab
-            dependencies = self.dependency_editor.get_links()
-            
-            # Determine parent task ID
-            parent_task_id = None
-            if self.parent_task:
-                parent_task_id = self.parent_task.id
-            elif hasattr(self, 'parent_var') and self.parent_var.get():
-                # Find parent task by name
-                parent_name = self.parent_var.get()
-                parent = self.project.get_task_by_id(parent_name)
-                if parent:
-                    parent_task_id = parent.id
-                else:
-                    # Try to find by name
-                    for t in self.project.tasks:
-                        if t.name == parent_name:
-                            parent_task_id = t.id
-                            break
-            
-            # Update task type if parent is set
-            if parent_task_id and final_task_type != "Sub-Task":
-                final_task_type = "Sub-Task"
-            
-            # Create the task
-            task = Task(
-                id=self.project.next_task_id(),
-                name=name,
-                start_date=start_date,
-                end_date=end_date,
-                progress=progress,
-                dependencies=dependencies,
-                color=color,
-                is_milestone=is_milestone,
-                task_type=final_task_type,
-                parent_task_id=parent_task_id
-            )
-            
-            # Validate
-            task.__post_init__()
-            
-            # Call save callback
-            if self.on_save:
-                self.on_save(task)
-
-            return True
-
-        except ValueError as e:
-            # Show the reason without closing, so it can be corrected
-            messagebox.showerror(
-                "Cannot Create Task",
-                f"{e}\n\nDates are written as YYYY-MM-DD; the calendar "
-                "button beside the box fills one in.",
-                parent=self,
-            )
-            return False
-    
-    def cancel(self):
-        """Cancel task creation."""
-        self.destroy()
-    
-    def _is_descendant(self, task_id: str, potential_ancestor_id: str, project: Project) -> bool:
-        """Check if a task is a descendant of another task."""
-        if task_id == potential_ancestor_id:
-            return True
-        
-        current_id = task_id
-        while current_id:
-            parent_task = project.get_task_by_id(current_id)
-            if not parent_task or not parent_task.parent_task_id:
-                break
-            current_id = parent_task.parent_task_id
-            if current_id == potential_ancestor_id:
-                return True
-        
-        return False
-    
-    def center_window(self):
-        """Center the window on the screen."""
-        self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
 
 
 class DragDropTaskList(ctk.CTkFrame):
@@ -1673,47 +1629,6 @@ class DragDropTaskList(ctk.CTkFrame):
             self.on_project_changed()
 
 
-    def _is_descendant(self, task_id: str, potential_ancestor_id: str, project: Project) -> bool:
-        """
-        Check if a task is a descendant of another task (through parent-child relationships).
-        
-        This is used to prevent circular dependencies when setting dependencies.
-        A task cannot depend on itself or any of its subtasks.
-        
-        PARAMETERS:
-        -----------
-        task_id : str
-            The task ID to check
-        potential_ancestor_id : str
-            The potential ancestor task ID
-        project : Project
-            The project containing the tasks
-        
-        RETURNS:
-        --------
-        bool
-            True if task_id is a descendant of potential_ancestor_id
-        
-        DEVELOPMENT NOTES:
-        ------------------
-        This recursively checks the parent hierarchy to see if task_id
-        is a subtask (directly or indirectly) of potential_ancestor_id.
-        """
-        if task_id == potential_ancestor_id:
-            return True
-        
-        # Check if task_id is a direct or indirect subtask of potential_ancestor_id
-        current_id = task_id
-        while current_id:
-            parent_task = project.get_task_by_id(current_id)
-            if not parent_task or not parent_task.parent_task_id:
-                break
-            current_id = parent_task.parent_task_id
-            if current_id == potential_ancestor_id:
-                return True
-        
-        return False
-    
     def _would_create_circle(self, source_id: str, target_id: str) -> bool:
         """
         Check if adding a dependency would create a circular reference.
@@ -1741,7 +1656,7 @@ class DragDropTaskList(ctk.CTkFrame):
             return True
         
         # Cannot depend on own subtask (directly or indirectly)
-        if self._is_descendant(target_id, source_id, self.project):
+        if self.project.is_descendant(target_id, source_id):
             return True
         
         # Check for circular dependencies through the dependency graph
