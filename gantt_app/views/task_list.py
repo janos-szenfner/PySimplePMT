@@ -89,6 +89,12 @@ class TaskFormDialog(ctk.CTkToplevel):
     GEOMETRY = "620x680"
     MINSIZE = (680, 480)
     DATE_FORMAT = '%Y-%m-%d'
+    
+    # Validation styling
+    INVALID_BORDER_COLOR = '#e74c3c'  # Red border for invalid fields
+    INVALID_BG_COLOR = '#ffebee'     # Light red background for invalid fields
+    WARNING_COLOR = '#ffc107'        # Amber/yellow for warnings
+    VALID_BORDER_COLOR = '#d0d0d0'   # Default border color
 
     #: Width of the buttons along the bottom.
     #:
@@ -129,6 +135,9 @@ class TaskFormDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.cancel)
 
         self._row = 0
+        
+        # Track validation warning labels
+        self._validation_labels = {}
 
     # ------------------------------------------------------------------
     # What the fields start on
@@ -218,6 +227,25 @@ class TaskFormDialog(ctk.CTkToplevel):
         self._build_general(main_frame)
         self._build_dependency_tab()
         self._build_buttons()
+        
+        # Initialize real-time validation
+        self._init_validation()
+        
+        # Validate initial state after a short delay to allow widgets to be fully created
+        self.after(100, self._validate_initial_state)
+    
+    def _validate_initial_state(self):
+        """Validate all fields when the form is first shown."""
+        if hasattr(self, 'name_entry'):
+            self._validate_name()
+        if hasattr(self, 'start_date_entry') and self.start_date_entry:
+            self._validate_required_date(self.start_date_entry, 'Start Date', True)
+        if hasattr(self, 'end_date_entry') and self.end_date_entry:
+            is_milestone = getattr(self, 'template', None) and self.template.is_milestone
+            is_required = not is_milestone
+            if hasattr(self, 'is_milestone_var'):
+                is_required = not self.is_milestone_var.get()
+            self._validate_required_date(self.end_date_entry, 'End Date', is_required)
 
     def _build_general(self, frame):
         """
@@ -454,6 +482,239 @@ class TaskFormDialog(ctk.CTkToplevel):
             return
         entry.set_date(value)
 
+    # ------------------------------------------------------------------
+    # Inline Validation
+    # ------------------------------------------------------------------
+
+    def _init_validation(self):
+        """
+        Set up real-time validation for form fields.
+        
+        Adds bindings to check field values as the user types or changes them,
+        and provides visual feedback (red borders, warning icons) for invalid
+        or missing required fields.
+        
+        DEVELOPMENT NOTES:
+        ------------------
+        Start date is always required. End date is required only for non-milestone
+        tasks. The validation checks both format (YYYY-MM-DD) and whether required
+        fields are empty.
+        """
+        # Validate name field on change
+        if hasattr(self, 'name_entry'):
+            self.name_entry.bind('<KeyRelease>', self._validate_name)
+            self.name_entry.bind('<FocusOut>', self._validate_name)
+        
+        # Validate start date field on change (always required)
+        if hasattr(self, 'start_date_entry') and self.start_date_entry:
+            self.start_date_entry.entry.bind('<KeyRelease>', 
+                lambda e: self._validate_required_date(self.start_date_entry, 'Start Date', True))
+            self.start_date_entry.entry.bind('<FocusOut>', 
+                lambda e: self._validate_required_date(self.start_date_entry, 'Start Date', True))
+        
+        # Validate end date field on change (required for non-milestones)
+        if hasattr(self, 'end_date_entry') and self.end_date_entry:
+            # Check if this is a milestone (end date not required)
+            is_milestone = getattr(self, 'template', None) and self.template.is_milestone
+            is_required = not is_milestone
+            
+            self.end_date_entry.entry.bind('<KeyRelease>', 
+                lambda e: self._validate_required_date(
+                    self.end_date_entry, 'End Date', 
+                    not self.is_milestone_var.get() if hasattr(self, 'is_milestone_var') else not is_milestone
+                ))
+            self.end_date_entry.entry.bind('<FocusOut>', 
+                lambda e: self._validate_required_date(
+                    self.end_date_entry, 'End Date',
+                    not self.is_milestone_var.get() if hasattr(self, 'is_milestone_var') else not is_milestone
+                ))
+        
+        # Also validate when milestone checkbox changes (affects end date requirement)
+        if hasattr(self, 'is_milestone_var'):
+            self.is_milestone_var.trace_add('write', self._on_milestone_change_validation)
+    
+    def _on_milestone_change_validation(self, *args):
+        """Re-validate end date when milestone status changes."""
+        if hasattr(self, 'end_date_entry') and self.end_date_entry:
+            is_required = not self.is_milestone_var.get()
+            self._validate_required_date(self.end_date_entry, 'End Date', is_required)
+
+    def _validate_name(self, event=None):
+        """Validate the task name field."""
+        if not hasattr(self, 'name_entry'):
+            return True
+        
+        name = self.name_entry.get().strip()
+        is_valid = bool(name)
+        self._show_validation_feedback(self.name_entry, is_valid, "Task name cannot be empty")
+        return is_valid
+
+    def _validate_required_date(self, date_entry, field_name, is_required=True):
+        """
+        Validate a date entry field that may be required.
+        
+        PARAMETERS:
+        -----------
+        date_entry : DateEntry
+            The date entry widget to validate.
+        field_name : str
+            The name of the field for error messages.
+        is_required : bool
+            Whether this date field is required.
+        """
+        if date_entry is None:
+            return True
+        
+        text = date_entry.get().strip()
+        
+        # Check if empty
+        if not text:
+            if is_required:
+                self._show_validation_feedback(date_entry, False, f"{field_name} cannot be empty")
+                return False
+            else:
+                self._show_validation_feedback(date_entry, True, "")
+                return True
+        
+        # Check if date format is valid
+        try:
+            datetime.strptime(text, self.DATE_FORMAT)
+            self._show_validation_feedback(date_entry, True, "")
+            return True
+        except ValueError:
+            error_msg = f"{field_name} must be in YYYY-MM-DD format (e.g., 2026-08-15)"
+            self._show_validation_feedback(date_entry, False, error_msg)
+            return False
+
+    def _show_validation_feedback(self, widget, is_valid, tooltip_text=""):
+        """
+        Show or hide validation feedback for a widget.
+        
+        Provides visual feedback including:
+        - Red border for invalid fields
+        - Warning label ("!") for empty required fields
+        - Tooltip text for guidance
+        
+        PARAMETERS:
+        -----------
+        widget : widget
+            The widget to show feedback for.
+        is_valid : bool
+            Whether the widget's value is valid.
+        tooltip_text : str
+            The tooltip text to show for invalid fields.
+        """
+        # For DateEntry (which is a CTkFrame), configure the frame border
+        if isinstance(widget, DateEntry):
+            border_color = self.VALID_BORDER_COLOR if is_valid else self.INVALID_BORDER_COLOR
+            widget.configure(border_color=border_color, border_width=2 if not is_valid else 0)
+            # Update the tooltip
+            widget.entry.configure(placeholder_text=tooltip_text if not is_valid and tooltip_text else "")
+            
+            # Show/hide warning label for empty required fields
+            self._update_warning_label(widget, is_valid, tooltip_text)
+        
+        # For CTkEntry, configure the border
+        elif hasattr(widget, 'configure'):
+            try:
+                if is_valid:
+                    # Remove invalid styling - use default
+                    widget.configure(border_color=None, border_width=None)
+                else:
+                    # Show red border for invalid
+                    widget.configure(border_color=self.INVALID_BORDER_COLOR, border_width=2)
+                
+                # For CTkEntry, we can use placeholder text as tooltip
+                if hasattr(widget, 'configure'):
+                    current_placeholder = widget.cget('placeholder_text', '')
+                    if not is_valid and tooltip_text:
+                        widget.configure(placeholder_text=tooltip_text)
+                    elif current_placeholder == tooltip_text:
+                        widget.configure(placeholder_text="")
+                
+                # Show/hide warning label for empty required fields
+                self._update_warning_label(widget, is_valid, tooltip_text)
+            except (tk.TclError, AttributeError):
+                # Widget doesn't support these options, skip
+                pass
+
+    def _update_warning_label(self, widget, is_valid, tooltip_text=""):
+        """
+        Show or hide a warning label next to a widget.
+        
+        Creates a small warning indicator ("!") for fields that are required
+        but empty, or have invalid values.
+        
+        PARAMETERS:
+        -----------
+        widget : widget
+            The widget to show the warning for.
+        is_valid : bool
+            Whether the widget's value is valid.
+        tooltip_text : str
+            The tooltip text for the warning.
+        """
+        # Only show warning label for empty required fields (not format errors)
+        if not is_valid and "cannot be empty" in tooltip_text.lower():
+            # Create a unique key for this widget
+            widget_id = str(id(widget))
+            
+            # Remove any existing warning label
+            if widget_id in self._validation_labels:
+                old_label = self._validation_labels[widget_id]
+                if old_label and old_label.winfo_exists():
+                    old_label.destroy()
+            
+            # Create new warning label
+            try:
+                # For DateEntry, which is a CTkFrame containing entry and button
+                if isinstance(widget, DateEntry):
+                    # Get the DateEntry's grid position
+                    grid_info = widget.grid_info()
+                    master = widget.master
+                    
+                    # Place warning label to the right of the DateEntry frame
+                    # The DateEntry is in column 1, so we use column 2
+                    label = ctk.CTkLabel(
+                        master, text="!", text_color=self.WARNING_COLOR,
+                        font=ctk.CTkFont(weight="bold"),
+                    )
+                    label.grid(row=grid_info.get("row", 0), column=2, padx=5, sticky=tk.W)
+                else:
+                    # For regular widgets like CTkEntry
+                    grid_info = widget.grid_info()
+                    master = widget.master if hasattr(widget, 'master') else widget
+                    
+                    # Check if column 2 is already occupied (e.g., by progress label)
+                    # If so, we'll skip the warning label to avoid conflicts
+                    try:
+                        # Try to see if there's already a widget in column 2 of this row
+                        existing = master.grid_slaves(row=grid_info.get("row", 0), column=2)
+                        if existing:
+                            # Column 2 is occupied, skip warning label
+                            return
+                    except (tk.TclError, AttributeError):
+                        pass
+                    
+                    # Place warning label in column 2
+                    label = ctk.CTkLabel(
+                        master, text="!", text_color=self.WARNING_COLOR,
+                        font=ctk.CTkFont(weight="bold"),
+                    )
+                    label.grid(row=grid_info.get("row", 0), column=2, padx=5, sticky=tk.W)
+                
+                self._validation_labels[widget_id] = label
+            except (tk.TclError, AttributeError) as e:
+                logger.debug(f"Could not create warning label: {e}")
+        else:
+            # Hide warning label if valid
+            widget_id = str(id(widget))
+            if widget_id in self._validation_labels:
+                old_label = self._validation_labels[widget_id]
+                if old_label and old_label.winfo_exists():
+                    old_label.destroy()
+                del self._validation_labels[widget_id]
+
     def _on_dependencies_changed(self):
         """
         Move the dates to satisfy the chosen links.
@@ -529,13 +790,56 @@ class TaskFormDialog(ctk.CTkToplevel):
         raise NotImplementedError
 
     def _report_invalid(self, error):
-        """Say why the form was rejected, without closing it."""
-        messagebox.showerror(
-            "Invalid Entry",
-            f"{error}\n\nDates are written as YYYY-MM-DD; the calendar "
-            "button beside the box fills one in.",
-            parent=self,
-        )
+        """
+        Say why the form was rejected, without closing it.
+        
+        Provides specific, field-level error messages with format guidance.
+        """
+        # Build a more helpful error message
+        error_text = str(error)
+        
+        # Map common error messages to more helpful ones
+        error_mappings = {
+            "Task name cannot be empty": (
+                "Task Name is required.\n\n"
+                "Please enter a name for this task."
+            ),
+            "A start date is required": (
+                "Start Date is required.\n\n"
+                "Please enter a valid date in YYYY-MM-DD format (e.g., 2026-08-15),\n"
+                "or use the calendar button to select a date."
+            ),
+            "start date is required": (
+                "Start Date is required.\n\n"
+                "Please enter a valid date in YYYY-MM-DD format (e.g., 2026-08-15),\n"
+                "or use the calendar button to select a date."
+            ),
+        }
+        
+        # Check if this is a date format error
+        if "invalid literal for" in error_text.lower() or "time data" in error_text.lower():
+            field_name = "Date"
+            if "start" in error_text.lower():
+                field_name = "Start Date"
+            elif "end" in error_text.lower():
+                field_name = "End Date"
+            
+            messagebox.showerror(
+                "Invalid Date Format",
+                f"{field_name} has an invalid format.\n\n"
+                f"Please use YYYY-MM-DD format (e.g., 2026-08-15).\n"
+                f"The calendar button beside the box can help you select a valid date.",
+                parent=self,
+            )
+        else:
+            # Use the mapping or the original error
+            helpful_msg = error_mappings.get(error_text, error_text)
+            messagebox.showerror(
+                "Invalid Entry",
+                f"{helpful_msg}\n\n"
+                "Dates are written as YYYY-MM-DD; the calendar button beside the box fills one in.",
+                parent=self,
+            )
 
     def cancel(self):
         """Close without saving."""
