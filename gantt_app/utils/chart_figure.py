@@ -30,6 +30,25 @@ from gantt_app.utils.log import get_logger
 logger = get_logger(__name__)
 
 
+def _get_visible_tasks(project: Project) -> List[Task]:
+    """
+    Get tasks that should be visible in the Gantt chart.
+    
+    Only returns tasks where show_in_timeline is True (default).
+    
+    PARAMETERS:
+    -----------
+    project : Project
+        The project containing tasks.
+        
+    RETURNS:
+    --------
+    List[Task]
+        List of tasks with show_in_timeline set to True.
+    """
+    return [task for task in project.tasks if task.show_in_timeline]
+
+
 #: Defaults used when a caller supplies no chart settings.
 DEFAULT_SETTINGS: Dict[str, Any] = {
     'font_size': 12,
@@ -281,12 +300,14 @@ def build_gantt_figure(project: Project,
     """
     resolved = _merged_settings(settings)
 
-    if not project.tasks:
+    # Get only tasks that should be visible in the timeline
+    visible_tasks = _get_visible_tasks(project)
+    if not visible_tasks:
         return build_empty_figure(resolved, width=width)
 
     # Rows follow the task list, not the dates, so this export matches what
     # the window shows - see the same note in chart_render.layout_chart
-    tasks = list(project.tasks)
+    tasks = visible_tasks
     positions = {task.id: index for index, task in enumerate(tasks)}
 
     figure = go.Figure()

@@ -83,6 +83,25 @@ def _shorten(text: str, limit: int = LABEL_CHARS) -> str:
     return text if len(text) <= limit else text[:limit - 1] + '...'
 
 
+def _get_visible_tasks(project: Project) -> List[Task]:
+    """
+    Get tasks that should be visible in the Gantt chart.
+    
+    Only returns tasks where show_in_timeline is True (default).
+    
+    PARAMETERS:
+    -----------
+    project : Project
+        The project containing tasks.
+        
+    RETURNS:
+    --------
+    List[Task]
+        List of tasks with show_in_timeline set to True.
+    """
+    return [task for task in project.tasks if task.show_in_timeline]
+
+
 def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
     """
     Corner points of the bracket drawn for a task that has sub-tasks.
@@ -173,9 +192,10 @@ def preferred_width(project: Project, available: int = 0) -> int:
     """
     width = max(int(available), MIN_WIDTH)
 
-    if project.tasks:
+    visible_tasks = _get_visible_tasks(project)
+    if visible_tasks:
         low, high = calculate_date_range(
-            sorted(project.tasks, key=lambda t: t.start_date)
+            sorted(visible_tasks, key=lambda t: t.start_date)
         )
         days = max((high - low).days, 1)
         needed = MARGIN_LEFT + MARGIN_RIGHT + days * MIN_PIXELS_PER_DAY
@@ -216,7 +236,8 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     # panes disagreed and a reorder looked like it had done nothing. The task
     # list is already in hierarchy order, which keeps a parent beside its
     # sub-tasks here too.
-    tasks = list(project.tasks)
+    # Only include tasks that should be visible in the timeline
+    tasks = _get_visible_tasks(project)
     title = f"Gantt Chart: {project.name or 'New Project'}"
 
     if not tasks:
