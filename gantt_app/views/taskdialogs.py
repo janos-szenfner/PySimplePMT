@@ -83,15 +83,6 @@ class EditTaskDialog(TaskFormDialog):
             self._field(frame, "Parent Task:", self.parent_label,
                         sticky=tk.W)
 
-    def _build_duration(self, frame):
-        """Show the duration worked out from the dates."""
-        duration = self.task.duration_days
-        self.duration_label = ctk.CTkLabel(
-            frame, text=str(duration) if duration is not None else "N/A"
-        )
-        self._field(frame, "Duration (Days):", self.duration_label,
-                    sticky=tk.W)
-
     def _build_leading_buttons(self, frame):
         """Delete and Help, set apart on the left."""
         super()._build_leading_buttons(frame)
@@ -128,6 +119,24 @@ class EditTaskDialog(TaskFormDialog):
             if end is not None and end < start:
                 raise ValueError("The end date falls before the start date.")
 
+            # Get duration value
+            duration_text = self.duration_entry.get().strip()
+            duration = int(duration_text) if duration_text else None
+
+            # Get progress value
+            progress_text = self.progress_entry.get().strip()
+            progress = int(progress_text) if progress_text else 0
+            if progress < 0 or progress > 100:
+                raise ValueError("Progress must be between 0 and 100")
+
+            # Get earliest begin date
+            earliest_begin = None
+            if self.earliest_begin_var.get():
+                earliest_begin = self._typed_date(self.earliest_begin_entry, "earliest begin date")
+
+            # Get details
+            details = self.details_text.get("1.0", tk.END).strip()
+
             old_task = copy.copy(self.task)
 
             self.task.name = name
@@ -137,7 +146,14 @@ class EditTaskDialog(TaskFormDialog):
             self.task.start_date = start
             self.task.end_date = end
             self.task.is_milestone = is_milestone
-            self.task.progress = int(self.progress_slider.get())
+            self.task.progress = progress
+            self.task.duration = duration
+            self.task.priority = self.priority_var.get()
+            self.task.shape = self.shape_var.get()
+            self.task.show_in_timeline = self.show_in_timeline_var.get()
+            self.task.earliest_begin = earliest_begin
+            self.task.scheduling_options = self.scheduling_options_var.get()
+            self.task.details = details
             self.task.color = self.color_palette.get()
             if self._dependency_editor is not None:
                 # Untouched tab means untouched links
@@ -156,6 +172,13 @@ class EditTaskDialog(TaskFormDialog):
                     color=new_task.color,
                     is_milestone=new_task.is_milestone,
                     parent_task_id=new_task.parent_task_id,
+                    duration=new_task.duration,
+                    priority=new_task.priority,
+                    shape=new_task.shape,
+                    show_in_timeline=new_task.show_in_timeline,
+                    earliest_begin=new_task.earliest_begin,
+                    scheduling_options=new_task.scheduling_options,
+                    details=new_task.details,
                 ):
                     if self.on_save:
                         self.on_save(new_task)
@@ -342,18 +365,43 @@ class CreateTaskDialog(TaskFormDialog):
             if parent_task_id:
                 task_type = "Sub-Task"
 
+            # Get duration value
+            duration_text = self.duration_entry.get().strip()
+            duration = int(duration_text) if duration_text else None
+
+            # Get progress value
+            progress_text = self.progress_entry.get().strip()
+            progress = int(progress_text) if progress_text else 0
+            if progress < 0 or progress > 100:
+                raise ValueError("Progress must be between 0 and 100")
+
+            # Get earliest begin date
+            earliest_begin = None
+            if self.earliest_begin_var.get():
+                earliest_begin = self._typed_date(self.earliest_begin_entry, "earliest begin date")
+
+            # Get details
+            details = self.details_text.get("1.0", tk.END).strip()
+
             task = Task(
                 id=self.project.next_task_id(),
                 name=name,
                 start_date=start,
                 end_date=end,
-                progress=int(self.progress_slider.get()),
+                progress=progress,
                 dependencies=(self._dependency_editor.get_links()
                               if self._dependency_editor else []),
                 color=self.color_palette.get(),
                 is_milestone=is_milestone,
                 task_type=task_type,
                 parent_task_id=parent_task_id,
+                duration=duration,
+                priority=self.priority_var.get(),
+                shape=self.shape_var.get(),
+                show_in_timeline=self.show_in_timeline_var.get(),
+                earliest_begin=earliest_begin,
+                scheduling_options=self.scheduling_options_var.get(),
+                details=details,
             )
             task.__post_init__()
 
@@ -390,8 +438,10 @@ class CreateTaskDialog(TaskFormDialog):
         name.
         """
         self.name_entry.delete(0, tk.END)
-        self.progress_slider.set(0)
-        self.update_progress_label()
+        self.progress_entry.delete(0, tk.END)
+        self.progress_entry.insert(0, "0")
+        self.duration_entry.delete(0, tk.END)
+        self.details_text.delete("1.0", tk.END)
         self._touched.discard('name')
         self._check_fields()
 

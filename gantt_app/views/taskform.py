@@ -26,6 +26,7 @@ from typing import Optional, Callable
 import customtkinter as ctk
 
 from gantt_app.models import Task, Project
+from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.colorpalette import ColorPalette
@@ -240,15 +241,17 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         Fields are organized in logical groups:
         1. Basic Information: name, ID, type, parent
         2. Scheduling: dates, duration, milestone flag
-        3. Progress: completion percentage
-        4. Appearance: color
+        3. Additional Scheduling: scheduling options, earliest begin
+        4. Progress: completion percentage
+        5. Appearance: color, shape
+        6. Details: notes/details
         
         This grouping makes the dialog more intuitive to use
         without adding any performance overhead.
         """
         # Basic Information group
         self.name_entry = ctk.CTkEntry(frame)
-        self._field(frame, "Task Name:", self.name_entry)
+        self._field(frame, "Name:", self.name_entry)
         self.name_entry.insert(0, self.seed_name())
         self._build_identity(frame)
         self._build_type(frame)
@@ -263,6 +266,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_dates(frame)
         self._build_duration(frame)
         self._build_milestone(frame)
+        self._build_scheduling_options(frame)
+        self._build_earliest_begin(frame)
 
         # Separator between Scheduling and Progress
         ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
@@ -271,6 +276,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         # Progress group
         self._build_progress(frame)
+        self._build_priority(frame)
+        self._build_show_in_timeline(frame)
+        self._build_shape(frame)
 
         # Separator between Progress and Appearance
         ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
@@ -279,6 +287,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         # Appearance group
         self._build_color(frame)
+
+        # Details group
+        self._build_details(frame)
 
     def _build_identity(self, frame):
         """Show the task ID. Only an existing task has one."""
@@ -328,25 +339,111 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         )
         self._field(frame, "Is Milestone:", self.milestone_check, sticky=tk.W)
 
-    def _build_progress(self, frame):
-        """The progress slider and its percentage."""
-        progress = self.template.progress
-        self.progress_slider = ctk.CTkSlider(frame, from_=0, to=100)
-        row = self._field(frame, "Progress (%):", self.progress_slider)
-        self.progress_slider.set(progress)
-
-        self.progress_label = ctk.CTkLabel(frame, text=f"{progress}%")
-        self.progress_label.grid(row=row, column=2, padx=10, pady=5)
-
-        self.progress_slider.bind("<B1-Motion>", self.update_progress_label)
-        self.progress_slider.bind("<ButtonRelease-1>",
-                                  self.update_progress_label)
-
     def _build_color(self, frame):
         """The colour swatches."""
         self.color_palette = ColorPalette(frame, color=self.template.color)
-        self._field(frame, "Color:", self.color_palette,
+        self._field(frame, "Colors:", self.color_palette,
                     sticky=tk.W, label_sticky=tk.NW)
+
+    def _build_scheduling_options(self, frame):
+        """The scheduling options dropdown."""
+        self.scheduling_options_var = ctk.StringVar(
+            value=self.template.scheduling_options)
+        self.scheduling_options_menu = ctk.CTkOptionMenu(
+            frame, variable=self.scheduling_options_var,
+            values=["in this dialog", "auto", "manual"]
+        )
+        self._field(frame, "Scheduling options:", self.scheduling_options_menu)
+
+    def _build_duration(self, frame):
+        """The duration entry field."""
+        duration = self.template.duration
+        if duration is None:
+            # Calculate from dates if not manually set
+            duration = self.template.duration_days
+        self.duration_entry = ctk.CTkEntry(frame)
+        if duration is not None:
+            self.duration_entry.insert(0, str(duration))
+        self._field(frame, "Duration:", self.duration_entry)
+
+    def _build_earliest_begin(self, frame):
+        """The earliest begin date with checkbox and copy button."""
+        self.earliest_begin_var = ctk.BooleanVar(value=False)
+        self.earliest_begin_check = ctk.CTkCheckBox(
+            frame, text="", variable=self.earliest_begin_var
+        )
+        self.earliest_begin_entry = DateEntry(
+            frame, date=self.template.earliest_begin)
+        
+        # Create a frame to hold the checkbox, date entry, and button
+        sub_frame = ctk.CTkFrame(frame)
+        self.earliest_begin_check.pack(side=tk.LEFT, padx=0)
+        self.earliest_begin_entry.pack(side=tk.LEFT, padx=5)
+        
+        copy_btn = ctk.CTkButton(
+            sub_frame, text="Copy begin date", width=100,
+            command=self._copy_begin_date
+        )
+        copy_btn.pack(side=tk.LEFT, padx=5)
+        
+        row = self._next_row()
+        ctk.CTkLabel(frame, text="Earliest begin").grid(
+            row=row, column=0, sticky=tk.W, pady=5)
+        sub_frame.grid(row=row, column=1, sticky=tk.EW, pady=5)
+
+    def _copy_begin_date(self):
+        """Copy the start date to the earliest begin date."""
+        if hasattr(self, 'start_date_entry') and self.start_date_entry:
+            start_date = self._read_date(self.start_date_entry)
+            if start_date:
+                self.earliest_begin_entry.set_date(start_date)
+
+    def _build_priority(self, frame):
+        """The priority dropdown."""
+        self.priority_var = ctk.StringVar(value=self.template.priority)
+        self.priority_menu = ctk.CTkOptionMenu(
+            frame, variable=self.priority_var,
+            values=PRIORITY_LEVELS
+        )
+        self._field(frame, "Priority:", self.priority_menu)
+
+    def _build_show_in_timeline(self, frame):
+        """The show in timeline checkbox."""
+        self.show_in_timeline_var = ctk.BooleanVar(
+            value=self.template.show_in_timeline)
+        self.show_in_timeline_check = ctk.CTkCheckBox(
+            frame, text="", variable=self.show_in_timeline_var
+        )
+        self._field(frame, "Show in timeline:", self.show_in_timeline_check,
+                    sticky=tk.W)
+
+    def _build_shape(self, frame):
+        """The shape dropdown."""
+        self.shape_var = ctk.StringVar(value=self.template.shape)
+        self.shape_menu = ctk.CTkOptionMenu(
+            frame, variable=self.shape_var,
+            values=["Default", "Rectangle", "Rounded"]
+        )
+        self._field(frame, "Shape:", self.shape_menu)
+
+    def _build_progress(self, frame):
+        """The progress entry field (0-100)."""
+        progress = self.template.progress
+        self.progress_entry = ctk.CTkEntry(frame)
+        self.progress_entry.insert(0, str(progress))
+        self._field(frame, "Progress:", self.progress_entry)
+
+    def _build_details(self, frame):
+        """The details text area."""
+        self.details_text = ctk.CTkTextbox(frame, height=80, width=400)
+        if self.template.details:
+            self.details_text.insert("1.0", self.template.details)
+        # Span across both columns
+        row = self._next_row()
+        ctk.CTkLabel(frame, text="Details:").grid(
+            row=row, column=0, sticky=tk.NW, pady=5)
+        self.details_text.grid(row=row, column=1, sticky=tk.EW, pady=5)
+        frame.columnconfigure(1, weight=1)
 
     def _build_dependency_tab(self):
         """
@@ -454,11 +551,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             self._touched.add('end_date')
         self._check_fields()
 
-    def update_progress_label(self, event=None):
-        """Keep the percentage beside the slider in step with it."""
-        self.progress_label.configure(
-            text=f"{int(self.progress_slider.get())}%"
-        )
+
 
     def _read_date(self, entry) -> Optional[datetime]:
         """Parse a date box, or None when it is empty or will not parse."""

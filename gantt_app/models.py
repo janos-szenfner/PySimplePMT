@@ -17,6 +17,8 @@ import uuid
 # already dotted, so the logger is exactly the same object either way.
 logger = logging.getLogger(__name__)
 
+from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
+
 
 #: How a dependency constrains the dependent task.
 #:
@@ -207,6 +209,13 @@ class Task:
         is_milestone: Whether this is a milestone (single-date marker)
         task_type: Type of task - 'Task' or 'Sub-Task'
         parent_task_id: ID of parent task (for Sub-Tasks only, None for regular Tasks)
+        duration: Duration in days (can be manually set)
+        priority: Task priority level
+        shape: Visual shape for the task
+        show_in_timeline: Whether to show in timeline view
+        earliest_begin: Earliest possible start date
+        scheduling_options: Scheduling mode for the task
+        details: Additional notes/details about the task
     
     DEVELOPMENT NOTES:
     ------------------
@@ -225,6 +234,13 @@ class Task:
     is_milestone: bool = False
     task_type: str = "Task"
     parent_task_id: Optional[str] = None
+    duration: Optional[int] = None
+    priority: str = DEFAULT_PRIORITY
+    shape: str = "Default"
+    show_in_timeline: bool = True
+    earliest_begin: Optional[datetime] = None
+    scheduling_options: str = "in this dialog"
+    details: str = ""
     
     def __post_init__(self):
         """
@@ -430,20 +446,24 @@ class Task:
     @property
     def duration_days(self) -> Optional[int]:
         """
-        Calculate duration in days from start_date to end_date.
+        Calculate duration in days from start_date to end_date, or use manual duration.
         
         RETURNS:
         --------
         Optional[int]
             Number of days between start_date and end_date (inclusive),
             or 0 for milestones, or None if end_date is not set.
+            If duration is manually set, that value is returned.
         
         DEVELOPMENT NOTES:
         ------------------
         This is a calculated property that automatically updates when
         start_date or end_date changes. For subtasks without an explicit
-        end_date, it returns None.
+        end_date, it returns None. If duration is manually set, it takes
+        precedence over the calculated value.
         """
+        if self.duration is not None:
+            return self.duration
         if self.is_milestone:
             return 0
         if self.end_date is None:
@@ -469,7 +489,14 @@ class Task:
             'color': self.color,
             'is_milestone': self.is_milestone,
             'task_type': self.task_type,
-            'parent_task_id': self.parent_task_id
+            'parent_task_id': self.parent_task_id,
+            'duration': self.duration,
+            'priority': self.priority,
+            'shape': self.shape,
+            'show_in_timeline': self.show_in_timeline,
+            'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
+            'scheduling_options': self.scheduling_options,
+            'details': self.details
         }
     
     @classmethod
@@ -508,6 +535,14 @@ class Task:
             except (ValueError, TypeError):
                 end_date = None
         
+        # Handle earliest_begin (could be string, datetime, or None)
+        earliest_begin = data.get('earliest_begin')
+        if isinstance(earliest_begin, str):
+            try:
+                earliest_begin = datetime.fromisoformat(earliest_begin)
+            except (ValueError, TypeError):
+                earliest_begin = None
+        
         return cls(
             id=data['id'],
             name=data['name'],
@@ -518,7 +553,14 @@ class Task:
             color=data['color'],
             is_milestone=data['is_milestone'],
             task_type=data.get('task_type', 'Task'),
-            parent_task_id=data.get('parent_task_id', None)
+            parent_task_id=data.get('parent_task_id', None),
+            duration=data.get('duration', None),
+            priority=data.get('priority', DEFAULT_PRIORITY),
+            shape=data.get('shape', 'Default'),
+            show_in_timeline=data.get('show_in_timeline', True),
+            earliest_begin=earliest_begin,
+            scheduling_options=data.get('scheduling_options', 'in this dialog'),
+            details=data.get('details', '')
         )
 
 

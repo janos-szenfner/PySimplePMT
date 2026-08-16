@@ -975,7 +975,14 @@ class ProjectStateTracker:
             'color': kwargs.get('color', task.color),
             'is_milestone': kwargs.get('is_milestone', task.is_milestone),
             'task_type': kwargs.get('task_type', task.task_type),
-            'parent_task_id': kwargs.get('parent_task_id', task.parent_task_id)
+            'parent_task_id': kwargs.get('parent_task_id', task.parent_task_id),
+            'duration': kwargs.get('duration', task.duration),
+            'priority': kwargs.get('priority', task.priority),
+            'shape': kwargs.get('shape', task.shape),
+            'show_in_timeline': kwargs.get('show_in_timeline', task.show_in_timeline),
+            'earliest_begin': kwargs.get('earliest_begin', task.earliest_begin),
+            'scheduling_options': kwargs.get('scheduling_options', task.scheduling_options),
+            'details': kwargs.get('details', task.details)
         }
         
         new_task = Task(**new_task_data)
