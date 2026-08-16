@@ -49,7 +49,7 @@ gantt_app/
 │   ├── formcheck.py       # Checks the task form as it is filled in
 │   ├── scrollframe.py     # Scrolling container the task form is built in
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
-│   ├── colorpalette.py    # Colour swatches shared by the task dialogs
+│   ├── colorpicker.py     # Color picker with popup for task dialogs
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs

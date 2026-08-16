@@ -29,7 +29,7 @@ from gantt_app.models import Task, Project
 from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
-from gantt_app.views.colorpalette import ColorPalette
+from gantt_app.views.colorpicker import ColorEntry
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.formcheck import FormChecks
 from gantt_app.views.scrollframe import ScrollFrame
@@ -340,20 +340,69 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._field(frame, "Is Milestone:", self.milestone_check, sticky=tk.W)
 
     def _build_color(self, frame):
-        """The colour swatches."""
-        self.color_palette = ColorPalette(frame, color=self.template.color)
-        self._field(frame, "Colors:", self.color_palette,
+        """The color picker with Choose and Default buttons."""
+        self.color_entry = ColorEntry(frame, color=self.template.color)
+        self._field(frame, "Colors:", self.color_entry,
                     sticky=tk.W, label_sticky=tk.NW)
 
     def _build_scheduling_options(self, frame):
         """The scheduling options dropdown."""
         self.scheduling_options_var = ctk.StringVar(
-            value=self.template.scheduling_options)
+            value=self.template.scheduling_options if self.template.scheduling_options in [
+                "Start date is calculated", "End date is calculated", "Duration is calculated"
+            ] else "End date is calculated")
         self.scheduling_options_menu = ctk.CTkOptionMenu(
             frame, variable=self.scheduling_options_var,
-            values=["in this dialog", "auto", "manual"]
+            values=["Start date is calculated", "End date is calculated", "Duration is calculated"]
         )
         self._field(frame, "Scheduling options:", self.scheduling_options_menu)
+        
+        # Trace the variable to update field states when changed
+        self.scheduling_options_var.trace_add("write", self._on_scheduling_mode_changed)
+        
+        # Initialize field states based on the current mode
+        self._update_field_states()
+
+    def _on_scheduling_mode_changed(self, *args):
+        """Handle changes to the scheduling mode dropdown."""
+        self._update_field_states()
+
+    def _update_field_states(self):
+        """
+        Enable/disable fields based on the selected scheduling mode.
+        
+        Scheduling modes:
+        - Start date is calculated: End date and Duration editable, Begin date disabled
+        - End date is calculated: Begin date and Duration editable, End date disabled
+        - Duration is calculated: Begin date and End date editable, Duration disabled
+        """
+        mode = self.scheduling_options_var.get()
+        
+        # Ensure all date widgets exist
+        if not hasattr(self, 'start_date_entry') or self.start_date_entry is None:
+            return
+        if not hasattr(self, 'end_date_entry') or self.end_date_entry is None:
+            return
+        if not hasattr(self, 'duration_entry') or self.duration_entry is None:
+            return
+        
+        # Reset all to normal state first
+        self.start_date_entry.configure(state=tk.NORMAL)
+        if self.end_date_entry:
+            self.end_date_entry.configure(state=tk.NORMAL)
+        self.duration_entry.configure(state=tk.NORMAL)
+        
+        # Apply mode-specific disablement
+        if mode == "Start date is calculated":
+            # Begin date is calculated: disable start date
+            self.start_date_entry.configure(state=tk.DISABLED)
+        elif mode == "End date is calculated":
+            # End date is calculated: disable end date
+            if self.end_date_entry:
+                self.end_date_entry.configure(state=tk.DISABLED)
+        elif mode == "Duration is calculated":
+            # Duration is calculated: disable duration
+            self.duration_entry.configure(state=tk.DISABLED)
 
     def _build_duration(self, frame):
         """The duration entry field."""

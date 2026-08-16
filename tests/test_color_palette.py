@@ -1,5 +1,5 @@
 """
-Tests for the colour swatches and the task list's column sizing.
+Tests for the colour picker and the task list's column sizing.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -11,7 +11,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from gantt_app.models import Project, Task
-from gantt_app.views.colorpalette import PALETTE
+from gantt_app.views.colorpicker import ColorEntry, FULL_PALETTE, DEFAULT_COLOR
 
 
 def _display_available() -> bool:
@@ -33,17 +33,17 @@ class TestPaletteContents(unittest.TestCase):
 
     def test_every_entry_is_a_hex_colour(self):
         """Each swatch is something Tk can paint."""
-        for value, _name in PALETTE:
+        for value, _name in FULL_PALETTE:
             self.assertRegex(value, r'^#[0-9a-f]{6}$')
 
     def test_every_entry_is_named(self):
         """Each colour has a readable name."""
-        for _value, name in PALETTE:
+        for _value, name in FULL_PALETTE:
             self.assertTrue(name.strip())
 
     def test_there_are_no_duplicates(self):
         """The same colour is not offered twice."""
-        values = [value for value, _name in PALETTE]
+        values = [value for value, _name in FULL_PALETTE]
 
         self.assertEqual(len(values), len(set(values)))
 
@@ -54,15 +54,15 @@ class TestPaletteContents(unittest.TestCase):
         Otherwise opening any task made before this existed would show an
         extra swatch rather than a selected one.
         """
-        values = {value for value, _name in PALETTE}
+        values = {value for value, _name in FULL_PALETTE}
 
         for default in ('#3498db', '#9b59b6', '#e74c3c', '#1f6aa5'):
             self.assertIn(default, values)
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
-class TestColorPalette(unittest.TestCase):
-    """The swatch widget."""
+class TestColorEntry(unittest.TestCase):
+    """The color picker entry widget."""
 
     def setUp(self):
         """Build a root window."""
@@ -78,64 +78,37 @@ class TestColorPalette(unittest.TestCase):
         except Exception:
             pass
 
-    def palette(self, color='#1f6aa5', on_change=None):
-        """A palette over the root window."""
-        from gantt_app.views.colorpalette import ColorPalette
-
-        return ColorPalette(self.root, color=color, on_change=on_change)
-
-    def test_it_draws_a_swatch_per_colour(self):
-        """Every palette entry gets one."""
-        widget = self.palette()
-
-        self.assertEqual(len(widget._buttons), len(PALETTE))
+    def entry(self, color=DEFAULT_COLOR, on_change=None):
+        """A color entry over the root window."""
+        return ColorEntry(self.root, color=color, on_change=on_change)
 
     def test_it_starts_on_the_given_colour(self):
         """The task's own colour is what shows as selected."""
-        widget = self.palette('#2ecc71')
+        widget = self.entry('#2ecc71')
 
         self.assertEqual(widget.get(), '#2ecc71')
 
-    def test_picking_changes_the_value(self):
-        """Clicking a swatch selects it."""
-        widget = self.palette()
+    def test_setting_a_new_colour(self):
+        """Setting a color programmatically changes the value."""
+        widget = self.entry()
 
         widget.set('#f39c12')
 
         self.assertEqual(widget.get(), '#f39c12')
 
-    def test_the_selected_swatch_is_outlined(self):
-        """Selection is shown by the border, not by hiding the colour."""
-        widget = self.palette('#2ecc71')
+    def test_default_button_resets_to_blue(self):
+        """Clicking Default resets to the default blue color."""
+        widget = self.entry('#2ecc71')
 
-        outline = widget._buttons['#2ecc71'].cget('highlightbackground')
+        widget.set_default()
 
-        self.assertEqual(str(outline), widget.SELECTED_BORDER_COLOR)
-
-    def test_the_others_are_not_outlined(self):
-        """Only one swatch reads as chosen."""
-        widget = self.palette('#2ecc71')
-
-        outline = widget._buttons['#e74c3c'].cget('highlightbackground')
-
-        self.assertEqual(str(outline), widget.UNSELECTED_BORDER_COLOR)
-
-    def test_a_colour_outside_the_palette_is_kept(self):
-        """
-        An imported colour is offered rather than snapped to a neighbour.
-
-        Replacing it with the closest palette entry would repaint someone's
-        plan without asking.
-        """
-        widget = self.palette('#123456')
-
-        self.assertEqual(widget.get(), '#123456')
-        self.assertEqual(len(widget._buttons), len(PALETTE) + 1)
+        self.assertEqual(widget.get(), DEFAULT_COLOR)
+        self.assertEqual(widget.get(), '#1f6aa5')
 
     def test_it_reports_a_change(self):
         """The callback fires with the new colour."""
         seen = []
-        widget = self.palette(on_change=seen.append)
+        widget = self.entry(on_change=seen.append)
 
         widget.set('#1abc9c')
 
@@ -144,7 +117,7 @@ class TestColorPalette(unittest.TestCase):
     def test_reselecting_reports_nothing(self):
         """Choosing the colour already selected is not a change."""
         seen = []
-        widget = self.palette('#1abc9c', on_change=seen.append)
+        widget = self.entry('#1abc9c', on_change=seen.append)
 
         widget.set('#1abc9c')
 
@@ -152,14 +125,14 @@ class TestColorPalette(unittest.TestCase):
 
     def test_a_missing_colour_falls_back(self):
         """An empty value does not leave the widget blank."""
-        widget = self.palette('')
+        widget = self.entry('')
 
         self.assertTrue(widget.get().startswith('#'))
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestDialogColourPicking(unittest.TestCase):
-    """The dialogs use the palette rather than a hex box."""
+    """The dialogs use the color picker rather than a hex box."""
 
     def setUp(self):
         """A root window and a small project."""
@@ -182,23 +155,23 @@ class TestDialogColourPicking(unittest.TestCase):
             pass
 
     def test_the_edit_dialog_shows_the_tasks_colour(self):
-        """The palette opens on whatever the task already is."""
+        """The color entry opens on whatever the task already is."""
         from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.task, self.project,
                                 on_save=lambda t: None,
                                 on_delete=lambda i: None)
 
-        self.assertEqual(dialog.color_palette.get(), '#2ecc71')
+        self.assertEqual(dialog.color_entry.get(), '#2ecc71')
 
     def test_saving_stores_the_picked_colour(self):
-        """What the palette shows is what the task gets."""
+        """What the color entry shows is what the task gets."""
         from gantt_app.views.taskdialogs import EditTaskDialog
 
         dialog = EditTaskDialog(self.root, self.task, self.project,
                                 on_save=lambda t: None,
                                 on_delete=lambda i: None)
-        dialog.color_palette.set('#f39c12')
+        dialog.color_entry.set('#f39c12')
 
         dialog.save()
 
@@ -214,18 +187,8 @@ class TestDialogColourPicking(unittest.TestCase):
                                       task_type=task_type,
                                       on_save=lambda t: None)
 
-            self.assertEqual(dialog.color_palette.get(), colour, task_type)
+            self.assertEqual(dialog.color_entry.get(), colour, task_type)
             dialog.destroy()
-
-    def test_no_hex_entry_is_left(self):
-        """The text box the palette replaced is gone."""
-        from gantt_app.views.taskdialogs import EditTaskDialog
-
-        dialog = EditTaskDialog(self.root, self.task, self.project,
-                                on_save=lambda t: None,
-                                on_delete=lambda i: None)
-
-        self.assertFalse(hasattr(dialog, 'color_entry'))
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")

@@ -154,7 +154,7 @@ class EditTaskDialog(TaskFormDialog):
             self.task.earliest_begin = earliest_begin
             self.task.scheduling_options = self.scheduling_options_var.get()
             self.task.details = details
-            self.task.color = self.color_palette.get()
+            self.task.color = self.color_entry.get()
             if self._dependency_editor is not None:
                 # Untouched tab means untouched links
                 self.task.dependencies = self._dependency_editor.get_links()
@@ -391,7 +391,7 @@ class CreateTaskDialog(TaskFormDialog):
                 progress=progress,
                 dependencies=(self._dependency_editor.get_links()
                               if self._dependency_editor else []),
-                color=self.color_palette.get(),
+                color=self.color_entry.get(),
                 is_milestone=is_milestone,
                 task_type=task_type,
                 parent_task_id=parent_task_id,
