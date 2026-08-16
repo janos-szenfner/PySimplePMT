@@ -239,7 +239,7 @@ class Task:
     shape: str = "Default"
     show_in_timeline: bool = True
     earliest_begin: Optional[datetime] = None
-    scheduling_options: str = "in this dialog"
+    scheduling_options: str = "End date is calculated"
     details: str = ""
     
     def __post_init__(self):
@@ -543,6 +543,16 @@ class Task:
             except (ValueError, TypeError):
                 earliest_begin = None
         
+        # Handle backward compatibility for scheduling_options
+        scheduling_options = data.get('scheduling_options', 'End date is calculated')
+        # Map old values to new ones
+        old_to_new = {
+            'in this dialog': 'End date is calculated',
+            'auto': 'End date is calculated',
+            'manual': 'End date is calculated'
+        }
+        scheduling_options = old_to_new.get(scheduling_options, scheduling_options)
+        
         return cls(
             id=data['id'],
             name=data['name'],
@@ -559,7 +569,7 @@ class Task:
             shape=data.get('shape', 'Default'),
             show_in_timeline=data.get('show_in_timeline', True),
             earliest_begin=earliest_begin,
-            scheduling_options=data.get('scheduling_options', 'in this dialog'),
+            scheduling_options=scheduling_options,
             details=data.get('details', '')
         )
 
