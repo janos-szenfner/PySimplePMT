@@ -370,13 +370,29 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             self.end_date_entry.configure(state=tk.DISABLED)
 
     def _build_milestone(self, frame):
-        """The milestone tick box."""
+        """
+        The milestone tick box, ticked when a milestone is being created.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The box is told what to show rather than left to work it out from
+        the variable it was handed. CustomTkinter decides a checkbox's
+        opening state by comparing the variable against its onvalue, which
+        is the number 1 against a BooleanVar holding True - a comparison
+        that holds in CPython but is the library's business, not ours, and
+        differs between its versions. Choosing Create Milestone and finding
+        the box unticked is the sort of thing that follows.
+        """
         self.is_milestone_var = ctk.BooleanVar(
             value=self.template.is_milestone)
         self.milestone_check = ctk.CTkCheckBox(
             frame, text="", variable=self.is_milestone_var,
             command=self.toggle_milestone,
         )
+        if self.template.is_milestone:
+            self.milestone_check.select()
+        else:
+            self.milestone_check.deselect()
         self._field(frame, "Is Milestone:", self.milestone_check, sticky=tk.W)
 
     def _build_color(self, frame):

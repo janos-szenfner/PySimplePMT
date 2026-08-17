@@ -189,6 +189,48 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(set(chart.current_settings()) & set(DEFAULT_SETTINGS),
                          set(DEFAULT_SETTINGS))
 
+    def test_creating_a_milestone_opens_with_the_box_ticked(self):
+        """
+        Choosing Create Milestone means a milestone, so the box says so.
+
+        The box is told what to show rather than left to work it out from
+        the variable it is handed: CustomTkinter decides a checkbox's
+        opening state by comparing that variable against its onvalue, which
+        is its business and differs between its versions.
+        """
+        from gantt_app.views.taskdialogs import CreateTaskDialog
+
+        dialog = CreateTaskDialog(self.root, self.project,
+                                  task_type="Milestone")
+
+        self.assertTrue(dialog.is_milestone_var.get())
+        self.assertEqual(dialog.milestone_check.get(), 1)
+
+    def test_creating_anything_else_opens_with_it_clear(self):
+        """A task is not a milestone until somebody says so."""
+        from gantt_app.views.taskdialogs import CreateTaskDialog
+
+        for kind in ("Phase", "Deliverable", "Task", "Subtask"):
+            dialog = CreateTaskDialog(self.root, self.project, task_type=kind)
+
+            self.assertFalse(dialog.is_milestone_var.get(), kind)
+            self.assertEqual(dialog.milestone_check.get(), 0, kind)
+
+    def test_editing_a_milestone_opens_with_the_box_ticked(self):
+        """The same box, over a task that is already one."""
+        from gantt_app.models import Task
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        milestone = Task(id="M1", name="Sign-off", task_type="Milestone",
+                         start_date=datetime(2026, 1, 1))
+        self.project.add_task(milestone)
+
+        dialog = EditTaskDialog(self.root, milestone, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+
+        self.assertEqual(dialog.milestone_check.get(), 1)
+
     def test_create_task_dialog_builds(self):
         """Creating a task opens a complete form."""
         from gantt_app.views.taskdialogs import CreateTaskDialog

@@ -48,6 +48,48 @@ WIN_MENU_TEXT = "#1C1D1F"   # dark text color
 WIN_DROPDOWN_BG = "#F8F9FA" # light background for dropdown menus
 SEPARATOR_COLOR = "#C8CDD2" # the hairline between groups of icons
 
+#: What a menu entry looks like under the pointer: the application's own
+#: blue, which is what every other selected thing here uses. The grey it
+#: used to take barely showed which row was about to be chosen.
+MENU_HIGHLIGHT = ACCENT
+MENU_HIGHLIGHT_TEXT = ACCENT_TEXT
+
+
+def highlight_on_hover(button, resting_text_color=WIN_MENU_TEXT):
+    """
+    Make a menu entry light up in blue while the pointer is over it.
+
+    PARAMETERS:
+    -----------
+    button : ctk.CTkButton
+        The entry.
+    resting_text_color : str
+        What its text goes back to when the pointer leaves.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    CustomTkinter swaps a button's background for hover_color on its own but
+    leaves the text alone, and dark grey on this blue is barely legible - so
+    the text is swapped here too, and put back on the way out.
+    """
+    def enter(_event=None):
+        """Light the entry up."""
+        button.configure(text_color=MENU_HIGHLIGHT_TEXT)
+
+    def leave(_event=None):
+        """Put it back."""
+        button.configure(text_color=resting_text_color)
+
+    button.configure(hover_color=MENU_HIGHLIGHT)
+    button.bind("<Enter>", enter, add="+")
+    button.bind("<Leave>", leave, add="+")
+
+    # Kept on the button so the effect can be driven without a pointer:
+    # a window that is never shown receives no crossing events, so a test
+    # cannot hover one.
+    button.highlight_enter = enter
+    button.highlight_leave = leave
+
 
 class CTkDropdownMenu(ctk.CTkToplevel):
     """Floating dropdown menu window for CustomTkinter with Windows-style appearance."""
@@ -64,8 +106,11 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self.configure(fg_color=WIN_DROPDOWN_BG, corner_radius=8)
         
         self.items = items
-        #: The submenu this menu has open, if any. See _handle_submenu.
+        #: The submenu this menu has open, if any, and the row that asked
+        #: for it - so asking twice for the same row leaves it alone.
+        #: See _handle_submenu.
         self._submenu = None
+        self._submenu_row = None
         self._create_widgets()
         
         # Bind global click to dismiss menu when clicking outside
@@ -125,6 +170,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
                 corner_radius=6,
                 command=make_toggle_handler(item, var)
             )
+            highlight_on_hover(btn)
             btn.pack(fill="x", expand=True)
 
         elif item_type == "action":
@@ -143,6 +189,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
                 corner_radius=6,
                 command=make_action_handler(item)
             )
+            highlight_on_hover(btn)
             btn.pack(fill="x", expand=True)
 
         elif item_type == "submenu":
@@ -163,6 +210,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
                 corner_radius=6,
                 command=make_submenu_handler(item, submenu_items, row)
             )
+            highlight_on_hover(btn)
             btn.pack(side="left", fill="x", expand=True)
             
             arrow = ctk.CTkLabel(row, text=">", text_color="#6C757D", width=20)
@@ -221,9 +269,24 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         Only the submenu already showing is closed. Destroying this menu
         would take the row that was just clicked with it, and the submenu
         being opened is this menu's child.
+
+        Asking twice for the same row does nothing the second time. Both
+        hovering a row and clicking it come through here, so a click on a
+        row the pointer had already opened used to tear the submenu down and
+        build it again - and with the pointer then over neither window, and
+        a focus event arriving between the two, what the user saw was a
+        click that did nothing. The submenu a row opened stays open until
+        another row asks for one.
         """
         if not submenu_items:
             return
+
+        if self._submenu_row is row and self._submenu is not None:
+            try:
+                if self._submenu.winfo_exists():
+                    return
+            except tk.TclError:
+                pass
 
         x = self.winfo_rootx() + self.winfo_width() - 4
         y = row.winfo_rooty()
@@ -232,6 +295,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
 
         self._in_submenu = True
         self._submenu = CTkDropdownMenu(self, items=submenu_items)
+        self._submenu_row = row
         self._submenu.geometry(f"+{x}+{y}")
         self._submenu.focus_set()
         self._in_submenu = False
@@ -239,9 +303,10 @@ class CTkDropdownMenu(ctk.CTkToplevel):
     def _close_submenu(self):
         """Close the submenu this menu has open, if any."""
         submenu = getattr(self, '_submenu', None)
+        self._submenu = None
+        self._submenu_row = None
         if submenu is None:
             return
-        self._submenu = None
         try:
             submenu.destroy()
         except tk.TclError:
@@ -330,6 +395,7 @@ class CustomMenuBar(ctk.CTkFrame):
                 corner_radius=6,
                 command=create_handler(title, items)
             )
+            highlight_on_hover(btn)
             btn.pack(side="left", padx=5, pady=5)
             self.menu_buttons.append(btn)
             

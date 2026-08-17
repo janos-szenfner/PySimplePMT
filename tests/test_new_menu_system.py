@@ -347,5 +347,162 @@ class TestSubmenusOpen(unittest.TestCase):
         self.assertTrue(dropdown._submenu.winfo_exists())
 
 
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestMenuEntriesHighlight(unittest.TestCase):
+    """A menu entry lights up in the application's blue under the pointer."""
+
+    def setUp(self):
+        """A toolbar with its menu bar."""
+        import customtkinter as ctk
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.toolbar = Toolbar(self.root, Project(name="Test Project"))
+        self.toolbar.pack(fill="x")
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def dropdown_buttons(self, title):
+        """Every pressable row of one menu."""
+        import customtkinter as ctk
+
+        bar = self.toolbar.menu_bar
+        button = next(b for b in bar.menu_buttons
+                      if str(b.cget('text')) == title)
+        button.invoke()
+        self.root.update_idletasks()
+
+        found = []
+        for container in bar.active_dropdown.winfo_children():
+            for row in container.winfo_children():
+                found.extend(w for w in row.winfo_children()
+                             if isinstance(w, ctk.CTkButton))
+        return found
+
+    def test_the_menu_bar_lights_up_blue(self):
+        """Rather than the barely-there grey it used to take."""
+        from gantt_app.views.toolbar import MENU_HIGHLIGHT
+
+        for button in self.toolbar.menu_bar.menu_buttons:
+            self.assertEqual(button.cget('hover_color'), MENU_HIGHLIGHT)
+
+    def test_every_row_of_a_menu_lights_up_blue(self):
+        """Actions and its rows alike."""
+        from gantt_app.views.toolbar import MENU_HIGHLIGHT
+
+        for button in self.dropdown_buttons('Actions'):
+            self.assertEqual(button.cget('hover_color'), MENU_HIGHLIGHT)
+
+    def test_the_text_stays_readable_on_the_highlight(self):
+        """
+        Dark grey on that blue is barely legible, so the text turns too.
+
+        CustomTkinter swaps the background on its own and leaves the text
+        alone, which is why this is done by hand.
+        """
+        from gantt_app.views.toolbar import (
+            MENU_HIGHLIGHT_TEXT, WIN_MENU_TEXT,
+        )
+
+        button = self.toolbar.menu_bar.menu_buttons[0]
+
+        button.highlight_enter()
+        self.assertEqual(button.cget('text_color'), MENU_HIGHLIGHT_TEXT)
+
+        button.highlight_leave()
+        self.assertEqual(button.cget('text_color'), WIN_MENU_TEXT)
+
+    def test_a_row_is_bound_to_the_pointer_crossing_it(self):
+        """The handlers are on the widget the pointer actually reaches."""
+        button = self.toolbar.menu_bar.menu_buttons[0]
+
+        self.assertNotEqual(button._canvas.bind('<Enter>'), '')
+        self.assertNotEqual(button._canvas.bind('<Leave>'), '')
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestOpeningASubmenuTwice(unittest.TestCase):
+    """
+    Asking again for the row already showing one leaves it alone.
+
+    WHY THIS EXISTS:
+    ================
+    Hovering a row opens its submenu and clicking it asks again, so a click
+    on a row the pointer had already opened tore the submenu down and built
+    it afresh. With the pointer then over neither window and a focus event
+    arriving between the two, what the user saw was a click that did
+    nothing.
+    """
+
+    def setUp(self):
+        """A toolbar with the Actions menu open."""
+        import customtkinter as ctk
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.toolbar = Toolbar(self.root, Project(name="Test Project"))
+        self.toolbar.pack(fill="x")
+        self.root.update_idletasks()
+
+        bar = self.toolbar.menu_bar
+        button = next(b for b in bar.menu_buttons
+                      if str(b.cget('text')) == 'Actions')
+        button.invoke()
+        self.root.update_idletasks()
+        self.dropdown = bar.active_dropdown
+
+        self.row_button, self.row = self._submenu_row()
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _submenu_row(self):
+        """The Create row and the frame holding it."""
+        import customtkinter as ctk
+
+        for container in self.dropdown.winfo_children():
+            for row in container.winfo_children():
+                for widget in row.winfo_children():
+                    if (isinstance(widget, ctk.CTkButton)
+                            and getattr(widget, 'submenu_items', None)):
+                        return widget, row
+        raise AssertionError("Actions has no submenu row")
+
+    def test_clicking_twice_keeps_the_same_submenu(self):
+        """The second press is not a fresh window."""
+        self.row_button.invoke()
+        self.root.update_idletasks()
+        first = self.dropdown._submenu
+
+        self.row_button.invoke()
+        self.root.update_idletasks()
+
+        self.assertIs(self.dropdown._submenu, first)
+        self.assertTrue(first.winfo_exists())
+
+    def test_hovering_then_clicking_keeps_it(self):
+        """Which is what a pointer actually does on the way to the row."""
+        self.dropdown._handle_submenu(None, self.row_button.submenu_items,
+                                      self.row)
+        self.root.update_idletasks()
+        hovered = self.dropdown._submenu
+
+        self.row_button.invoke()
+        self.root.update_idletasks()
+
+        self.assertIs(self.dropdown._submenu, hovered)
+        self.assertTrue(hovered.winfo_exists())
+
+
 if __name__ == '__main__':
     unittest.main()
