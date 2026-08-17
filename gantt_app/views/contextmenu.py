@@ -156,9 +156,12 @@ class TaskContextMenu:
 
         DEVELOPMENT NOTES:
         ------------------
-        The clicked row is selected first. Right-clicking a row that is not
-        the selected one would otherwise act on whatever happened to be
-        selected already, which is a reliable way to move the wrong task.
+        The clicked row is selected first, unless it is already one of
+        several that are. Right-clicking a row that is not the selected one
+        would otherwise act on whatever happened to be selected already,
+        which is a reliable way to move the wrong task - while collapsing the
+        selection onto the clicked row regardless meant Copy and Cut could
+        never see more than one, however many the user had picked out.
 
         Clicking below the last row opens the menu with no row behind it.
         That used to do nothing at all, which left the empty space - the
@@ -176,7 +179,8 @@ class TaskContextMenu:
             task_id = None
 
         if task_id is not None:
-            self.tree.selection_set(task_id)
+            if task_id not in self.tree.selection():
+                self.tree.selection_set(task_id)
             self.tree.focus(task_id)
         else:
             self.tree.selection_remove(*self.tree.selection())

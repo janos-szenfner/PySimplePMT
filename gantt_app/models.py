@@ -71,6 +71,79 @@ PARENT_TYPES = ('Phase', 'Deliverable', 'Task')
 LEAF_TYPES = ('Subtask', 'Milestone')
 
 
+def rolled_up_progress(parent, children) -> int:
+    """
+    The completion a parent takes from the work under it.
+
+    PARAMETERS:
+    -----------
+    parent : Task
+        The task whose progress is being worked out. Its type decides which
+        rule applies.
+    children : list
+        Its direct children. Only these; the rule for each level is written
+        in terms of the level below it, and the levels below that have
+        already settled by the time this is asked - see roll_up_summaries.
+
+    RETURNS:
+    --------
+    int
+        A percentage from 0 to 100. An empty container is 0.
+
+    WHAT THE RULES ARE:
+    -------------------
+    Each level of the plan counts what is under it in the way that suits
+    what that level is.
+
+    A Subtask is a tick on a checklist: done or not, nothing in between.
+    See Task.is_completed.
+
+    A Task with sub-tasks reads how many of them are ticked. It is a
+    checklist, and a checklist is counted, not weighted - four sub-tasks of
+    an hour each are four boxes like any other four. A Task without
+    sub-tasks keeps the percentage the user typed on it.
+
+    A Deliverable weights its tasks by how long they run, so a fortnight's
+    work counts for more towards it than an afternoon's. Where nothing under
+    it has any length - all milestones, say - there is nothing to weight by
+    and it averages them instead.
+
+    A Phase averages its deliverables evenly. Deliverables are the units a
+    phase is scoped in, and one being longer than another is not a reason
+    for it to count for more of the phase.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Percentages are clamped as they are read. A child holding something
+    outside 0 to 100 - which nothing should write, but an imported file can
+    carry - would otherwise pull its parent outside it too.
+
+    The answer is rounded to a whole percent, which is the width of the
+    field it is stored in and finer than the chart can draw.
+    """
+    if not children:
+        return 0
+
+    percentages = [max(0, min(100, child.progress)) for child in children]
+
+    if parent.task_type == 'Task':
+        finished = sum(1 for child in children if child.is_completed)
+        return int(round(finished / len(children) * 100))
+
+    if parent.task_type == 'Phase':
+        return int(round(sum(percentages) / len(percentages)))
+
+    # A Deliverable, and anything else that has come to have children
+    lengths = [child.duration_days or 0 for child in children]
+    total = sum(lengths)
+    if total <= 0:
+        return int(round(sum(percentages) / len(percentages)))
+    return int(round(
+        sum(length * percent for length, percent in zip(lengths, percentages))
+        / total
+    ))
+
+
 @dataclass
 class Dependency:
     """
@@ -354,6 +427,24 @@ class Task:
     def is_leaf(self) -> bool:
         """Whether this task is a leaf node (cannot have children)."""
         return self.task_type in LEAF_TYPES
+
+    @property
+    def is_completed(self) -> bool:
+        """
+        Whether this counts as finished when its parent totals its children.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A sub-task is a tick on a checklist: done or not. The editor offers
+        it as a tick box rather than a percentage, so a sub-task entered here
+        holds 0 or 100 and nothing else.
+
+        Anything short of 100 is unfinished, which is what decides a
+        sub-task that arrived from an imported file at some middling
+        percentage. It is not rewritten - the number is the source file's to
+        state - but a job that is half done is not a job that is done.
+        """
+        return self.progress >= 100
 
     @property
     def effective_milestone(self) -> bool:
@@ -1700,20 +1791,13 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        New rollup rules based on task types:
-        
-        Date Rollups (for Phase and Deliverable):
-        - Start Date: earliest (minimum) start date among all direct children
-        - End Date: latest (maximum) end date among all direct children
-        
-        Progress Rollups:
-        - Task with Subtasks: count of completed subtasks / total subtasks as percentage
-        - Deliverable: weighted average based on task durations (if total duration > 0)
-                     or simple average if total duration is 0
-        - Phase: simple (unweighted) average of all deliverable progress percentages
-        
-        Children are walked deepest first, so containers total what their own
-        children have already settled on.
+        Anything with children spans them: its start is the earliest of
+        theirs and its end the latest. Which rule turns their progress into
+        its own is rolled_up_progress's to say.
+
+        Children are walked deepest first, so a parent totals children that
+        have already settled - the bottom-up cascade a change to one
+        sub-task sets off, reaching the phase above it in the same pass.
         """
         children = self._children_by_parent()
         changed = False
@@ -1721,6 +1805,13 @@ class Project:
         for task in self._deepest_first():
             brood = children.get(task.id)
             if not brood:
+                # An empty Phase or Deliverable holds no work, so none of it
+                # is done. Its dates are left alone: there is nothing under
+                # it to take them from, and the ones it was given are the
+                # only ones it has.
+                if task.is_container and task.progress != 0:
+                    task.progress = 0
+                    changed = True
                 continue
 
             # Calculate new start and end dates for container types
@@ -1733,52 +1824,7 @@ class Project:
 
             new_start, new_end = min(starts), max(ends)
 
-            # Calculate progress based on task type
-            if task.task_type == "Task":
-                # Task with subtasks: simple count-based progress
-                total_subtasks = len(brood)
-                if total_subtasks > 0:
-                    completed_subtasks = sum(1 for c in brood if c.progress >= 100)
-                    new_progress = int(round((completed_subtasks / total_subtasks) * 100))
-                else:
-                    new_progress = task.progress
-                    
-            elif task.task_type == "Deliverable":
-                # Deliverable: weighted average based on task durations
-                total_duration = sum(c.duration_days or 0 for c in brood)
-                
-                if total_duration > 0:
-                    # Weighted average
-                    weighted_sum = sum(
-                        (c.duration_days or 0) * max(0, min(100, c.progress))
-                        for c in brood
-                    )
-                    new_progress = int(round(weighted_sum / total_duration))
-                else:
-                    # Fall back to simple average
-                    if len(brood) > 0:
-                        new_progress = int(round(sum(max(0, min(100, c.progress)) for c in brood) / len(brood)))
-                    else:
-                        new_progress = task.progress
-                        
-            elif task.task_type == "Phase":
-                # Phase: simple average of deliverable progress
-                if len(brood) > 0:
-                    new_progress = int(round(sum(max(0, min(100, c.progress)) for c in brood) / len(brood)))
-                else:
-                    new_progress = task.progress
-            else:
-                # Default: weighted by duration for any container
-                total_duration = sum(c.duration_days or 0 for c in brood)
-                
-                if total_duration > 0:
-                    weighted_sum = sum(
-                        (c.duration_days or 0) * max(0, min(100, c.progress))
-                        for c in brood
-                    )
-                    new_progress = int(round(weighted_sum / total_duration))
-                else:
-                    new_progress = task.progress
+            new_progress = rolled_up_progress(task, brood)
 
             # Anything with children brackets them, whatever it is called.
             #

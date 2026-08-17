@@ -362,6 +362,33 @@ class DragDropTaskList(ctk.CTkFrame):
         logger.info("Deleting task %s %r", task.id, task.name)
         self.remove_task(task_id)
 
+    def get_selected_task_ids(self) -> List[str]:
+        """
+        The tasks the user has picked out, in the order they are shown.
+
+        RETURNS:
+        --------
+        List[str]
+            Task IDs, empty when nothing is selected.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The toolbar and the menu bar reach for this by name, behind a
+        hasattr, to decide what Copy, Cut and Paste act on. Nothing answered
+        to it, so the test was false every time and every one of those
+        actions quietly did nothing at all.
+
+        Rows carry their task's ID as their tree item ID, so the selection is
+        the answer; a row for a task that has since gone is left out rather
+        than handed on to be looked up and not found.
+        """
+        try:
+            selection = self.tree.selection()
+        except tk.TclError:
+            return []
+        return [task_id for task_id in selection
+                if self.project.get_task_by_id(task_id) is not None]
+
     def copy_tasks(self, selected_ids: List[str]):
         """
         Copy selected tasks to clipboard.

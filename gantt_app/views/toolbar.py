@@ -662,7 +662,7 @@ class Toolbar(ctk.CTkFrame):
             if selected_ids and self.project:
                 if messagebox.askyesno("Delete", f"Delete {len(selected_ids)} selected task(s)?"):
                     for task_id in selected_ids:
-                        self.project.delete_task(task_id)
+                        self.project.remove_task(task_id)
                     if self.on_project_changed:
                         self.on_project_changed()
 
@@ -1884,7 +1884,7 @@ class IconToolbar(ctk.CTkFrame):
             if selected_ids and self.project:
                 if messagebox.askyesno("Delete", f"Delete {len(selected_ids)} selected task(s)?"):
                     for task_id in selected_ids:
-                        self.project.delete_task(task_id)
+                        self.project.remove_task(task_id)
                     if self.on_project_changed:
                         self.on_project_changed()
     

@@ -575,6 +575,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         the user sees, which tells them what Python was doing rather than
         what they should type.
         """
+        if self.progress_done_var is not None:
+            # A sub-task is ticked or it is not
+            return 100 if self.progress_done_var.get() else 0
+
         text = self.progress_entry.get().strip()
         if not text:
             return 0
@@ -754,17 +758,36 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._field(frame, "Shape:", self.shape_menu)
 
     def _build_progress(self, frame):
-        """The progress entry field (0-100)."""
-        # Check if progress should be editable for this task type
-        progress_editable = self._should_show_progress()
-        
-        progress = self.template.progress
+        """
+        How far along this is: a tick for a sub-task, a percentage for the
+        rest, and nothing to fill in on a task that takes its own from the
+        work underneath it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A sub-task is a tick on a checklist - done or not - and the task
+        above it reads how many of its sub-tasks are ticked. Offering a
+        percentage box for one invited a 60% that would then count as not
+        done, with nothing on the form saying so.
+        """
+        self.progress_done_var = None
+        self.progress_entry = None
+
+        if self.template.task_type == 'Subtask':
+            self.progress_done_var = ctk.BooleanVar(
+                value=self.template.is_completed)
+            self.progress_check = ctk.CTkCheckBox(
+                frame, text="", variable=self.progress_done_var)
+            self._field(frame, "Completed:", self.progress_check,
+                        sticky=tk.W)
+            return
+
         self.progress_entry = ctk.CTkEntry(frame)
-        self.progress_entry.insert(0, str(progress))
-        self._field(frame, "Progress:", self.progress_entry)
-        
-        # Disable progress for containers (rolled up from children)
-        if not progress_editable:
+        self.progress_entry.insert(0, str(self.template.progress))
+        self._field(frame, "Progress (%):", self.progress_entry)
+
+        # Rolled up from the children of anything that has them
+        if not self._should_show_progress():
             self.progress_entry.configure(state=tk.DISABLED)
 
     def _build_details(self, frame):

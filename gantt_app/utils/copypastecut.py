@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 import copy
 import json
-import uuid
 
 from gantt_app.utils.log import get_logger
 
@@ -241,17 +240,31 @@ class ClipboardService:
         elif payload.operation == 'cut':
             self._paste_cut(payload, target_container_id, insert_index)
     
-    def _paste_copy(self, payload: ClipboardPayload, 
-                    target_container_id: Optional[str], 
+    def _paste_copy(self, payload: ClipboardPayload,
+                    target_container_id: Optional[str],
                     insert_index: Optional[int] = None) -> None:
-        """Handle paste operation for copied items."""
+        """
+        Paste copied items as new tasks under the target.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        One new task per item on the clipboard, and nothing else. Copying a
+        phase copies the phase row; the work under it is not brought along
+        and is not duplicated. What is selected is what is copied, so a
+        selection that includes both a phase and one of its tasks produces
+        exactly those two.
+
+        The new tasks are numbered from the project's own sequence rather
+        than given a UUID. The ID is a column in the task list, and a plan
+        that reads 001, 002, 4f3c8a91-... in the same table does not.
+        """
         if not self.project:
             return
-        
+
         new_tasks = []
         for item in payload.items:
             new_task_data = copy.deepcopy(item.payload)
-            new_task_data['id'] = str(uuid.uuid4())
+            new_task_data['id'] = self._next_id(new_tasks)
             new_task_data['parent_task_id'] = target_container_id
             
             if payload.source_container_id == target_container_id:
@@ -366,6 +379,22 @@ class ClipboardService:
         """Get the entity type from a Task object."""
         return task.task_type.lower()
     
+    def _next_id(self, pending: List['Task']) -> str:
+        """
+        The next free task ID, counting the ones about to be added.
+
+        PARAMETERS:
+        -----------
+        pending : List[Task]
+            Tasks built in this paste but not yet in the project, which
+            next_task_id cannot see and would otherwise hand out again.
+        """
+        task_id = self.project.next_task_id()
+        taken = {task.id for task in pending}
+        while task_id in taken:
+            task_id = str(int(task_id) + 1).zfill(len(task_id))
+        return task_id
+
     def _is_self_or_descendant(self, container_id: Optional[str],
                                task_id: str) -> bool:
         """

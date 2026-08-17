@@ -25,6 +25,20 @@ from gantt_app.utils.copypastecut import (
 )
 
 
+def _display_available() -> bool:
+    """Whether a usable Tk display is present."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+    except Exception:
+        return False
+    root.destroy()
+    return True
+
+
+HAVE_DISPLAY = _display_available()
+
+
 class TestClipboardPayloadModel(unittest.TestCase):
     """Test cases for ClipboardPayload and ClipboardItem dataclasses."""
 
@@ -555,6 +569,109 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         self.assertEqual(len(self.project.tasks), initial_count + 2)
 
 
+class TestOnlyWhatIsSelected(unittest.TestCase):
+    """
+    The clipboard carries the rows picked out, and nothing else.
+
+    WHY THESE EXIST:
+    ================
+    Copying a phase copies the phase. The work under it is not brought along
+    and is not duplicated: a plan is a tree, and duplicating a branch of it
+    because its top row was picked out is not what picking out one row means.
+    """
+
+    def setUp(self):
+        """A phase holding a task, which holds a sub-task."""
+        self.project = Project(name="Test Project")
+        self.service = ClipboardService(self.project)
+
+        today = datetime(2024, 1, 1)
+        self.phase = Task.create_task(name="Phase 1", start_date=today,
+                                      end_date=today + timedelta(days=20),
+                                      task_id="P001")
+        self.phase.task_type = "Phase"
+        self.project.add_task(self.phase)
+
+        self.task = Task.create_task(name="Task 1", start_date=today,
+                                     end_date=today + timedelta(days=5),
+                                     task_id="T001")
+        self.task.parent_task_id = "P001"
+        self.project.add_task(self.task)
+
+        self.subtask = Task.create_task(name="Subtask 1", start_date=today,
+                                        end_date=today + timedelta(days=2),
+                                        task_id="ST001")
+        self.subtask.task_type = "Subtask"
+        self.subtask.parent_task_id = "T001"
+        self.project.add_task(self.subtask)
+
+    def test_copying_a_phase_puts_one_item_on_the_clipboard(self):
+        """Its task and sub-task are not picked up with it."""
+        self.service.copy(["P001"])
+
+        self.assertEqual([item.id for item in self.service.active_payload.items],
+                         ["P001"])
+
+    def test_pasting_a_copied_phase_adds_one_task(self):
+        """One new row, not a duplicate of the branch."""
+        before = len(self.project.tasks)
+
+        self.service.copy(["P001"])
+        self.service.paste(None)
+
+        self.assertEqual(len(self.project.tasks), before + 1)
+
+    def test_the_copy_has_no_children(self):
+        """Nothing was reparented onto the new phase."""
+        self.service.copy(["P001"])
+        self.service.paste(None)
+
+        new_phase = self.project.tasks[-1]
+        children = [t for t in self.project.tasks
+                    if t.parent_task_id == new_phase.id]
+
+        self.assertEqual(children, [])
+
+    def test_the_original_keeps_its_children(self):
+        """Copying takes nothing away from what was copied."""
+        self.service.copy(["P001"])
+        self.service.paste(None)
+
+        self.assertEqual(self.task.parent_task_id, "P001")
+        self.assertEqual(self.subtask.parent_task_id, "T001")
+
+    def test_two_selected_rows_give_two_items(self):
+        """A parent and its child picked out together are exactly those two."""
+        self.service.copy(["P001", "T001"])
+
+        self.assertEqual([item.id for item in self.service.active_payload.items],
+                         ["P001", "T001"])
+
+    def test_a_pasted_copy_is_numbered_like_the_rest(self):
+        """
+        It takes the next ID in the project's sequence.
+
+        The ID is a column in the task list, and a plan that reads 001, 002,
+        4f3c8a91-... in the same table does not.
+        """
+        self.service.copy(["T001"])
+        self.service.paste(None)
+
+        new_task = self.project.tasks[-1]
+
+        self.assertTrue(new_task.id.isdigit(),
+                        f"{new_task.id!r} is not a plain number")
+
+    def test_two_pasted_copies_do_not_share_an_id(self):
+        """Both are numbered, and numbered differently."""
+        self.service.copy(["P001", "T001"])
+        self.service.paste(None)
+
+        pasted = self.project.tasks[-2:]
+
+        self.assertNotEqual(pasted[0].id, pasted[1].id)
+
+
 class TestPastingIntoItself(unittest.TestCase):
     """
     A cut task cannot be pasted inside its own subtree.
@@ -802,6 +919,72 @@ class TestClipboardEdgeCases(unittest.TestCase):
         # Clear
         self.service.clear_clipboard()
         self.assertTrue(self.service.is_clipboard_empty())
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheSelectionReachesTheClipboard(unittest.TestCase):
+    """
+    What the task list says is selected is what gets copied.
+
+    WHY THESE EXIST:
+    ================
+    The toolbar and the menu bar ask the task list for
+    get_selected_task_ids behind a hasattr. Nothing answered to that name,
+    so the test was false every time and Copy, Cut and Paste quietly did
+    nothing at all - no error, no entry in the log, no clipboard.
+    """
+
+    def setUp(self):
+        """A task list over a small plan."""
+        import customtkinter as ctk
+        from gantt_app.views.task_list import DragDropTaskList
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = Project(name="Test Project")
+        today = datetime(2024, 1, 1)
+        for number in ("001", "002", "003"):
+            self.project.add_task(Task.create_task(
+                name=f"Task {number}", start_date=today,
+                end_date=today + timedelta(days=2), task_id=number))
+
+        self.task_list = DragDropTaskList(self.root, self.project)
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def test_the_task_list_answers_to_the_name_the_toolbar_uses(self):
+        """The hasattr the toolbar guards with has something behind it."""
+        self.assertTrue(hasattr(self.task_list, 'get_selected_task_ids'))
+
+    def test_nothing_selected_is_an_empty_list(self):
+        """Not None, and not an exception."""
+        self.assertEqual(self.task_list.get_selected_task_ids(), [])
+
+    def test_one_selected_row_is_reported(self):
+        """The row the user picked out is the one handed on."""
+        self.task_list.tree.selection_set("002")
+
+        self.assertEqual(self.task_list.get_selected_task_ids(), ["002"])
+
+    def test_several_selected_rows_are_all_reported(self):
+        """Copy acts on every row picked out, not just the first."""
+        self.task_list.tree.selection_set("001", "003")
+
+        self.assertEqual(sorted(self.task_list.get_selected_task_ids()),
+                         ["001", "003"])
+
+    def test_a_row_whose_task_has_gone_is_left_out(self):
+        """A stale selection is not handed on to be looked up and missed."""
+        self.task_list.tree.selection_set("002")
+        self.project.remove_task("002")
+
+        self.assertEqual(self.task_list.get_selected_task_ids(), [])
 
 
 if __name__ == '__main__':
