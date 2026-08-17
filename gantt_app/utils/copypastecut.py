@@ -120,10 +120,14 @@ class ClipboardService:
         """
         if selected_ids is None:
             selected_ids = self.get_selected_ids()
-        
-        if not selected_ids or not self.project:
+
+        if not self.project:
+            logger.warning("Cannot copy: no plan is open")
             return
-        
+        if not selected_ids:
+            logger.info("Copy did nothing: no rows are selected")
+            return
+
         self.clear_cut_state()
         
         items = []
@@ -137,11 +141,14 @@ class ClipboardService:
                 ))
         
         if not items:
+            logger.warning("Nothing to copy: %s is in no plan", selected_ids)
             return
-        
+
         first_task = self._get_task_by_id(selected_ids[0])
         source_container_id = first_task.parent_task_id if first_task else None
-        
+
+        logger.info("Copied %d item(s): %s",
+                    len(items), [item.id for item in items])
         self.active_payload = ClipboardPayload(
             operation='copy',
             source_container_id=source_container_id,
@@ -166,10 +173,14 @@ class ClipboardService:
         """
         if selected_ids is None:
             selected_ids = self.get_selected_ids()
-        
-        if not selected_ids or not self.project:
+
+        if not self.project:
+            logger.warning("Cannot cut: no plan is open")
             return
-        
+        if not selected_ids:
+            logger.info("Cut did nothing: no rows are selected")
+            return
+
         self.clear_cut_state()
         
         items = []
@@ -183,11 +194,14 @@ class ClipboardService:
                 ))
         
         if not items:
+            logger.warning("Nothing to cut: %s is in no plan", selected_ids)
             return
-        
+
         first_task = self._get_task_by_id(selected_ids[0])
         source_container_id = first_task.parent_task_id if first_task else None
-        
+
+        logger.info("Cut %d item(s): %s",
+                    len(items), [item.id for item in items])
         self.active_payload = ClipboardPayload(
             operation='cut',
             source_container_id=source_container_id,
@@ -216,29 +230,39 @@ class ClipboardService:
             5. State Update: Select the newly pasted items.
         """
         if not self.project:
+            logger.warning("Cannot paste: no plan is open")
             return
-        
+
         payload = self._resolve_payload()
         if not payload or not payload.items:
+            logger.info("Paste did nothing: the clipboard is empty")
             return
-        
-        if target_container_id is None:
-            target_container_id = None
-        
+
         entity_types = [item.type for item in payload.items]
         if not self._can_accept_types(target_container_id, entity_types):
+            logger.info("Refused to paste %s into %s: it takes no children",
+                        entity_types, target_container_id or "the top level")
             return
 
         if payload.operation == 'cut' and any(
                 self._is_self_or_descendant(target_container_id, item.id)
                 for item in payload.items):
-            logger.info("Refused to paste a task inside itself")
+            logger.warning(
+                "Refused to paste %s into %s: it would sit inside itself",
+                [item.id for item in payload.items], target_container_id)
             return
+
+        where = target_container_id or "the top level"
+        logger.info("Pasting %d %s item(s) into %s",
+                    len(payload.items), payload.operation, where)
 
         if payload.operation == 'copy':
             self._paste_copy(payload, target_container_id, insert_index)
         elif payload.operation == 'cut':
             self._paste_cut(payload, target_container_id, insert_index)
+        else:
+            logger.error("Unknown clipboard operation %r; nothing pasted",
+                         payload.operation)
     
     def _paste_copy(self, payload: ClipboardPayload,
                     target_container_id: Optional[str],
@@ -344,7 +368,18 @@ class ClipboardService:
                     ) for item in payload_data.get('items', [])
                 ]
             )
-        except (ImportError, json.JSONDecodeError, KeyError, TypeError):
+        except ImportError:
+            # pyperclip is not a dependency of this application; without it
+            # the in-memory clipboard is the only one, which is all that
+            # copying inside one window needs
+            logger.debug("No pyperclip, so no system clipboard to read")
+            return None
+        except (json.JSONDecodeError, KeyError, TypeError):
+            logger.debug("The system clipboard holds something that is not "
+                         "a plan of ours; ignoring it")
+            return None
+        except Exception:
+            logger.exception("Could not read the system clipboard")
             return None
     
     def _write_to_system_clipboard(self) -> None:
@@ -367,7 +402,14 @@ class ClipboardService:
             }
             pyperclip.copy(json.dumps(payload_dict))
         except ImportError:
-            pass
+            logger.debug("No pyperclip, so nothing written to the system "
+                         "clipboard; copying within the window still works")
+        except Exception:
+            # A machine with no clipboard mechanism at all raises from
+            # pyperclip itself. Losing the system clipboard is not worth
+            # losing the copy over, so it is noted and the paste goes on
+            # from the in-memory one.
+            logger.exception("Could not write to the system clipboard")
     
     def _get_task_by_id(self, task_id: str) -> Optional['Task']:
         """Get task by ID from the project."""

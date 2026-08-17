@@ -10,10 +10,12 @@ works. This makes the interface cleaner and more user-friendly.
 
 DEVELOPMENT NOTES:
 ------------------
-Written to match the lazy-loading pattern used by datepicker.py. The color
-picker popup is only created when the user clicks the Choose button, which
-improves performance for dialogs that are opened but never use the color
-picker.
+Built the way the calendar in datepicker.py is, and the Dependency tab's
+editor: the form carries a swatch and two buttons, and the seventy-six
+swatches of the palette are built the first time Choose is pressed. Most
+edits are a name or a date and never open it, so building it with every task
+dialog would charge all of them for something few of them use - see
+ColorEntry.open_picker.
 """
 
 import tkinter as tk
@@ -123,6 +125,36 @@ FULL_PALETTE = (
 #: Swatches per row in the popup
 COLUMNS = 12
 
+#: How far the palette is allowed to grow before it starts scrolling.
+MAX_POPUP_WIDTH = 900
+MAX_POPUP_HEIGHT = 600
+
+
+def normalise(color: str) -> str:
+    """
+    Tidy a stored colour into a comparable string.
+
+    RETURNS:
+    --------
+    str
+        A lowercased hex string with its '#', or a colour name as given.
+        An empty value becomes DEFAULT_COLOR.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Six hex digits with no '#' are what a file written elsewhere tends to
+    carry, so they gain one. A name does not: Tk accepts 'red', and putting
+    a '#' in front of it made '#red', which Tk accepts from nobody.
+    """
+    text = str(color or '').strip().lower()
+    if not text:
+        return DEFAULT_COLOR
+    if text.startswith('#'):
+        return text
+    if all(character in '0123456789abcdef' for character in text):
+        return f'#{text}'
+    return text
+
 
 class ColorEntry(ctk.CTkFrame):
     """
@@ -151,7 +183,7 @@ class ColorEntry(ctk.CTkFrame):
         super().__init__(master, fg_color='transparent', **kwargs)
         
         self.on_change = on_change
-        self._value = ColorPickerDialog._normalise(color or DEFAULT_COLOR)
+        self._value = normalise(color or DEFAULT_COLOR)
         self._popup = None
         
         # Build the layout: preview swatch + Choose button + Default button
@@ -184,12 +216,19 @@ class ColorEntry(ctk.CTkFrame):
         self.default_btn.grid(row=0, column=2, padx=(0, 0))
 
     def _show_color(self):
-        """Update the preview swatch with the current color."""
+        """
+        Paint the preview swatch with the colour now selected.
+
+        A colour Tk will not take is logged and the swatch left as it was,
+        rather than passed over in silence: it means a task is carrying
+        something no chart can draw either, and the Log window is where
+        somebody would go to find out why the plan looks wrong.
+        """
         try:
             self.preview_frame.configure(background=self._value)
         except tk.TclError:
-            # Can happen if the frame doesn't exist yet or color is invalid
-            pass
+            logger.warning("Cannot show colour %r; it is not one Tk accepts",
+                           self._value)
 
     def get(self) -> str:
         """The selected color, as a hex string."""
@@ -204,7 +243,7 @@ class ColorEntry(ctk.CTkFrame):
         color : str
             The hex color string to set.
         """
-        value = ColorPickerDialog._normalise(color)
+        value = normalise(color)
         if value == self._value:
             return
         
@@ -219,11 +258,21 @@ class ColorEntry(ctk.CTkFrame):
         self.set(DEFAULT_COLOR)
 
     def open_picker(self):
-        """Open the color picker popup."""
+        """
+        Open the palette, building it the first time it is asked for.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The seventy-six swatches are built here rather than with the form,
+        the way the Dependency tab builds its editor on first sight of it.
+        Most edits are a name or a date and never open the palette, and
+        building it with every task dialog would charge all of them for it.
+        """
         if self._popup is not None and self._popup.winfo_exists():
             self._popup.lift()
             return self._popup
 
+        logger.debug("Building the colour palette, opening on %s", self._value)
         self._popup = ColorPickerPopup(
             self, self._value, on_pick=self._picked
         )
@@ -265,7 +314,7 @@ class ColorPickerPopup(ctk.CTkToplevel):
         super().__init__(master)
         
         self.on_pick = on_pick
-        self._value = ColorPickerDialog._normalise(color)
+        self._value = normalise(color)
         self._buttons = {}
         
         self.title("Choose Color")
@@ -278,43 +327,86 @@ class ColorPickerPopup(ctk.CTkToplevel):
         self._show_selection()
         self._place_near(master)
 
-    @staticmethod
-    def _normalise(color: str) -> str:
-        """Tidy a stored color into a comparable hex string."""
-        text = str(color or '').strip().lower()
-        return text if text.startswith('#') else f'#{text}' if text else DEFAULT_COLOR
-
     def _build(self):
-        """Build the scrollable frame and color grid."""
-        # Main container with scrollbar
+        """
+        Lay the palette out, and give the canvas room to show it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The canvas is sized from the palette rather than left at the size a
+        tk.Canvas defaults to. Left alone it opened at 284x199 around a grid
+        wanting 432x252, so the picker came up showing about half its colours
+        with the rest behind a scrollbar - on a palette of seventy-six
+        swatches that fits on any screen with room to spare.
+
+        The cap is there so that a palette someone extends to hundreds of
+        colours scrolls instead of opening taller than the desktop.
+        """
         main_frame = ctk.CTkFrame(self, fg_color='transparent')
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Canvas for scrolling
-        canvas = tk.Canvas(main_frame, highlightthickness=0, borderwidth=0)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Frame inside canvas to hold the colors
-        self._grid_frame = ctk.CTkFrame(canvas, fg_color='transparent')
-        self._window = canvas.create_window((0, 0), window=self._grid_frame, anchor='nw')
-        
-        # Build the actual color grid
+
+        # A canvas with no scroll increment moves a tenth of itself per
+        # notch, which on a palette this size is most of it
+        self._canvas = tk.Canvas(main_frame, highlightthickness=0,
+                                 borderwidth=0, yscrollincrement=20)
+        self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL,
+                                        command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+
+        self._grid_frame = ctk.CTkFrame(self._canvas, fg_color='transparent')
+        self._window = self._canvas.create_window(
+            (0, 0), window=self._grid_frame, anchor='nw')
+
         self._build_grid()
-        
-        # Update scroll region after widgets are laid out
-        self._grid_frame.update_idletasks()
-        canvas.config(scrollregion=canvas.bbox("all"))
-        
-        # Close button
+        self._fit_to_palette()
+        self._bind_wheel()
+
         close_frame = ctk.CTkFrame(self, fg_color='transparent')
         close_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
         ctk.CTkButton(close_frame, text="Close", width=80,
                       command=self.close).pack(side=tk.RIGHT)
+
+    def _fit_to_palette(self):
+        """Open at the size of the palette, up to what a screen will take."""
+        self._grid_frame.update_idletasks()
+        wanted_width = self._grid_frame.winfo_reqwidth()
+        wanted_height = self._grid_frame.winfo_reqheight()
+
+        width = min(wanted_width, MAX_POPUP_WIDTH)
+        height = min(wanted_height, MAX_POPUP_HEIGHT)
+        self._canvas.configure(width=width, height=height,
+                               scrollregion=(0, 0, wanted_width, wanted_height))
+
+        if wanted_height > height:
+            # Only then is there anything to scroll past
+            self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def _bind_wheel(self):
+        """
+        Let the wheel scroll a palette too tall to show at once.
+
+        Bound to the swatches as well as to the canvas: the pointer spends
+        its time over them, and an event goes to the widget under it, so a
+        wheel bound to the canvas alone did nothing anywhere the user's
+        pointer actually was.
+        """
+        def on_wheel(event):
+            """Scroll by a notch, the way the chart reads one."""
+            if event.delta:
+                steps = -1 if event.delta > 0 else 1
+                if abs(event.delta) >= 120:
+                    steps = int(-event.delta / 120)
+            else:
+                steps = -1 if getattr(event, 'num', 5) == 4 else 1
+            self._canvas.yview_scroll(steps, 'units')
+            return 'break'
+
+        for widget in [self._canvas, self._grid_frame,
+                       *self._buttons.values()]:
+            for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+                widget.bind(sequence, on_wheel, add='+')
 
     def _build_grid(self):
         """Lay the color swatches out in a grid."""
@@ -380,7 +472,7 @@ class ColorPickerPopup(ctk.CTkToplevel):
 
     def pick(self, color: str):
         """Choose a color and close."""
-        self._value = ColorPickerDialog._normalise(color)
+        self._value = normalise(color)
         if self.on_pick:
             self.on_pick(self._value)
         self.close()
@@ -394,10 +486,12 @@ class ColorPickerPopup(ctk.CTkToplevel):
 
 
 class ColorPickerDialog:
-    """Utility class for color normalization."""
-    
-    @staticmethod
-    def _normalise(color: str) -> str:
-        """Tidy a stored color into a comparable hex string."""
-        text = str(color or '').strip().lower()
-        return text if text.startswith('#') else f'#{text}' if text else DEFAULT_COLOR
+    """
+    Kept for the name alone.
+
+    It never was a dialog - it held one static copy of normalise, which two
+    other classes held copies of as well. The function is the module's now;
+    this stays so that anything reaching for the old name still finds it.
+    """
+
+    _normalise = staticmethod(normalise)
