@@ -29,10 +29,11 @@ This is a complete implementation of a project management tool with:
 - **Built-in Help**: A Help button on the task editor and on the Dependency tab opens a full reference - the fields of the form in one, link types, lead/lag and hardness in the other
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
+- **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Ctrl/Cmd+C, X and V. Copying a phase copies the phase row, not the work underneath it; cut rows are greyed until they are pasted, and what arrives lands beside the row you pasted from and is left selected. Paste is offered only where the item belongs - a phase does not go inside a task. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
-- **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type
+- **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
 
@@ -42,6 +43,7 @@ This is a complete implementation of a project management tool with:
 gantt_app/
 ├── __init__.py
 ├── models.py              # Task and Project data models
+├── workdaycalendar.py     # Working days, weekends and holidays
 ├── main.py                # Main application entry point
 ├── run.py                 # Entry point script
 │
@@ -98,12 +100,50 @@ gantt_app/
 ### Core Data Models (`models.py`)
 - **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, earliest_begin, scheduling_options, details
 - **Work Item Types**: `Phase`, `Deliverable`, `Task`, `Subtask`, `Milestone`. `Phase` and `Deliverable` are containers, taking their dates and progress from what is inside them; `Subtask` and `Milestone` hold nothing. The older hyphenated `Sub-Task` is rewritten to `Subtask` when a task is built, so plans saved by earlier versions load unchanged
-- **Project Class**: name, tasks, start_date, end_date
+- **Project Class**: name, tasks, start_date, end_date, calendar
 - **Methods**: add_task, remove_task, get_task_by_id, get_dependencies, get_dependents, move_task, move_task_before, next_task_id
 - **Completion Roll-Up**: `rolled_up_progress()` gives each level its own rule - see *Completion* below - and `roll_up_summaries()` applies it deepest-first, so ticking one sub-task reaches the phase above it in the same pass
 - **Serialization**: to_dict(), from_dict() for JSON compatibility
 - **Critical Path**: get_critical_path() algorithm for project analysis
 - **Factory Methods**: create_task(), create_milestone() for easy object creation
+
+### The Working Day Calendar (`workdaycalendar.py`)
+
+A plan has two different notions of "days", and conflating them is what makes a
+schedule wrong over a weekend:
+
+| | What it measures |
+| --- | --- |
+| **Working days** (`Task.duration_days`) | The effort a task holds. A weekend does not change it |
+| **Calendar days** (`Task.total_elapsed_days`) | How far apart its two ends sit. A weekend stretches it, and this is the span the chart draws |
+
+A duration is stated in the first and drawn in the second. The rules:
+
+1. **The calendar** names the non-working weekdays - Saturday and Sunday by
+   default - plus any holidays, either on fixed dates or recurring every year.
+   It belongs to the project and is saved with it, so a plan imported from a
+   GanttProject file keeps the holidays that file declared.
+2. **A finish is walked, not added.** Starting at the start date, the calendar
+   is stepped through a day at a time and one day of duration is spent only on
+   a working day.
+3. **A weekend is crossed for free.** A task reaching one pauses on the
+   Saturday and resumes on the Monday, finishing further out in calendar time
+   without holding any more work. Five days from a Thursday ends on the
+   following Wednesday.
+4. **A task cannot start on a day nobody works.** One scheduled or moved onto a
+   Saturday starts on the Monday instead.
+
+`Project.enforce_working_calendar()` applies rules 3 and 4 to the whole plan,
+and runs inside `reschedule()` so a task moved by a dependency link lands on
+working days too. It reads the duration before either date moves and writes it
+back afterwards, which is what makes it leave the effort alone: the task ends
+up somewhere else in calendar time holding exactly the work it held. Running it
+twice changes nothing, which is what lets it sit inside the reschedule loop.
+
+Everything that turns a duration into dates goes through it - the task form's
+three scheduling modes, the dependency scheduler, and the GanttProject,
+spreadsheet and Mermaid importers - so the same plan comes out with the same
+dates whichever way it arrived.
 
 ### Completion
 
@@ -206,9 +246,10 @@ under everything else.
 - **Milestone Diamonds**: Special diamond shapes for milestones
 - **Dependency Lines**: Red dotted lines connecting dependent tasks
 - **Critical Path**: Highlighted in orange
-- **Hover Tooltips**: Detailed information on hover (name, dates, duration, progress, dependencies)
+- **Hover Tooltips**: Detailed information on hover (name, dates, working duration, elapsed calendar days, progress, dependencies)
 - **Zoom**: Zoom in, zoom out, Fit and Reset buttons beneath the chart. Fit scales the chart to exactly the width available so nothing scrolls; Reset returns to 100%, where a long plan is drawn wider than the pane to keep it readable
-- **Summary Bars**: A task with sub-tasks is drawn as a spanning bracket rather than a solid bar
+- **Phase Bars**: A `Phase` is drawn as a solid bar ending in an arrow head pointing at its finish, whether or not anything hangs off it yet - it is the top of the plan, and the reader wants to see where it runs to
+- **Summary Bars**: Any other task with sub-tasks - a `Deliverable`, or a plain `Task` with work under it - is drawn as a spanning bracket rather than a solid bar
 - **Labels**: Task names displayed next to milestones
 - **Date Formatting**: Proper date display with tick formatting
 - **Empty State**: Helpful message when no tasks exist
@@ -251,7 +292,7 @@ came out blank on Linux. Drawing depends on no font being installed.
 ### GAN Importer (`utils/gan_importer.py`)
 - **XML Parsing**: Uses xml.etree.ElementTree for GAN files
 - **Namespace Handling**: Reads both GanttProject 3.x files (no namespace) and older namespaced files
-- **Working-Day Calendar**: Replays the file's `<calendars>` block (weekend definition plus recurring and year-specific holidays) to turn each task's working-day duration into an end date, reproducing the dates GanttProject displays
+- **Working-Day Calendar**: Replays the file's `<calendars>` block (weekend definition plus recurring and year-specific holidays) to turn each task's working-day duration into an end date, reproducing the dates GanttProject displays. The same calendar becomes the imported project's own, so the application goes on scheduling it the way GanttProject did
 - **Date Parsing**: Handles plain `YYYY-MM-DD` dates and legacy ISO 8601 timestamps
 - **Nested Sub-Tasks**: Tasks nested inside other tasks are imported to any depth as Sub-Tasks with the correct parent
 - **Dependency Direction**: `<depend>` names a *successor*, so edges are reversed onto the dependent task; the legacy `<depends-on><dependency idref=""/>` form is also supported
@@ -272,7 +313,7 @@ came out blank on Linux. Drawing depends on no font being installed.
 - **Header-Driven**: Locates the task table by scoring rows against known column names, so a title block above the table is fine
 - **Column Aliases**: Recognises common English and Hungarian headers (`Task`/`Feladat`, `Start`/`Kezdés`, `Pred.`/`Előzmény`, `Duration (wd)`/`Munkanap`, …)
 - **Date Handling**: Reads real datetimes, Excel day serial numbers, and common date strings; formula columns are read from their cached values
-- **Duration Fallback**: Derives a missing end date from the duration, skipping weekends when the column is labelled in working days
+- **Duration Fallback**: Derives a missing end date from the duration - or a missing start date, for a sheet that gives the end instead - skipping weekends when the column is labelled in working days
 - **Phase Grouping**: Each distinct Phase value becomes a parent task (disable with `XLSXImporter(group_by_phase=False)`); an explicit `Parent Task` column takes precedence
 - **Dependencies**: Splits multi-predecessor cells (`6;7`), resolves references by ID or by task name, ignores `–`/`n/a` placeholders, and drops references to tasks that are not present
 - **Progress**: Taken from a Progress column, or mapped from Status text (`Done` → 100, `Ongoing` → 50, `Not started` → 0)
@@ -549,7 +590,7 @@ The application starts with a complete sample project with tasks and subtasks:
 - `is_milestone`: Boolean flag for milestones
 - `task_type`: One of 'Phase', 'Deliverable', 'Task', 'Subtask', 'Milestone'
 - `parent_task_id`: ID of the parent row, None at the top level
-- `duration`: Length in days when one has been set; None leaves it derived
+- `duration`: Length in working days when one has been set; None leaves it derived
 - `priority`: One of the levels in `priority.py`; 'Normal' by default
 - `shape`: How the bar is drawn - 'Default', 'Rectangle' or 'Rounded'
 - `show_in_timeline`: Whether the task appears in the chart at all
@@ -557,8 +598,10 @@ The application starts with a complete sample project with tasks and subtasks:
 - `scheduling_options`: Which of the three the form derives - 'Start date is
   calculated', 'End date is calculated' or 'Duration is calculated'
 - `details`: Free text, shown in the notes panel beside the form
-- `duration_days`: Calculated property - days from start to end inclusive, 0
-  for a milestone or a container, None where there is no end date
+- `duration_days`: Calculated property - working days from start to end
+  inclusive, 0 for a milestone or a container, None where there is no end date
+- `total_elapsed_days`: Calculated property - calendar days from start to end
+  inclusive, weekends and holidays included. This is the span the chart draws
 
 ### Project
 - `name`: Project name
@@ -727,10 +770,10 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 
 ### 4. Critical Path Calculation
 - Longest chain of dependent tasks, ending at the task that finishes last
-- Measured by **accumulated duration**, not by comparing calendar dates: plans
-  scheduled in working days leave weekend and holiday gaps between a task and
-  its successor, and a date-based comparison reads those gaps as slack, which
-  drops most of the chain
+- Measured by **accumulated working duration**, not by comparing calendar
+  dates: plans scheduled in working days leave weekend and holiday gaps between
+  a task and its successor, and a date-based comparison reads those gaps as
+  slack, which drops most of the chain
 - Summary tasks are excluded from the chain, but a dependency **on** a summary
   task resolves to the work inside it, so grouping does not sever the network
 - Ties on the finish date are broken by chain length, so the path always
@@ -801,7 +844,7 @@ Unit tests cover:
 - ✅ **Models**: Task and Project classes, serialization, critical path calculation
 - ✅ **File I/O**: JSON save/load, datetime handling, error cases
 - ✅ **GAN Import**: Real GanttProject 3.x fixtures - working-day calendar, nested sub-tasks, successor-to-predecessor edge reversal, milestones, colors, namespaced files
-- ✅ **Mermaid Import/Export**: Inclusive durations, dependency chains, section grouping, frontmatter, round-trip
+- ✅ **Mermaid Import/Export**: Inclusive working-day durations, dependency chains, section grouping, frontmatter, round-trip
 - ✅ **XLSX Import**: Header detection, column aliases, Excel serial dates, working-day durations, phase grouping, dependency resolution, lossless export round-trip
 - ✅ **Task Hierarchy**: Three-level sub-task creation, parent candidate ordering, cycle safety
 - ✅ **Logging**: Buffer capacity and filtering, file output, failure paths, importer errors reaching the log
@@ -850,41 +893,30 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
 
-### Planned: shared working-day calendar model
+### The working-day calendar, and what is left of it
 
-Today the notion of a working day exists in two places and belongs to neither:
-`GanttProjectCalendar` in `gan_importer.py`, which replays the weekend and
-holiday rules from a `.gan` file, and a weekends-only helper in
-`xlsx_importer.py` used when a spreadsheet gives a duration but no end date.
-The application core has no calendar at all, so anything created or edited in
-the app is scheduled in plain calendar days.
+The shared calendar this section used to plan for now exists as
+`workdaycalendar.py` - see *The Working Day Calendar* above. A `WorkingCalendar`
+belongs to the `Project`, is saved alongside it, and is what every duration in
+the application is counted against, so a plan created in the editor is
+scheduled the same way one imported from GanttProject is. What that leaves:
 
-The plan is to promote this into a first-class model - roughly
-`utils/calendar.py`, with a `WorkCalendar` owned by the `Project` and
-serialised alongside it:
-
-- **One definition of a working day**: a weekend rule plus a holiday list,
-  populated from whichever file was imported and editable afterwards.
-- **Calendar-aware scheduling**: adding or dragging a task lands on working
-  days, so a plan imported from GanttProject keeps its shape when edited
-  rather than drifting onto weekends.
-- **Round-trip fidelity**: GanttProject durations are working days. Without a
-  calendar in the model, exporting back to `.gan` cannot reconstruct the
-  durations the file started with.
-- **Full critical path analysis**: this is the blocker for proper CPM float.
-  A backward pass computing late start/finish needs to measure slack in
-  *working* days; measured in calendar days, the weekend between a task
-  finishing on Friday and its successor starting on Monday reads as two days
-  of float, and almost every task falls off the critical path. That is why
-  `get_critical_path()` currently uses accumulated duration along the longest
-  chain instead, and why it returns a single chain rather than every
-  zero-float task.
+- **Editing the calendar from the application**: the weekend rule and the
+  holiday list can be carried in from an imported file, but there is no dialog
+  for changing them afterwards.
 - **Holiday presets**: GanttProject ships regional calendars (the sample file
   carries a Hungarian one); the same list could be offered when starting a
   project from scratch.
+- **GAN export**: durations can now be reconstructed in working days, so the
+  export the importer has no counterpart for has what it needs.
+- **Full critical path analysis**: `get_critical_path()` measures accumulated
+  *working* days along the longest chain, which is what the weekend gaps
+  needed. A proper backward pass computing late start/finish - and so every
+  zero-float task rather than a single chain - is still to be written, but the
+  calendar it needs to measure float in is there now.
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.21.0
+**Version**: 1.24.0
 **Last Updated**: 2026-08-17

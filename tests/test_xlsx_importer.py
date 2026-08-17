@@ -521,14 +521,28 @@ class TestXLSXValueParsing(unittest.TestCase):
         self.assertIsNone(self.importer._parse_cell_date("not a date"))
         self.assertIsNone(self.importer._parse_cell_date(None))
 
-    def test_add_working_days_skips_weekends(self):
-        """Working-day arithmetic steps over Saturdays and Sundays."""
+    def test_end_date_for_a_working_day_duration_skips_weekends(self):
+        """A duration counted in working days steps over the weekend."""
         monday = datetime(2024, 1, 1)
-        self.assertEqual(self.importer._add_working_days(monday, 4),
-                         datetime(2024, 1, 5))
-        self.assertEqual(self.importer._add_working_days(monday, 5),
-                         datetime(2024, 1, 8))
-        self.assertEqual(self.importer._add_working_days(monday, 0), monday)
+        self.assertEqual(self.importer._end_date_for(monday, 5, True),
+                         datetime(2024, 1, 5))     # Mon to Fri
+        self.assertEqual(self.importer._end_date_for(monday, 6, True),
+                         datetime(2024, 1, 8))     # spills to the Monday
+        self.assertEqual(self.importer._end_date_for(monday, 1, True), monday)
+
+    def test_end_date_for_a_calendar_duration_does_not(self):
+        """A sheet counting calendar days is taken at its word."""
+        monday = datetime(2024, 1, 1)
+        self.assertEqual(self.importer._end_date_for(monday, 7, False),
+                         datetime(2024, 1, 7))     # straight through Sunday
+
+    def test_start_date_for_works_backwards_from_the_end(self):
+        """A sheet giving an end and a duration gets a working-day start."""
+        friday = datetime(2024, 1, 5)
+        self.assertEqual(self.importer._start_date_for(friday, 5, True),
+                         datetime(2024, 1, 1))     # back to the Monday
+        self.assertEqual(self.importer._start_date_for(friday, 5, False),
+                         datetime(2024, 1, 1))
 
     def test_progress_from_percentage_column(self):
         """An explicit progress column takes precedence over status."""

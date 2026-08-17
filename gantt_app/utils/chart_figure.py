@@ -20,7 +20,7 @@ order as the task list.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import plotly.graph_objects as go
 
@@ -98,8 +98,18 @@ def calculate_date_range(tasks: List[Task]) -> Tuple[datetime, datetime]:
     return min_date - timedelta(days=padding), max_date + timedelta(days=padding)
 
 
-def _duration_days(task: Task) -> int:
-    """Get a task's length in days, never less than one."""
+def _elapsed_days(task: Task) -> int:
+    """
+    How many calendar days a task spans, never less than one.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    This is what a bar is drawn across, so it has to be elapsed time: a bar is
+    placed on a date axis and a weekend inside a task is calendar the bar has
+    to cover. Task.duration_days is the working effort inside it, which is a
+    smaller number for anything crossing a weekend - see
+    gantt_app.workdaycalendar - and using it here drew every such bar short.
+    """
     end = task.end_date or task.start_date
     if end < task.start_date:
         return 1
@@ -107,37 +117,104 @@ def _duration_days(task: Task) -> int:
 
 
 def _hover_text(task: Task, project: Project) -> str:
-    """Build the tooltip shown when hovering a task bar."""
+    """
+    Build the tooltip shown when hovering a task bar.
+
+    Both measures are given: the working days the task holds, and the calendar
+    days it is spread over. A reader looking at a bar that runs over a weekend
+    is owed the explanation of why it is longer than its duration.
+    """
     end = task.end_date or task.start_date
     names = []
     for dep_id in task.dependency_ids:
         dep = project.get_task_by_id(dep_id)
         names.append(dep.name if dep else dep_id)
 
+    duration = task.duration_days
+    duration_text = "-" if duration is None else f"{duration} working day(s)"
+    elapsed = _elapsed_days(task)
+
     return (
         f"<b>{task.name}</b><br>"
         f"ID: {task.id}<br>"
         f"Start: {task.start_date.strftime('%Y-%m-%d')}<br>"
         f"End: {end.strftime('%Y-%m-%d')}<br>"
-        f"Duration: {_duration_days(task)} days<br>"
+        f"Duration: {duration_text}<br>"
+        f"Elapsed: {elapsed} calendar day(s)<br>"
         f"Progress: {task.progress}%<br>"
         f"Type: {task.task_type}<br>"
         f"Dependencies: {', '.join(names) if names else 'None'}"
     )
 
 
+#: Half-height of a task bar, in row units, and how much of a Phase's length
+#: its arrow head takes up.
+BAR_HALF_HEIGHT = 0.4
+PHASE_HEAD_FRACTION = 0.12
+PHASE_HEAD_MAX_DAYS = 4
+
+
+def _phase_outline(task: Task) -> Tuple[List[Any], List[float]]:
+    """
+    The pointed shape a Phase row is drawn in, as x and y coordinates.
+
+    RETURNS:
+    --------
+    Tuple[List[Any], List[float]]
+        Dates and row offsets tracing a full-height bar whose right-hand end
+        is drawn to a point, closed back to where it started.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The head is a fraction of the phase's own length rather than a fixed number
+    of pixels, because a Plotly trace is placed in dates and rows and knows
+    nothing about how wide it will be drawn. It is capped so a year-long phase
+    does not get a head a month and a half deep, and it can never eat the whole
+    span, which would fold the shape through itself.
+    """
+    start = task.start_date
+    # A task is inclusive of its end date, so the shape covers that whole day
+    end = (task.end_date or task.start_date) + timedelta(days=1)
+
+    span_days = max((end - start).days, 1)
+    head_days = min(max(span_days * PHASE_HEAD_FRACTION, 0.5),
+                    PHASE_HEAD_MAX_DAYS, span_days)
+    shoulder = end - timedelta(days=head_days)
+
+    row = 0.0
+    top, bottom = row - BAR_HALF_HEIGHT, row + BAR_HALF_HEIGHT
+
+    return ([start, shoulder, end, shoulder, start, start],
+            [top, top, row, bottom, bottom, top])
+
+
 def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
-               positions: Dict[str, int]) -> None:
+               positions: Dict[str, int],
+               critical_colour: str, critical_ids: Set[str]) -> None:
     """
     Draw every non-milestone task as a horizontal bar.
 
     DEVELOPMENT NOTES:
     ------------------
-    A task with sub-tasks brackets the work beneath it rather than being work
-    of its own, so it is drawn thinner and fully opaque. The static renderer
-    gives it a proper tapered bracket; Plotly has no shape for that inside a
-    bar trace, so the distinction is carried by weight instead. The point is
-    only that a summary row cannot be mistaken for real work.
+    Three shapes, matching chart_render so the window, the static exports and
+    this HTML one show the same plan:
+
+      * A Phase is a full-height bar drawn to a point at its finish. Plotly has
+        no arrow-ended bar, so it is a filled scatter trace instead - which
+        still carries the same hover text, so nothing is lost by it.
+      * Any other task with sub-tasks brackets the work beneath it rather than
+        being work of its own, so it is drawn thinner and fully opaque. There is
+        no tapered bracket to be had inside a bar trace, so that distinction is
+        carried by weight; the point is only that a summary row cannot be
+        mistaken for real work.
+      * Everything else is an ordinary bar.
+
+    A Phase on the critical path is painted in the critical colour here rather
+    than having a bar overlaid on it by _add_critical_path, which would cover
+    the point with a rectangle and lose the shape. Only a Phase with nothing
+    inside it can be on the path at all - get_critical_path looks through
+    anything with children - but that is exactly the Phase somebody has just
+    created and is looking at.
     """
     summary_ids = project.get_summary_task_ids()
 
@@ -145,10 +222,31 @@ def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
         if task.effective_milestone:
             continue
 
+        hover = _hover_text(task, project) + '<extra></extra>'
+
+        # A Phase keeps its shape whether or not anything hangs off it yet
+        if task.task_type == 'Phase':
+            xs, offsets = _phase_outline(task)
+            row = positions[task.id]
+            figure.add_trace(go.Scatter(
+                x=xs,
+                y=[row + offset for offset in offsets],
+                mode='lines',
+                fill='toself',
+                fillcolor=(critical_colour if task.id in critical_ids
+                           else task.color),
+                line=dict(color='black', width=1),
+                name=task.name,
+                hoveron='fills',
+                hovertemplate=hover,
+                showlegend=False,
+            ))
+            continue
+
         is_summary = task.id in summary_ids
 
         figure.add_trace(go.Bar(
-            x=[_duration_days(task) * 86400000],  # bar length in milliseconds
+            x=[_elapsed_days(task) * 86400000],  # bar length in milliseconds
             y=[positions[task.id]],
             base=[task.start_date],
             orientation='h',
@@ -157,7 +255,7 @@ def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
             marker=dict(color=task.color,
                         line=dict(color='black',
                                   width=2 if is_summary else 1)),
-            hovertemplate=_hover_text(task, project) + '<extra></extra>',
+            hovertemplate=hover,
             showlegend=False,
             opacity=1.0 if is_summary else 0.85
         ))
@@ -223,15 +321,22 @@ def _add_dependencies(figure: go.Figure, tasks: List[Task], project: Project,
 
 def _add_critical_path(figure: go.Figure, project: Project,
                        positions: Dict[str, int], colour: str) -> None:
-    """Overlay the critical path in its own colour."""
+    """
+    Overlay the critical path in its own colour.
+
+    Phases are left out: an overlaid bar is a rectangle, which would cover the
+    point a Phase is drawn with. _add_tasks paints those in the critical colour
+    directly instead.
+    """
     critical = [t for t in project.get_critical_path() if t.id in positions]
     if not critical:
         return
 
-    bars = [t for t in critical if not t.is_milestone]
+    bars = [t for t in critical
+            if not t.is_milestone and t.task_type != 'Phase']
     if bars:
         figure.add_trace(go.Bar(
-            x=[_duration_days(t) * 86400000 for t in bars],
+            x=[_elapsed_days(t) * 86400000 for t in bars],
             y=[positions[t.id] for t in bars],
             base=[t.start_date for t in bars],
             orientation='h',
@@ -310,8 +415,11 @@ def build_gantt_figure(project: Project,
     tasks = visible_tasks
     positions = {task.id: index for index, task in enumerate(tasks)}
 
+    critical_ids = {t.id for t in project.get_critical_path()}
+
     figure = go.Figure()
-    _add_tasks(figure, tasks, project, positions)
+    _add_tasks(figure, tasks, project, positions,
+               resolved['critical_path_color'], critical_ids)
     _add_milestones(figure, tasks, positions)
     _add_dependencies(figure, tasks, project, positions,
                       resolved['dependency_color'])

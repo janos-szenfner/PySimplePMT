@@ -102,15 +102,62 @@ class TestTask(unittest.TestCase):
         self.assertIsNone(milestone.end_date)
     
     def test_duration_days_regular_task(self):
-        """Test duration calculation for regular tasks."""
+        """
+        Duration is the working days a task covers, both ends included.
+
+        The fixture starts on Monday 1 January 2024 and runs to the Wednesday
+        of the following week: ten calendar days holding eight days of work,
+        the Saturday and Sunday between them being worked by nobody. See
+        gantt_app.workdaycalendar.
+        """
         task = Task(
             id="test",
             name="Test",
             start_date=self.start_date,
             end_date=self.start_date + timedelta(days=9)
         )
-        self.assertEqual(task.duration_days, 10)  # Inclusive counting
-    
+        self.assertEqual(task.duration_days, 8)
+        self.assertEqual(task.total_elapsed_days, 10)
+
+    def test_duration_days_within_one_week(self):
+        """A task inside a single working week counts every day of it."""
+        task = Task(
+            id="test",
+            name="Test",
+            start_date=self.start_date,                       # Monday
+            end_date=self.start_date + timedelta(days=4)      # Friday
+        )
+        self.assertEqual(task.duration_days, 5)
+        self.assertEqual(task.total_elapsed_days, 5)
+
+    def test_duration_days_ignores_a_weekend_tail(self):
+        """
+        A span running into the weekend holds no more work for it.
+
+        Monday to Sunday is seven calendar days and five days of work, which
+        is the whole point of separating the two.
+        """
+        task = Task(
+            id="test",
+            name="Test",
+            start_date=self.start_date,                       # Monday
+            end_date=self.start_date + timedelta(days=6)      # Sunday
+        )
+        self.assertEqual(task.duration_days, 5)
+        self.assertEqual(task.total_elapsed_days, 7)
+
+    def test_a_manual_duration_is_taken_as_given(self):
+        """A duration written onto the task wins over its dates."""
+        task = Task(
+            id="test",
+            name="Test",
+            start_date=self.start_date,
+            end_date=self.start_date + timedelta(days=4),
+            duration=3
+        )
+        self.assertEqual(task.duration_days, 3)
+
+
     def test_duration_days_milestone(self):
         """Test duration calculation for milestones."""
         milestone = Task.create_milestone(

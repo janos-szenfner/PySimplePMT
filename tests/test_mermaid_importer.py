@@ -35,15 +35,19 @@ class TestMermaidImporter(unittest.TestCase):
         self.assertEqual(project.name, "Test Project")
         self.assertEqual(len(project.tasks), 2)
         
-        # Durations are inclusive spans: a 5d task from the 1st ends on the 5th
+        # Durations are inclusive spans of working days: a 5d task from Monday
+        # the 1st ends on the Friday
         self.assertEqual(project.tasks[0].name, "Task 1")
         self.assertEqual(project.tasks[0].start_date, datetime(2024, 1, 1))
         self.assertEqual(project.tasks[0].end_date, datetime(2024, 1, 5))
         self.assertEqual(project.tasks[0].duration_days, 5)
 
+        # The 6th is a Saturday. Work begins on the Monday, so three days of it
+        # run to the Wednesday - the task keeps its length and its bar reaches
+        # further out. Project.enforce_working_calendar moves the start itself.
         self.assertEqual(project.tasks[1].name, "Task 2")
         self.assertEqual(project.tasks[1].start_date, datetime(2024, 1, 6))
-        self.assertEqual(project.tasks[1].end_date, datetime(2024, 1, 8))
+        self.assertEqual(project.tasks[1].end_date, datetime(2024, 1, 10))
         self.assertEqual(project.tasks[1].duration_days, 3)
     
     def test_parse_with_milestone(self):
@@ -83,15 +87,16 @@ class TestMermaidImporter(unittest.TestCase):
         self.assertEqual(task2.dependency_ids, ["a1"])
         self.assertEqual(task3.dependency_ids, ["a2"])
         
-        # Each task starts the day after its predecessor finishes
-        self.assertEqual(task1.start_date, datetime(2024, 1, 1))
-        self.assertEqual(task1.end_date, datetime(2024, 1, 5))
+        # Each task starts the next working day after its predecessor finishes
+        self.assertEqual(task1.start_date, datetime(2024, 1, 1))   # Mon
+        self.assertEqual(task1.end_date, datetime(2024, 1, 5))     # Fri
 
-        self.assertEqual(task2.start_date, datetime(2024, 1, 6))
-        self.assertEqual(task2.end_date, datetime(2024, 1, 8))
+        # Not the Saturday: the chain resumes on the Monday
+        self.assertEqual(task2.start_date, datetime(2024, 1, 8))
+        self.assertEqual(task2.end_date, datetime(2024, 1, 10))
 
-        self.assertEqual(task3.start_date, datetime(2024, 1, 9))
-        self.assertEqual(task3.end_date, datetime(2024, 1, 10))
+        self.assertEqual(task3.start_date, datetime(2024, 1, 11))
+        self.assertEqual(task3.end_date, datetime(2024, 1, 12))
     
     def test_parse_with_milestone_dependency(self):
         """Test parsing Mermaid with milestone dependencies."""
@@ -120,12 +125,13 @@ class TestMermaidImporter(unittest.TestCase):
         self.assertEqual(task1.start_date, datetime(2024, 1, 1))
         self.assertEqual(task1.end_date, datetime(2024, 1, 5))
 
-        # Milestone falls the day after its dependency finishes
-        self.assertEqual(milestone.start_date, datetime(2024, 1, 6))
+        # Milestone falls the next working day after its dependency finishes -
+        # the Monday, the 6th being a Saturday
+        self.assertEqual(milestone.start_date, datetime(2024, 1, 8))
 
         # A milestone has zero duration, so what follows starts on the same day
-        self.assertEqual(impl.start_date, datetime(2024, 1, 6))
-        self.assertEqual(impl.end_date, datetime(2024, 1, 15))
+        self.assertEqual(impl.start_date, datetime(2024, 1, 8))
+        self.assertEqual(impl.end_date, datetime(2024, 1, 19))
         self.assertEqual(impl.duration_days, 10)
     
     def test_import_nonexistent_file(self):
@@ -144,24 +150,46 @@ class TestMermaidImporter(unittest.TestCase):
         self.assertIsNone(result)
     
     def test_parse_duration_formats(self):
-        """Test parsing different duration formats."""
+        """
+        Test parsing different duration formats.
+
+        Durations are inclusive spans of working days, so the returned date is
+        the last day worked. 1 January 2024 is a Monday.
+        """
         start_date = datetime(2024, 1, 1)
 
-        # Durations are inclusive: the returned date is the last day of the span
+        # A working week, Monday to Friday
         result = self.importer._parse_duration("5d", start_date)
         self.assertEqual(result, datetime(2024, 1, 5))
 
-        # Test weeks (14 days)
+        # Two weeks: ten working days, ending on the second Friday
         result = self.importer._parse_duration("2w", start_date)
-        self.assertEqual(result, datetime(2024, 1, 14))
+        self.assertEqual(result, datetime(2024, 1, 12))
 
-        # Test months (approximate, 30 days)
+        # A month: twenty working days, ending on the fourth Friday
         result = self.importer._parse_duration("1m", start_date)
-        self.assertEqual(result, datetime(2024, 1, 30))
+        self.assertEqual(result, datetime(2024, 1, 26))
 
         # A zero duration collapses onto the start date
         result = self.importer._parse_duration("0d", start_date)
         self.assertEqual(result, start_date)
+
+    def test_a_duration_pauses_over_the_weekend(self):
+        """
+        A duration crossing a weekend reaches further without growing.
+
+        Five days from a Thursday runs Thursday, Friday, then Monday to
+        Wednesday - the same five days of work, two calendar days later.
+        """
+        thursday = datetime(2024, 1, 4)
+        self.assertEqual(self.importer._parse_duration("5d", thursday),
+                         datetime(2024, 1, 10))
+
+    def test_a_weekend_start_begins_on_the_monday(self):
+        """A chart that starts a task on a Saturday means the Monday."""
+        saturday = datetime(2024, 1, 6)
+        self.assertEqual(self.importer._parse_duration("1d", saturday),
+                         datetime(2024, 1, 8))
 
 
 class TestMermaidSections(unittest.TestCase):

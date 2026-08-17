@@ -18,7 +18,7 @@ the form would be reading attributes the subclass had not set yet.
 """
 
 import tkinter as tk
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Callable
 import copy
 
@@ -246,14 +246,21 @@ class CreateTaskDialog(TaskFormDialog):
         apart.
 
         A sub-task starts with its parent and runs a day; anything else
-        starts today and runs a week.
+        starts today and runs seven days.
+
+        The lengths are working days and go through the project's calendar, so
+        a form opened on a Friday offers a task ending the following Thursday
+        rather than one two days of which fall over the weekend. A start on a
+        weekend is moved to the Monday for the same reason.
         """
+        calendar = self.project.calendar
+
         if self.parent_task and not self.is_milestone:
-            start = self.parent_task.start_date
-            end = start + timedelta(days=self.SUBTASK_LENGTH)
+            start = calendar.get_next_working_day(self.parent_task.start_date)
+            end = calendar.add_working_days(start, self.SUBTASK_LENGTH)
         else:
-            start = datetime.now()
-            end = start + timedelta(days=self.DEFAULT_LENGTH)
+            start = calendar.get_next_working_day(datetime.now())
+            end = calendar.add_working_days(start, self.DEFAULT_LENGTH)
 
         return Task(
             id='__new__',

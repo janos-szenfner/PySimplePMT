@@ -2,6 +2,11 @@
 Utilities for the Gantt Project Management Tool.
 """
 
+from gantt_app.workdaycalendar import (
+    WorkingCalendar,
+    CalendarTask,
+    default_calendar,
+)
 from .file_io import JSONFileIO, save_project, load_project
 from .gan_importer import GANImporter, import_gan_file
 from .mpp_importer import MPPImporter, import_mpp_file, MPPImportManager
@@ -31,6 +36,7 @@ from .undoredo import (
 )
 
 __all__ = [
+    'WorkingCalendar', 'CalendarTask', 'default_calendar',
     'JSONFileIO', 'save_project', 'load_project',
     'GANImporter', 'import_gan_file',
     'MPPImporter', 'import_mpp_file', 'MPPImportManager',

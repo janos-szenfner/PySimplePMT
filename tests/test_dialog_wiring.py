@@ -120,13 +120,19 @@ class TestRequiredStartDate(unittest.TestCase):
         self.assertIsNone(self._required([], datetime(2024, 2, 1)))
 
     def test_end_start_hard(self):
-        """End - Start pins to the day after the predecessor ends."""
+        """
+        End - Start pins to the next working day after the predecessor ends.
+
+        The predecessor finishes on Friday 5 January, and the date the dialog
+        offers is the Monday: the same date the scheduler would settle on, so
+        saving the form does not immediately move the task again.
+        """
         from gantt_app.models import Dependency
 
         required = self._required([Dependency(self.first.id, 'FS', 'Hard')],
                                   datetime(2024, 2, 1))
 
-        self.assertEqual(required, datetime(2024, 1, 6))
+        self.assertEqual(required, datetime(2024, 1, 8))
 
     def test_start_start_hard(self):
         """Start - Start pins to the predecessor's start."""

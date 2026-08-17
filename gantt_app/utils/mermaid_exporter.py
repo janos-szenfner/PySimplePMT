@@ -176,24 +176,27 @@ def _format_date(date: datetime) -> str:
 
 def _get_task_duration_days(task: Task) -> Optional[int]:
     """
-    Get task duration in days.
-    
+    Get task duration in working days.
+
     PARAMETERS:
     -----------
     task : Task
         The task to get duration for
-        
+
     RETURNS:
     --------
     Optional[int]
-        Duration in days, or None if not calculable
-        
+        Duration in working days, or None if not calculable
+
     DEVELOPMENT NOTES:
     ------------------
     For milestones, we return 0 since they represent a single point in time.
-    For regular tasks, we calculate the number of days between start and end.
-    The +1 ensures that a task from Jan 1 to Jan 2 is 2 days, not 1.
-    
+    For regular tasks, this is the working effort they hold - the same number
+    Task.duration_days answers and the same number the importer reads a "5d"
+    back as, so a plan exported and reimported keeps its lengths. Counting the
+    calendar days instead wrote a task crossing a weekend out two days longer
+    than it was.
+
     If the task has no end_date, we return None, and the caller should
     handle this case (typically by using a default duration of 1 day).
     """
@@ -201,7 +204,7 @@ def _get_task_duration_days(task: Task) -> Optional[int]:
         return 0
     if task.end_date is None or task.start_date is None:
         return None
-    return (task.end_date - task.start_date).days + 1
+    return task.duration_days
 
 
 def _sort_tasks_for_dependencies(project: Project) -> List[Task]:

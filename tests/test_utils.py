@@ -115,12 +115,19 @@ class TestProjectUtilities(unittest.TestCase):
         self.assertEqual(len(task1_dependents), 2)  # task2 and task4
     
     def test_task_duration_calculation(self):
-        """Test duration calculation for tasks."""
-        # Test various durations
+        """
+        Test duration calculation for tasks.
+
+        Durations are working days, so the spans below are chosen inside a
+        working week where the two measures agree; the ten-day case crosses a
+        weekend and holds eight days of work for it. 1 January 2024 is a
+        Monday.
+        """
         test_cases = [
-            (datetime(2024, 1, 1), datetime(2024, 1, 1), 1),  # Same day
-            (datetime(2024, 1, 1), datetime(2024, 1, 2), 2),  # 2 days
-            (datetime(2024, 1, 1), datetime(2024, 1, 10), 10),  # 10 days
+            (datetime(2024, 1, 1), datetime(2024, 1, 1), 1),  # Monday alone
+            (datetime(2024, 1, 1), datetime(2024, 1, 2), 2),  # Mon to Tue
+            (datetime(2024, 1, 1), datetime(2024, 1, 5), 5),  # Mon to Fri
+            (datetime(2024, 1, 1), datetime(2024, 1, 10), 8),  # over a weekend
         ]
         
         for start, end, expected_duration in test_cases:

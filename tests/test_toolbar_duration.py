@@ -3,14 +3,19 @@ Tests that the duration entered when creating a task is the duration created.
 
 DEVELOPMENT NOTES:
 ------------------
-The toolbar asks for a duration in days and turns it into an end date. That
-arithmetic has to agree with Task.duration_days, which is inclusive, and with
-the importers, which all treat a stated duration as inclusive too. It
-previously did not, so a task created in the UI was a day longer than one
-imported from a file with the same stated duration.
+The dialogs ask for a duration in days and turn it into an end date. That
+arithmetic has to agree with Task.duration_days, which counts inclusive
+working days, and with the importers, which all treat a stated duration the
+same way. It previously did not, so a task created in the UI was a day longer
+than one imported from a file with the same stated duration.
 
-The end-date expressions are duplicated here rather than driven through the
-toolbar, which would need a display to construct.
+A duration is working effort, so both sides of that agreement now go through
+the working calendar - see gantt_app.workdaycalendar. Adding days with plain
+timedelta arithmetic is what these tests exist to catch: it spends part of a
+task over the weekend, and the task comes out shorter than it was asked for.
+
+The end-date expression is duplicated here rather than driven through the
+form, which would need a display to construct.
 """
 
 import unittest
@@ -18,11 +23,12 @@ from datetime import datetime, timedelta
 
 from gantt_app.models import Task
 from gantt_app.utils.mermaid_importer import MermaidImporter
+from gantt_app.workdaycalendar import WorkingCalendar
 
 
 def end_date_for(start: datetime, duration_days: int) -> datetime:
-    """The expression used by Toolbar.add_task and Toolbar.add_subtask."""
-    return start + timedelta(days=duration_days - 1)
+    """The expression the create dialog and the importers both use."""
+    return WorkingCalendar().add_working_days(start, duration_days)
 
 
 class TestCreatedTaskDuration(unittest.TestCase):

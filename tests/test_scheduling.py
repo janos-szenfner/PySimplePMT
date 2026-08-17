@@ -7,6 +7,13 @@ Everything here goes against Project directly, so none of it needs a display.
 The four types split into two groups - FS and SS place a task's start, FF and
 SF its finish - which is why constrained_dates returns a pair rather than the
 single start date the model used to work with.
+
+Scheduling runs on the project's working calendar, so the dates here are read
+against a Monday-to-Friday week - see gantt_app.workdaycalendar. Two things
+follow, and both are asserted below rather than assumed: a task is never left
+starting or finishing on a weekend, and a task that moves keeps its working
+duration rather than its calendar span. The fixture runs from Thursday 1
+January 2026, which puts a weekend inside the first chain deliberately.
 """
 
 import unittest
@@ -68,13 +75,22 @@ class TestDependencyTypes(DependencyTestCase):
         self.assertEqual(self.second.end_date, datetime(2026, 1, 1))
 
     def test_duration_is_preserved(self):
-        """Moving a task keeps its length."""
-        original = self.second.end_date - self.second.start_date
+        """
+        Moving a task keeps its working length.
+
+        Its calendar span may well change, and that is the point: the
+        successor starts on Thursday the 1st and ends on Saturday the 3rd, two
+        days of work inside a three day span. Moved to the Tuesday it holds the
+        same two days of work in two days of calendar. Adding the old span back
+        on instead would have spent one of them on the Saturday.
+        """
+        original = self.project.working_duration(self.second)
 
         self.link('FS')
 
-        self.assertEqual(self.second.end_date - self.second.start_date,
-                         original)
+        self.assertEqual(self.project.working_duration(self.second), original)
+        self.assertEqual(self.second.start_date, datetime(2026, 1, 6))
+        self.assertEqual(self.second.end_date, datetime(2026, 1, 7))
 
     def test_every_type_is_supported(self):
         """All four codes round-trip through a Dependency."""
@@ -108,10 +124,15 @@ class TestLagAndLead(DependencyTestCase):
         self.assertEqual(self.second.start_date, datetime(2026, 1, 9))
 
     def test_lead_pulls_the_successor_in(self):
-        """A negative lag is lead time, compressing the schedule."""
+        """
+        A negative lag is lead time, compressing the schedule.
+
+        Two days of lead off the 6th reaches Sunday the 4th, so the successor
+        starts on the Monday. Lead cannot buy back a weekend nobody works.
+        """
         self.link('FS', lag=-2)
 
-        self.assertEqual(self.second.start_date, datetime(2026, 1, 4))
+        self.assertEqual(self.second.start_date, datetime(2026, 1, 5))
 
     def test_lag_applies_to_a_finish_link(self):
         """FF with lag finishes that many days after the predecessor."""
@@ -148,12 +169,27 @@ class TestHardness(DependencyTestCase):
 
     def test_rubber_leaves_a_later_task_alone(self):
         """A rubber link only forbids being earlier."""
-        self.second.start_date = datetime(2026, 3, 1)
-        self.second.end_date = datetime(2026, 3, 3)
+        self.second.start_date = datetime(2026, 3, 2)      # a Monday
+        self.second.end_date = datetime(2026, 3, 4)
 
         self.link('FS', hardness='Rubber')
 
-        self.assertEqual(self.second.start_date, datetime(2026, 3, 1))
+        self.assertEqual(self.second.start_date, datetime(2026, 3, 2))
+
+    def test_a_link_never_leaves_a_task_on_a_weekend(self):
+        """
+        Whatever a link works out, the task lands on a working day.
+
+        A task sitting on a Sunday is moved to the Monday even by a rubber
+        link that had nothing else to say about it: every date the scheduler
+        writes is a date somebody could work.
+        """
+        self.second.start_date = datetime(2026, 3, 1)      # a Sunday
+        self.second.end_date = datetime(2026, 3, 4)
+
+        self.link('FS', hardness='Rubber')
+
+        self.assertEqual(self.second.start_date, datetime(2026, 3, 2))
 
     def test_rubber_still_pushes_an_early_task_out(self):
         """A rubber link is a floor, so it moves a task that starts too soon."""
@@ -213,10 +249,16 @@ class TestAutoScheduling(unittest.TestCase):
         return {t.id: t.start_date for t in self.project.tasks}
 
     def test_the_chain_settles(self):
-        """Each task follows the one before it."""
+        """
+        Each task follows the one before it, on working days.
+
+        Every task holds two days of work. A starts Thursday the 1st and ends
+        on the Friday; B would follow on Saturday the 3rd, so it starts on the
+        Monday; C follows it on the Wednesday.
+        """
         self.assertEqual(self.starts(), {
             "A": datetime(2026, 1, 1),
-            "B": datetime(2026, 1, 4),
+            "B": datetime(2026, 1, 5),
             "C": datetime(2026, 1, 7),
         })
 
@@ -226,6 +268,9 @@ class TestAutoScheduling(unittest.TestCase):
 
         Links used to be applied only when one was created, so moving a
         predecessor afterwards left everything downstream where it was.
+
+        The head is moved onto Sunday 1 February, which it cannot start on, so
+        the chain runs from the Monday.
         """
         head = self.project.get_task_by_id("A")
         head.start_date = datetime(2026, 2, 1)
@@ -234,9 +279,9 @@ class TestAutoScheduling(unittest.TestCase):
         self.project.reschedule()
 
         self.assertEqual(self.starts(), {
-            "A": datetime(2026, 2, 1),
+            "A": datetime(2026, 2, 2),
             "B": datetime(2026, 2, 4),
-            "C": datetime(2026, 2, 7),
+            "C": datetime(2026, 2, 6),
         })
 
     def test_a_settled_plan_does_not_move(self):
@@ -362,11 +407,16 @@ class TestSummaryRollUp(unittest.TestCase):
         return self.project.get_task_by_id("P1")
 
     def test_it_spans_its_children(self):
-        """The parent runs from the earliest child to the latest."""
+        """
+        The parent runs from the earliest child to the latest.
+
+        The later child was given a finish on Saturday the 24th. It holds the
+        same work ending on the Friday, so that is where the parent reaches.
+        """
         self.project.reschedule()
 
         self.assertEqual(self.parent().start_date, datetime(2026, 1, 1))
-        self.assertEqual(self.parent().end_date, datetime(2026, 1, 24))
+        self.assertEqual(self.parent().end_date, datetime(2026, 1, 23))
 
     def test_progress_counts_finished_subtasks(self):
         """
@@ -381,13 +431,18 @@ class TestSummaryRollUp(unittest.TestCase):
         self.assertEqual(self.parent().progress, 50)
 
     def test_a_child_moving_out_stretches_the_parent(self):
-        """The parent grows rather than the child being clipped."""
+        """
+        The parent grows rather than the child being clipped.
+
+        The child is stretched to Sunday 15 March, so its last working day is
+        the Friday before, and the parent reaches exactly that far.
+        """
         self.project.reschedule()
         self.project.get_task_by_id("C2").end_date = datetime(2026, 3, 15)
 
         self.project.reschedule()
 
-        self.assertEqual(self.parent().end_date, datetime(2026, 3, 15))
+        self.assertEqual(self.parent().end_date, datetime(2026, 3, 13))
 
     def test_nested_summaries_total_upwards(self):
         """A summary of summaries takes what its children settled on."""

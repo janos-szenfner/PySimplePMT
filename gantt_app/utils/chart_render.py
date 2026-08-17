@@ -57,7 +57,17 @@ MILESTONE_RADIUS = 9
 
 #: How far the tapered ends of a summary bracket reach back along the span.
 SUMMARY_FOOT = 7
+
+#: How far back along the span a Phase's arrow head reaches, as a fraction of
+#: the bar's height. A head about three quarters as long as the bar is tall
+#: reads as a point rather than as a bar somebody has nicked the corner off.
+PHASE_HEAD_RATIO = 0.75
+
 LABEL_CHARS = 28
+
+#: Outline shapes a summary row can be drawn in; see _summary_outline.
+SHAPE_BRACKET = 'bracket'
+SHAPE_PHASE = 'phase'
 
 
 @dataclass
@@ -141,32 +151,50 @@ def _get_visible_tasks(project: Project) -> List[Task]:
 
 def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
     """
-    Corner points of the bracket drawn for a task that has sub-tasks.
+    Corner points of the shape drawn for a task that has sub-tasks.
 
     PARAMETERS:
     -----------
     summary : Dict[str, Any]
-        A `ChartLayout.summaries` entry.
+        A `ChartLayout.summaries` entry. Its 'shape' decides which outline is
+        returned; anything without one gets the bracket.
 
     RETURNS:
     --------
     List[Tuple[float, float]]
-        A closed polygon: a thin spine across the span with a tapered point
-        dropping below each end.
+        A closed polygon. For a Phase, a full-height bar drawn to a point at
+        its right-hand end. For anything else, a thin spine across the span
+        with a tapered foot dropping below each end.
 
     DEVELOPMENT NOTES:
     ------------------
-    This is the shape every Gantt tool uses for a summary row, and it reads
-    as "this row brackets the work below it" rather than "this row is work",
-    which is what a plain bar said. Both emitters share it so the on-screen
-    chart and the exports cannot drift apart.
+    Two shapes, because a plan has two kinds of parent and they are read
+    differently. A Phase is the top of the plan - the reader wants to see
+    where it runs to, so it is drawn as a solid bar ending in an arrow head
+    pointing at its finish. A Deliverable, or a plain Task that happens to
+    have sub-tasks, brackets the work beneath it, which is the thin spine with
+    feet that every Gantt tool uses.
 
-    The end points are clamped for a short summary, so a bracket spanning
-    only a day or two collapses to a wedge rather than crossing over itself.
+    Both emitters share this so the on-screen chart and the exports cannot
+    drift apart.
+
+    Each is clamped for a short span: a bracket spanning a day or two collapses
+    to a wedge, and a phase to a plain triangle, rather than folding through
+    itself.
     """
     x0, x1 = summary['x0'], summary['x1']
     y0, y1 = summary['y0'], summary['y1']
     height = y1 - y0
+
+    if summary.get('shape') == SHAPE_PHASE:
+        head = min(height * PHASE_HEAD_RATIO, max(x1 - x0, 1))
+        return [
+            (x0, y0),
+            (x1 - head, y0),
+            (x1, y0 + height / 2),
+            (x1 - head, y1),
+            (x0, y1),
+        ]
 
     spine = y0 + height * 0.45          # the bar itself stays thin
     foot = min(SUMMARY_FOOT, max((x1 - x0) / 2, 1))
@@ -367,7 +395,12 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         colour = (resolved['critical_path_color'] if task.id in critical
                   else task.color)
 
-        if task.id in summary_ids:
+        # A Phase is drawn to a point whether or not anything hangs off it
+        # yet. It is the top of the plan either way, and one that changed
+        # shape the moment its first deliverable was added looked like two
+        # different kinds of row.
+        is_phase = task.task_type == 'Phase'
+        if is_phase or task.id in summary_ids:
             layout.summaries.append({
                 'x0': start_x,
                 'x1': end_x,
@@ -375,6 +408,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                 'y1': centre + bar_height / 2,
                 'color': colour,
                 'label': task.name,
+                'shape': SHAPE_PHASE if is_phase else SHAPE_BRACKET,
             })
             continue
 

@@ -25,6 +25,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 from gantt_app.models import Project, Task
+from gantt_app.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -37,7 +38,12 @@ class MermaidImporter:
     Mermaid Gantt charts use a specific text-based syntax to define tasks,
     milestones, and their relationships.
     """
-    
+
+    #: The calendar a stated duration is counted against: Monday to Friday.
+    #: An imported chart declares no holidays, and the standard week is what
+    #: the application schedules on - see gantt_app.workdaycalendar.
+    CALENDAR = WorkingCalendar()
+
     def __init__(self, group_by_section: bool = True):
         """
         PARAMETERS:
@@ -62,18 +68,35 @@ class MermaidImporter:
         except (ValueError, TypeError):
             return None
     
+    #: Working days per week and per month, for a duration written in either.
+    #: A week of work is five days and a month is four of those - the same
+    #: convention every planning tool uses, and the one that makes "2w" mean
+    #: two weeks of work rather than ten working days spread over a fortnight
+    #: and a bit.
+    DAYS_PER_WEEK = 5
+    DAYS_PER_MONTH = 20
+
     def _parse_duration(self, duration_str: str, start_date: datetime) -> Optional[datetime]:
         """
         Parse duration string and calculate the inclusive end date.
 
         DEVELOPMENT NOTES:
         ------------------
-        Mermaid treats a duration as a span of N calendar units starting on
-        start_date, so a "5d" task running from the 1st occupies the 1st
-        through the 5th. Task.end_date is inclusive (duration_days adds +1),
-        so the last day of the span is returned rather than the first day
-        after it. Returning the exclusive end here made every imported bar
-        one day too long.
+        A duration is working days, as everywhere else in the application - see
+        gantt_app.workdaycalendar. A "5d" task starting on a Thursday therefore
+        runs to the following Wednesday rather than to the Monday, having spent
+        none of itself over the weekend.
+
+        Mermaid itself counts a bare duration in calendar days unless the chart
+        declares `excludes weekends`, so this does read some charts a few days
+        long. Agreeing with the rest of the application is worth more: a plan
+        imported from Mermaid and the same plan typed into the editor have to
+        come out with the same dates, and a task whose stated length is spent
+        on a Saturday is wrong in a way nobody can see in the chart.
+
+        Task.end_date is inclusive, so the last day worked is returned rather
+        than the first day after it. Returning the exclusive end here made
+        every imported bar one day too long.
         """
         if not duration_str or duration_str.strip() == '':
             return None
@@ -87,9 +110,9 @@ class MermaidImporter:
         unit = match.group(2)
 
         if unit in ['w', 'week', 'weeks']:
-            days = number * 7
+            days = number * self.DAYS_PER_WEEK
         elif unit in ['m', 'month', 'months']:
-            days = number * 30
+            days = number * self.DAYS_PER_MONTH
         else:
             # 'd'/'day'/'days' and any unrecognised unit are treated as days
             days = number
@@ -97,7 +120,7 @@ class MermaidImporter:
         if days <= 0:
             return start_date
 
-        return start_date + timedelta(days=days - 1)
+        return self.CALENDAR.add_working_days(start_date, days)
     
     #: Chart-level directives that never describe a task.
     DIRECTIVES = (
@@ -268,14 +291,17 @@ class MermaidImporter:
                     
                     if dep_id in task_map:
                         dep_task = task_map[dep_id]
-                        # A dependent task starts the day after its predecessor
-                        # finishes. Milestones have zero duration, so anything
-                        # following one starts on the milestone date itself.
+                        # A dependent task starts the next working day after
+                        # its predecessor finishes - the Monday, for one
+                        # following a task that ends on a Friday. Milestones
+                        # have zero duration, so anything following one starts
+                        # on the milestone date itself.
                         new_start_date = None
                         if dep_task.is_milestone and dep_task.start_date:
                             new_start_date = dep_task.start_date
                         elif dep_task.end_date:
-                            new_start_date = dep_task.end_date + timedelta(days=1)
+                            new_start_date = self.CALENDAR.get_next_working_day(
+                                dep_task.end_date + timedelta(days=1))
 
                         if new_start_date and new_start_date != task.start_date:
                             task.start_date = new_start_date

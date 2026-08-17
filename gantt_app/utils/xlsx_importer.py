@@ -28,6 +28,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 
 from gantt_app.models import Project, Task
+from gantt_app.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -238,26 +239,38 @@ class XLSXImporter:
 
         return 0
 
-    def _add_working_days(self, start: datetime, days: int) -> datetime:
-        """
-        Advance a date by a number of working days, skipping weekends.
+    #: The calendar a stated duration is counted against: Monday to Friday.
+    #:
+    #: Public holidays are not modelled. The spreadsheets this reads use
+    #: Excel's WORKDAY without a holiday list, so weekends alone reproduce
+    #: them, and it is the same calendar the application schedules on - see
+    #: gantt_app.workdaycalendar.
+    CALENDAR = WorkingCalendar()
 
-        DEVELOPMENT NOTES:
-        ------------------
-        Used only when a plan gives a duration but no end date. Public
-        holidays are not modelled - the spreadsheets this reads use Excel's
-        WORKDAY without a holiday list, so weekends alone reproduce them.
+    def _end_date_for(self, start: datetime, duration: int,
+                      working_days: bool) -> datetime:
         """
-        if days <= 0:
-            return start
+        The inclusive end date of a task the sheet gave a duration for.
 
-        current = start
-        remaining = days
-        while remaining > 0:
-            current += timedelta(days=1)
-            if current.weekday() < 5:
-                remaining -= 1
-        return current
+        PARAMETERS:
+        -----------
+        start : datetime
+            The task's start date.
+        duration : int
+            Length in days, the start day included.
+        working_days : bool
+            Whether the sheet counts that duration in working days.
+        """
+        if working_days:
+            return self.CALENDAR.add_working_days(start, duration)
+        return start + timedelta(days=duration - 1)
+
+    def _start_date_for(self, end: datetime, duration: int,
+                        working_days: bool) -> datetime:
+        """The inclusive start date, for a sheet that gives the end instead."""
+        if working_days:
+            return self.CALENDAR.subtract_working_days(end, duration)
+        return end - timedelta(days=duration - 1)
 
     #: An MS Project style reference: a task number, an optional dependency
     #: type, and an optional lag - "12", "3FS", "3FS+2d", "7SS-1".
@@ -460,16 +473,15 @@ class XLSXImporter:
 
         # A plan may give start+end, start+duration, or end+duration
         if start_date is None and end_date is not None and duration:
-            start_date = end_date - timedelta(days=int(duration) - 1)
+            start_date = self._start_date_for(end_date, int(duration),
+                                             duration_in_working_days)
         if start_date is None:
             return None
         if end_date is None and duration is not None:
             span = int(duration)
             if span > 0:
-                if duration_in_working_days:
-                    end_date = self._add_working_days(start_date, span - 1)
-                else:
-                    end_date = start_date + timedelta(days=span - 1)
+                end_date = self._end_date_for(start_date, span,
+                                              duration_in_working_days)
 
         is_milestone = self._parse_bool(values.get('milestone'))
         if not is_milestone and duration is not None and duration == 0:

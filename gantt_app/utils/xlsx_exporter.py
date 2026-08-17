@@ -123,7 +123,10 @@ def _get_task_data_dict(task: Task, project: Project) -> Dict[str, Any]:
     start_date_str = task.start_date.strftime('%Y-%m-%d') if task.start_date else ""
     end_date_str = task.end_date.strftime('%Y-%m-%d') if task.end_date else ""
     
-    # Calculate duration
+    # Calculate duration. It is working days - see gantt_app.workdaycalendar -
+    # and the column says so, because that is what tells xlsx_importer how to
+    # read it back. Written as "Duration (Days)" the same number came back in as
+    # calendar days, and a task exported and reimported lost its weekends.
     duration_days = task.duration_days
     duration_str = str(duration_days) if duration_days is not None else ""
     
@@ -134,7 +137,7 @@ def _get_task_data_dict(task: Task, project: Project) -> Dict[str, Any]:
         'Parent Task': parent_name,
         'Start Date': start_date_str,
         'End Date': end_date_str,
-        'Duration (Days)': duration_str,
+        'Duration (WD)': duration_str,
         'Progress (%)': task.progress,
         'Dependencies': ', '.join(dependency_names) if dependency_names else "",
         'Milestone': 'Yes' if task.is_milestone else 'No',
@@ -174,7 +177,7 @@ def _create_tasks_workbook(project: Project):
     # Define headers
     headers = [
         'ID', 'Name', 'Type', 'Parent Task', 'Start Date', 'End Date', 
-        'Duration (Days)', 'Progress (%)', 'Dependencies', 'Milestone', 'Color'
+        'Duration (WD)', 'Progress (%)', 'Dependencies', 'Milestone', 'Color'
     ]
     
     # Write headers with styling
@@ -202,7 +205,7 @@ def _create_tasks_workbook(project: Project):
             elif header == 'Milestone':
                 # Center milestone indicator
                 cell.alignment = Alignment(horizontal='center')
-            elif header == 'Duration (Days)':
+            elif header == 'Duration (WD)':
                 # Right-align numbers
                 cell.alignment = Alignment(horizontal='right')
     

@@ -18,6 +18,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
+from gantt_app.workdaycalendar import WorkingCalendar, default_calendar
 
 
 #: How a dependency constrains the dependent task.
@@ -705,24 +706,57 @@ class Task:
         )
     
     @property
+    def working_calendar(self) -> WorkingCalendar:
+        """
+        The calendar this task's own arithmetic is measured against.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The standard Monday-to-Friday week. A task does not carry a calendar
+        of its own: it is a property of the plan, so Project holds it and
+        passes it to everything that schedules. What a task can answer on its
+        own - how long it is - is answered against the standard week, which is
+        what every project has unless a file said otherwise.
+        """
+        return default_calendar()
+
+    @property
+    def effective_start_date(self) -> datetime:
+        """
+        The day work actually begins.
+
+        A task placed on a Saturday cannot start on it, so the start is
+        pushed forward to the next working day. Project.enforce_working_calendar
+        writes that back onto the task; this answers it for a task that has
+        not been through the plan yet.
+        """
+        return self.working_calendar.get_next_working_day(self.start_date)
+
+    @property
     def duration_days(self) -> Optional[int]:
         """
-        Calculate duration in days from start_date to end_date, or use manual duration.
-        
+        How much working effort the task holds, in days.
+
         RETURNS:
         --------
         Optional[int]
-            Number of days between start_date and end_date (inclusive),
-            or 0 for milestones and container types, or None if end_date is not set.
-            If duration is manually set, that value is returned.
-        
+            Working days between start_date and end_date, both included, or
+            0 for milestones and container types, or None if end_date is not
+            set. If duration is manually set, that value is returned.
+
         DEVELOPMENT NOTES:
         ------------------
-        This is a calculated property that automatically updates when
-        start_date or end_date changes. For subtasks without an explicit
-        end_date, it returns None. If duration is manually set, it takes
-        precedence over the calculated value.
-        Milestones and container types (Phase, Deliverable) return 0 duration.
+        Working days, not calendar days: a task running Thursday to the
+        following Wednesday holds five days of work, not seven, because
+        nothing was worked on the Saturday or the Sunday. That is the whole
+        point of the working calendar - see gantt_app.workdaycalendar - and it
+        is why a task crossing a weekend keeps its duration while its bar
+        stretches. total_elapsed_days answers the other one.
+
+        A span falling entirely on non-working days holds no work at all, but
+        a task is at least a day long, so the count has a floor of one. A
+        start date on a weekend is what puts a task there, and
+        Project.enforce_working_calendar moves it off.
         """
         if self.duration is not None:
             return self.duration
@@ -730,8 +764,29 @@ class Task:
             return 0
         if self.end_date is None:
             return None
-        return (self.end_date - self.start_date).days + 1
-    
+        worked = self.working_calendar.working_days_between(self.start_date,
+                                                            self.end_date)
+        return max(worked, 1)
+
+    @property
+    def total_elapsed_days(self) -> Optional[int]:
+        """
+        How many calendar days the task spans, weekends included.
+
+        RETURNS:
+        --------
+        Optional[int]
+            Days from start to end inclusive, or 0 for a milestone, or None
+            when there is no end date. This is the span the chart draws;
+            duration_days is the effort inside it.
+        """
+        if self.effective_milestone:
+            return 0
+        if self.end_date is None:
+            return None
+        return self.working_calendar.elapsed_days(self.start_date,
+                                                  self.end_date)
+
     def to_dict(self) -> dict:
         """
         Convert task to dictionary for serialization.
@@ -846,12 +901,21 @@ class Project:
         tasks: List of Task objects
         start_date: Project start date
         end_date: Project end date
+        calendar: Which days the project works; see enforce_working_calendar
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The calendar belongs to the project rather than to each task: which days
+    are worked is a property of the plan, and a plan whose tasks each held
+    their own idea of the week could not be scheduled at all. Everything that
+    turns a duration into dates goes through it - see gantt_app.workdaycalendar.
     """
     name: str
     tasks: List[Task] = field(default_factory=list)
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    
+    calendar: WorkingCalendar = field(default_factory=WorkingCalendar)
+
     def __post_init__(self):
         """Update project dates based on tasks if not set."""
         if self.tasks:
@@ -1497,9 +1561,10 @@ class Project:
             'name': self.name,
             'tasks': [task.to_dict() for task in self.tasks],
             'start_date': self.start_date.isoformat() if self.start_date else None,
-            'end_date': self.end_date.isoformat() if self.end_date else None
+            'end_date': self.end_date.isoformat() if self.end_date else None,
+            'calendar': self.calendar.to_dict()
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'Project':
         """Create project from dictionary."""
@@ -1519,12 +1584,15 @@ class Project:
             except (ValueError, TypeError):
                 end_date = None
         
-        # Create empty project first
+        # Create empty project first. A file saved before projects carried a
+        # calendar has no calendar block, and WorkingCalendar.from_dict answers
+        # the standard week for it - which is what those plans were built on.
         project = cls(
             name=data['name'],
             start_date=start_date,
             end_date=end_date,
-            tasks=[]  # Start with empty tasks to avoid __post_init__ updating dates prematurely
+            tasks=[],  # Start with empty tasks to avoid __post_init__ updating dates prematurely
+            calendar=WorkingCalendar.from_dict(data.get('calendar'))
         )
         
         # Add tasks manually
@@ -1651,19 +1719,39 @@ class Project:
         """
         start, end = self.constrained_dates(task)
         if start is not None:
-            return start
+            return self.calendar.get_next_working_day(start)
         if end is None:
             return None
 
-        span = self._task_span(task)
-        return end - span
+        return self.calendar.subtract_working_days(end,
+                                                   self.working_duration(task))
 
-    @staticmethod
-    def _task_span(task: Task) -> timedelta:
-        """How long a task lasts, as the gap between its two dates."""
-        if task.is_milestone or task.end_date is None:
-            return timedelta(0)
-        return max(task.end_date - task.start_date, timedelta(0))
+    def working_duration(self, task: Task) -> int:
+        """
+        How many working days of effort a task holds, against this calendar.
+
+        RETURNS:
+        --------
+        int
+            The task's own duration when it states one, otherwise the working
+            days its dates cover. Zero for a milestone, which takes no time.
+            Never less than one for anything else: a task is at least a day.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Task.duration_days answers nearly the same thing, but against the
+        standard week rather than this project's calendar - a task cannot know
+        which plan it is in. Scheduling has to use the plan's calendar, so
+        anything moving a task asks here.
+        """
+        if task.is_milestone:
+            return 0
+        if task.duration is not None:
+            return max(int(task.duration), 1)
+        if task.end_date is None:
+            return 1
+        return max(self.calendar.working_days_between(task.start_date,
+                                                      task.end_date), 1)
 
     def apply_dependency_constraints(self, task: Task,
                                      preserve_duration: bool = True,
@@ -1706,6 +1794,13 @@ class Project:
         the plan on dates GanttProject never showed. Repairing violations
         without closing deliberate slack is what "keep the links satisfied"
         actually asks for.
+
+        A moved task keeps its working duration, not its calendar span. Moving
+        a task from a Monday to a Thursday puts a weekend inside it, and adding
+        the old span of calendar days back on spent two days of it on the
+        Saturday and Sunday - the task lost two days of work by being moved.
+        The dates are placed on working days for the same reason: a link that
+        lands a task on a Saturday means it starts on the Monday.
         """
         required_start, required_end = self.constrained_dates(task)
         if required_start is None and required_end is None:
@@ -1720,17 +1815,21 @@ class Project:
             if required_start is None and required_end is None:
                 return False
 
-        span = self._task_span(task)
+        duration = self.working_duration(task)
         new_start, new_end = task.start_date, task.end_date
 
         if required_start is not None:
-            new_start = required_start
+            new_start = self.calendar.get_next_working_day(required_start)
             if preserve_duration and task.end_date is not None:
-                new_end = required_start + span
+                new_end = self.calendar.add_working_days(new_start, duration)
         elif required_end is not None:
-            new_end = required_end
+            # Forward, not back, for a finish landing on a weekend. A link
+            # says a task may not finish before a date, so pulling it back to
+            # the Friday would break the link it is being moved to satisfy.
+            new_end = self.calendar.get_next_working_day(required_end)
             if preserve_duration:
-                new_start = required_end - span
+                new_start = self.calendar.subtract_working_days(new_end,
+                                                                duration)
 
         if task.is_milestone:
             new_end = None
@@ -1777,6 +1876,69 @@ class Project:
                 task.parent_task_id = None
                 task.task_type = "Task"
                 changed = True
+
+        return changed
+
+    def enforce_working_calendar(self) -> bool:
+        """
+        Put every task on working days, without changing what it holds.
+
+        RETURNS:
+        --------
+        bool
+            True when any task moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Two rules, from gantt_app.workdaycalendar:
+
+          * A task cannot start on a non-working day, so a start landing on a
+            Saturday is pushed to the Monday.
+          * A task's finish is its start plus its working duration, walked
+            over the calendar. A task crossing a weekend therefore ends
+            further out without holding any more work, and one that had been
+            given a finish on a Sunday ends on the Friday instead.
+
+        The duration is read before either date moves and written back after,
+        which is what makes this leave the effort alone: the task ends up
+        somewhere else in calendar time holding exactly the work it held.
+
+        Containers are skipped. A Phase or a Deliverable takes its dates from
+        the children beneath it - see roll_up_summaries - and those are on
+        working days by the time this is done with them, so bracketing them
+        cannot land on a weekend.
+
+        Running twice changes nothing: a task already on working days spanning
+        its own duration is left exactly where it is, which is what lets this
+        sit inside the reschedule loop.
+        """
+        changed = False
+
+        for task in self.tasks:
+            if task.is_container:
+                continue
+
+            new_start = self.calendar.get_next_working_day(task.start_date)
+
+            if task.effective_milestone:
+                new_end = None
+            elif task.end_date is None:
+                # Nothing states how long it is, so there is no finish to work
+                # out - only the start to move off the weekend.
+                new_end = None
+            else:
+                duration = self.working_duration(task)
+                new_end = self.calendar.add_working_days(new_start, duration)
+
+            if new_start == task.start_date and new_end == task.end_date:
+                continue
+
+            logger.debug("Working calendar moved %r from %s-%s to %s-%s",
+                         task.name, task.start_date, task.end_date,
+                         new_start, new_end)
+            task.start_date = new_start
+            task.end_date = new_end
+            changed = True
 
         return changed
 
@@ -1938,6 +2100,12 @@ class Project:
         The two feed each other - a resized summary can move a task linked to
         it - so the pass repeats until nothing changes, capped so a cycle in
         the links cannot spin here forever.
+
+        The working calendar is enforced inside the loop, between the two. A
+        link can land a task on a Saturday, and a task pushed off a Saturday
+        moves its summary, so doing it once before or after the loop left one
+        of the two disagreeing with the calendar. It only ever moves a task
+        forward onto a working day, so it cannot fight the link pass.
         """
         changed = False
 
@@ -1953,6 +2121,9 @@ class Project:
                     continue
                 if self.apply_dependency_constraints(task, forward_only=True):
                     moved = True
+
+            if self.enforce_working_calendar():
+                moved = True
 
             if self.roll_up_summaries():
                 moved = True
@@ -2032,10 +2203,18 @@ class Project:
             children.setdefault(task.parent_task_id, []).append(task)
 
         def duration(task: Task) -> int:
-            """Length of a task in days; milestones take no time."""
+            """
+            Working length of a task; milestones take no time.
+
+            Working days rather than calendar days, which is what makes the
+            weekend gaps this docstring talks about drop out. Measured in
+            calendar days, a chain that happens to straddle more weekends
+            outranked a chain holding more actual work.
+            """
             if task.is_milestone or task.end_date is None:
                 return 0
-            return max((task.end_date - task.start_date).days + 1, 0)
+            return self.calendar.working_days_between(task.start_date,
+                                                      task.end_date)
 
         resolved_deps: Dict[str, List[Task]] = {}
 

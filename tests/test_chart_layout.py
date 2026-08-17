@@ -133,6 +133,105 @@ class TestSummaryBars(ChartLayoutTestCase):
         self.assertIn("Phase One", [b['label'] for b in layout.bars])
 
 
+class TestPhaseShape(unittest.TestCase):
+    """
+    A Phase is drawn as a bar ending in a point.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A Phase is the top of the plan, and the reader wants to see where it runs
+    to, so it gets a solid bar with an arrow head at its finish rather than the
+    thin bracket every other parent row is drawn with.
+    """
+
+    def setUp(self):
+        """A Phase with a sub-task, a Deliverable with one, and a plain task."""
+        self.project = Project(name="Shapes")
+        base = datetime(2026, 1, 5)
+
+        self.project.add_task(Task(
+            id="P", name="Phase", start_date=base,
+            end_date=base + timedelta(days=20), task_type="Phase",
+        ))
+        self.project.add_task(Task(
+            id="D", name="Deliverable", start_date=base,
+            end_date=base + timedelta(days=10), task_type="Deliverable",
+            parent_task_id="P",
+        ))
+        self.project.add_task(Task(
+            id="W", name="Work", start_date=base,
+            end_date=base + timedelta(days=4), task_type="Subtask",
+            parent_task_id="D",
+        ))
+
+    def shapes(self):
+        """The shape drawn for each summary row, by label."""
+        layout = layout_chart(self.project, width=1200)
+        return {s['label']: s['shape'] for s in layout.summaries}
+
+    def test_a_phase_is_drawn_as_a_phase(self):
+        """The Phase row asks for the pointed shape."""
+        self.assertEqual(self.shapes()['Phase'], 'phase')
+
+    def test_other_parents_keep_the_bracket(self):
+        """A Deliverable brackets the work beneath it, as before."""
+        self.assertEqual(self.shapes()['Deliverable'], 'bracket')
+
+    def test_an_empty_phase_is_still_a_phase(self):
+        """
+        A Phase with nothing in it yet gets the same shape.
+
+        Otherwise the row changed shape the moment its first deliverable was
+        added, which read as two different kinds of row.
+        """
+        project = Project(name="Empty phase")
+        project.add_task(Task(id="P", name="Phase",
+                              start_date=datetime(2026, 1, 5),
+                              end_date=datetime(2026, 1, 9),
+                              task_type="Phase"))
+
+        layout = layout_chart(project, width=1200)
+
+        self.assertEqual([s['shape'] for s in layout.summaries], ['phase'])
+        self.assertEqual(layout.bars, [])
+
+    def test_the_outline_is_a_pointed_bar(self):
+        """
+        Five corners: a full-height bar with its right end drawn to a point.
+
+        The point sits at the far end, halfway up, and is the only thing that
+        reaches it - which is what makes the shape read as an arrow rather than
+        as a bar with a notch.
+        """
+        from gantt_app.utils.chart_render import _summary_outline
+
+        points = _summary_outline({'x0': 0.0, 'x1': 200.0, 'y0': 0.0,
+                                   'y1': 20.0, 'color': '#000000',
+                                   'label': 'x', 'shape': 'phase'})
+
+        self.assertEqual(len(points), 5)
+        self.assertEqual(points[2], (200.0, 10.0))
+        self.assertEqual([x for x, _y in points].count(200.0), 1)
+        # Full height at the blunt end, unlike the bracket's thin spine
+        self.assertEqual(points[0], (0.0, 0.0))
+        self.assertEqual(points[4], (0.0, 20.0))
+
+    def test_a_short_phase_does_not_fold_through_itself(self):
+        """
+        A phase spanning a couple of pixels collapses to a triangle.
+
+        Without clamping, the head reaches back further than the span is wide
+        and the polygon turns inside out.
+        """
+        from gantt_app.utils.chart_render import _summary_outline
+
+        points = _summary_outline({'x0': 100.0, 'x1': 103.0, 'y0': 0.0,
+                                   'y1': 20.0, 'color': '#000000',
+                                   'label': 'x', 'shape': 'phase'})
+
+        self.assertTrue(all(x >= 100.0 for x, _y in points))
+
+
 class TestSummaryOutline(unittest.TestCase):
     """The bracket shape itself."""
 

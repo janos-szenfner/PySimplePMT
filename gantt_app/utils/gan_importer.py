@@ -25,11 +25,12 @@ are stripped up front so both parse through the same code path.
 
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple, Set
 from pathlib import Path
 
 from gantt_app.models import Project, Task
+from gantt_app.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -120,6 +121,41 @@ class GanttProjectCalendar:
                     continue
 
         return calendar
+
+    def to_working_calendar(self) -> WorkingCalendar:
+        """
+        The same calendar in the form the application schedules with.
+
+        RETURNS:
+        --------
+        WorkingCalendar
+            The file's week and holidays, ready to be handed to a Project.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This class reads a .gan file's <calendars> block, which is a parsing
+        job and stays here. Scheduling against a calendar is the application's
+        job and belongs to one implementation - see gantt_app.workdaycalendar -
+        so what the file declared is handed over rather than copied.
+
+        Year-pinned holidays are held here as (year, month, day) triples and
+        become real dates on the way across. A triple that is not a date - the
+        29th of February in a year that has none - is dropped, since a holiday
+        on a day that does not exist cannot fall in anyone's plan.
+        """
+        holidays = set()
+        for year, month, day in self.holidays:
+            try:
+                holidays.add(date(year, month, day))
+            except ValueError:
+                logger.warning("Ignoring holiday %04d-%02d-%02d, which is not "
+                               "a real date", year, month, day)
+
+        return WorkingCalendar(
+            non_working_days=set(self.non_working_weekdays),
+            holidays=holidays,
+            recurring_holidays=set(self.recurring_holidays),
+        )
 
     def is_working_day(self, day: datetime) -> bool:
         """Check whether a date counts as a working day."""
@@ -533,7 +569,8 @@ class GANImporter:
             calendar = GanttProjectCalendar.from_element(root.find('calendars'))
             tasks = self.parse_tasks(root, calendar)
 
-            project = Project(name=project_name, tasks=tasks)
+            project = Project(name=project_name, tasks=tasks,
+                              calendar=calendar.to_working_calendar())
             logger.info("Imported %d task(s) from GAN file %s",
                         len(project.tasks), filepath)
             return project

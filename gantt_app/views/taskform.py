@@ -20,7 +20,7 @@ from tkinter import ttk
 # See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
 # to match the application on X11
 from gantt_app.views import dialogs as messagebox
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Callable
 
 import customtkinter as ctk
@@ -597,8 +597,14 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     # date could be changed at all.
     #
     # Durations are inclusive, as everywhere else in the application: a task
-    # running from the 1st to the 5th lasts five days, so a task of n days
-    # ends n - 1 days after it starts.
+    # running from Monday to Friday lasts five days.
+    #
+    # They are also working days, so the arithmetic goes through the project's
+    # working calendar rather than through timedelta - see
+    # gantt_app.workdaycalendar. Five days from a Thursday ends on the
+    # following Wednesday, because the Saturday and the Sunday between them
+    # are not worked. Adding four days to the start instead put the end on the
+    # Monday and spent two days of the task over a weekend.
 
     #: How the calculated box is filled in, by which one it is.
     SCHEDULING_MODES = (
@@ -607,6 +613,17 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         "Duration is calculated",
     )
     DEFAULT_SCHEDULING_MODE = "End date is calculated"
+
+    @property
+    def working_calendar(self):
+        """
+        The calendar the form's date arithmetic goes through.
+
+        The project's own, so a plan imported from a file that declared its
+        holidays gets them here too, and the dates the form writes are the
+        dates the scheduler would have worked out for itself.
+        """
+        return self.project.calendar
 
     def _recalculate_schedule(self, *_args):
         """
@@ -652,27 +669,28 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             return                      # a milestone is a day with no length
 
         mode = self.scheduling_options_var.get()
+        calendar = self.working_calendar
 
         if mode == "Duration is calculated":
             start = self._read_date(self.start_date_entry)
             end = self._read_date(self.end_date_entry)
             if start is None or end is None:
                 return
-            self._write_duration((end - start).days + 1)
+            self._write_duration(calendar.working_days_between(start, end))
         elif mode == "End date is calculated":
             start = self._read_date(self.start_date_entry)
             length = self._typed_duration()
             if start is None or length is None:
                 return
             self._write_date(self.end_date_entry,
-                             start + timedelta(days=length - 1))
+                             calendar.add_working_days(start, length))
         elif mode == "Start date is calculated":
             end = self._read_date(self.end_date_entry)
             length = self._typed_duration()
             if end is None or length is None:
                 return
             self._write_date(self.start_date_entry,
-                             end - timedelta(days=length - 1))
+                             calendar.subtract_working_days(end, length))
 
     def _typed_duration(self) -> Optional[int]:
         """
@@ -778,6 +796,14 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         ValueError
             When a box the user fills in cannot be read, or the three do not
             describe a task that lasts at least a day.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The length that comes back is working days, which is what the task
+        stores. A span falling entirely on a weekend holds no work at all, and
+        is refused rather than saved as a task of nought days - a start date on
+        a Saturday is what puts a task there, and the form says so instead of
+        quietly moving it.
         """
         self._recalculate_schedule()
 
@@ -792,13 +818,20 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         length = self._typed_duration()
 
         if end is None and length is not None:
-            end = start + timedelta(days=length - 1)
+            end = self.working_calendar.add_working_days(start, length)
         if end is None:
             return start, None, None
         if end < start:
             raise ValueError("The end date falls before the start date.")
 
-        return start, end, (end - start).days + 1
+        worked = self.working_calendar.working_days_between(start, end)
+        if worked < 1:
+            raise ValueError(
+                "The task falls entirely on non-working days. Start it on a "
+                "working day, or give it a longer span."
+            )
+
+        return start, end, worked
 
     def _field_edited(self, key):
         """
@@ -828,8 +861,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             # length is the work inside them. Nothing is inside one yet when
             # it is being created, and showing a length of nought days for a
             # task with two dates on the same form reads as a mistake
-            duration = (self.template.end_date
-                        - self.template.start_date).days + 1
+            duration = self.working_calendar.working_days_between(
+                self.template.start_date, self.template.end_date)
         self.duration_entry = ctk.CTkEntry(frame)
         if duration is not None:
             self.duration_entry.insert(0, str(duration))

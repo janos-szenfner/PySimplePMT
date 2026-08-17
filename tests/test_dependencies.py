@@ -115,6 +115,14 @@ class TestTaskDependencyHelpers(unittest.TestCase):
 class TestDependencyScheduling(unittest.TestCase):
     """Tests for the start date each link type and hardness produces."""
 
+    #: Both fixtures run Monday to Friday, so their five calendar days are
+    #: five days of work. Scheduling counts working days - see
+    #: gantt_app.workdaycalendar - and a span starting on a Saturday would
+    #: hold less work than its length suggests, which is a separate thing to
+    #: test and not what this class is about.
+    SECOND_START = datetime(2024, 1, 22)
+    SECOND_END = datetime(2024, 1, 26)
+
     def setUp(self):
         """A predecessor running 1 to 5 January, and a later dependent task."""
         self.project = Project(name="Scheduling")
@@ -123,24 +131,29 @@ class TestDependencyScheduling(unittest.TestCase):
                                       task_id=self.project.next_task_id())
         self.project.add_task(self.first)
 
-        self.second = Task.create_task("Second", datetime(2024, 1, 20),
-                                       datetime(2024, 1, 24),
+        self.second = Task.create_task("Second", self.SECOND_START,
+                                       self.SECOND_END,
                                        task_id=self.project.next_task_id())
         self.project.add_task(self.second)
 
     def _link(self, dep_type, hardness):
         """Attach a single link and reschedule."""
-        self.second.start_date = datetime(2024, 1, 20)
-        self.second.end_date = datetime(2024, 1, 24)
+        self.second.start_date = self.SECOND_START
+        self.second.end_date = self.SECOND_END
         self.second.dependencies = []
         self.second.add_dependency(self.first.id, dep_type, hardness)
         self.project.apply_dependency_constraints(self.second)
 
     def test_end_start_hard_starts_after_the_predecessor(self):
-        """End - Start pins the task to the day after the predecessor ends."""
+        """
+        End - Start pins the task to the day after the predecessor ends.
+
+        The predecessor finishes on Friday the 5th, so the day after it is a
+        Saturday and the dependent task starts on the Monday.
+        """
         self._link('FS', 'Hard')
 
-        self.assertEqual(self.second.start_date, datetime(2024, 1, 6))
+        self.assertEqual(self.second.start_date, datetime(2024, 1, 8))
 
     def test_start_start_hard_matches_the_predecessor_start(self):
         """Start - Start pins the task to the predecessor's start."""
@@ -149,27 +162,37 @@ class TestDependencyScheduling(unittest.TestCase):
         self.assertEqual(self.second.start_date, datetime(2024, 1, 1))
 
     def test_hard_link_preserves_duration(self):
-        """Moving a task keeps its length."""
+        """
+        Moving a task keeps its length.
+
+        Five days of work, moved to the Monday the link lands it on, run to the
+        Friday. The weekend the task was moved across costs it nothing.
+        """
         self._link('FS', 'Hard')
 
         self.assertEqual(self.second.duration_days, 5)
-        self.assertEqual(self.second.end_date, datetime(2024, 1, 10))
+        self.assertEqual(self.second.end_date, datetime(2024, 1, 12))
 
     def test_rubber_allows_a_later_start(self):
         """A Rubber link is a floor, so a later start is left alone."""
         self._link('FS', 'Rubber')
 
-        self.assertEqual(self.second.start_date, datetime(2024, 1, 20))
+        self.assertEqual(self.second.start_date, self.SECOND_START)
 
     def test_rubber_pushes_an_earlier_start_forward(self):
-        """A Rubber link still forbids starting too early."""
+        """
+        A Rubber link still forbids starting too early.
+
+        The floor is the Saturday after the predecessor finishes, so the task
+        is pushed to the Monday rather than onto the weekend.
+        """
         self.second.start_date = datetime(2024, 1, 2)
         self.second.end_date = datetime(2024, 1, 6)
         self.second.dependencies = []
         self.second.add_dependency(self.first.id, 'FS', 'Rubber')
         self.project.apply_dependency_constraints(self.second)
 
-        self.assertEqual(self.second.start_date, datetime(2024, 1, 6))
+        self.assertEqual(self.second.start_date, datetime(2024, 1, 8))
 
     def test_a_hard_link_wins_over_a_rubber_one(self):
         """Hard links fix the date regardless of any rubber floor."""
