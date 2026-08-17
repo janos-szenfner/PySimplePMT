@@ -187,12 +187,12 @@ class TestGANImporter(unittest.TestCase):
         self.assertEqual(len(project.tasks), 6)
 
     def test_nested_tasks_become_subtasks(self):
-        """A <task> inside a <task> becomes a Sub-Task of it."""
+        """A <task> inside a <task> becomes a Subtask of it."""
         project = self.importer.import_gan(self._create_gan_file(SAMPLE_GAN))
 
         build = project.get_task_by_id("4")
         self.assertEqual(build.parent_task_id, "3")
-        self.assertEqual(build.task_type, "Sub-Task")
+        self.assertEqual(build.task_type, "Subtask")
 
         top_level = {t.id for t in project.get_root_tasks()}
         self.assertEqual(top_level, {"1", "2", "3"})
@@ -203,7 +203,7 @@ class TestGANImporter(unittest.TestCase):
 
         sub_build = project.get_task_by_id("5")
         self.assertEqual(sub_build.parent_task_id, "4")
-        self.assertEqual(sub_build.task_type, "Sub-Task")
+        self.assertEqual(sub_build.task_type, "Subtask")
 
     def test_dependencies_are_reversed(self):
         """<depend> names a successor, so the edge lands on the successor."""

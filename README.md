@@ -28,7 +28,11 @@ This is a complete implementation of a project management tool with:
 - **Built-in Help**: A Help button on the task editor and on the Dependency tab opens a full reference - the fields of the form in one, link types, lead/lag and hardness in the other
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
-- **Summary Roll-Up**: A task with sub-tasks spans them and shows their duration-weighted progress
+- **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
+- **Summary Roll-Up**: Anything with children spans them. A Task reads how many of its sub-tasks are finished, a Deliverable weights its tasks by duration, and a Phase averages its deliverables
+- **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type
+- **Copy, Cut and Paste**: Move or duplicate work items from the right-click menu, the Edit menu or the keyboard
+- **Icon Toolbar**: The common actions as a row of icons above the menu bar
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
 - **Progress Tracking**: Track completion percentage for each task
 
@@ -64,8 +68,15 @@ gantt_app/
 │   ├── editorhelp.py      # Task editor reference behind its Help button
 │   └── dependencyhelp.py  # Dependency reference behind the Help button
 │
+├── priority.py            # The priority levels a work item can carry
+│
+├── resources/
+│   ├── __init__.py
+│   └── icons.py            # The toolbar's icons
+│
 ├── utils/
 │   ├── __init__.py
+│   ├── copypastecut.py     # The clipboard behind Copy, Cut and Paste
 │   ├── file_io.py          # JSON save/load functionality
 │   ├── gan_importer.py     # GAN (GanttProject) file import
 │   ├── mpp_importer.py     # MPP (MS Project) file import

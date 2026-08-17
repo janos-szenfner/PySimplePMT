@@ -95,7 +95,7 @@ class TestDialogConstruction(unittest.TestCase):
         from gantt_app.views.taskdialogs import CreateTaskDialog
 
         dialog = CreateTaskDialog(self.root, self.project,
-                                  task_type="Sub-Task",
+                                  task_type="Subtask",
                                   parent_task=self.parent,
                                   on_save=lambda task: None)
 

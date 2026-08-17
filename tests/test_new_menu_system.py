@@ -201,7 +201,7 @@ class TestMenuStructure(unittest.TestCase):
         # Check work item types in Create submenu
         create_items = [item['text'] for item in create_item['submenu']]
         self.assertIn('Task...', create_items, "Task... not found in Create submenu")
-        self.assertIn('Sub-Task...', create_items, "Sub-Task... not found in Create submenu")
+        self.assertIn('Subtask...', create_items, "Subtask... not found in Create submenu")
         self.assertIn('Milestone...', create_items, "Milestone... not found in Create submenu")
 
     def test_menu_order_is_preserved(self):

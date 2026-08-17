@@ -60,7 +60,7 @@ class TaskListTestCase(unittest.TestCase):
         for task_id, name in [("004", "Beta one"), ("005", "Beta two")]:
             self.project.add_task(Task(
                 id=task_id, name=name, start_date=base,
-                task_type="Sub-Task", parent_task_id="002",
+                task_type="Subtask", parent_task_id="002",
             ))
 
         self.task_list = DragDropTaskList(self.root, self.project)
@@ -241,7 +241,7 @@ class TestIndentOutdent(TaskListTestCase):
         """The row goes under the one above and becomes a sub-task."""
         self.invoke_entry("002", "Indent")
 
-        self.assertEqual(self.levels()["002"], ("Sub-Task", "001"))
+        self.assertEqual(self.levels()["002"], ("Subtask", "001"))
 
     def test_indenting_nests_the_row_in_the_tree(self):
         """The change is visible, not just in the model."""
@@ -279,8 +279,8 @@ class TestIndentOutdent(TaskListTestCase):
         self.invoke_entry("002", "Indent")
 
         levels = self.levels()
-        self.assertEqual(levels["002"], ("Sub-Task", "001"))
-        self.assertEqual(levels["004"], ("Sub-Task", "002"))
+        self.assertEqual(levels["002"], ("Subtask", "001"))
+        self.assertEqual(levels["004"], ("Subtask", "002"))
 
     def test_indenting_under_a_milestone_is_refused(self):
         """A milestone cannot bracket sub-tasks."""
@@ -323,7 +323,7 @@ class TestIndentUndo(TaskListTestCase):
     def test_undo_restores_the_parent_and_type(self):
         """Undoing an indent puts the task back at its old level."""
         self.task_list.indent_task("002")
-        self.assertEqual(self.level_of("002"), ("Sub-Task", "001"))
+        self.assertEqual(self.level_of("002"), ("Subtask", "001"))
 
         self.manager.undo()
 
@@ -336,7 +336,7 @@ class TestIndentUndo(TaskListTestCase):
 
         self.manager.redo()
 
-        self.assertEqual(self.level_of("002"), ("Sub-Task", "001"))
+        self.assertEqual(self.level_of("002"), ("Subtask", "001"))
 
     def test_undo_restores_an_outdent(self):
         """The same holds coming the other way."""
@@ -345,7 +345,7 @@ class TestIndentUndo(TaskListTestCase):
 
         self.manager.undo()
 
-        self.assertEqual(self.level_of("004"), ("Sub-Task", "002"))
+        self.assertEqual(self.level_of("004"), ("Subtask", "002"))
 
     def test_a_refused_change_records_nothing(self):
         """Indenting the first row leaves the undo history alone."""
@@ -377,7 +377,7 @@ class TestCreateSubmenu(TaskListTestCase):
                         on_save=None, project_tracker=None):
             """Stand in for the dialog, saving as a user pressing Save would."""
             new_id = project.next_task_id()
-            if task_type == "Sub-Task":
+            if task_type == "Subtask":
                 task = Task.create_subtask("New", parent_task, task_id=new_id)
             elif task_type == "Milestone":
                 task = Task.create_milestone("New", dt(2026, 1, 1),
@@ -402,10 +402,11 @@ class TestCreateSubmenu(TaskListTestCase):
         return [submenu.entrycget(i, 'label')
                 for i in range(submenu.index('end') + 1)]
 
-    def test_it_offers_the_three_types(self):
-        """Task, Sub-Task and Milestone."""
-        self.assertEqual(self.submenu_labels("001"),
-                         ["Task", "Sub-Task", "Milestone"])
+    def test_it_offers_every_type(self):
+        """The five the plan is built from, outermost first."""
+        self.assertEqual(
+            self.submenu_labels("001"),
+            ["Phase", "Deliverable", "Task", "Subtask", "Milestone"])
 
     def test_a_task_lands_below_the_clicked_row(self):
         """
@@ -426,7 +427,7 @@ class TestCreateSubmenu(TaskListTestCase):
 
     def test_a_subtask_lands_under_the_clicked_row(self):
         """A sub-task is created inside the task the menu was opened on."""
-        self.task_list.create_task("Sub-Task", "001")
+        self.task_list.create_task("Subtask", "001")
 
         self.assertEqual(self.created.parent_task_id, "001")
         self.assertIn(self.created.id,
@@ -485,7 +486,7 @@ class TestCreateSubmenu(TaskListTestCase):
         """A sub-task has nothing to go under."""
         before = len(self.project.tasks)
 
-        self.task_list.create_task("Sub-Task", None)
+        self.task_list.create_task("Subtask", None)
 
         self.assertEqual(len(self.project.tasks), before)
 
@@ -841,13 +842,14 @@ class TestContextMenu(TaskListTestCase):
         return entries
 
     def test_the_entries_are_offered_in_order(self):
-        """Moves, level changes, task actions, then the history."""
+        """Moves, level changes, task actions, the clipboard, the history."""
         labels = [label for label, _ in self.menu_for("002")]
 
         self.assertEqual(labels, ["Move to top", "Move up",
                                   "Move down", "Move to bottom",
                                   "Indent", "Outdent",
                                   "Create", "Edit", "Delete",
+                                  "Copy", "Cut", "Paste",
                                   "Undo", "Redo"])
 
     def test_undo_and_redo_come_last(self):
@@ -857,12 +859,17 @@ class TestContextMenu(TaskListTestCase):
         self.assertEqual(labels[-2:], ["Undo", "Redo"])
 
     def test_separators_divide_the_groups(self):
-        """Moves, level changes, task actions and history are kept apart."""
+        """
+        Moves, level changes, task actions, clipboard and history apart.
+
+        Four separators for five groups: the clipboard entries came in
+        between the task actions and the history.
+        """
         menu = self.task_list.context_menu._build(self.project, "002")
 
         kinds = [menu.type(i) for i in range(menu.index('end') + 1)]
 
-        self.assertEqual(kinds.count('separator'), 3)
+        self.assertEqual(kinds.count('separator'), 4)
         self.assertEqual(kinds.index('separator'), 4)
 
     def test_a_middle_row_can_move_either_way(self):
@@ -1059,7 +1066,7 @@ class TestContextMenu(TaskListTestCase):
                   str(submenu.entrycget(i, 'state'))
                   for i in range(submenu.index('end') + 1)}
 
-        self.assertEqual(states["Sub-Task"], 'disabled')
+        self.assertEqual(states["Subtask"], 'disabled')
 
 
 if __name__ == '__main__':

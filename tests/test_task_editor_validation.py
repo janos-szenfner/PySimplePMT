@@ -109,6 +109,19 @@ class EditorTestCase(unittest.TestCase):
         entry.delete(0, tk.END)
         entry.insert(0, text)
 
+    def let_the_end_date_be_typed(self, dialog):
+        """
+        Put the form in the mode where the end date is the user's to set.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A task form opens on "End date is calculated", which greys the end
+        date box out and works it out from the start date and the duration.
+        Typing an end date means saying so first, which is what this does -
+        the same two clicks a user makes.
+        """
+        dialog.scheduling_options_var.set("Duration is calculated")
+
     def marked(self, dialog, key):
         """Whether a field is currently outlined as wrong."""
         return bool(dialog._marked.get(key))
@@ -145,6 +158,7 @@ class TestTheFormStaysUsable(EditorTestCase):
         dialog = self.edit_dialog()
 
         self.type_into(dialog.name_entry, "Renamed")
+        self.let_the_end_date_be_typed(dialog)
         self.type_into(dialog.start_date_entry, "2026-02-01")
         self.type_into(dialog.end_date_entry, "nonsense")
         self.type_into(dialog.end_date_entry, "2026-02-05")
@@ -212,6 +226,7 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
     def test_an_end_before_the_start_is_marked(self):
         """A task cannot finish before it begins."""
         dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
 
         self.type_into(dialog.start_date_entry, "2026-03-10")
         self.type_into(dialog.end_date_entry, "2026-03-01")
@@ -222,6 +237,7 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
     def test_a_milestone_is_not_asked_for_an_end_date(self):
         """Ticking Is Milestone withdraws the complaint about the end date."""
         dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
 
         self.type_into(dialog.end_date_entry, "")
         self.assertTrue(self.marked(dialog, 'end_date'))
@@ -234,6 +250,7 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
     def test_unticking_milestone_asks_for_the_end_date(self):
         """A task that is no longer a milestone needs one again."""
         dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
 
         self.type_into(dialog.end_date_entry, "")
         dialog.is_milestone_var.set(True)
@@ -280,6 +297,7 @@ class TestRefusingToSave(EditorTestCase):
         from gantt_app.views import dialogs
 
         dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
         original_end = self.task.end_date
 
         self.type_into(dialog.end_date_entry, "01/02/2026")
@@ -295,6 +313,7 @@ class TestRefusingToSave(EditorTestCase):
         from gantt_app.views import dialogs
 
         dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
 
         self.type_into(dialog.name_entry, "Renamed")
         self.type_into(dialog.end_date_entry, "01/02/2026")
@@ -317,6 +336,7 @@ class TestRefusingToSave(EditorTestCase):
     def test_a_good_form_saves(self):
         """Nothing above stops an ordinary edit going through."""
         dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
 
         self.type_into(dialog.name_entry, "Renamed")
         self.type_into(dialog.start_date_entry, "2026-04-01")

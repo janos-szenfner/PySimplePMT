@@ -37,7 +37,7 @@ class ChartLayoutTestCase(unittest.TestCase):
                 id=task_id, name=name,
                 start_date=base + timedelta(days=offset),
                 end_date=base + timedelta(days=offset + 4),
-                task_type="Sub-Task", parent_task_id="001",
+                task_type="Subtask", parent_task_id="001",
             ))
         self.project.add_task(Task(
             id="004", name="Phase Two",

@@ -39,7 +39,7 @@ class TestMoveTask(unittest.TestCase):
             self.project.add_task(Task(
                 id=task_id, name=name, start_date=base,
                 end_date=base + timedelta(days=1),
-                task_type="Sub-Task", parent_task_id="002",
+                task_type="Subtask", parent_task_id="002",
             ))
 
     def test_starting_order_is_insertion_order(self):
@@ -154,7 +154,7 @@ class TestMoveTask(unittest.TestCase):
         base = datetime(2026, 1, 1)
         self.project.add_task(Task(
             id="099", name="Orphan", start_date=base,
-            task_type="Sub-Task", parent_task_id="missing",
+            task_type="Subtask", parent_task_id="missing",
         ))
 
         self.project.move_task("003", 'top')
@@ -178,7 +178,7 @@ class TestMoveTaskBefore(unittest.TestCase):
             ))
         self.project.add_task(Task(
             id="004", name="Beta one", start_date=base,
-            task_type="Sub-Task", parent_task_id="002",
+            task_type="Subtask", parent_task_id="002",
         ))
 
     def test_moves_into_the_target_position(self):
@@ -231,7 +231,7 @@ class TestIndent(unittest.TestCase):
         self.project.indent_task("B")
 
         self.assertEqual(self.project.get_task_by_id("B").task_type,
-                         "Sub-Task")
+                         "Subtask")
 
     def test_the_first_row_cannot_indent(self):
         """There is nothing above it to go under."""
@@ -251,7 +251,7 @@ class TestIndent(unittest.TestCase):
         """The whole branch moves down a level."""
         self.project.add_task(Task(
             id="B1", name="B1", start_date=datetime(2026, 1, 1),
-            task_type="Sub-Task", parent_task_id="B",
+            task_type="Subtask", parent_task_id="B",
         ))
 
         self.project.indent_task("B")
@@ -315,7 +315,7 @@ class TestIndent(unittest.TestCase):
         """The whole branch is checked, not only the task itself."""
         self.project.add_task(Task(
             id="B1", name="B1", start_date=datetime(2026, 1, 1),
-            task_type="Sub-Task", parent_task_id="B",
+            task_type="Subtask", parent_task_id="B",
         ))
         self.project.get_task_by_id("B1").add_dependency("A", 'FS', 'Hard')
 
@@ -368,7 +368,7 @@ class TestOutdent(unittest.TestCase):
             self.project.add_task(Task(
                 id=task_id, name=task_id, start_date=base,
                 end_date=base + timedelta(days=2),
-                task_type="Sub-Task", parent_task_id="A",
+                task_type="Subtask", parent_task_id="A",
             ))
         self.project.add_task(Task(id="D", name="D", start_date=base,
                                    end_date=base + timedelta(days=2)))
@@ -393,7 +393,7 @@ class TestOutdent(unittest.TestCase):
 
         task = self.project.get_task_by_id("C")
         self.assertEqual(task.parent_task_id, "A")
-        self.assertEqual(task.task_type, "Sub-Task")
+        self.assertEqual(task.task_type, "Subtask")
 
     def test_a_root_task_cannot_outdent(self):
         """There is no level above the top one."""
@@ -432,7 +432,7 @@ class TestOutdent(unittest.TestCase):
 
         task = self.project.get_task_by_id("B")
         self.assertEqual(task.parent_task_id, "A")
-        self.assertEqual(task.task_type, "Sub-Task")
+        self.assertEqual(task.task_type, "Subtask")
         self.assertEqual(ids(self.project), ["A", "C", "B", "D"])
 
 
@@ -489,7 +489,7 @@ class TestGetSiblings(unittest.TestCase):
         for task_id in ("003", "004"):
             self.project.add_task(Task(
                 id=task_id, name=f"Sub {task_id}", start_date=base,
-                task_type="Sub-Task", parent_task_id="002",
+                task_type="Subtask", parent_task_id="002",
             ))
 
     def test_root_tasks_are_siblings(self):

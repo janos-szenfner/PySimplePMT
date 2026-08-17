@@ -488,7 +488,7 @@ class TestRemoveUndo(unittest.TestCase):
         for task_id, name in [("002", "Child A"), ("003", "Child B")]:
             self.project.add_task(Task(
                 id=task_id, name=name, start_date=base,
-                task_type="Sub-Task", parent_task_id="001",
+                task_type="Subtask", parent_task_id="001",
             ))
 
         later = Task(id="004", name="Later",

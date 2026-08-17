@@ -165,7 +165,7 @@ class TestMermaidImporter(unittest.TestCase):
 
 
 class TestMermaidSections(unittest.TestCase):
-    """Tests for mapping Mermaid sections onto the Task/Sub-Task hierarchy."""
+    """Tests for mapping Mermaid sections onto the Task/Subtask hierarchy."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -184,7 +184,7 @@ class TestMermaidSections(unittest.TestCase):
 """
 
     def test_sections_become_parent_tasks(self):
-        """Each section becomes a parent task holding its tasks as Sub-Tasks."""
+        """Each section becomes a parent task holding its tasks as Subtasks."""
         project = self.importer._parse_mermaid_content(self.CONTENT)
 
         self.assertIsNotNone(project)
@@ -199,7 +199,7 @@ class TestMermaidSections(unittest.TestCase):
         subtasks = project.get_subtasks(phase_one.id)
         self.assertEqual([t.name for t in subtasks], ["Task 1", "Task 2"])
         for subtask in subtasks:
-            self.assertEqual(subtask.task_type, "Sub-Task")
+            self.assertEqual(subtask.task_type, "Subtask")
 
     def test_section_parent_spans_its_children(self):
         """A section parent covers the full range of the tasks inside it."""

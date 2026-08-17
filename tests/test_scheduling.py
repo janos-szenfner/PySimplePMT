@@ -349,12 +349,12 @@ class TestSummaryRollUp(unittest.TestCase):
         self.project.add_task(Task(
             id="C1", name="One", start_date=datetime(2026, 1, 1),
             end_date=datetime(2026, 1, 10), progress=100,
-            task_type="Sub-Task", parent_task_id="P1",
+            task_type="Subtask", parent_task_id="P1",
         ))
         self.project.add_task(Task(
             id="C2", name="Two", start_date=datetime(2026, 1, 5),
             end_date=datetime(2026, 1, 24), progress=0,
-            task_type="Sub-Task", parent_task_id="P1",
+            task_type="Subtask", parent_task_id="P1",
         ))
 
     def parent(self):
@@ -368,15 +368,17 @@ class TestSummaryRollUp(unittest.TestCase):
         self.assertEqual(self.parent().start_date, datetime(2026, 1, 1))
         self.assertEqual(self.parent().end_date, datetime(2026, 1, 24))
 
-    def test_progress_is_weighted_by_duration(self):
+    def test_progress_counts_finished_subtasks(self):
         """
-        A long child counts for more than a short one.
+        A Task with sub-tasks reads how many of them are done.
 
-        Ten of thirty days are complete, so the parent reads 33%.
+        One of its two sub-tasks is finished, so it reads 50% - the length
+        of each does not come into it. A Deliverable weights its children by
+        duration instead, and a Phase averages them; see roll_up_summaries.
         """
         self.project.reschedule()
 
-        self.assertEqual(self.parent().progress, 33)
+        self.assertEqual(self.parent().progress, 50)
 
     def test_a_child_moving_out_stretches_the_parent(self):
         """The parent grows rather than the child being clipped."""
@@ -396,11 +398,11 @@ class TestSummaryRollUp(unittest.TestCase):
         project.add_task(Task(id="MID", name="Mid",
                               start_date=datetime(2026, 1, 1),
                               end_date=datetime(2026, 1, 2),
-                              task_type="Sub-Task", parent_task_id="TOP"))
+                              task_type="Subtask", parent_task_id="TOP"))
         project.add_task(Task(id="LEAF", name="Leaf",
                               start_date=datetime(2026, 4, 1),
                               end_date=datetime(2026, 4, 30),
-                              task_type="Sub-Task", parent_task_id="MID"))
+                              task_type="Subtask", parent_task_id="MID"))
 
         project.reschedule()
 
@@ -445,7 +447,7 @@ class TestMilestoneRules(unittest.TestCase):
         self.project.add_task(Task(id="S", name="Child",
                                    start_date=datetime(2026, 1, 1),
                                    end_date=datetime(2026, 1, 3),
-                                   task_type="Sub-Task", parent_task_id="M"))
+                                   task_type="Subtask", parent_task_id="M"))
 
     def test_an_end_date_is_cleared(self):
         """A milestone carries no end date."""

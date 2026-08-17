@@ -290,10 +290,15 @@ class TaskContextMenu:
 
         create = tk.Menu(menu, tearoff=0)
         for task_type in CREATE_TYPES:
-            # A sub-task needs a row to go under; the other two do not, and
-            # over empty space they are added at the end of the plan
+            # A sub-task needs a row to go under; the rest do not, and over
+            # empty space they are added at the end of the plan.
+            #
+            # The type is spelt as the model spells it. Against the old
+            # hyphenated "Sub-Task" this test was true of every entry, so
+            # Subtask was offered over empty space with no parent to hang it
+            # on.
             can_create = self._on_create is not None and (
-                has_task or task_type != "Sub-Task"
+                has_task or task_type != "Subtask"
             )
             create.add_command(
                 label=task_type,

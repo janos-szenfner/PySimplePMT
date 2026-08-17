@@ -16,6 +16,10 @@ import copy
 import json
 import uuid
 
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
+
 if TYPE_CHECKING:
     from gantt_app.models import Project, Task
 
@@ -225,7 +229,13 @@ class ClipboardService:
         entity_types = [item.type for item in payload.items]
         if not self._can_accept_types(target_container_id, entity_types):
             return
-        
+
+        if payload.operation == 'cut' and any(
+                self._is_self_or_descendant(target_container_id, item.id)
+                for item in payload.items):
+            logger.info("Refused to paste a task inside itself")
+            return
+
         if payload.operation == 'copy':
             self._paste_copy(payload, target_container_id, insert_index)
         elif payload.operation == 'cut':
@@ -356,6 +366,47 @@ class ClipboardService:
         """Get the entity type from a Task object."""
         return task.task_type.lower()
     
+    def _is_self_or_descendant(self, container_id: Optional[str],
+                               task_id: str) -> bool:
+        """
+        Whether a container is the given task, or sits underneath it.
+
+        PARAMETERS:
+        -----------
+        container_id : Optional[str]
+            Where the paste would land. None is the top of the plan, which is
+            underneath nothing.
+        task_id : str
+            The task being moved.
+
+        RETURNS:
+        --------
+        bool
+            True when moving the task there would make it its own ancestor.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Cutting a phase and pasting it into one of its own tasks used to be
+        allowed. It left a loop in the parent links with no root: the task
+        disappeared from the tree, which walks down from the top, and the
+        passes that settle the schedule walk that loop.
+
+        The walk is bounded by the number of tasks rather than by reaching
+        the top, so a plan that already contains a loop is answered rather
+        than followed forever.
+        """
+        seen = 0
+        current = container_id
+        while current is not None and seen <= len(self.project.tasks):
+            if current == task_id:
+                return True
+            parent = self._get_task_by_id(current)
+            if parent is None:
+                return False
+            current = parent.parent_task_id
+            seen += 1
+        return False
+
     def _can_accept_types(self, container_id: Optional[str], entity_types: List[str]) -> bool:
         """Check if a container can accept the given entity types."""
         if container_id is None:

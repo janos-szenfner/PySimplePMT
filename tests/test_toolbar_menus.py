@@ -104,7 +104,8 @@ class TestMenuContents(unittest.TestCase):
         create = find(self.tree, 'Actions')['items'][0]
 
         self.assertEqual(labels(create['submenu']),
-                         ['Task...', 'Sub-Task...', 'Milestone...'])
+                         ['Phase...', 'Deliverable...', 'Task...',
+                          'Subtask...', 'Milestone...'])
 
     def test_project_title_sits_directly_under_actions(self):
         """

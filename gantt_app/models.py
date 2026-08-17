@@ -1780,23 +1780,20 @@ class Project:
                 else:
                     new_progress = task.progress
 
-            # Apply date rollup only to container types (Phase, Deliverable)
-            # Apply progress rollup to container types and Tasks with Subtasks
-            should_rollup_dates = task.task_type in CONTAINER_TYPES
-            should_rollup_progress = (task.task_type in CONTAINER_TYPES or 
-                                   (task.task_type == "Task" and brood and any(c.task_type == "Subtask" for c in brood)))
-            
-            if should_rollup_dates or should_rollup_progress:
-                new_start_date = new_start if should_rollup_dates else task.start_date
-                new_end_date = new_end if should_rollup_dates else task.end_date
-                new_progress_value = new_progress if should_rollup_progress else task.progress
-                
-                if (task.start_date != new_start_date or task.end_date != new_end_date
-                        or task.progress != new_progress_value):
-                    task.start_date = new_start_date
-                    task.end_date = new_end_date
-                    task.progress = new_progress_value
-                    changed = True
+            # Anything with children brackets them, whatever it is called.
+            #
+            # Rolling the dates up for Phase and Deliverable alone left every
+            # other parent holding whatever dates it happened to have: a
+            # plain Task with sub-tasks stopped spanning them, and so did
+            # every parent the importers build - a Mermaid section, a
+            # spreadsheet phase, a nested GanttProject task all arrive as
+            # ordinary Tasks. Which progress rule applies still goes by type.
+            if (task.start_date != new_start or task.end_date != new_end
+                    or task.progress != new_progress):
+                task.start_date = new_start
+                task.end_date = new_end
+                task.progress = new_progress
+                changed = True
 
         return changed
 

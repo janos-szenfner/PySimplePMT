@@ -555,6 +555,77 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         self.assertEqual(len(self.project.tasks), initial_count + 2)
 
 
+class TestPastingIntoItself(unittest.TestCase):
+    """
+    A cut task cannot be pasted inside its own subtree.
+
+    WHY THESE EXIST:
+    ================
+    Nothing stopped it. Cutting a phase and pasting it into one of its own
+    tasks left a loop in the parent links with no root: the phase vanished
+    from the tree, which is walked down from the top, and the passes that
+    settle the schedule walked the loop instead.
+    """
+
+    def setUp(self):
+        """A phase holding a task, which holds a sub-task."""
+        self.project = Project(name="Test Project")
+        self.service = ClipboardService(self.project)
+
+        today = datetime(2024, 1, 1)
+        self.phase = Task.create_task(name="Phase 1", start_date=today,
+                                      end_date=today + timedelta(days=20),
+                                      task_id="P001")
+        self.phase.task_type = "Phase"
+        self.project.add_task(self.phase)
+
+        self.task = Task.create_task(name="Task 1", start_date=today,
+                                     end_date=today + timedelta(days=5),
+                                     task_id="T001")
+        self.task.parent_task_id = "P001"
+        self.project.add_task(self.task)
+
+        self.subtask = Task.create_task(name="Subtask 1", start_date=today,
+                                        end_date=today + timedelta(days=2),
+                                        task_id="ST001")
+        self.subtask.task_type = "Subtask"
+        self.subtask.parent_task_id = "T001"
+        self.project.add_task(self.subtask)
+
+    def test_a_phase_cannot_be_pasted_into_its_own_task(self):
+        """Its parent is left alone rather than pointing inside itself."""
+        self.service.cut(["P001"])
+        self.service.paste("T001")
+
+        self.assertIsNone(self.phase.parent_task_id)
+
+    def test_a_phase_cannot_be_pasted_into_a_deeper_descendant(self):
+        """A grandchild is no more of a home for it than a child."""
+        self.service.cut(["P001"])
+        self.service.paste("ST001")
+
+        self.assertIsNone(self.phase.parent_task_id)
+
+    def test_a_task_cannot_be_pasted_into_itself(self):
+        """Its own row is not somewhere to put it."""
+        self.service.cut(["T001"])
+        self.service.paste("T001")
+
+        self.assertEqual(self.task.parent_task_id, "P001")
+
+    def test_it_still_moves_somewhere_that_is_not_beneath_it(self):
+        """The guard refuses a loop, not every paste."""
+        other = Task.create_task(name="Phase 2", start_date=datetime(2024, 1, 1),
+                                 end_date=datetime(2024, 1, 5), task_id="P002")
+        other.task_type = "Phase"
+        self.project.add_task(other)
+
+        self.service.cut(["T001"])
+        self.service.paste("P002")
+
+        self.assertEqual(self.task.parent_task_id, "P002")
+
+
 class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
     """Test cases for clipboard operations with special task types."""
 

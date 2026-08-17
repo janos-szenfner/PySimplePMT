@@ -111,7 +111,7 @@ class TestXLSXImporter(unittest.TestCase):
         self.assertEqual(project.get_task_by_id("3").progress, 100)  # Done
 
     def test_phases_become_parent_tasks(self):
-        """Each phase becomes a parent task holding its rows as Sub-Tasks."""
+        """Each phase becomes a parent task holding its rows as Subtasks."""
         project = self.importer.import_xlsx(self.make(SAMPLE_ROWS))
 
         roots = project.get_root_tasks()
@@ -121,7 +121,7 @@ class TestXLSXImporter(unittest.TestCase):
         subtasks = project.get_subtasks(phase_one.id)
         self.assertEqual([t.name for t in subtasks], ["Kick-off", "Analysis"])
         for subtask in subtasks:
-            self.assertEqual(subtask.task_type, "Sub-Task")
+            self.assertEqual(subtask.task_type, "Subtask")
 
     def test_phase_parent_spans_its_children(self):
         """A phase parent covers the range of the rows inside it."""
@@ -251,7 +251,7 @@ class TestXLSXImporter(unittest.TestCase):
         self.assertEqual(len(project.tasks), 2)
         child = project.get_task_by_id("2")
         self.assertEqual(child.parent_task_id, "1")
-        self.assertEqual(child.task_type, "Sub-Task")
+        self.assertEqual(child.task_type, "Subtask")
 
     def test_sheet_without_table_is_skipped(self):
         """A workbook whose first sheet has no table still imports."""

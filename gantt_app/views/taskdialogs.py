@@ -78,7 +78,7 @@ class EditTaskDialog(TaskFormDialog):
         """Name the parent, when there is one."""
         parent = self.seed_parent()
         name = parent.name if parent else "Unknown"
-        if self.task.task_type == "Sub-Task" and self.task.parent_task_id:
+        if self.task.task_type == "Subtask" and self.task.parent_task_id:
             self.parent_label = ctk.CTkLabel(frame, text=name)
             self._field(frame, "Parent Task:", self.parent_label,
                         sticky=tk.W)
@@ -109,32 +109,15 @@ class EditTaskDialog(TaskFormDialog):
             if not name:
                 raise ValueError("Enter a name for the task.")
 
-            start = self._typed_date(self.start_date_entry, "start date")
-            if start is None:
-                raise ValueError("Enter a start date.")
-
             is_milestone = self.is_milestone_var.get()
-            end = (None if is_milestone
-                   else self._typed_date(self.end_date_entry, "end date"))
-            if end is not None and end < start:
-                raise ValueError("The end date falls before the start date.")
+            start, end, duration = self._read_schedule()
+            progress = self._typed_progress()
 
-            # Get duration value
-            duration_text = self.duration_entry.get().strip()
-            duration = int(duration_text) if duration_text else None
-
-            # Get progress value
-            progress_text = self.progress_entry.get().strip()
-            progress = int(progress_text) if progress_text else 0
-            if progress < 0 or progress > 100:
-                raise ValueError("Progress must be between 0 and 100")
-
-            # Get earliest begin date
             earliest_begin = None
             if self.earliest_begin_var.get():
-                earliest_begin = self._typed_date(self.earliest_begin_entry, "earliest begin date")
+                earliest_begin = self._typed_date(self.earliest_begin_entry,
+                                                  "earliest begin date")
 
-            # Get details
             details = self.details_text.get("1.0", tk.END).strip()
 
             old_task = copy.copy(self.task)
@@ -237,7 +220,7 @@ class CreateTaskDialog(TaskFormDialog):
 
         titles = {
             'Milestone': "Create New Milestone",
-            'Sub-Task': "Create New Sub-Task",
+            'Subtask': "Create New Subtask",
         }
         super().__init__(master, project,
                          titles.get(task_type, "Create New Task"),
@@ -309,7 +292,7 @@ class CreateTaskDialog(TaskFormDialog):
             super()._build_parent(frame)
             return
 
-        if self.task_type != "Sub-Task":
+        if self.task_type != "Subtask":
             return
 
         names = [t.name for t in self.project.get_root_tasks()]
@@ -347,40 +330,23 @@ class CreateTaskDialog(TaskFormDialog):
             if not name:
                 raise ValueError("Enter a name for the task.")
 
-            start = self._typed_date(self.start_date_entry, "start date")
-            if start is None:
-                raise ValueError("Enter a start date.")
-
             is_milestone = self.is_milestone_var.get()
-            end = (None if is_milestone
-                   else self._typed_date(self.end_date_entry, "end date"))
-            if end is not None and end < start:
-                raise ValueError("The end date falls before the start date.")
+            start, end, duration = self._read_schedule()
+            progress = self._typed_progress()
 
             parent_task_id = self._resolve_parent_id()
-            if is_milestone:
-                task_type = "Task"
-            else:
-                task_type = self.task_type_var.get()
-            if parent_task_id:
-                task_type = "Sub-Task"
+            task_type = "Milestone" if is_milestone else self.task_type_var.get()
+            if parent_task_id and task_type in ("Task", "Subtask"):
+                # Work hung off a parent is a sub-task of it; a Phase or a
+                # Deliverable keeps the type it was asked for, since those
+                # bracket other work rather than being it
+                task_type = "Subtask"
 
-            # Get duration value
-            duration_text = self.duration_entry.get().strip()
-            duration = int(duration_text) if duration_text else None
-
-            # Get progress value
-            progress_text = self.progress_entry.get().strip()
-            progress = int(progress_text) if progress_text else 0
-            if progress < 0 or progress > 100:
-                raise ValueError("Progress must be between 0 and 100")
-
-            # Get earliest begin date
             earliest_begin = None
             if self.earliest_begin_var.get():
-                earliest_begin = self._typed_date(self.earliest_begin_entry, "earliest begin date")
+                earliest_begin = self._typed_date(self.earliest_begin_entry,
+                                                  "earliest begin date")
 
-            # Get details
             details = self.details_text.get("1.0", tk.END).strip()
 
             task = Task(

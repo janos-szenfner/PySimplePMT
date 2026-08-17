@@ -18,7 +18,6 @@ picker.
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional, Callable
 
 import customtkinter as ctk
 

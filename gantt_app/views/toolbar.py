@@ -767,8 +767,10 @@ class Toolbar(ctk.CTkFrame):
                 'text': 'Actions',
                 'items': [
                     {"text": "Create", "submenu": [
+                        {"text": "Phase...", "command": self.add_phase},
+                        {"text": "Deliverable...", "command": self.add_deliverable},
                         {"text": "Task...", "command": self.add_task},
-                        {"text": "Sub-Task...", "command": self.add_subtask},
+                        {"text": "Subtask...", "command": self.add_subtask},
                         {"text": "Milestone...", "command": self.add_milestone},
                     ]},
                     # Renaming the project is not a create action, so it sits
@@ -840,18 +842,37 @@ class Toolbar(ctk.CTkFrame):
                 f"Could not open the log window:\n{e}"
             )
 
-    def add_task(self):
-        """Add a new task to the project with undo support."""
+    def _create_of_type(self, task_type: str):
+        """
+        Open the create dialog for one kind of work item.
+
+        PARAMETERS:
+        -----------
+        task_type : str
+            One of models.TASK_TYPES.
+        """
         from gantt_app.views.taskdialogs import CreateTaskDialog
-        
-        # Open create task dialog
+
         dialog = CreateTaskDialog(
             self.master, self.project,
-            task_type="Task",
+            task_type=task_type,
             on_save=self._save_new_task
         )
         dialog.wait_window()
-    
+
+    def add_phase(self):
+        """Add a phase: the outermost grouping, bracketing deliverables."""
+        self._create_of_type("Phase")
+
+    def add_deliverable(self):
+        """Add a deliverable: a grouping of the tasks that produce it."""
+        self._create_of_type("Deliverable")
+
+    def add_task(self):
+        """Add a new task to the project with undo support."""
+        self._create_of_type("Task")
+
+
     def _save_new_task(self, task: Task):
         """Handle saving a newly created task with undo support."""
         # Use undo/redo if available
@@ -873,15 +894,7 @@ class Toolbar(ctk.CTkFrame):
     
     def add_milestone(self):
         """Add a new milestone to the project with undo support."""
-        from gantt_app.views.taskdialogs import CreateTaskDialog
-        
-        # Open create milestone dialog
-        dialog = CreateTaskDialog(
-            self.master, self.project,
-            task_type="Milestone",
-            on_save=self._save_new_task
-        )
-        dialog.wait_window()
+        self._create_of_type("Milestone")
     
     def add_subtask(self):
         """Add a new subtask to the project with undo support."""
@@ -1641,23 +1654,35 @@ class IconToolbar(ctk.CTkFrame):
         # delete (X), cut (scissors), copy, paste, undo, redo
         
         icon_order = [
-            ('open', 'Open Project', self.load_project),
-            ('new_project', 'New Project', self.new_project),
-            ('save', 'Save Project', self.save_project),
-            ('edit', 'Edit', self.edit_project_info),
-            ('task', 'Create Task', self.add_task),
-            ('subtask', 'Create Subtask', self.add_subtask),
-            ('milestone', 'Create Milestone', self.add_milestone),
-            ('cut', 'Cut', self.cut_tasks),
-            ('copy', 'Copy', self.copy_tasks),
-            ('paste', 'Paste', self.paste_tasks),
-            ('delete', 'Delete', self.delete_selected),
-            ('undo', 'Undo', self.undo),
-            ('redo', 'Redo', self.redo),
+            ('open', 'Open Project', 'load_project'),
+            ('new_project', 'New Project', 'new_project'),
+            ('save', 'Save Project', 'save_project'),
+            ('edit', 'Edit', 'edit_project_info'),
+            ('task', 'Create Task', 'add_task'),
+            ('subtask', 'Create Subtask', 'add_subtask'),
+            ('milestone', 'Create Milestone', 'add_milestone'),
+            ('cut', 'Cut', 'cut_tasks'),
+            ('copy', 'Copy', 'copy_tasks'),
+            ('paste', 'Paste', 'paste_tasks'),
+            ('delete', 'Delete', 'delete_selected'),
+            ('undo', 'Undo', 'undo'),
+            ('redo', 'Redo', 'redo'),
         ]
-        
-        for icon_name, tooltip, command in icon_order:
-            self._create_icon_button(icon_name, tooltip, command)
+
+        # Named, and looked up when the button is pressed.
+        #
+        # Handed self.add_task here instead, each button kept the bound
+        # method it was built with, and Toolbar._connect_icon_toolbar - which
+        # puts the real handlers in place afterwards - changed nothing the
+        # buttons could see. Every icon ran this class's own stub: pressing
+        # Create Task added a task called "New Task" with no dialog and no
+        # undo behind it, and Open and Save opened their own file choosers
+        # rather than the application's.
+        for icon_name, tooltip, method in icon_order:
+            self._create_icon_button(
+                icon_name, tooltip,
+                lambda name=method: getattr(self, name)(),
+            )
     
     def _create_icon_button(self, icon_name: str, tooltip: str, command: Callable):
         """
