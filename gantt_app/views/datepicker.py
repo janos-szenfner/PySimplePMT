@@ -254,11 +254,16 @@ class CalendarPopup(ctk.CTkToplevel):
     changes, and rebuilding is simpler than tracking which cells to blank.
     """
 
+    #: How wide a column is, in pixels, and how wide a cell asks to be, in
+    #: characters. Both are given: the characters size the label to its text
+    #: and the pixels hold every column to the same width whatever is in it.
     CELL = 34
+    CELL_CHARS = 3
     SELECTED_COLOR = '#1f6aa5'
     TODAY_BORDER = '#e74c3c'
     CELL_BG = '#ffffff'
     HOVER_BG = '#cfe2f3'
+    HEADING_COLOR = '#6b7280'
 
     def __init__(self, master, date: datetime, on_pick):
         super().__init__(master)
@@ -278,7 +283,7 @@ class CalendarPopup(ctk.CTkToplevel):
         self._place_near(master)
 
     def _build(self):
-        """Build the header, the weekday row and the grid's container."""
+        """Build the month header, the day grid's container and the footer."""
         header = ctk.CTkFrame(self, fg_color='transparent')
         header.pack(fill=tk.X, padx=10, pady=(10, 4))
 
@@ -290,15 +295,16 @@ class CalendarPopup(ctk.CTkToplevel):
         ctk.CTkButton(header, text='›', width=32,
                       command=self.next_month).pack(side=tk.RIGHT)
 
-        weekdays = ctk.CTkFrame(self, fg_color='transparent')
-        weekdays.pack(padx=10)
-        for column, name in enumerate(WEEKDAYS):
-            ctk.CTkLabel(weekdays, text=name, width=self.CELL,
-                         text_color='#6b7280').grid(row=0, column=column,
-                                                    padx=1)
-
+        # The weekday headings and the day cells share one grid, so they
+        # share its columns. They used to sit in two frames, each with a
+        # grid of its own, and be sized in different units besides - the
+        # headings 34 pixels wide, the cells three characters - so Monday
+        # stood over no particular column and nor did any other day.
         self._grid = ctk.CTkFrame(self, fg_color='transparent')
         self._grid.pack(padx=10, pady=(2, 4))
+        for column in range(len(WEEKDAYS)):
+            self._grid.grid_columnconfigure(column, uniform='day',
+                                            minsize=self.CELL)
 
         footer = ctk.CTkFrame(self, fg_color='transparent')
         footer.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -330,13 +336,23 @@ class CalendarPopup(ctk.CTkToplevel):
             text=f"{calendar.month_name[self._month]} {self._year}"
         )
 
+        # The headings go in with the days, being cleared with them. Same
+        # widget and same width as a day cell, so a column is the same
+        # width whichever of the two is measuring it.
+        for column, name in enumerate(WEEKDAYS):
+            tk.Label(self._grid, text=name, width=self.CELL_CHARS,
+                     background=self.CELL_BG, foreground=self.HEADING_COLOR,
+                     padx=2, pady=3).grid(row=0, column=column,
+                                          padx=1, pady=(1, 3))
+
         today = datetime.now().date()
         weeks = calendar.Calendar(firstweekday=0).monthdayscalendar(
             self._year, self._month
         )
 
         self.day_buttons = {}
-        for row, week in enumerate(weeks):
+        # Row 0 is the headings, so the weeks start at row 1
+        for row, week in enumerate(weeks, start=1):
             for column, day in enumerate(week):
                 if day == 0:
                     continue                # a day belonging to another month
@@ -346,7 +362,7 @@ class CalendarPopup(ctk.CTkToplevel):
                 is_today = date.date() == today
 
                 cell = tk.Label(
-                    self._grid, text=str(day), width=3,
+                    self._grid, text=str(day), width=self.CELL_CHARS,
                     background=(self.SELECTED_COLOR if selected
                                 else self.CELL_BG),
                     foreground='#ffffff' if selected else '#1a1a1a',
