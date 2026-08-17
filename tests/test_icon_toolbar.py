@@ -140,12 +140,42 @@ class TestIconToolbarCreation(unittest.TestCase):
                         f"Icon button '{icon_name}' not created")
         self.toolbar = toolbar
 
-    def test_icon_toolbar_button_count(self):
-        """Test that IconToolbar creates the expected number of buttons."""
+    def test_a_button_is_made_for_every_icon(self):
+        """
+        One button per icon named, and none for the dividers.
+
+        Counted against ICON_ACTIONS rather than against a number written
+        here, which went stale the moment Phase and Deliverable were added.
+        """
         toolbar = IconToolbar(self.root, self.project)
-        # We expect: open, new_project, save, edit, task, subtask, milestone,
-        # cut, copy, paste, delete, undo, redo = 13 buttons
-        self.assertEqual(len(toolbar.icon_buttons), 13)
+        expected = [name for name, _tip, _action in toolbar.ICON_ACTIONS
+                    if name != toolbar.SEPARATOR]
+
+        self.assertEqual(list(toolbar.icon_buttons), expected)
+        self.toolbar = toolbar
+
+    def test_the_dividers_are_not_buttons(self):
+        """A divider is a hairline, not something to press."""
+        toolbar = IconToolbar(self.root, self.project)
+
+        self.assertNotIn(toolbar.SEPARATOR, toolbar.icon_buttons)
+        self.assertEqual(len(toolbar.separators), 2)
+        self.toolbar = toolbar
+
+    def test_the_dividers_fall_between_the_groups(self):
+        """
+        Making things is held apart from moving them about.
+
+        One divider after the file actions, one after the work items, so the
+        row reads as three groups rather than one long run of buttons.
+        """
+        toolbar = IconToolbar(self.root, self.project)
+        names = [name for name, _tip, _action in toolbar.ICON_ACTIONS]
+
+        self.assertEqual(names.index(toolbar.SEPARATOR),
+                         names.index('save') + 1)
+        self.assertEqual(names[names.index('milestone') + 1],
+                         toolbar.SEPARATOR)
         self.toolbar = toolbar
 
 
@@ -335,17 +365,22 @@ class TestIconToolbarActions(unittest.TestCase):
         self.root.destroy()
 
     def test_every_icon_names_an_action(self):
-        """No icon is drawn with nothing to invoke."""
+        """No icon is drawn with nothing to invoke. Dividers are not icons."""
         for icon_name, tooltip, action in self.toolbar.ICON_ACTIONS:
+            if icon_name == self.toolbar.SEPARATOR:
+                continue
             self.assertTrue(action, f"{icon_name} names no action")
 
     def test_the_row_offers_the_expected_actions(self):
         """The actions Toolbar connects are the actions the row asks for."""
-        actions = [action for _icon, _tip, action in self.toolbar.ICON_ACTIONS]
+        actions = [action for icon, _tip, action in self.toolbar.ICON_ACTIONS
+                   if icon != self.toolbar.SEPARATOR]
 
         self.assertEqual(actions, [
-            'load_project', 'new_project', 'save_project', 'edit_project_info',
-            'add_task', 'add_subtask', 'add_milestone',
+            'load_project', 'new_project', 'save_project',
+            'edit_project_info',
+            'add_phase', 'add_deliverable', 'add_task', 'add_subtask',
+            'add_milestone',
             'cut_tasks', 'copy_tasks', 'paste_tasks', 'delete_selected',
             'undo', 'redo',
         ])

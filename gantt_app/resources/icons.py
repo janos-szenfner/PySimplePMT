@@ -213,6 +213,20 @@ ICON_STROKES: Dict[str, List[tuple]] = {
     'milestone': [
         ('shape', [(0.50, 0.12), (0.88, 0.50), (0.50, 0.88), (0.12, 0.50)]),
     ],
+    # A phase brackets the deliverables under it, so it is drawn as the
+    # stack of layers it is - the outermost thing in the plan.
+    'phase': [
+        ('shape', [(0.50, 0.08), (0.92, 0.30), (0.50, 0.52), (0.08, 0.30)]),
+        ('line', [(0.08, 0.50), (0.50, 0.72), (0.92, 0.50)]),
+        ('line', [(0.08, 0.68), (0.50, 0.90), (0.92, 0.68)]),
+    ],
+    # A deliverable is the thing handed over when its tasks are done: a box
+    # with a tick on it, told apart from the plain rectangles by both.
+    'deliverable': [
+        ('shape', [(0.10, 0.26), (0.90, 0.26), (0.90, 0.88), (0.10, 0.88)]),
+        ('line', [(0.10, 0.44), (0.90, 0.44)]),
+        ('line', [(0.30, 0.64), (0.44, 0.78), (0.72, 0.54)]),
+    ],
     'cut': [
         ('line', [(0.24, 0.14), (0.72, 0.72)]),
         ('line', [(0.76, 0.14), (0.28, 0.72)]),

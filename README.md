@@ -231,8 +231,12 @@ on any desktop does:
 - **Log**: Opens the application log window, at the end of the row
 
 **The action bar** under it carries the handful worth reaching for without
-opening a menu: open, new, save, edit, the three work items, cut, copy, paste,
-delete, undo, redo.
+opening a menu, in three groups divided by a hairline:
+
+- open, new, save
+- edit, and the five work item types outermost first: Phase, Deliverable,
+  Task, Subtask, Milestone
+- cut, copy, paste, delete, undo, redo
 
 The icons are **drawn** (`resources/icons.py`), a few strokes each painted with
 Pillow at four times the size and reduced. They were set in "Segoe UI Emoji"

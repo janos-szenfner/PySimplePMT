@@ -46,6 +46,7 @@ WIN_MENU_BG = "#F1F3F5"     # light gray background for menu bar
 WIN_MENU_HOVER = "#E9ECEF"  # hover color for menu items
 WIN_MENU_TEXT = "#1C1D1F"   # dark text color
 WIN_DROPDOWN_BG = "#F8F9FA" # light background for dropdown menus
+SEPARATOR_COLOR = "#C8CDD2" # the hairline between groups of icons
 
 
 class CTkDropdownMenu(ctk.CTkToplevel):
@@ -679,6 +680,8 @@ class Toolbar(ctk.CTkFrame):
         self.icon_toolbar.load_project = self.load_project
         self.icon_toolbar.save_project = self.save_project
         self.icon_toolbar.edit_project_info = self.edit_project_info
+        self.icon_toolbar.add_phase = self.add_phase
+        self.icon_toolbar.add_deliverable = self.add_deliverable
         self.icon_toolbar.add_task = self.add_task
         self.icon_toolbar.add_subtask = self.add_subtask
         self.icon_toolbar.add_milestone = self.add_milestone
@@ -1641,6 +1644,10 @@ class IconToolbar(ctk.CTkFrame):
     #: Icon size in pixels
     ICON_SIZE = 20
     BUTTON_SIZE = 32
+
+    #: The divider between two groups of icons.
+    SEPARATOR_HEIGHT = 22
+    SEPARATOR_PAD = 6
     
     # Icon size in pixels
     # Note: We use emoji icons as a cross-platform fallback
@@ -1662,6 +1669,8 @@ class IconToolbar(ctk.CTkFrame):
         
         # Store button references for state management
         self.icon_buttons = {}
+        #: The dividers between groups, kept so they can be found again
+        self.separators = []
         
         # Which icons are live with no project open, and which need one
         from gantt_app.resources.icons import (
@@ -1683,14 +1692,23 @@ class IconToolbar(ctk.CTkFrame):
     #: handlers themselves belong to Toolbar, which puts them here through
     #: _connect_icon_toolbar once this row is built - so binding a method of
     #: this class to a button would bind the wrong thing, and did.
+    #: The name standing in for a divider rather than a button.
+    SEPARATOR = 'separator'
+
     ICON_ACTIONS = (
         ('open', 'Open Project', 'load_project'),
         ('new_project', 'New Project', 'new_project'),
         ('save', 'Save Project', 'save_project'),
+        (SEPARATOR, '', ''),
         ('edit', 'Edit', 'edit_project_info'),
+        # The five work item types, outermost first, in the order the plan
+        # nests them - the same order the Create menus offer
+        ('phase', 'Create Phase', 'add_phase'),
+        ('deliverable', 'Create Deliverable', 'add_deliverable'),
         ('task', 'Create Task', 'add_task'),
         ('subtask', 'Create Subtask', 'add_subtask'),
         ('milestone', 'Create Milestone', 'add_milestone'),
+        (SEPARATOR, '', ''),
         ('cut', 'Cut', 'cut_tasks'),
         ('copy', 'Copy', 'copy_tasks'),
         ('paste', 'Paste', 'paste_tasks'),
@@ -1700,12 +1718,29 @@ class IconToolbar(ctk.CTkFrame):
     )
 
     def _create_ui(self):
-        """Build the row of icon buttons."""
+        """Build the row of icon buttons, divided into its groups."""
         for icon_name, tooltip, action in self.ICON_ACTIONS:
+            if icon_name == self.SEPARATOR:
+                self._create_separator()
+                continue
             self._create_icon_button(
                 icon_name, tooltip,
                 lambda name=action: self._perform(name),
             )
+
+    def _create_separator(self):
+        """
+        A divider between two groups of icons.
+
+        A hairline rather than a gap: the row runs from making things to
+        moving them about, and the two read as one long row of buttons
+        without a line to say where one ends.
+        """
+        divider = ctk.CTkFrame(self, width=1, height=self.SEPARATOR_HEIGHT,
+                               fg_color=SEPARATOR_COLOR, corner_radius=0)
+        divider.pack(side="left", fill=None, padx=self.SEPARATOR_PAD, pady=6)
+        divider.pack_propagate(False)
+        self.separators.append(divider)
 
     def _perform(self, action: str):
         """
