@@ -616,12 +616,55 @@ class Toolbar(ctk.CTkFrame):
         # Convert existing menu definitions to new format
         menu_config = self._convert_to_new_menu_format()
         
-        # Create Windows-style menu bar
+        # Create graphical icon toolbar
+        self.icon_toolbar = IconToolbar(
+            self, self.project,
+            on_project_changed=self.on_project_changed,
+            undo_redo_manager=self.undo_redo_manager,
+            clipboard_manager=self.clipboard_manager
+        )
+        self.icon_toolbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Connect icon toolbar actions to toolbar methods
+        self._connect_icon_toolbar()
+        
+        # Create Windows-style menu bar (keep for dropdown menus)
         self.menu_bar = CustomMenuBar(self, menu_config=menu_config)
         self.menu_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Theme toggle and Log buttons
         self._create_theme_log_buttons()
+    
+    def _connect_icon_toolbar(self):
+        """Connect the icon toolbar button actions to the toolbar's methods."""
+        if not hasattr(self, 'icon_toolbar'):
+            return
+        
+        # Override the icon toolbar's methods with the toolbar's methods
+        self.icon_toolbar.new_project = self.new_project
+        self.icon_toolbar.load_project = self.load_project
+        self.icon_toolbar.save_project = self.save_project
+        self.icon_toolbar.edit_project_info = self.edit_project_info
+        self.icon_toolbar.add_task = self.add_task
+        self.icon_toolbar.add_subtask = self.add_subtask
+        self.icon_toolbar.add_milestone = self.add_milestone
+        self.icon_toolbar.cut_tasks = self.cut_tasks
+        self.icon_toolbar.copy_tasks = self.copy_tasks
+        self.icon_toolbar.paste_tasks = self.paste_tasks
+        self.icon_toolbar.delete_selected = lambda: self._delete_selected_tasks()
+        self.icon_toolbar.undo = self.undo
+        self.icon_toolbar.redo = self.redo
+    
+    def _delete_selected_tasks(self):
+        """Delete selected tasks from the task list."""
+        if hasattr(self.task_list, 'get_selected_task_ids'):
+            selected_ids = self.task_list.get_selected_task_ids()
+            if selected_ids and self.project:
+                if messagebox.askyesno("Delete", f"Delete {len(selected_ids)} selected task(s)?"):
+                    for task_id in selected_ids:
+                        self.project.delete_task(task_id)
+                    if self.on_project_changed:
+                        self.on_project_changed()
 
     def _convert_to_new_menu_format(self):
         """
@@ -1535,3 +1578,301 @@ class Toolbar(ctk.CTkFrame):
     def set_task_list(self, task_list):
         """Set the task list reference for copy/paste operations."""
         self.task_list = task_list
+        if hasattr(self, 'icon_toolbar'):
+            self.icon_toolbar.set_task_list(task_list)
+
+
+class IconToolbar(ctk.CTkFrame):
+    """
+    Graphical toolbar with icon buttons for the Gantt application.
+    
+    This toolbar displays icons for common actions and replaces the text-based menu bar
+    with a more visual interface similar to standard toolbar designs.
+    
+    Icons are generated SVG icons that are open source and unique.
+    """
+    
+    #: Icon size in pixels
+    ICON_SIZE = 20
+    BUTTON_SIZE = 32
+    
+    # Icon size in pixels
+    # Note: We use emoji icons as a cross-platform fallback
+    # The SVG paths are available in gantt_app.resources.icons for future use
+    
+    def __init__(self, master, project: Project,
+                 on_project_changed: Callable[[], None] = None,
+                 undo_redo_manager: UndoRedoManager = None,
+                 clipboard_manager=None,
+                 **kwargs):
+        super().__init__(master, height=40, fg_color=WIN_MENU_BG, **kwargs)
+        
+        self.master = master
+        self.project = project
+        self.on_project_changed = on_project_changed
+        self.undo_redo_manager = undo_redo_manager
+        self.clipboard_manager = clipboard_manager
+        self.task_list = None
+        
+        # Store button references for state management
+        self.icon_buttons = {}
+        
+        # Import icons from resources
+        from gantt_app.resources.icons import (
+            ALWAYS_ACTIVE, ACTIVE_WHEN_PROJECT_OPEN, ICON_EMOJIS
+        )
+        self.ALWAYS_ACTIVE = ALWAYS_ACTIVE
+        self.ACTIVE_WHEN_PROJECT_OPEN = ACTIVE_WHEN_PROJECT_OPEN
+        self.ICON_EMOJIS = ICON_EMOJIS
+        
+        # Create UI
+        self._create_ui()
+        
+        # Update button states
+        self._update_button_states()
+    
+    def _create_ui(self):
+        """Create the icon toolbar user interface."""
+        # Icon button order based on screenshot: 
+        # folder, floppy, clock, person, X, i, scissors, copy, paste, undo, redo
+        # Modified per user request:
+        # folder (open), floppy (save), edit (replaces i), 
+        # task (replaces clock), milestone (replaces person), 
+        # delete (X), cut (scissors), copy, paste, undo, redo
+        
+        icon_order = [
+            ('open', 'Open Project', self.load_project),
+            ('new_project', 'New Project', self.new_project),
+            ('save', 'Save Project', self.save_project),
+            ('edit', 'Edit', self.edit_project_info),
+            ('task', 'Create Task', self.add_task),
+            ('subtask', 'Create Subtask', self.add_subtask),
+            ('milestone', 'Create Milestone', self.add_milestone),
+            ('cut', 'Cut', self.cut_tasks),
+            ('copy', 'Copy', self.copy_tasks),
+            ('paste', 'Paste', self.paste_tasks),
+            ('delete', 'Delete', self.delete_selected),
+            ('undo', 'Undo', self.undo),
+            ('redo', 'Redo', self.redo),
+        ]
+        
+        for icon_name, tooltip, command in icon_order:
+            self._create_icon_button(icon_name, tooltip, command)
+    
+    def _create_icon_button(self, icon_name: str, tooltip: str, command: Callable):
+        """
+        Create a single icon button.
+        
+        PARAMETERS:
+        -----------
+        icon_name : str
+            Name of the icon
+        tooltip : str
+            Tooltip text for the button
+        command : Callable
+            Function to call when button is clicked
+        """
+        # Create frame for the button
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(side="left", padx=1, pady=2)
+        
+        # Get emoji icon
+        icon_char = self.ICON_EMOJIS.get(icon_name, '?')
+        
+        # Create button with emoji icon
+        # Use a larger font for better visibility
+        try:
+            # Try using the system emoji font
+            font = ("Segoe UI Emoji", 16)
+        except:
+            font = ("Arial", 16)
+        
+        btn = ctk.CTkButton(
+            btn_frame,
+            text=icon_char,
+            width=self.BUTTON_SIZE,
+            height=self.BUTTON_SIZE,
+            fg_color="transparent",
+            hover_color=WIN_MENU_HOVER,
+            corner_radius=4,
+            command=command,
+            font=font
+        )
+        
+        btn.pack(side="left", padx=2, pady=2)
+        btn.tooltip = tooltip  # Store tooltip for future use
+        
+        # Store button reference
+        self.icon_buttons[icon_name] = btn
+    
+    def _update_button_states(self):
+        """
+        Update the enabled/disabled state of all icon buttons.
+        
+        Buttons are active when there's an open or new project plan,
+        except the Open button which is always active.
+        """
+        has_project = self.project is not None
+        
+        for icon_name, btn in self.icon_buttons.items():
+            if icon_name in self.ALWAYS_ACTIVE:
+                # Always active
+                btn.configure(state="normal")
+            elif icon_name in self.ACTIVE_WHEN_PROJECT_OPEN:
+                # Active only when project is open
+                btn.configure(state="normal" if has_project else "disabled")
+            else:
+                # Default: active when project is open
+                btn.configure(state="normal" if has_project else "disabled")
+    
+    def set_task_list(self, task_list):
+        """Set the task list reference for copy/paste operations."""
+        self.task_list = task_list
+        self._update_button_states()
+    
+    # Methods for button actions
+    def new_project(self):
+        """Create a new project."""
+        if hasattr(self, '_new_project_impl'):
+            self._new_project_impl()
+        else:
+            # Default implementation
+            self.project = Project(name="New Project")
+            if self.on_project_changed:
+                self.on_project_changed()
+            self._update_button_states()
+    
+    def load_project(self):
+        """Load a project from file."""
+        if hasattr(self, '_load_project_impl'):
+            self._load_project_impl()
+        else:
+            file_path = filedialog.askopenfilename(
+                filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+                title="Open Project"
+            )
+            if file_path:
+                try:
+                    self.project = load_project(file_path)
+                    if self.on_project_changed:
+                        self.on_project_changed()
+                    self._update_button_states()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to load project: {e}")
+    
+    def save_project(self):
+        """Save the current project."""
+        if hasattr(self, '_save_project_impl'):
+            self._save_project_impl()
+        else:
+            if self.project:
+                file_path = filedialog.asksaveasfilename(
+                    defaultextension=".json",
+                    filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+                    title="Save Project"
+                )
+                if file_path:
+                    try:
+                        save_project(self.project, file_path)
+                    except Exception as e:
+                        messagebox.showerror("Error", f"Failed to save project: {e}")
+    
+    def edit_project_info(self):
+        """Edit project information."""
+        if hasattr(self, '_edit_project_info_impl'):
+            self._edit_project_info_impl()
+        else:
+            # Default implementation
+            if self.project:
+                new_name = simpledialog.askstring("Edit Project", "Project Name:", 
+                                                   initialvalue=self.project.name)
+                if new_name:
+                    self.project.name = new_name
+                    if self.on_project_changed:
+                        self.on_project_changed()
+    
+    def add_task(self):
+        """Add a new task."""
+        if hasattr(self, '_add_task_impl'):
+            self._add_task_impl()
+        else:
+            if self.project:
+                from gantt_app.models import Task
+                task = Task.create_task(name="New Task")
+                self.project.add_task(task)
+                if self.on_project_changed:
+                    self.on_project_changed()
+    
+    def add_subtask(self):
+        """Add a new subtask."""
+        if hasattr(self, '_add_subtask_impl'):
+            self._add_subtask_impl()
+        else:
+            self.add_task()  # Default: same as task for now
+    
+    def add_milestone(self):
+        """Add a new milestone."""
+        if hasattr(self, '_add_milestone_impl'):
+            self._add_milestone_impl()
+        else:
+            if self.project:
+                from gantt_app.models import Task
+                task = Task.create_milestone(name="New Milestone")
+                self.project.add_task(task)
+                if self.on_project_changed:
+                    self.on_project_changed()
+    
+    def cut_tasks(self):
+        """Cut selected tasks to clipboard."""
+        if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
+            selected_ids = self.task_list.get_selected_task_ids()
+            if selected_ids:
+                self.clipboard_manager.cut(selected_ids)
+                self._update_button_states()
+    
+    def copy_tasks(self):
+        """Copy selected tasks to clipboard."""
+        if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
+            selected_ids = self.task_list.get_selected_task_ids()
+            if selected_ids:
+                self.clipboard_manager.copy(selected_ids)
+                self._update_button_states()
+    
+    def paste_tasks(self):
+        """Paste tasks from clipboard."""
+        if self.clipboard_manager and self.clipboard_manager.can_paste():
+            target_container_id = None
+            if hasattr(self.task_list, 'get_selected_task_ids'):
+                selected_ids = self.task_list.get_selected_task_ids()
+                if selected_ids:
+                    target_container_id = selected_ids[0]
+            
+            self.clipboard_manager.paste(target_container_id)
+            if self.on_project_changed:
+                self.on_project_changed()
+            self._update_button_states()
+    
+    def delete_selected(self):
+        """Delete selected tasks."""
+        if hasattr(self.task_list, 'get_selected_task_ids'):
+            selected_ids = self.task_list.get_selected_task_ids()
+            if selected_ids and self.project:
+                if messagebox.askyesno("Delete", f"Delete {len(selected_ids)} selected task(s)?"):
+                    for task_id in selected_ids:
+                        self.project.delete_task(task_id)
+                    if self.on_project_changed:
+                        self.on_project_changed()
+    
+    def undo(self):
+        """Undo the last action."""
+        if self.undo_redo_manager:
+            self.undo_redo_manager.undo()
+            if self.on_project_changed:
+                self.on_project_changed()
+    
+    def redo(self):
+        """Redo the last undone action."""
+        if self.undo_redo_manager:
+            self.undo_redo_manager.redo()
+            if self.on_project_changed:
+                self.on_project_changed()
