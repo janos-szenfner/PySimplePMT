@@ -243,6 +243,8 @@ class GanttApp(ctk.CTk):
         
         # Set task list reference in toolbar for copy/paste functionality
         self.toolbar.set_task_list(self.task_list)
+        # The chart draws the rows the list is showing, so the two line up
+        self.gantt_chart.set_task_list(self.task_list)
 
         # Create Gantt chart
         self.gantt_chart = GanttChart(

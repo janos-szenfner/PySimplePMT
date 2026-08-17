@@ -157,6 +157,9 @@ class DragDropTaskList(ctk.CTkFrame):
         self._drop_above = True
         self._drop_line_widget = None
 
+        #: Called when the rows on show change or scroll; see on_rows_changed
+        self._row_watchers = []
+
         # Create UI
         self._create_ui()
         
@@ -220,7 +223,9 @@ class DragDropTaskList(ctk.CTkFrame):
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
 
-        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.tree.configure(yscrollcommand=self._rows_scrolled,
+                            xscrollcommand=hsb.set)
+        self._vertical_scrollbar = vsb
         
         # Grid layout
         self.tree.grid(row=0, column=0, sticky=tk.NSEW)
@@ -250,6 +255,11 @@ class DragDropTaskList(ctk.CTkFrame):
         # the way this widget can say it.
         self.tree.tag_configure('cut', foreground=self.CUT_ROW_TEXT)
         
+        # Folding a branch away changes which rows are on show, which the
+        # chart beside the list draws from
+        self.tree.bind('<<TreeviewOpen>>', self._tell_row_watchers, add='+')
+        self.tree.bind('<<TreeviewClose>>', self._tell_row_watchers, add='+')
+
         # Bind events
         self.tree.bind('<Double-1>', self.on_double_click)
         self.tree.bind('<ButtonPress-1>', self.on_press)
@@ -370,6 +380,82 @@ class DragDropTaskList(ctk.CTkFrame):
 
         logger.info("Deleting task %s %r", task.id, task.name)
         self.remove_task(task_id)
+
+    def on_rows_changed(self, callback):
+        """
+        Be told when the rows on show change, or scroll.
+
+        PARAMETERS:
+        -----------
+        callback : callable
+            Called with no arguments. The Gantt chart beside the list uses
+            this to draw the same rows the list is drawing - folding a
+            branch away takes its bars with it - and to scroll with it.
+        """
+        self._row_watchers.append(callback)
+
+    def _rows_scrolled(self, first, last):
+        """
+        Move the scrollbar, and tell anything following the rows.
+
+        This is the tree's yscrollcommand, so it runs whenever what is on
+        show changes - a scroll, a branch folded away, a row added.
+        """
+        self._vertical_scrollbar.set(first, last)
+        self._tell_row_watchers()
+
+    def _tell_row_watchers(self, _event=None):
+        """Let the chart know the rows have moved or changed."""
+        for callback in self._row_watchers:
+            try:
+                callback()
+            except Exception:
+                logger.exception("A row watcher failed")
+
+    def rows_scrolled_to(self) -> float:
+        """
+        How far down the rows the list has scrolled, from 0 to 1.
+
+        The chart beside it scrolls to match, so the two panes show the same
+        rows rather than only starting at the same one.
+        """
+        try:
+            return float(self.tree.yview()[0])
+        except (tk.TclError, ValueError, IndexError):
+            return 0.0
+
+    def visible_rows(self) -> List[str]:
+        """
+        The task IDs the grid is showing, top to bottom.
+
+        RETURNS:
+        --------
+        List[str]
+            In the order they are drawn, with the contents of folded-away
+            branches left out - what the reader can actually see.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what the Gantt chart draws its rows from, so that a bar sits
+        on the line of the task it belongs to. Asking the tree rather than
+        the project is the point: the project knows nothing about which
+        branches are folded away, and a chart drawn from it put bars beside
+        rows that were not on screen.
+        """
+        rows: List[str] = []
+
+        def walk(item: str):
+            """Add a row, then its children when it is open."""
+            for child in self.tree.get_children(item):
+                rows.append(child)
+                if self.tree.item(child, 'open'):
+                    walk(child)
+
+        try:
+            walk('')
+        except tk.TclError:
+            return []
+        return rows
 
     def _cut_task_ids(self) -> set:
         """
@@ -1087,6 +1173,12 @@ class DragDropTaskList(ctk.CTkFrame):
             self.tree.delete(item)
 
         self._populate_tree_hierarchical()
+
+        # The rows are all new, so anything drawing from them - the Gantt
+        # chart beside the list - is told once they are all in place. The
+        # tree's own scroll callback fires part way through the rebuild,
+        # when the answer to what is on show is still half of it.
+        self._tell_row_watchers()
     
     def _populate_tree_hierarchical(self):
         """

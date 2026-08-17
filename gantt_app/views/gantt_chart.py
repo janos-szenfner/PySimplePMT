@@ -26,7 +26,8 @@ from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
 from PIL import ImageTk
 
 from gantt_app.utils.chart_render import (
-    render_image, preferred_width, MIN_WIDTH
+    render_image, preferred_width, MIN_WIDTH, RowPlan,
+    MARGIN_TOP as CHART_TOP_MARGIN,
 )
 from gantt_app.utils.log import get_logger
 
@@ -75,6 +76,14 @@ class GanttChart(ctk.CTkFrame):
         self.width = width
         self.height = height
         self.dpi = dpi
+
+        #: The task list this chart is drawn beside, once main.py has built
+        #: both and introduced them - see set_task_list. With one, the chart
+        #: draws the rows the list is showing, at the list's row height, so
+        #: a bar sits on the line of the task it belongs to. Without one it
+        #: chooses its own rows and prints its own labels, which is what the
+        #: exports do.
+        self.task_list = None
         
         # Colors - these match the theme used in the exporters
         self.task_color = '#1f6aa5'
@@ -114,6 +123,13 @@ class GanttChart(ctk.CTkFrame):
         self._resize_job = None
         self._drawing = False
         self._photo = None
+
+        # What the last drawing was of, so a scroll can be told from a change
+        # of rows, and the chart scrolled in the rows it actually has
+        self._drawn_rows = []
+        self._drawn_row_height = 0
+        self._drawn_top_margin = 0
+        self._drawn_height = 0
 
         # Draw initial chart
         self.draw_chart()
@@ -305,13 +321,16 @@ class GanttChart(ctk.CTkFrame):
         if self._zoom != 1.0:
             width = max(int(width * self._zoom), MIN_ZOOMED_WIDTH)
 
+        plan = self._row_plan()
+
         try:
             image = render_image(
                 self.project,
                 settings=self._figure_settings(),
                 width=width,
                 scale=SCREEN_SCALE,
-                min_width=MIN_ZOOMED_WIDTH if self._zoom < 1.0 else MIN_WIDTH
+                min_width=MIN_ZOOMED_WIDTH if self._zoom < 1.0 else MIN_WIDTH,
+                rows=plan,
             )
         except Exception:
             logger.exception("Could not draw the Gantt chart")
@@ -321,8 +340,140 @@ class GanttChart(ctk.CTkFrame):
 
         self._show_image(image)
 
+        if plan is not None:
+            self._drawn_rows = [task.id for task in plan.tasks]
+            self._drawn_row_height = plan.row_height
+            self._drawn_top_margin = plan.top_margin
+        else:
+            self._drawn_rows = []
+        self._drawn_height = image.size[1] / SCREEN_SCALE
+
         logger.debug("Drew Gantt chart for %r (%d task(s), %dpx wide)",
                      self.project.name, len(self.project.tasks), width)
+
+    def set_task_list(self, task_list):
+        """
+        Draw this chart against the rows of a task list.
+
+        PARAMETERS:
+        -----------
+        task_list : DragDropTaskList
+            The grid to the left of the chart.
+        """
+        self.task_list = task_list
+        task_list.on_rows_changed(self._rows_changed)
+        self.draw_chart()
+
+    def _rows_changed(self):
+        """
+        Follow the list: redraw when its rows change, scroll when it does.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Folding a branch away takes rows off the list, so the chart is drawn
+        again from what is left - otherwise the bars below the fold stayed
+        where they were and every one of them was a row out of place.
+
+        A plain scroll changes no rows, so it only moves the chart. Redrawing
+        on every scroll step would rasterise the whole plan for each notch of
+        the wheel.
+        """
+        rows = self.task_list.visible_rows() if self.task_list else []
+        if rows != self._drawn_rows:
+            self.draw_chart()
+        self._scroll_to_match()
+
+    def _scroll_to_match(self):
+        """
+        Put the chart at the row the list has scrolled to.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Worked out in rows rather than passed straight through as a
+        fraction. The two panes are not the same height and the chart has a
+        title and a date axis above its first row, so the same fraction of
+        each is not the same row of the plan.
+        """
+        if self._canvas is None or not self._drawn_rows:
+            return
+
+        try:
+            fraction = self.task_list.rows_scrolled_to()
+            first_row = round(fraction * len(self._drawn_rows))
+            top = self._drawn_top_margin + first_row * self._drawn_row_height
+            height = max(self._drawn_height, 1)
+            self._canvas.yview_moveto(max(0.0, top / height))
+        except (tk.TclError, AttributeError, ZeroDivisionError):
+            logger.debug("Could not scroll the chart to match the task list")
+
+    def _row_plan(self):
+        """
+        The rows to draw, taken from the task list beside the chart.
+
+        RETURNS:
+        --------
+        Optional[RowPlan]
+            None when there is no task list, or it is showing nothing - the
+            chart then chooses its own rows, as it does for an export.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The rows are the list's, in the list's order, at the list's row
+        height, so the two panes read as one table. Only the top margin is
+        the chart's own: it carries a title and a row of dates above the
+        first bar, and the list carries a heading above its first row.
+        _first_row_offset measures what the list uses so the chart can leave
+        the same.
+        """
+        if self.task_list is None:
+            return None
+
+        try:
+            visible = self.task_list.visible_rows()
+        except Exception:
+            logger.exception("Could not read the task list's rows")
+            return None
+
+        tasks = [self.project.get_task_by_id(task_id) for task_id in visible]
+        tasks = [task for task in tasks if task is not None]
+        if not tasks:
+            return None
+
+        return RowPlan(
+            tasks=tasks,
+            row_height=self.task_list.GRID_ROW_HEIGHT,
+            top_margin=self._first_row_offset(),
+            label_width=0,
+        )
+
+    def _first_row_offset(self) -> int:
+        """
+        How far down the chart's first row sits, to match the list's.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Measured rather than assumed. The two panes are packed separately -
+        the list under a heading of its own, the chart in a canvas - so how
+        far each starts from the top of its pane is a matter of what the
+        window manager made of them, not of any number written here.
+
+        Before either pane has been laid out there is nothing to measure and
+        the chart's own margin is used, which is what the first draw during
+        startup gets.
+        """
+        default = CHART_TOP_MARGIN
+        try:
+            rows = self.task_list.tree.winfo_rooty()
+            heading = self.task_list.tree.winfo_y()
+            canvas_top = (self._canvas.winfo_rooty() if self._canvas
+                          else self.chart_frame.winfo_rooty())
+            offset = rows + heading - canvas_top
+        except (tk.TclError, AttributeError):
+            return default
+
+        if offset <= 0:
+            return default
+        return int(offset)
 
     def _figure_settings(self):
         """

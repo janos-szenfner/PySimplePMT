@@ -61,6 +61,43 @@ LABEL_CHARS = 28
 
 
 @dataclass
+class RowPlan:
+    """
+    The rows to draw, and the geometry that lines them up with a task list.
+
+    WHY THIS EXISTS:
+    ================
+    On its own the chart chooses its own rows, in its own order, at its own
+    height, and prints the task's name down the left of it. Beside the task
+    list that is three ways of disagreeing with the grid the reader is
+    looking at: a row folded away in the list still had a bar, a row height
+    of 34 against the list's 26 drifted a whole row out of step every four
+    tasks, and the names appeared twice.
+
+    Handed one of these, the chart draws exactly the rows it is given, in the
+    order given, at the height given - so a bar sits on the same line as the
+    task it belongs to, which is how a plan is read.
+
+    ATTRIBUTES:
+    -----------
+    tasks : List[Task]
+        The rows, top to bottom. Whatever the list is showing.
+    row_height : int
+        Pixels per row, matching the grid's.
+    top_margin : int
+        Pixels above the first row, so row one starts level with the grid's.
+    label_width : int
+        Room down the left for the chart's own task names. Zero beside a
+        task list, which is already showing them.
+    """
+
+    tasks: List[Task]
+    row_height: int
+    top_margin: int = MARGIN_TOP
+    label_width: int = 0
+
+
+@dataclass
 class ChartLayout:
     """Geometry for one rendered chart, in pixels."""
 
@@ -206,7 +243,8 @@ def preferred_width(project: Project, available: int = 0) -> int:
 
 def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400,
-                 min_width: int = MIN_WIDTH) -> ChartLayout:
+                 min_width: int = MIN_WIDTH,
+                 rows: Optional['RowPlan'] = None) -> ChartLayout:
     """
     Compute the geometry of the chart.
 
@@ -222,6 +260,11 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         Floor for that width. The default keeps a chart readable; the
         on-screen view lowers it when the user has deliberately zoomed out,
         which would otherwise stop having any effect at the default floor.
+    rows : Optional[RowPlan]
+        The rows to draw and how tall to draw them, when the chart is being
+        lined up with a task list beside it. Left out - as the PNG, PDF and
+        SVG exports leave it out - the chart chooses its own rows and prints
+        its own labels, having no grid beside it to borrow either from.
 
     RETURNS:
     --------
@@ -237,7 +280,9 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     # list is already in hierarchy order, which keeps a parent beside its
     # sub-tasks here too.
     # Only include tasks that should be visible in the timeline
-    tasks = _get_visible_tasks(project)
+    tasks = rows.tasks if rows is not None else _get_visible_tasks(project)
+    top_margin = rows.top_margin if rows is not None else MARGIN_TOP
+    label_width = rows.label_width if rows is not None else MARGIN_LEFT
     title = f"Gantt Chart: {project.name or 'New Project'}"
 
     if not tasks:
@@ -250,13 +295,16 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     # plan with hundreds of tasks would otherwise be tens of thousands of
     # pixels tall, and rendering that repeatedly while dragging the pane
     # divider was enough to exhaust memory.
-    row_height = ROW_HEIGHT
-    height = MARGIN_TOP + len(tasks) * row_height + MARGIN_BOTTOM
-    if width * height > MAX_PIXELS:
-        budget = max(MAX_PIXELS // max(width, 1) - MARGIN_TOP - MARGIN_BOTTOM,
+    row_height = rows.row_height if rows is not None else ROW_HEIGHT
+    height = top_margin + len(tasks) * row_height + MARGIN_BOTTOM
+    if width * height > MAX_PIXELS and rows is None:
+        # Rows are squeezed only when the chart is free to choose them. Given
+        # a row height by the list beside it, changing it is what puts the
+        # two out of step, so the width gives way instead.
+        budget = max(MAX_PIXELS // max(width, 1) - top_margin - MARGIN_BOTTOM,
                      len(tasks) * MIN_ROW_HEIGHT)
         row_height = max(MIN_ROW_HEIGHT, budget // max(len(tasks), 1))
-        height = MARGIN_TOP + len(tasks) * row_height + MARGIN_BOTTOM
+        height = top_margin + len(tasks) * row_height + MARGIN_BOTTOM
 
         # Rows have a floor, so a very long task list stays tall no matter
         # what. Give back the remaining pixels by narrowing the chart, which
@@ -268,8 +316,11 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                     "stay within the pixel budget",
                     width, height, row_height, len(tasks))
 
+    if width * height > MAX_PIXELS:
+        width = max(int(min_width), MAX_PIXELS // max(height, 1))
+
     bar_height = max(6, int(row_height * BAR_HEIGHT / ROW_HEIGHT))
-    plot_left = MARGIN_LEFT
+    plot_left = label_width or MARGIN_RIGHT
     plot_right = width - MARGIN_RIGHT
     plot_span = max(plot_right - plot_left, 1)
 
@@ -283,7 +334,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     def y_for(index: int) -> float:
         """Centre of the row at the given index."""
-        return MARGIN_TOP + index * row_height + row_height / 2
+        return top_margin + index * row_height + row_height / 2
 
     layout = ChartLayout(width=width, height=height, settings=resolved,
                          title=title)
@@ -296,7 +347,8 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     for index, task in enumerate(tasks):
         centre = y_for(index)
-        layout.row_labels.append((centre, _shorten(task.name)))
+        if label_width:
+            layout.row_labels.append((centre, _shorten(task.name)))
 
         if task.is_milestone:
             layout.milestones.append({
@@ -589,7 +641,8 @@ def _safe_scale(layout: 'ChartLayout', scale: float) -> float:
 
 def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400, scale: float = 2.0,
-                 min_width: int = MIN_WIDTH) -> Image.Image:
+                 min_width: int = MIN_WIDTH,
+                 rows: Optional['RowPlan'] = None) -> Image.Image:
     """
     Render the chart into a PIL image.
 
@@ -601,13 +654,17 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         without needing an anti-aliasing capable drawing backend.
     min_width : int
         Floor for the rendered width; see layout_chart.
+    rows : Optional[RowPlan]
+        The rows to draw, when the chart is lined up with a task list; see
+        layout_chart.
 
     RETURNS:
     --------
     Image.Image
         The finished RGB image.
     """
-    layout = layout_chart(project, settings, width, min_width=min_width)
+    layout = layout_chart(project, settings, width, min_width=min_width,
+                          rows=rows)
     s = layout.settings
     scale = _safe_scale(layout, scale)
 
