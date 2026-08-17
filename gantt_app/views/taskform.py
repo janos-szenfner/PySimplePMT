@@ -106,6 +106,19 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     ACTION_WIDTH = 120
     DELETE_WIDTH = 100
 
+    #: How a field looks when it is the user's to fill in, and when the form
+    #: is working it out for them.
+    #:
+    #: A disabled CustomTkinter box is only very slightly paler than a live
+    #: one, so the end date - greyed out because the scheduling mode is
+    #: deriving it - looked exactly like the start date you are meant to
+    #: type in. A shaded background and a grey caption is how every other
+    #: form says a field is not yours to fill.
+    FIELD_BG = '#ffffff'
+    FIELD_BG_DISABLED = '#ebecee'
+    FIELD_TEXT = '#1a1a1a'
+    FIELD_TEXT_DISABLED = '#8a8f96'
+
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
         'Phase': "#34495e",        # Dark Blue
@@ -135,6 +148,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self._row = 0
         self._prepare_checks()
+
+        #: The caption beside each field, so greying a field out greys what
+        #: it is called; see _field and _set_field_enabled
+        self._field_labels = {}
 
         # Guards _recalculate_schedule against the box it writes to setting
         # it off again; see "Working the calculated field out" below
@@ -213,13 +230,67 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _field(self, parent, label: str, widget=None,
                sticky=tk.EW, label_sticky=tk.W) -> int:
-        """Put a labelled widget on the next row and return that row."""
+        """
+        Put a labelled widget on the next row and return that row.
+
+        The label is remembered against its widget, so that greying a field
+        out can grey what it is called as well - see _set_field_enabled.
+        """
         row = self._next_row()
-        ctk.CTkLabel(parent, text=label).grid(
-            row=row, column=0, sticky=label_sticky, pady=5)
+        caption = ctk.CTkLabel(parent, text=label)
+        caption.grid(row=row, column=0, sticky=label_sticky, pady=5)
         if widget is not None:
             widget.grid(row=row, column=1, sticky=sticky, pady=5)
+            self._field_labels[widget] = caption
         return row
+
+    def _set_field_enabled(self, widget, enabled: bool):
+        """
+        Grey a field out, or bring it back.
+
+        PARAMETERS:
+        -----------
+        widget : widget
+            The box, menu or tick box on the row.
+        enabled : bool
+            False greys the row and stops it taking input.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A disabled CustomTkinter box is only very slightly paler than a live
+        one - the end date, greyed out because the mode is working it out
+        for you, looked exactly like the start date you are meant to fill in.
+        So the box is given a shaded background and its caption goes grey
+        with it, which is how every other form says a field is not yours to
+        fill in.
+
+        A DateEntry passes state on to the box and the calendar button it is
+        made of; see datepicker.DateEntry.configure.
+        """
+        if widget is None:
+            return
+
+        try:
+            widget.configure(state=tk.NORMAL if enabled else tk.DISABLED)
+        except (tk.TclError, ValueError):
+            logger.debug("Could not set the state of %s", widget)
+
+        entry = self._entry_of(widget)
+        if isinstance(entry, ctk.CTkEntry):
+            try:
+                entry.configure(
+                    fg_color=(self.FIELD_BG if enabled
+                              else self.FIELD_BG_DISABLED),
+                    text_color=(self.FIELD_TEXT if enabled
+                                else self.FIELD_TEXT_DISABLED),
+                )
+            except (tk.TclError, ValueError):
+                logger.debug("Could not shade %s", widget)
+
+        caption = self._field_labels.get(widget)
+        if caption is not None:
+            caption.configure(text_color=(self.FIELD_TEXT if enabled
+                                          else self.FIELD_TEXT_DISABLED))
 
     def _create_form(self):
         """
@@ -354,9 +425,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                                           date=self.template.start_date)
         self._field(frame, "Start Date:", self.start_date_entry)
         
-        # Disable start date for containers (rolled up from children)
+        # A container takes its dates from the work inside it
         if not dates_editable:
-            self.start_date_entry.configure(state=tk.DISABLED)
+            self._set_field_enabled(self.start_date_entry, False)
 
         if not self.seed_has_end():
             self.end_date_entry = None
@@ -365,9 +436,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.end_date_entry = DateEntry(frame, date=self.template.end_date)
         self._field(frame, "End Date:", self.end_date_entry)
         
-        # Disable end date for milestones and containers
+        # A milestone takes no time, and a container is bracketed by
+        # whatever is under it
         if self.template.effective_milestone or not dates_editable:
-            self.end_date_entry.configure(state=tk.DISABLED)
+            self._set_field_enabled(self.end_date_entry, False)
 
     def _build_milestone(self, frame):
         """
@@ -426,7 +498,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _update_field_states(self):
         """
-        Grey out the box the scheduling mode says is not the user's to fill.
+        Grey out the boxes the form is filling in for the user.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -436,32 +508,38 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         everything and then greying out only what the mode calls calculated
         handed those back, so the dates of a task that brackets others could
         be typed over and were then overwritten by its children.
+
+        Each field is worked out as one answer and set once, rather than
+        being enabled and then disabled again - which flickered, and left
+        the shading of a field depending on which rule spoke last.
         """
         mode = self.scheduling_options_var.get()
         if getattr(self, 'duration_entry', None) is None:
             return                      # the form is still being built
 
-        for widget in (self.start_date_entry, self.end_date_entry,
-                       self.duration_entry):
-            if widget is not None:
-                widget.configure(state=tk.NORMAL)
+        dates_editable = self._should_show_dates()
+        milestone = self.is_milestone_var.get()
 
         calculated = {
             "Start date is calculated": self.start_date_entry,
             "End date is calculated": self.end_date_entry,
             "Duration is calculated": self.duration_entry,
         }.get(mode)
-        if calculated is not None:
-            calculated.configure(state=tk.DISABLED)
 
-        if not self._should_show_dates():
-            for widget in (self.start_date_entry, self.end_date_entry):
-                if widget is not None:
-                    widget.configure(state=tk.DISABLED)
-        if not self._should_show_duration():
-            self.duration_entry.configure(state=tk.DISABLED)
-        if self.end_date_entry is not None and self.is_milestone_var.get():
-            self.end_date_entry.configure(state=tk.DISABLED)
+        for widget in (self.start_date_entry, self.end_date_entry,
+                       self.duration_entry):
+            if widget is None:
+                continue
+
+            enabled = widget is not calculated
+            if widget in (self.start_date_entry, self.end_date_entry):
+                enabled = enabled and dates_editable
+            if widget is self.end_date_entry and milestone:
+                enabled = False
+            if widget is self.duration_entry:
+                enabled = enabled and self._should_show_duration()
+
+            self._set_field_enabled(widget, enabled)
 
     # ------------------------------------------------------------------
     # Working the calculated field out
@@ -715,9 +793,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             self.duration_entry.insert(0, str(duration))
         self._field(frame, "Duration:", self.duration_entry)
         
-        # Disable duration for milestones and containers
+        # A milestone has no length, and a container's is its children's
         if not duration_editable:
-            self.duration_entry.configure(state=tk.DISABLED)
+            self._set_field_enabled(self.duration_entry, False)
 
     def _build_earliest_begin(self, frame):
         """
@@ -817,7 +895,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         # Rolled up from the children of anything that has them
         if not self._should_show_progress():
-            self.progress_entry.configure(state=tk.DISABLED)
+            self._set_field_enabled(self.progress_entry, False)
 
     def _build_details(self, parent):
         """

@@ -399,24 +399,42 @@ class TestMenuEntriesHighlight(unittest.TestCase):
         for button in self.dropdown_buttons('Actions'):
             self.assertEqual(button.cget('hover_color'), MENU_HIGHLIGHT)
 
-    def test_the_text_stays_readable_on_the_highlight(self):
+    def test_the_entry_under_the_pointer_stays_readable(self):
         """
-        Dark grey on that blue is barely legible, so the text turns too.
+        Both colours are set together, or the entry disappears.
 
-        CustomTkinter swaps the background on its own and leaves the text
-        alone, which is why this is done by hand.
+        CustomTkinter's own hover paints the button straight onto its
+        canvas, and any configure() afterwards redraws it - which on a
+        transparent button paints that same area back to the background.
+        Setting only the text therefore rubbed out the highlight it was
+        meant to sit on, and the row under the pointer turned white on
+        white: the one the user was pointing at was the one they could not
+        read.
         """
         from gantt_app.views.toolbar import (
-            MENU_HIGHLIGHT_TEXT, WIN_MENU_TEXT,
+            MENU_HIGHLIGHT, MENU_HIGHLIGHT_TEXT, WIN_MENU_TEXT,
         )
 
         button = self.toolbar.menu_bar.menu_buttons[0]
+        resting = button.cget('fg_color')
 
         button.highlight_enter()
+        self.assertEqual(button.cget('fg_color'), MENU_HIGHLIGHT)
         self.assertEqual(button.cget('text_color'), MENU_HIGHLIGHT_TEXT)
 
         button.highlight_leave()
+        self.assertEqual(button.cget('fg_color'), resting)
         self.assertEqual(button.cget('text_color'), WIN_MENU_TEXT)
+
+    def test_a_menu_row_lights_up_the_same_way(self):
+        """Not only the bar along the top; the rows inside a menu too."""
+        from gantt_app.views.toolbar import MENU_HIGHLIGHT, MENU_HIGHLIGHT_TEXT
+
+        for button in self.dropdown_buttons('Actions'):
+            button.highlight_enter()
+
+            self.assertEqual(button.cget('fg_color'), MENU_HIGHLIGHT)
+            self.assertEqual(button.cget('text_color'), MENU_HIGHLIGHT_TEXT)
 
     def test_a_row_is_bound_to_the_pointer_crossing_it(self):
         """The handlers are on the widget the pointer actually reaches."""

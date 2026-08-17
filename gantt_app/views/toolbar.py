@@ -68,17 +68,30 @@ def highlight_on_hover(button, resting_text_color=WIN_MENU_TEXT):
 
     DEVELOPMENT NOTES:
     ------------------
-    CustomTkinter swaps a button's background for hover_color on its own but
-    leaves the text alone, and dark grey on this blue is barely legible - so
-    the text is swapped here too, and put back on the way out.
+    Both colours are set together, in one configure, rather than leaving the
+    background to CustomTkinter's own hover and only changing the text.
+
+    Its hover paints the button's inner parts straight onto the canvas, and
+    any configure() afterwards redraws the button - which, on a button whose
+    fg_color is transparent, paints those same parts back to the background
+    colour. Setting only the text therefore rubbed out the very highlight it
+    was meant to sit on, and the entry under the pointer turned white on
+    white: the row the user was pointing at was the one they could not read.
+
+    hover_color is set to the same blue so that CustomTkinter's own hover,
+    which fires first, agrees with what is painted a moment later.
     """
+    resting_fg = button.cget("fg_color")
+
     def enter(_event=None):
-        """Light the entry up."""
-        button.configure(text_color=MENU_HIGHLIGHT_TEXT)
+        """Light the entry up, background and text in one go."""
+        button.configure(fg_color=MENU_HIGHLIGHT,
+                         text_color=MENU_HIGHLIGHT_TEXT)
 
     def leave(_event=None):
-        """Put it back."""
-        button.configure(text_color=resting_text_color)
+        """Put both back."""
+        button.configure(fg_color=resting_fg,
+                         text_color=resting_text_color)
 
     button.configure(hover_color=MENU_HIGHLIGHT)
     button.bind("<Enter>", enter, add="+")

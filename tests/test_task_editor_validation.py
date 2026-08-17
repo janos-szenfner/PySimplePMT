@@ -83,6 +83,16 @@ class EditorTestCase(unittest.TestCase):
         dialog.update_idletasks()
         return dialog
 
+    def edit_dialog_for(self, task, **kwargs):
+        """An edit dialog over a given task."""
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, task, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None, **kwargs)
+        dialog.update_idletasks()
+        return dialog
+
     def create_dialog(self, task_type="Task", **kwargs):
         """A create dialog for a new task."""
         from gantt_app.views.taskdialogs import CreateTaskDialog
@@ -472,6 +482,98 @@ class TestTheHelpButton(EditorTestCase):
 
         self.assertEqual(len(scrollbars), 1)
         self.assertEqual(int(scrollbars[0].grid_info().get('column')), 1)
+
+
+class TestFieldsTheFormFillsInItself(EditorTestCase):
+    """
+    A box the user cannot type in looks like one.
+
+    WHY THESE EXIST:
+    ================
+    A disabled CustomTkinter box is only very slightly paler than a live
+    one, so the end date - greyed out because the scheduling mode is
+    deriving it - looked exactly like the start date you are meant to fill
+    in. There was nothing on the form to say which was which.
+    """
+
+    def state_of(self, dialog, widget):
+        """A field's state, background and caption colour."""
+        entry = dialog._entry_of(widget)
+        caption = dialog._field_labels.get(widget)
+        return (str(entry.cget('state')),
+                entry.cget('fg_color'),
+                caption.cget('text_color') if caption else None)
+
+    def test_the_calculated_date_is_greyed(self):
+        """It is the form's to fill in, not the user's."""
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+        state, background, caption = self.state_of(dialog,
+                                                   dialog.end_date_entry)
+
+        self.assertEqual(state, 'disabled')
+        self.assertEqual(background, TaskFormDialog.FIELD_BG_DISABLED)
+        self.assertEqual(caption, TaskFormDialog.FIELD_TEXT_DISABLED)
+
+    def test_the_boxes_the_user_fills_in_are_not(self):
+        """The start date and the duration stay live and plain."""
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+
+        for widget in (dialog.start_date_entry, dialog.duration_entry):
+            state, background, caption = self.state_of(dialog, widget)
+
+            self.assertEqual(state, 'normal')
+            self.assertEqual(background, TaskFormDialog.FIELD_BG)
+            self.assertEqual(caption, TaskFormDialog.FIELD_TEXT)
+
+    def test_the_greying_follows_the_scheduling_mode(self):
+        """Whichever box the mode names is the one that greys."""
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+        dialog.scheduling_options_var.set("Duration is calculated")
+
+        duration = self.state_of(dialog, dialog.duration_entry)
+        end = self.state_of(dialog, dialog.end_date_entry)
+
+        self.assertEqual(duration[0], 'disabled')
+        self.assertEqual(duration[1], TaskFormDialog.FIELD_BG_DISABLED)
+        self.assertEqual(end[0], 'normal')
+        self.assertEqual(end[1], TaskFormDialog.FIELD_BG)
+
+    def test_a_container_greys_everything_it_rolls_up(self):
+        """A phase takes its dates and its length from the work inside it."""
+        from gantt_app.models import Task
+        from gantt_app.views.taskform import TaskFormDialog
+
+        phase = Task(id="P1", name="Planning", task_type="Phase",
+                     start_date=datetime(2026, 1, 1),
+                     end_date=datetime(2026, 1, 8))
+        self.project.add_task(phase)
+        dialog = self.edit_dialog_for(phase)
+
+        for widget in (dialog.start_date_entry, dialog.end_date_entry,
+                       dialog.duration_entry):
+            state, background, _caption = self.state_of(dialog, widget)
+
+            self.assertEqual(state, 'disabled')
+            self.assertEqual(background, TaskFormDialog.FIELD_BG_DISABLED)
+
+    def test_a_caption_goes_back_to_black_when_its_box_comes_back(self):
+        """Greying is undone, not only applied."""
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+        dialog.scheduling_options_var.set("Duration is calculated")
+        dialog.scheduling_options_var.set("End date is calculated")
+
+        _state, _background, caption = self.state_of(dialog,
+                                                     dialog.duration_entry)
+
+        self.assertEqual(caption, TaskFormDialog.FIELD_TEXT)
 
 
 if __name__ == '__main__':
