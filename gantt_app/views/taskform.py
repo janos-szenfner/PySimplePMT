@@ -108,7 +108,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
-        'Phase': "#6c757d",        # Gray
+        'Phase': "#34495e",        # Dark Blue
         'Deliverable': "#28a745",   # Green  
         'Task': "#3498db",        # Blue
         'Subtask': "#9b59b6",      # Purple

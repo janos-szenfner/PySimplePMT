@@ -535,7 +535,7 @@ class Task:
     
     @classmethod
     def create_phase(cls, name: str, start_date: datetime, 
-                     color: str = "#6c757d", progress: int = 0,
+                     color: str = "#34495e", progress: int = 0,
                      dependencies: List[str] = None, task_id: str = None) -> 'Task':
         """
         Create a new Phase (high-level lifecycle container).
