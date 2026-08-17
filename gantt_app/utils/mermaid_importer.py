@@ -375,7 +375,7 @@ class MermaidImporter:
             section_tasks[section] = parent
 
             for member in members:
-                member.task_type = "Sub-Task"
+                member.task_type = "Subtask"
                 member.parent_task_id = section_id
 
         # Rebuild the list so each parent precedes the tasks it contains

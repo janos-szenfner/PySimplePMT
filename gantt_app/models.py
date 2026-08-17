@@ -46,6 +46,30 @@ DEPENDENCY_HARDNESS_LABELS = {
     'Rubber': 'Rubber',
 }
 
+#: Task types in the new hierarchy
+TASK_TYPES = ('Phase', 'Deliverable', 'Task', 'Subtask', 'Milestone')
+
+#: Task type display labels
+TASK_TYPE_LABELS = {
+    'Phase': 'Phase',
+    'Deliverable': 'Deliverable', 
+    'Task': 'Task',
+    'Subtask': 'Subtask',
+    'Milestone': 'Milestone',
+}
+
+#: Container types that have children and roll up dates/progress
+CONTAINER_TYPES = ('Phase', 'Deliverable')
+
+#: Work types that represent actual work items
+WORK_TYPES = ('Task', 'Subtask')
+
+#: Types that can have subtasks
+PARENT_TYPES = ('Phase', 'Deliverable', 'Task')
+
+#: Types that cannot have children (leaf nodes)
+LEAF_TYPES = ('Subtask', 'Milestone')
+
 
 @dataclass
 class Dependency:
@@ -206,9 +230,8 @@ class Task:
         progress: Completion percentage (0-100)
         dependencies: List of task IDs that must complete before this task
         color: Hex color string for visualization
-        is_milestone: Whether this is a milestone (single-date marker)
-        task_type: Type of task - 'Task' or 'Sub-Task'
-        parent_task_id: ID of parent task (for Sub-Tasks only, None for regular Tasks)
+        task_type: Type of task - one of TASK_TYPES (Phase, Deliverable, Task, Subtask, Milestone)
+        parent_task_id: ID of parent task (for hierarchical organization)
         duration: Duration in days (can be manually set)
         priority: Task priority level
         shape: Visual shape for the task
@@ -216,13 +239,16 @@ class Task:
         earliest_begin: Earliest possible start date
         scheduling_options: Scheduling mode for the task
         details: Additional notes/details about the task
+        is_milestone: Legacy flag, now determined by task_type='Milestone'
     
     DEVELOPMENT NOTES:
     ------------------
-    - task_type can be 'Task' or 'Sub-Task'
-    - Sub-Tasks must have a parent_task_id pointing to a regular Task
-    - Sub-Tasks inherit the start_date from their parent by default
-    - Duration is calculated from start_date and end_date (if available)
+    - task_type can be 'Phase', 'Deliverable', 'Task', 'Subtask', or 'Milestone'
+    - Phase and Deliverable are container types that roll up dates and progress from children
+    - Task is the primary work unit with duration, start/end dates, and completion
+    - Subtask is a micro-action under a Task for basic completion tracking
+    - Milestone is a zero-duration marker representing key events
+    - is_milestone flag is maintained for backward compatibility but task_type='Milestone' is authoritative
     """
     id: str
     name: str
@@ -231,7 +257,6 @@ class Task:
     progress: int = 0
     dependencies: List['Dependency'] = field(default_factory=list)
     color: str = "#1f6aa5"
-    is_milestone: bool = False
     task_type: str = "Task"
     parent_task_id: Optional[str] = None
     duration: Optional[int] = None
@@ -241,6 +266,7 @@ class Task:
     earliest_begin: Optional[datetime] = None
     scheduling_options: str = "End date is calculated"
     details: str = ""
+    is_milestone: bool = False
     
     def __post_init__(self):
         """
@@ -252,15 +278,31 @@ class Task:
         may still pass a plain list of task IDs. That keeps every existing
         `dependencies=[task.id]` call working and lets projects saved before
         dependencies carried a type load unchanged.
+        
+        Handles backward compatibility for legacy is_milestone flag and
+        old task_type values ('Task', 'Subtask').
         """
         if not self.name:
             raise ValueError("Task name cannot be empty")
         if self.progress < 0 or self.progress > 100:
             raise ValueError("Progress must be between 0 and 100")
-        if self.is_milestone and self.end_date is not None:
-            # For milestones, end_date should be None or same as start_date
+        
+        # Handle backward compatibility for legacy task types
+        if self.task_type == "Sub-Task":
+            self.task_type = "Subtask"
+        
+        # Synchronize is_milestone with task_type for backward compatibility
+        if self.task_type == "Milestone":
+            self.is_milestone = True
+            self.end_date = None  # Milestones have no duration
+        elif self.is_milestone and self.task_type != "Milestone":
+            # Legacy milestone flag: convert to new type
+            self.task_type = "Milestone"
             self.end_date = None
-
+        
+        # For container types (Phase, Deliverable), ensure they don't have end_date if they shouldn't
+        # Actually, containers CAN have end dates as they roll up from children
+        
         self.dependencies = DependencyList(self.dependencies or [])
 
     def __setattr__(self, name, value):
@@ -292,6 +334,53 @@ class Task:
             how the link is configured.
         """
         return [d.task_id for d in self.dependencies]
+
+    @property
+    def is_container(self) -> bool:
+        """Whether this task is a container type (Phase or Deliverable)."""
+        return self.task_type in CONTAINER_TYPES
+
+    @property
+    def is_work_item(self) -> bool:
+        """Whether this task is a work item (Task or Subtask)."""
+        return self.task_type in WORK_TYPES
+
+    @property
+    def can_have_children(self) -> bool:
+        """Whether this task type can have child tasks."""
+        return self.task_type in PARENT_TYPES
+
+    @property
+    def is_leaf(self) -> bool:
+        """Whether this task is a leaf node (cannot have children)."""
+        return self.task_type in LEAF_TYPES
+
+    @property
+    def effective_milestone(self) -> bool:
+        """Whether this task behaves as a milestone (zero duration)."""
+        return self.task_type == "Milestone" or self.is_milestone
+
+    @property
+    def can_edit_dates(self) -> bool:
+        """Whether dates can be directly edited (not rolled up from children)."""
+        return not self.is_container
+
+    @property
+    def can_edit_progress(self) -> bool:
+        """Whether progress can be directly edited (not rolled up from children)."""
+        return not self.is_container
+
+    @property
+    def can_have_dependencies(self) -> bool:
+        """Whether this task type can have dependencies."""
+        # Container types can have dependencies, but leaf nodes like Subtasks might not
+        return self.task_type != "Subtask"  # Subtasks typically don't have complex dependencies
+
+    @property
+    def can_edit_duration(self) -> bool:
+        """Whether duration can be edited."""
+        # Milestones and containers have fixed/rolled up duration
+        return not self.effective_milestone and not self.is_container
 
     def get_dependency(self, task_id: str) -> Optional['Dependency']:
         """Get the link to a given predecessor, or None."""
@@ -336,7 +425,7 @@ class Task:
                    dependencies: List[str] = None,
                    task_id: str = None) -> 'Task':
         """
-        Create a new regular task.
+        Create a new regular task (Work Unit).
 
         PARAMETERS:
         -----------
@@ -353,6 +442,7 @@ class Task:
             progress=progress,
             dependencies=dependencies or [],
             color=color,
+            task_type="Task",
             is_milestone=False
         )
     
@@ -362,7 +452,7 @@ class Task:
                         dependencies: List[str] = None,
                         task_id: str = None) -> 'Task':
         """
-        Create a new milestone (single-date marker).
+        Create a new milestone (zero-duration key event marker).
 
         PARAMETERS:
         -----------
@@ -373,12 +463,12 @@ class Task:
             id=task_id or str(uuid.uuid4()),
             name=name,
             start_date=date,
-            end_date=None,
+            end_date=None,  # Milestones have no end date (zero duration)
             progress=0,
             dependencies=dependencies or [],
             color=color,
+            task_type="Milestone",
             is_milestone=True,
-            task_type="Task",
             parent_task_id=None
         )
     
@@ -439,8 +529,88 @@ class Task:
             dependencies=dependencies or [],
             color=color,
             is_milestone=False,
-            task_type="Sub-Task",
+            task_type="Subtask",
             parent_task_id=parent_task.id
+        )
+    
+    @classmethod
+    def create_phase(cls, name: str, start_date: datetime, 
+                     color: str = "#6c757d", progress: int = 0,
+                     dependencies: List[str] = None, task_id: str = None) -> 'Task':
+        """
+        Create a new Phase (high-level lifecycle container).
+        
+        PARAMETERS:
+        -----------
+        name : str
+            Name of the phase
+        start_date : datetime
+            Start date of the phase
+        color : str, optional
+            Hex color for visualization (default: gray)
+        progress : int, optional
+            Initial progress percentage (default: 0)
+        dependencies : List[str], optional
+            List of task IDs this phase depends on
+        task_id : str, optional
+            Identifier to use; see create_task.
+        
+        RETURNS:
+        --------
+        Task
+            A new Phase with task_type='Phase' and no parent
+        """
+        return cls(
+            id=task_id or str(uuid.uuid4()),
+            name=name,
+            start_date=start_date,
+            end_date=None,  # Will be rolled up from children
+            progress=progress,
+            dependencies=dependencies or [],
+            color=color,
+            task_type="Phase",
+            is_milestone=False,
+            parent_task_id=None
+        )
+    
+    @classmethod
+    def create_deliverable(cls, name: str, start_date: datetime, 
+                           color: str = "#28a745", progress: int = 0,
+                           dependencies: List[str] = None, task_id: str = None) -> 'Task':
+        """
+        Create a new Deliverable (major work package / scope output).
+        
+        PARAMETERS:
+        -----------
+        name : str
+            Name of the deliverable
+        start_date : datetime
+            Start date of the deliverable
+        color : str, optional
+            Hex color for visualization (default: green)
+        progress : int, optional
+            Initial progress percentage (default: 0)
+        dependencies : List[str], optional
+            List of task IDs this deliverable depends on
+        task_id : str, optional
+            Identifier to use; see create_task.
+        
+        RETURNS:
+        --------
+        Task
+            A new Deliverable with task_type='Deliverable' and no parent
+        """
+        return cls(
+            id=task_id or str(uuid.uuid4()),
+            name=name,
+            start_date=start_date,
+            end_date=None,  # Will be rolled up from children
+            progress=progress,
+            dependencies=dependencies or [],
+            color=color,
+            task_type="Deliverable",
+            is_milestone=False,
+            parent_task_id=None
         )
     
     @property
@@ -452,7 +622,7 @@ class Task:
         --------
         Optional[int]
             Number of days between start_date and end_date (inclusive),
-            or 0 for milestones, or None if end_date is not set.
+            or 0 for milestones and container types, or None if end_date is not set.
             If duration is manually set, that value is returned.
         
         DEVELOPMENT NOTES:
@@ -461,10 +631,11 @@ class Task:
         start_date or end_date changes. For subtasks without an explicit
         end_date, it returns None. If duration is manually set, it takes
         precedence over the calculated value.
+        Milestones and container types (Phase, Deliverable) return 0 duration.
         """
         if self.duration is not None:
             return self.duration
-        if self.is_milestone:
+        if self.effective_milestone or self.is_container:
             return 0
         if self.end_date is None:
             return None
@@ -979,7 +1150,7 @@ class Project:
 
         task = self.get_task_by_id(task_id)
         task.parent_task_id = new_parent.id
-        task.task_type = "Sub-Task"
+        task.task_type = "Subtask"
 
         self.tasks = self._flatten(self._children_by_parent())
         self.strip_ancestor_links(task_id)
@@ -1015,7 +1186,7 @@ class Project:
         parent = self.get_task_by_id(task.parent_task_id)
 
         task.parent_task_id = parent.parent_task_id
-        task.task_type = "Task" if task.parent_task_id is None else "Sub-Task"
+        task.task_type = "Task" if task.parent_task_id is None else "Subtask"
 
         self.tasks = self._flatten(self._children_by_parent())
         return True
@@ -1520,7 +1691,7 @@ class Project:
 
     def roll_up_summaries(self) -> bool:
         """
-        Make every task with sub-tasks span the work beneath it.
+        Make every task with children span the work beneath it with new rollup rules.
 
         RETURNS:
         --------
@@ -1529,15 +1700,19 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        A summary task brackets its children rather than holding work of its
-        own, so its dates are derived: it starts with the earliest child and
-        ends with the latest. That is also what keeps a sub-task inside its
-        parent - the parent stretches rather than the child being clipped,
-        which would lose work the user entered.
-
-        Progress is weighted by duration, so a long child that is half done
-        counts for more than a short one that is finished. Children are
-        walked deepest first, so a summary of summaries totals what its own
+        New rollup rules based on task types:
+        
+        Date Rollups (for Phase and Deliverable):
+        - Start Date: earliest (minimum) start date among all direct children
+        - End Date: latest (maximum) end date among all direct children
+        
+        Progress Rollups:
+        - Task with Subtasks: count of completed subtasks / total subtasks as percentage
+        - Deliverable: weighted average based on task durations (if total duration > 0)
+                     or simple average if total duration is 0
+        - Phase: simple (unweighted) average of all deliverable progress percentages
+        
+        Children are walked deepest first, so containers total what their own
         children have already settled on.
         """
         children = self._children_by_parent()
@@ -1548,32 +1723,80 @@ class Project:
             if not brood:
                 continue
 
+            # Calculate new start and end dates for container types
             starts = [c.start_date for c in brood if c.start_date is not None]
             ends = [c.end_date or c.start_date for c in brood
                     if (c.end_date or c.start_date) is not None]
+            
             if not starts or not ends:
                 continue
 
             new_start, new_end = min(starts), max(ends)
 
-            total = sum(max((c.end_date or c.start_date) - c.start_date,
-                            timedelta(0)).days + 1 for c in brood)
-            if total:
-                done = sum(
-                    (max((c.end_date or c.start_date) - c.start_date,
-                         timedelta(0)).days + 1) * max(0, min(100, c.progress))
-                    for c in brood
-                )
-                new_progress = int(round(done / total))
+            # Calculate progress based on task type
+            if task.task_type == "Task":
+                # Task with subtasks: simple count-based progress
+                total_subtasks = len(brood)
+                if total_subtasks > 0:
+                    completed_subtasks = sum(1 for c in brood if c.progress >= 100)
+                    new_progress = int(round((completed_subtasks / total_subtasks) * 100))
+                else:
+                    new_progress = task.progress
+                    
+            elif task.task_type == "Deliverable":
+                # Deliverable: weighted average based on task durations
+                total_duration = sum(c.duration_days or 0 for c in brood)
+                
+                if total_duration > 0:
+                    # Weighted average
+                    weighted_sum = sum(
+                        (c.duration_days or 0) * max(0, min(100, c.progress))
+                        for c in brood
+                    )
+                    new_progress = int(round(weighted_sum / total_duration))
+                else:
+                    # Fall back to simple average
+                    if len(brood) > 0:
+                        new_progress = int(round(sum(max(0, min(100, c.progress)) for c in brood) / len(brood)))
+                    else:
+                        new_progress = task.progress
+                        
+            elif task.task_type == "Phase":
+                # Phase: simple average of deliverable progress
+                if len(brood) > 0:
+                    new_progress = int(round(sum(max(0, min(100, c.progress)) for c in brood) / len(brood)))
+                else:
+                    new_progress = task.progress
             else:
-                new_progress = task.progress
+                # Default: weighted by duration for any container
+                total_duration = sum(c.duration_days or 0 for c in brood)
+                
+                if total_duration > 0:
+                    weighted_sum = sum(
+                        (c.duration_days or 0) * max(0, min(100, c.progress))
+                        for c in brood
+                    )
+                    new_progress = int(round(weighted_sum / total_duration))
+                else:
+                    new_progress = task.progress
 
-            if (task.start_date != new_start or task.end_date != new_end
-                    or task.progress != new_progress):
-                task.start_date = new_start
-                task.end_date = new_end
-                task.progress = new_progress
-                changed = True
+            # Apply date rollup only to container types (Phase, Deliverable)
+            # Apply progress rollup to container types and Tasks with Subtasks
+            should_rollup_dates = task.task_type in CONTAINER_TYPES
+            should_rollup_progress = (task.task_type in CONTAINER_TYPES or 
+                                   (task.task_type == "Task" and brood and any(c.task_type == "Subtask" for c in brood)))
+            
+            if should_rollup_dates or should_rollup_progress:
+                new_start_date = new_start if should_rollup_dates else task.start_date
+                new_end_date = new_end if should_rollup_dates else task.end_date
+                new_progress_value = new_progress if should_rollup_progress else task.progress
+                
+                if (task.start_date != new_start_date or task.end_date != new_end_date
+                        or task.progress != new_progress_value):
+                    task.start_date = new_start_date
+                    task.end_date = new_end_date
+                    task.progress = new_progress_value
+                    changed = True
 
         return changed
 

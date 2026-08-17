@@ -457,7 +457,7 @@ class Toolbar(ctk.CTkFrame):
             parent_task = candidate_parents[0]
             dialog = CreateTaskDialog(
                 self.master, self.project,
-                task_type="Sub-Task",
+                task_type="Subtask",
                 parent_task=parent_task,
                 on_save=self._save_new_task
             )
@@ -468,7 +468,7 @@ class Toolbar(ctk.CTkFrame):
             if parent_task:
                 dialog = CreateTaskDialog(
                     self.master, self.project,
-                    task_type="Sub-Task",
+                    task_type="Subtask",
                     parent_task=parent_task,
                     on_save=self._save_new_task
                 )
@@ -508,7 +508,7 @@ class Toolbar(ctk.CTkFrame):
                 if task.id in visited:
                     continue
                 visited.add(task.id)
-                if not task.is_milestone:
+                if not task.effective_milestone and task.can_have_children:
                     ordered.append(task)
                 walk(task.id)
 
@@ -516,7 +516,7 @@ class Toolbar(ctk.CTkFrame):
 
         # Include anything unreachable from the root (orphaned parent reference)
         for task in self.project.tasks:
-            if task.id not in visited and not task.is_milestone:
+            if task.id not in visited and not task.effective_milestone and task.can_have_children:
                 ordered.append(task)
 
         return ordered

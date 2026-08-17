@@ -274,13 +274,13 @@ def _create_tasks_workbook(project: Project):
     ]
     
     # Count task types
-    regular_tasks = [t for t in project.tasks if t.task_type == 'Task' and not t.is_milestone]
-    subtasks = [t for t in project.tasks if t.task_type == 'Sub-Task']
-    milestones = [t for t in project.tasks if t.is_milestone]
+    regular_tasks = [t for t in project.tasks if t.task_type == 'Task' and not t.effective_milestone]
+    subtasks = [t for t in project.tasks if t.task_type == 'Subtask']
+    milestones = [t for t in project.tasks if t.effective_milestone]
     
     summary_data.extend([
         ['Regular Tasks:', len(regular_tasks)],
-        ['Sub-Tasks:', len(subtasks)],
+        ['Subtasks:', len(subtasks)],
         ['Milestones:', len(milestones)],
     ])
     

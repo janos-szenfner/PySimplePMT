@@ -42,7 +42,7 @@ LEVEL_ACTIONS = (
 )
 
 #: What the Create submenu offers, as the task_type each entry builds.
-CREATE_TYPES = ("Task", "Sub-Task", "Milestone")
+CREATE_TYPES = ("Phase", "Deliverable", "Task", "Subtask", "Milestone")
 
 #: Entries following the moves, after a separator.
 TASK_ACTIONS = ("Edit", "Delete")

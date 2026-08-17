@@ -25,7 +25,7 @@ from typing import Optional, Callable
 
 import customtkinter as ctk
 
-from gantt_app.models import Task, Project
+from gantt_app.models import Task, Project, TASK_TYPES, TASK_TYPE_LABELS
 from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
@@ -108,9 +108,11 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
-        'Milestone': "#e74c3c",
-        'Sub-Task': "#9b59b6",
-        'Task': "#3498db",
+        'Phase': "#6c757d",        # Gray
+        'Deliverable': "#28a745",   # Green  
+        'Task': "#3498db",        # Blue
+        'Subtask': "#9b59b6",      # Purple
+        'Milestone': "#e74c3c",    # Red
     }
 
     def __init__(self, master, project: Project, title: str,
@@ -170,6 +172,21 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     def seed_type_locked(self) -> bool:
         """Whether the type menu is fixed."""
         return False
+
+    def _should_show_dates(self) -> bool:
+        """Whether date fields should be shown and editable."""
+        template = self.form_template()
+        return template.can_edit_dates
+
+    def _should_show_duration(self) -> bool:
+        """Whether duration field should be shown and editable."""
+        template = self.form_template()
+        return template.can_edit_duration
+
+    def _should_show_progress(self) -> bool:
+        """Whether progress field should be shown and editable."""
+        template = self.form_template()
+        return template.can_edit_progress
 
     def seed_has_end(self) -> bool:
         """Whether an end date box is shown at all."""
@@ -295,10 +312,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """Show the task ID. Only an existing task has one."""
 
     def _build_type(self, frame):
-        """The Task / Sub-Task menu."""
+        """The Task Type menu with all available types."""
         self.task_type_var = ctk.StringVar(value=self.template.task_type)
         self.task_type_menu = ctk.CTkOptionMenu(
-            frame, variable=self.task_type_var, values=["Task", "Sub-Task"],
+            frame, variable=self.task_type_var, values=list(TASK_TYPES),
             state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
         self._field(frame, "Type:", self.task_type_menu)
@@ -316,9 +333,16 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_dates(self, frame):
         """The start and end boxes, each with a calendar behind it."""
+        # Check if dates should be editable for this task type
+        dates_editable = self._should_show_dates()
+        
         self.start_date_entry = DateEntry(frame,
                                           date=self.template.start_date)
         self._field(frame, "Start Date:", self.start_date_entry)
+        
+        # Disable start date for containers (rolled up from children)
+        if not dates_editable:
+            self.start_date_entry.configure(state=tk.DISABLED)
 
         if not self.seed_has_end():
             self.end_date_entry = None
@@ -326,7 +350,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self.end_date_entry = DateEntry(frame, date=self.template.end_date)
         self._field(frame, "End Date:", self.end_date_entry)
-        if self.template.is_milestone:
+        
+        # Disable end date for milestones and containers
+        if self.template.effective_milestone or not dates_editable:
             self.end_date_entry.configure(state=tk.DISABLED)
 
     def _build_milestone(self, frame):
@@ -406,6 +432,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_duration(self, frame):
         """The duration entry field."""
+        # Check if duration should be editable for this task type
+        duration_editable = self._should_show_duration()
+        
         duration = self.template.duration
         if duration is None:
             # Calculate from dates if not manually set
@@ -414,6 +443,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if duration is not None:
             self.duration_entry.insert(0, str(duration))
         self._field(frame, "Duration:", self.duration_entry)
+        
+        # Disable duration for milestones and containers
+        if not duration_editable:
+            self.duration_entry.configure(state=tk.DISABLED)
 
     def _build_earliest_begin(self, frame):
         """The earliest begin date with checkbox and copy button."""
@@ -477,10 +510,17 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_progress(self, frame):
         """The progress entry field (0-100)."""
+        # Check if progress should be editable for this task type
+        progress_editable = self._should_show_progress()
+        
         progress = self.template.progress
         self.progress_entry = ctk.CTkEntry(frame)
         self.progress_entry.insert(0, str(progress))
         self._field(frame, "Progress:", self.progress_entry)
+        
+        # Disable progress for containers (rolled up from children)
+        if not progress_editable:
+            self.progress_entry.configure(state=tk.DISABLED)
 
     def _build_details(self, frame):
         """The details text area."""

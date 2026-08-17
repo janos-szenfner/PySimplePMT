@@ -663,10 +663,10 @@ class DragDropTaskList(ctk.CTkFrame):
                 return
 
         if anchor is None:
-            if task_type == "Sub-Task":
+            if task_type == "Subtask":
                 return
             parent_id = None
-        elif task_type == "Sub-Task":
+        elif task_type == "Subtask":
             # A sub-task goes inside the clicked row; a task or milestone
             # goes beside it, which is what "under this row" means for those
             parent_id = anchor.id
@@ -704,7 +704,9 @@ class DragDropTaskList(ctk.CTkFrame):
         before = self.project.structure_snapshot()
 
         task.parent_task_id = parent_id
-        task.task_type = "Sub-Task" if parent_id else "Task"
+        # Only set task_type to Subtask if it's not already set to a specific type and has a parent
+        if parent_id and task.task_type not in ("Phase", "Deliverable", "Milestone"):
+            task.task_type = "Subtask"
 
         self.project.add_task(task)
         anchor = self.project.get_task_by_id(anchor_id)
@@ -1055,7 +1057,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self._row_counter += 1
 
         tags = [band]
-        if task.task_type == 'Sub-Task':
+        if task.task_type == 'Subtask':
             tags.append('subtask')
         self.tree.item(item_id, tags=tuple(tags))
 

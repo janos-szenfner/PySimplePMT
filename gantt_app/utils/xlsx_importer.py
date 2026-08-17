@@ -544,7 +544,7 @@ class XLSXImporter:
             parent = by_id.get(token) or by_name.get(token.lower())
             if parent is not None and parent.id != task.id:
                 task.parent_task_id = parent.id
-                task.task_type = "Sub-Task"
+                task.task_type = "Subtask"
 
     def _group_by_phase(self, records: List[Dict[str, Any]],
                         tasks: List[Task]) -> List[Task]:
@@ -608,7 +608,7 @@ class XLSXImporter:
             phase_tasks[phase] = parent
 
             for member in group:
-                member.task_type = "Sub-Task"
+                member.task_type = "Subtask"
                 member.parent_task_id = phase_id
 
         ordered: List[Task] = []

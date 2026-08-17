@@ -24,7 +24,7 @@ import copy
 
 import customtkinter as ctk
 
-from gantt_app.models import Task, Project
+from gantt_app.models import Task, Project, TASK_TYPES
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.taskform import TaskFormDialog
 from gantt_app.utils.log import get_logger
@@ -278,7 +278,7 @@ class CreateTaskDialog(TaskFormDialog):
             color=self.DEFAULT_COLORS.get(self.task_type,
                                           self.DEFAULT_COLORS['Task']),
             is_milestone=self.is_milestone,
-            task_type="Task" if self.is_milestone else self.task_type,
+            task_type=self.task_type,
             parent_task_id=self.parent_task.id if self.parent_task else None,
         )
 
@@ -298,7 +298,7 @@ class CreateTaskDialog(TaskFormDialog):
         if self.is_milestone:
             return
         self.task_type_menu = ctk.CTkOptionMenu(
-            frame, variable=self.task_type_var, values=["Task", "Sub-Task"],
+            frame, variable=self.task_type_var, values=list(TASK_TYPES),
             state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
         self._field(frame, "Type:", self.task_type_menu)

@@ -380,7 +380,7 @@ class GANImporter:
                 dependencies=[],
                 color=self._task_color(task_elem, color_map, is_milestone),
                 is_milestone=is_milestone,
-                task_type="Sub-Task" if parent_id else "Task",
+                task_type="Subtask" if parent_id else "Task",
                 parent_task_id=parent_id
             )
 

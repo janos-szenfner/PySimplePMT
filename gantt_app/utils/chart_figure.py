@@ -142,7 +142,7 @@ def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
     summary_ids = project.get_summary_task_ids()
 
     for task in tasks:
-        if task.is_milestone:
+        if task.effective_milestone:
             continue
 
         is_summary = task.id in summary_ids
@@ -166,7 +166,7 @@ def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
 def _add_milestones(figure: go.Figure, tasks: List[Task],
                     positions: Dict[str, int]) -> None:
     """Draw milestones as diamond markers with their name beside them."""
-    milestones = [t for t in tasks if t.is_milestone]
+    milestones = [t for t in tasks if t.effective_milestone]
     if not milestones:
         return
 
