@@ -13,7 +13,7 @@ This is a complete implementation of a project management tool with:
 
 ## Features
 
-- **Interactive Gantt Chart Visualization**: Visual representation of tasks and milestones with dependency arrows, using Plotly for zoom, pan, and hover tooltips
+- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Milestone Support**: Special single-date markers with diamond icons
@@ -57,10 +57,11 @@ gantt_app/
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
-│   ├── gantt_chart.py     # Interactive Plotly Gantt chart
+│   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── log_window.py      # Application log viewer
-│   └── toolbar.py         # Action buttons and file operations
+│   ├── modal.py           # Makes a dialog modal once the window manager shows it
+│   └── toolbar.py         # The menu bar and the icon action bar
 │
 ├── help/
 │   ├── __init__.py
@@ -95,38 +96,112 @@ gantt_app/
 ## Implemented Features
 
 ### Core Data Models (`models.py`)
-- **Task Class**: id, name, start_date, end_date, progress, dependencies, color, is_milestone
+- **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, earliest_begin, scheduling_options, details
+- **Work Item Types**: `Phase`, `Deliverable`, `Task`, `Subtask`, `Milestone`. `Phase` and `Deliverable` are containers, taking their dates and progress from what is inside them; `Subtask` and `Milestone` hold nothing. The older hyphenated `Sub-Task` is rewritten to `Subtask` when a task is built, so plans saved by earlier versions load unchanged
 - **Project Class**: name, tasks, start_date, end_date
-- **Methods**: add_task, remove_task, get_task_by_id, get_dependencies, get_dependents
+- **Methods**: add_task, remove_task, get_task_by_id, get_dependencies, get_dependents, move_task, move_task_before, next_task_id
+- **Completion Roll-Up**: `rolled_up_progress()` gives each level its own rule - see *Completion* below - and `roll_up_summaries()` applies it deepest-first, so ticking one sub-task reaches the phase above it in the same pass
 - **Serialization**: to_dict(), from_dict() for JSON compatibility
 - **Critical Path**: get_critical_path() algorithm for project analysis
 - **Factory Methods**: create_task(), create_milestone() for easy object creation
 
+### Completion
+
+Each level counts what is under it in the way that suits what that level is:
+
+| Level | How its completion is worked out |
+| --- | --- |
+| **Subtask** | A tick box: done or not, nothing in between. The editor offers a checkbox rather than a percentage |
+| **Task** | With sub-tasks, how many are ticked - counted, not weighted, a checklist being a checklist. Without, the percentage typed on it |
+| **Deliverable** | Its tasks weighted by how long they run, so a fortnight counts for more than an afternoon. With nothing to weight by - all milestones, say - a plain average |
+| **Phase** | Its deliverables averaged evenly. One being longer is not a reason for it to count for more |
+| **Empty container** | 0%. No work under it, none of it done |
+
+Percentages are clamped as they are read, so a child carrying something
+outside 0 to 100 - which nothing writes, but an imported file can hold -
+cannot pull its parent outside it either.
+
 ### Task List View (`views/task_list.py`)
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
-- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Task, Sub-Task, Milestone), Edit and Delete, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable
+- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Deliverable, Task, Subtask, Milestone), Edit and Delete, Copy, Cut and Paste, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
 - **Indent / Outdent**: Indent makes a task a sub-task of the row above it; outdent lifts it beside its parent, becoming a task again at the top level. A branch moves as a whole, and both are undoable
-- **EditTaskDialog**: Comprehensive task editing interface with all fields visible. Buttons read Delete (set apart), Close, Save & Close, Save & New
-- **CreateTaskDialog**: New dialog for creating tasks, sub-tasks, and milestones with all fields in a single popup
+- **EditTaskDialog** (`views/taskdialogs.py`): The task form over an existing task. Buttons read Help and Delete (set apart), then Close, Save & Close, Save & New
+- **CreateTaskDialog** (`views/taskdialogs.py`): The same form over a new one, for any of the five work item types
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
 - **Hierarchical Display**: Sub-tasks are visually indented under their parent tasks with tree structure
+- **Cut rows are held apart**: a row waiting to be pasted somewhere is greyed until it lands
 - **Features**:
   - Double-click a row to expand or collapse its sub-tasks; edit from the right-click menu
   - Create tasks with all fields visible at once (no more one-by-one input)
   - Circular dependency prevention (including parent-child relationships)
   - Milestone toggle with automatic end_date handling
-  - Progress slider with percentage display
-  - Colour chosen from a palette of swatches rather than typed as a hex code
+  - Colour chosen from a popup palette, built the first time it is opened
   - Start and end dates picked from a calendar, or typed as YYYY-MM-DD
   - Save & Close, or Save & New to keep entering tasks without reopening the dialog
-  - Dependency management via checkboxes (select multiple tasks and subtasks for all task types including milestones)
-  - Task Type selection (Task or Sub-Task)
+  - Dependencies set on the form's own Dependency tab, which is built the first time it is looked at
   - Parent Task display for sub-tasks
-  - Duration calculation display
+
+### The Task Form (`views/taskform.py`)
+
+The form both dialogs show. The fields run down the left; the notes fill the
+column beside them, having the height of the form to use rather than one line
+under everything else.
+
+- **Grouped fields**: name, ID, type and parent; then the dates, duration and
+  milestone flag; then progress, priority, timeline visibility and shape; then
+  the colour
+- **Scheduling modes**: whichever of the start date, the end date and the
+  duration the mode names is worked out from the other two and greyed out, and
+  fills itself in as the other two are typed. Durations are inclusive, so a
+  task running from the 1st to the 5th lasts five days
+- **Checked as it is filled in** (`views/formcheck.py`): a name or a date that
+  cannot be used is outlined, and the reason written on a line under the form
+  which keeps its place whether or not it has anything to say. A box is only
+  complained about for being empty once the user has been in it, so a new task
+  does not open covered in red. Fields are watched through a variable rather
+  than the keyboard, so a date arriving from the calendar or from a dependency
+  is checked too
+- **Help**: a Help button beside Delete opens a reference on the form's own
+  fields (`help/editorhelp.py`)
+- **Progress**: a percentage for most rows, a tick box for a sub-task, and
+  nothing to fill in on a container that takes its own from its children
+- **Built to be quick**: the form is built in a scrolling frame of the
+  application's own (`views/scrollframe.py`) rather than CustomTkinter's, whose
+  scrollbar forces a full layout pass of the window on every draw - 3.2ms a
+  wheel notch against 0.11ms. The Dependency tab and the colour palette are
+  both built the first time they are asked for
+
+### Copy, Cut and Paste (`utils/copypastecut.py`)
+- **Acts on the selection**: from the right-click menu, the Edit menu, or
+  Ctrl/Cmd+C, X and V. Shortcuts stand aside while the focus is in a text box,
+  so editing text behaves normally
+- **What is selected is what is copied**: copying a phase copies the phase row.
+  The work under it is not brought along and is not duplicated
+- **Held to the levels of the plan**: a phase belongs at the top, a deliverable
+  in a phase, a sub-task in a task. Paste is greyed out where an item does not
+  belong, and a selection with one item that does not fit is refused whole
+- **Lands where it was asked for**: pasted rows go directly after the row the
+  menu was opened over, and are left selected. Pasting a task inside itself is
+  refused
+- **Numbered like the rest**: a pasted copy takes the next ID in the project's
+  own sequence
+- **Reaches the desktop clipboard**: through Tk's own, so it needs no extra
+  package. What is written is a readable list of what was copied, then a
+  marker, then the same thing as JSON - so it pastes into a mail as text and
+  back into this application as tasks
 
 ### Gantt Chart View (`views/gantt_chart.py`)
-- **Interactive Visualization**: Built with Plotly for rich interactivity
+- **Drawn, not downloaded**: The chart on screen is painted with Pillow
+  (`utils/chart_render.py`). Plotly is still used to build the interactive
+  figure behind the HTML export, but nothing is fetched and no browser is
+  involved in showing a chart
+- **Rows line up with the task list**: the chart draws the rows the list is
+  showing, in its order and at its row height, so a bar sits on the line of the
+  task it belongs to. Fold a branch away and its bars go with it; scroll the
+  list and the chart follows. Because the grid beside it is already showing
+  every name, the chart drops its own label column and gives the width to the
+  bars - an exported chart, having no grid beside it, keeps them
 - **Task Bars**: Horizontal bars colored by task.color
 - **Milestone Diamonds**: Special diamond shapes for milestones
 - **Dependency Lines**: Red dotted lines connecting dependent tasks
@@ -134,24 +209,35 @@ gantt_app/
 - **Hover Tooltips**: Detailed information on hover (name, dates, duration, progress, dependencies)
 - **Zoom**: Zoom in, zoom out, Fit and Reset buttons beneath the chart. Fit scales the chart to exactly the width available so nothing scrolls; Reset returns to 100%, where a long plan is drawn wider than the pane to keep it readable
 - **Summary Bars**: A task with sub-tasks is drawn as a spanning bracket rather than a solid bar
-- **Row Order**: Chart rows follow the task list, so a reorder is visible in both panes
 - **Labels**: Task names displayed next to milestones
 - **Date Formatting**: Proper date display with tick formatting
 - **Empty State**: Helpful message when no tasks exist
 - **Dynamic Sizing**: Chart height adjusts based on number of tasks
 
-### Toolbar (`views/toolbar.py`)
-The toolbar has been redesigned with dropdown menus for better organization:
+### Menu Bar and Action Bar (`views/toolbar.py`)
 
-- **Create**: Dropdown with Task, Sub-Task, Milestone
-- **Project**: Dropdown with New Project, Load Project, Save Project
-- **Import**: Dropdown with MPP, GAN, Mermaid, XLSX import
-- **Export**: Dropdown with Mermaid, PNG, PDF, XLSX export
-- **Edit**: Dropdown with Undo, Redo
-- **View**: Dropdown with Project Info, Toggle Theme
-- **Log**: Opens the application log window (dark yellow button)
-- **Dialog Integration**: File dialogs, input validation, parent task selection for subtasks
-- **Color Scheme**: All main buttons are blue with white text, dropdown items are dark green with white text, Log button is dark yellow with white text
+Two rows, one above the other, because they are two different things.
+
+**The menu bar** names everything the application can do, the way a menu bar
+on any desktop does:
+
+- **Project**: New Project, Load Project, Save Project
+- **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (Mermaid, HTML, SVG,
+  PNG, PDF, XLSX)
+- **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone), and
+  Project Title
+- **Edit**: Undo, Redo, Cut, Copy, Paste
+- **View**: Toggle Theme, Gantt Chart Settings
+- **Log**: Opens the application log window, at the end of the row
+
+**The action bar** under it carries the handful worth reaching for without
+opening a menu: open, new, save, edit, the three work items, cut, copy, paste,
+delete, undo, redo.
+
+The icons are **drawn** (`resources/icons.py`), a few strokes each painted with
+Pillow at four times the size and reduced. They were set in "Segoe UI Emoji"
+before, a font that ships with Windows and with nothing else, so the whole row
+came out blank on Linux. Drawing depends on no font being installed.
 
 ### File I/O (`utils/file_io.py`)
 - **JSON Serialization**: Handles datetime objects and None values
@@ -202,16 +288,15 @@ preserved in the project's own JSON format.
 `MermaidExporter` in `mermaid_importer.py` is a backwards-compatible wrapper
 that delegates here, so the two cannot drift apart.
 
-### PNG Exporter (`utils/png_exporter.py`)
-- **High-Quality Export**: Creates PNG images with configurable DPI (default 300)
-- **Browser-Free**: Drawn with Pillow; nothing is downloaded and no browser is involved
-- **Automatic Scaling**: Properly scales chart elements for image output
-- **Directory Creation**: Automatically creates parent directories
-
-### PDF Exporter (`utils/pdf_exporter.py`)
-- **Vector Export**: Creates PDF documents with crisp, scalable graphics
-- **Browser-Free**: Drawn with Pillow at 150 dpi; export to SVG for scalable output
-- **Consistent Output**: Produces same visual output as PNG export
+### Chart Export (`utils/image_export.py`, `utils/chart_render.py`)
+- **PNG**: Configurable DPI, 300 by default
+- **PDF**: Drawn at 150 dpi; export to SVG where scalable output is wanted
+- **SVG and HTML**: The vector and the interactive Plotly form of the same chart
+- **Browser-Free**: Everything but the HTML export is drawn with Pillow, so
+  nothing is downloaded and no browser is involved
+- **Standalone Layout**: An exported chart has no task list beside it, so it
+  chooses its own rows and prints its own task names down the left - which is
+  what the on-screen chart drops in favour of the grid
 - **Directory Creation**: Automatically creates parent directories
 
 ### XLSX Exporter (`utils/xlsx_exporter.py`)
@@ -335,13 +420,16 @@ pysimplepmt --log-file      # print the log file path
    - Enter project name
    - Start adding tasks and milestones
 
-2. **Add Tasks**
-   - Click **Create** dropdown menu and select "Task..."
-   - Enter task name and duration in days
-   - Set start date and other properties
+2. **Add Work Items**
+   - **Actions -> Create** offers Phase, Deliverable, Task, Subtask and
+     Milestone, as does the Create submenu on any row's right-click menu
+   - Creating from a row puts the new item beside it - or inside it, for a
+     sub-task - rather than at the end of the plan
+   - Enter the name, and whichever two of start date, end date and duration the
+     scheduling mode leaves you to fill in
 
 3. **Add Sub-Tasks**
-   - Click **Create** dropdown menu and select "Sub-Task..."
+   - Choose "Subtask..." from either Create menu
    - Enter subtask name and duration in days
    - Select a parent task from the list (must have at least one task)
    - Any task can be the parent, **including an existing sub-task**, so hierarchies can go deeper than two levels
@@ -351,7 +439,7 @@ pysimplepmt --log-file      # print the log file path
    - Sub-tasks appear indented under their parent in the task list
 
 4. **Add Milestones**
-   - Click **Create** dropdown menu and select "Milestone..."
+   - Choose "Milestone..." from either Create menu
    - Enter milestone name and date
    - Milestones appear as diamonds in the Gantt chart
 
@@ -362,55 +450,65 @@ pysimplepmt --log-file      # print the log file path
    - Cannot create circular dependencies (a task cannot depend on itself or its own subtasks)
 
 6. **Edit Tasks**
-   - Double-click on a task in the task list
-   - Modify properties, dependencies, and colors
-   - Save changes or delete the task
+   - Choose Edit from a row's right-click menu. Double-click folds a branch
+     away instead, as it does in any other tree
+   - Modify properties, dependencies, notes and colours
+   - Save & Close, Save & New, or Delete
+   - Help opens a reference on what each field means
 
-7. **Save Project**
-   - Click **Project** dropdown menu and select "Save Project..."
+7. **Copy, Cut and Paste**
+   - From a row's right-click menu, the Edit menu, or Ctrl/Cmd+C, X and V
+   - Acts on every row selected, and copies only those rows - copying a phase
+     does not duplicate the work under it
+   - Pasted rows land after the row the menu was opened over, and stay selected
+   - Paste is offered only where the item belongs: a phase does not go inside
+     a task
+
+8. **Save Project**
+   - Choose **Project -> Save Project...**
    - Choose file location and name
    - Project is saved in JSON format
 
-8. **Load Project**
-   - Click **Project** dropdown menu and select "Load Project..."
+9. **Load Project**
+   - Choose **Project -> Load Project...**
    - Select a previously saved JSON file
 
-9. **Create New Project**
-   - Click **Project** dropdown menu and select "New Project..."
+10. **Create New Project**
+   - Choose **Project -> New Project...**
    - Enter project name
    - Start adding tasks and milestones
 
-10. **Import Projects**
-    - Click **Import** dropdown menu and select the format:
+11. **Import Projects**
+    - Choose **File -> Import** and pick the format:
     - "MPP..." to import MS Project files (requires Tasklib)
     - "GAN..." to import GanttProject files
     - "Mermaid..." to import Mermaid Gantt chart files (.mmd, .mermaid)
     - "XLSX..." to import an Excel project plan (requires openpyxl)
     - Importing replaces the current project and clears the undo/redo history
 
-11. **Export Projects**
-    - Click **Export** dropdown menu and select the format:
+12. **Export Projects**
+    - Choose **File -> Export** and pick the format:
     - "Mermaid..." to export project to Mermaid format
     - "PNG..." to export Gantt chart as PNG image
     - "PDF..." to export Gantt chart as PDF document
     - "XLSX..." to export all tasks to Excel format
 
-12. **Undo/Redo**
-    - Click **Edit** dropdown menu and select "Undo" to revert the last action
-    - Click **Edit** dropdown menu and select "Redo" to reapply the last undone action
+13. **Undo/Redo**
+    - Choose **Edit -> Undo** to revert the last action
+    - Choose **Edit -> Redo** to reapply the last undone action
     - Menu items are disabled when no actions are available
     - Supports undo/redo for: adding tasks, removing tasks, updating tasks, editing project info, setting dependencies
 
-13. **View Project Information**
-    - Click **View** dropdown menu and select "Project Info"
+14. **Rename the Project**
+    - Choose **Actions -> Project Title...**
     - Edit the project name
 
-14. **Toggle Theme**
-    - Click **View** dropdown menu and select "Toggle Theme"
+15. **Toggle Theme**
+    - Choose **View -> Toggle Theme**
     - Switch between light and dark modes
 
-15. **View the Log**
-    - Click the **Log** button in the top right (dark yellow button)
+16. **View the Log**
+    - Click the **Log** button at the end of the menu bar
     - Filter by level, auto-refresh, and copy or save the log to a file
     - Import and export failures appear here with full tracebacks
     - The log is also written to a file; see the Logging section for its location
@@ -419,20 +517,20 @@ pysimplepmt --log-file      # print the log file path
 - **Double-click** a row to expand or collapse its sub-tasks
 - **Drag** a row to reorder it within its siblings
 - **Right-click** a row (two-finger click on macOS) to move, edit or delete it
-- Use **View** dropdown menu and select "Toggle Theme" to switch between light/dark modes
+- Choose **View -> Toggle Theme** to switch between light and dark modes
 
 ## Sample Data
 
 The application starts with a complete sample project with tasks and subtasks:
 
-1. **Project Planning** (3 days) - Blue
+2. **Project Planning** (3 days) - Blue
    - **Requirements Gathering** (Sub-Task, 1 day) - Purple
-2. **Design Phase** (7 days, depends on Planning) - Green
+3. **Design Phase** (7 days, depends on Planning) - Green
    - **UI Mockups** (Sub-Task, 3 days) - Dark Purple
-3. **Design Review** (Milestone, depends on Design) - Red
-4. **Implementation** (10 days, depends on Design, 30% complete) - Orange
-5. **Testing** (5 days, depends on Implementation + Design Review) - Purple
-6. **Deployment** (3 days, depends on Testing) - Teal
+4. **Design Review** (Milestone, depends on Design) - Red
+5. **Implementation** (10 days, depends on Design, 30% complete) - Orange
+6. **Testing** (5 days, depends on Implementation + Design Review) - Purple
+7. **Deployment** (3 days, depends on Testing) - Teal
 
 ## Data Models
 
@@ -445,9 +543,18 @@ The application starts with a complete sample project with tasks and subtasks:
 - `dependencies`: List of task IDs this task depends on
 - `color`: Hex color for visualization
 - `is_milestone`: Boolean flag for milestones
-- `task_type`: Type of task - 'Task' or 'Sub-Task'
-- `parent_task_id`: ID of parent task (for Sub-Tasks only, None for regular Tasks)
-- `duration_days`: Calculated property - number of days between start_date and end_date (inclusive)
+- `task_type`: One of 'Phase', 'Deliverable', 'Task', 'Subtask', 'Milestone'
+- `parent_task_id`: ID of the parent row, None at the top level
+- `duration`: Length in days when one has been set; None leaves it derived
+- `priority`: One of the levels in `priority.py`; 'Normal' by default
+- `shape`: How the bar is drawn - 'Default', 'Rectangle' or 'Rounded'
+- `show_in_timeline`: Whether the task appears in the chart at all
+- `earliest_begin`: A date the task may not start before, or None
+- `scheduling_options`: Which of the three the form derives - 'Start date is
+  calculated', 'End date is calculated' or 'Duration is calculated'
+- `details`: Free text, shown in the notes panel beside the form
+- `duration_days`: Calculated property - days from start to end inclusive, 0
+  for a milestone or a container, None where there is no end date
 
 ### Project
 - `name`: Project name
@@ -464,7 +571,7 @@ Projects are saved as JSON files with the following structure:
   "name": "Project Name",
   "tasks": [
     {
-      "id": "task-uuid",
+      "id": "001",
       "name": "Task Name",
       "start_date": "2024-01-01T00:00:00",
       "end_date": "2024-01-07T00:00:00",
@@ -473,25 +580,43 @@ Projects are saved as JSON files with the following structure:
       "color": "#1f6aa5",
       "is_milestone": false,
       "task_type": "Task",
-      "parent_task_id": null
+      "parent_task_id": null,
+      "duration": null,
+      "priority": "Normal",
+      "shape": "Default",
+      "show_in_timeline": true,
+      "earliest_begin": null,
+      "scheduling_options": "End date is calculated",
+      "details": ""
     },
     {
-      "id": "subtask-uuid",
-      "name": "Sub-Task Name",
+      "id": "002",
+      "name": "Subtask Name",
       "start_date": "2024-01-01T00:00:00",
       "end_date": "2024-01-03T00:00:00",
       "progress": 0,
       "dependencies": [],
       "color": "#9b59b6",
       "is_milestone": false,
-      "task_type": "Sub-Task",
-      "parent_task_id": "task-uuid"
+      "task_type": "Subtask",
+      "parent_task_id": "001",
+      "duration": null,
+      "priority": "Normal",
+      "shape": "Default",
+      "show_in_timeline": true,
+      "earliest_begin": null,
+      "scheduling_options": "End date is calculated",
+      "details": ""
     }
   ],
   "start_date": "2024-01-01T00:00:00",
   "end_date": "2024-01-07T00:00:00"
 }
 ```
+
+A file written by an earlier version carries fewer fields than this. Anything
+missing takes its default when the file is read, and `Sub-Task` is rewritten
+to `Subtask`, so older plans open unchanged.
 
 ### GAN Import
 Supports GanttProject XML files (`.gan`), as written by GanttProject 3.x and
@@ -573,10 +698,15 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 
 ## Key Technical Decisions
 
-### 1. Matplotlib Integration
-- Used `FigureCanvasTkAgg` for embedding in Tkinter
-
-- Custom date formatting for better readability
+### 1. The chart is drawn, not rendered by a browser
+- Matplotlib and numpy were removed; Kaleido was never adopted. Plotly can
+  only rasterise a figure through Kaleido, which does it by driving a Chrome
+  or Chromium browser and downloading one at runtime when none is installed -
+  which a self-contained desktop package cannot do
+- The chart on screen and every image export are painted with Pillow
+  (`utils/chart_render.py`), which fetches nothing
+- Plotly remains for the interactive HTML export, where a browser is the
+  point
 
 ### 2. Drag-and-Drop Implementation
 - Rows are reordered by dragging, implemented in plain Tkinter. tkinterdnd2 is
@@ -605,10 +735,27 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 - Visual highlighting in Gantt chart
 
 ### 5. Color Management
-- Default colors for tasks and milestones
-- Custom colors per task
+- A colour per work item type, so the five levels are told apart before
+  anybody picks anything
+- Custom colours per task, chosen from a popup palette that is built the first
+  time it is opened rather than with every task dialog
 - Critical path highlighting
-- Color serialization in JSON
+- Colour serialization in JSON
+
+### 6. No font is relied on for a glyph
+- The calendar button's icon and the whole action bar are drawn with Pillow.
+  Emoji and icon fonts are a Windows and macOS assumption: a stock Linux
+  desktop has neither, and both came out blank there before they were drawn
+
+### 7. Fields are watched through variables, not the keyboard
+- The task form checks a field through a Tk variable rather than a
+  `<KeyRelease>` binding, so a value arriving from the calendar, from a
+  dependency or from the scheduling calculation is seen as readily as a typed
+  one
+- Nothing is reconfigured while a field's verdict is unchanged: a
+  CustomTkinter widget redraws its canvas on every `configure()`, so
+  reasserting a border on each keystroke cost more than working the answer
+  out
 
 ## Error Handling
 
@@ -636,19 +783,13 @@ Run all unit tests with:
 python3 run_tests.py
 ```
 
-Run specific test modules:
+Run a single module by name:
 ```bash
 python3 run_tests.py test_models
-python3 run_tests.py test_file_io
-python3 run_tests.py test_gan_importer
-python3 run_tests.py test_mermaid_importer
-python3 run_tests.py test_xlsx_importer
-python3 run_tests.py test_gantt_export
-python3 run_tests.py test_task_hierarchy
-python3 run_tests.py test_log
-python3 run_tests.py test_undoredo
-python3 run_tests.py test_utils
 ```
+
+Some of the suite builds real widgets, so those modules skip when no display
+is available and CI runs them under xvfb.
 
 ### Test Coverage
 
@@ -663,28 +804,26 @@ Unit tests cover:
 - ✅ **Gantt Export**: PNG and PDF rendering
 - ✅ **Undo/Redo**: Command stack behaviour
 - ✅ **Utilities**: Project utilities, validation, edge cases
+- ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, and the whole cascade from a ticked sub-task to the phase above it
+- ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
+- ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, where pasted rows land, that a task cannot be pasted inside itself, and that the selection reaches the clipboard at all
+- ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
+- ✅ **Scroll Frame**: The scrolling container the task form is built in
+- ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it
 
 The GAN fixtures deliberately mirror the format GanttProject actually writes.
 An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-All modules import successfully and all tests pass:
-- ✅ `gantt_app.models`
-- ✅ `gantt_app.utils.file_io`
-- ✅ `gantt_app.utils.gan_importer`
-- ✅ `gantt_app.utils.mpp_importer`
-- ✅ `gantt_app.views.task_list`
-- ✅ `gantt_app.views.gantt_chart`
-- ✅ `gantt_app.views.toolbar`
-- ✅ `gantt_app.main`
+862 tests, all passing.
 
 ## Known Limitations
 
-1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
-2. **Performance**: Large projects (>100 tasks) may impact chart rendering
-3. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
-4. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
+2. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
+3. **Performance**: Large projects (>100 tasks) may impact chart rendering
+4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
+5. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
 
 ## Future Enhancements
 
@@ -699,6 +838,11 @@ All modules import successfully and all tests pass:
 - [x] Timeline zoom/pan
 - [ ] Filtering and grouping
 - [x] Undo/Redo functionality
+- [x] Copy, Cut and Paste
+- [x] Work item hierarchy with completion roll-up
+- [x] Chart rows aligned to the task list
+- [ ] Recursive copy of a whole branch
+- [ ] Undo for paste
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
 
@@ -738,5 +882,5 @@ serialised alongside it:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.0.0
-**Last Updated**: 2026-08-13
+**Version**: 1.21.0
+**Last Updated**: 2026-08-17
