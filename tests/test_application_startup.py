@@ -89,6 +89,40 @@ class TestTheApplicationStarts(unittest.TestCase):
         self.assertEqual(self.app.gantt_chart._drawn_rows,
                          self.app.task_list.visible_rows())
 
+    def test_the_rows_stay_lined_up_across_a_redraw(self):
+        """
+        Selecting a task must not move the chart's rows.
+
+        Where the first row goes was measured afresh on every draw, from the
+        canvas when there was one and from the frame when there was not -
+        two different widgets, and a window still settling reports positions
+        that go on changing. Clicking a task redraws the chart, and the bars
+        stepped out of line with the rows they belong to.
+        """
+        chart = self.app.gantt_chart
+        first = chart._drawn_top_margin
+
+        self.app.task_list.tree.selection_set(
+            self.app.task_list.visible_rows()[0])
+        self.app.update_all()
+        self.app.update_idletasks()
+        second = chart._drawn_top_margin
+
+        chart.draw_chart()
+        self.app.update_idletasks()
+        third = chart._drawn_top_margin
+
+        self.assertEqual([first, second], [second, third],
+                         "the chart's first row moved between draws")
+
+    def test_the_rows_still_match_after_a_redraw(self):
+        """The chart draws the list's rows however often it is redrawn."""
+        self.app.update_all()
+        self.app.update_idletasks()
+
+        self.assertEqual(self.app.gantt_chart._drawn_rows,
+                         self.app.task_list.visible_rows())
+
 
 if __name__ == '__main__':
     unittest.main()

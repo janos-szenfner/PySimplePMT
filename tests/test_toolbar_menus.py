@@ -124,7 +124,7 @@ class TestMenuContents(unittest.TestCase):
         """View no longer offers Project Info."""
         view = labels(find(self.tree, 'View')['items'])
 
-        self.assertEqual(view, ['Toggle Theme', 'Gantt Chart Settings'])
+        self.assertEqual(view, ['Toggle Theme', 'Settings...'])
         self.assertNotIn('Project Info', view)
 
     def test_edit_menu(self):

@@ -255,7 +255,29 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self._handle_submenu(None, submenu_items, row)
 
     def _on_focus_out(self):
-        """Handle focus out to close the menu."""
+        """
+        Close the menu when the focus leaves it - unless a submenu has it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Whether a submenu is open is asked of the submenu, not of a flag set
+        while one is being built. _in_submenu was set True around the two
+        lines that make one and cleared immediately afterwards, but the
+        focus-out it was guarding against arrives from the event queue after
+        those lines have run - so the flag was always False again by the
+        time it was read.
+
+        This menu then closed itself the instant its submenu took focus,
+        and the submenu went with it, being its child. Opening File or
+        Actions looked as though it did nothing at all.
+        """
+        submenu = getattr(self, '_submenu', None)
+        if submenu is not None:
+            try:
+                if submenu.winfo_exists():
+                    return
+            except tk.TclError:
+                pass
         if self._in_submenu:
             return
         self._close_all_menus()
@@ -829,7 +851,7 @@ class Toolbar(ctk.CTkFrame):
                 'text': 'View',
                 'items': [
                     {"text": "Toggle Theme", "command": self.toggle_theme},
-                    {"text": "Gantt Chart Settings", "command": self.open_gantt_chart_settings},
+                    {"text": "Settings...", "command": self.open_gantt_chart_settings},
                 ],
             },
         ]

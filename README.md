@@ -227,7 +227,7 @@ on any desktop does:
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone), and
   Project Title
 - **Edit**: Undo, Redo, Cut, Copy, Paste
-- **View**: Toggle Theme, Gantt Chart Settings
+- **View**: Toggle Theme, Settings
 - **Log**: Opens the application log window, at the end of the row
 
 **The action bar** under it carries the handful worth reaching for without

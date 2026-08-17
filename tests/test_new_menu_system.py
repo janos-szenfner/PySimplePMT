@@ -15,6 +15,20 @@ from gantt_app.views.toolbar import Toolbar, CustomMenuBar, CTkDropdownMenu
 from gantt_app.models import Project
 
 
+def _display_available() -> bool:
+    """Whether a usable Tk display is present."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+    except Exception:
+        return False
+    root.destroy()
+    return True
+
+
+HAVE_DISPLAY = _display_available()
+
+
 class TestMenuClassesExist(unittest.TestCase):
     """Tests that the new menu classes exist and are importable."""
 
@@ -238,6 +252,99 @@ class TestMenuStructure(unittest.TestCase):
         self.assertIn('Cut', edit_items)
         self.assertIn('Copy', edit_items)
         self.assertIn('Paste', edit_items)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestSubmenusOpen(unittest.TestCase):
+    """
+    Choosing a menu entry that has a submenu opens it.
+
+    WHY THESE EXIST:
+    ================
+    File and Actions hold nothing but submenus - Import, Export, Create - so
+    when the parent menu closed itself the instant its submenu took focus,
+    those two menus did nothing at all. The submenu went with the parent,
+    being its child.
+    """
+
+    def setUp(self):
+        """A toolbar with its menu bar."""
+        import customtkinter as ctk
+        from gantt_app.models import Project
+        from gantt_app.views.toolbar import Toolbar
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.toolbar = Toolbar(self.root, Project(name="Test Project"))
+        self.toolbar.pack(fill="x")
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def open_menu(self, title):
+        """Open a menu from the bar and return its dropdown."""
+        bar = self.toolbar.menu_bar
+        button = next(b for b in bar.menu_buttons
+                      if str(b.cget('text')) == title)
+        button.invoke()
+        self.root.update_idletasks()
+        return bar.active_dropdown
+
+    def submenu_rows(self, dropdown):
+        """The rows of a dropdown that open a submenu."""
+        import customtkinter as ctk
+
+        rows = []
+        for container in dropdown.winfo_children():
+            for row in container.winfo_children():
+                for widget in row.winfo_children():
+                    if (isinstance(widget, ctk.CTkButton)
+                            and getattr(widget, 'submenu_items', None)):
+                        rows.append(widget)
+        return rows
+
+    def test_file_offers_import_and_export(self):
+        """Both are submenus, and both are there to be opened."""
+        dropdown = self.open_menu('File')
+
+        labels = [str(w.cget('text')).strip()
+                  for w in self.submenu_rows(dropdown)]
+
+        self.assertEqual(labels, ['Import', 'Export'])
+
+    def test_opening_a_submenu_leaves_its_parent_alive(self):
+        """
+        Which is what stopped it appearing at all.
+
+        The parent closed on losing focus to its own submenu, and the
+        submenu is the parent's child, so both vanished together.
+        """
+        dropdown = self.open_menu('File')
+        self.submenu_rows(dropdown)[0].invoke()
+        self.root.update_idletasks()
+
+        self.assertTrue(dropdown.winfo_exists(),
+                        "the parent menu closed itself")
+        self.assertIsNotNone(dropdown._submenu)
+        self.assertTrue(dropdown._submenu.winfo_exists())
+
+    def test_the_actions_create_submenu_opens(self):
+        """Actions holds Create, which is where the work items are made."""
+        dropdown = self.open_menu('Actions')
+        rows = self.submenu_rows(dropdown)
+
+        self.assertEqual([str(w.cget('text')).strip() for w in rows],
+                         ['Create'])
+
+        rows[0].invoke()
+        self.root.update_idletasks()
+
+        self.assertTrue(dropdown._submenu.winfo_exists())
 
 
 if __name__ == '__main__':

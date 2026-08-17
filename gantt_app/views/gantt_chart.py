@@ -131,6 +131,10 @@ class GanttChart(ctk.CTkFrame):
         self._drawn_top_margin = 0
         self._drawn_height = 0
 
+        # Where the chart's first row goes, measured once the panes have
+        # been laid out; see _first_row_offset
+        self._row_offset = None
+
         # Draw initial chart
         self.draw_chart()
 
@@ -255,6 +259,9 @@ class GanttChart(ctk.CTkFrame):
         if event is not None and getattr(event, 'widget', None) is not self:
             return
 
+        # The panes have moved, so where the rows start is worth asking again
+        self._row_offset = None
+
         if self._resize_job is not None:
             try:
                 self.after_cancel(self._resize_job)
@@ -361,6 +368,7 @@ class GanttChart(ctk.CTkFrame):
             The grid to the left of the chart.
         """
         self.task_list = task_list
+        self._row_offset = None
         task_list.on_rows_changed(self._rows_changed)
         self.draw_chart()
 
@@ -450,6 +458,11 @@ class GanttChart(ctk.CTkFrame):
         """
         How far down the chart's first row sits, to match the list's.
 
+        RETURNS:
+        --------
+        int
+            Pixels from the top of the chart image to the top of row one.
+
         DEVELOPMENT NOTES:
         ------------------
         Measured rather than assumed. The two panes are packed separately -
@@ -457,23 +470,65 @@ class GanttChart(ctk.CTkFrame):
         far each starts from the top of its pane is a matter of what the
         window manager made of them, not of any number written here.
 
-        Before either pane has been laid out there is nothing to measure and
-        the chart's own margin is used, which is what the first draw during
-        startup gets.
-        """
-        default = CHART_TOP_MARGIN
-        try:
-            rows = self.task_list.tree.winfo_rooty()
-            heading = self.task_list.tree.winfo_y()
-            canvas_top = (self._canvas.winfo_rooty() if self._canvas
-                          else self.chart_frame.winfo_rooty())
-            offset = rows + heading - canvas_top
-        except (tk.TclError, AttributeError):
-            return default
+        Measured against chart_frame every time, and never against the
+        canvas. The canvas is built afresh by _show_image on every draw, so
+        it does not exist for the first one: the offset was taken from the
+        frame once and from the canvas afterwards, and the two differ - so
+        the rows jumped out of line the moment anything redrew the chart,
+        which selecting a task does.
 
-        if offset <= 0:
-            return default
-        return int(offset)
+        Measured once, and then kept until the panes are resized. A window
+        being built reports positions that go on changing until it settles,
+        so measuring afresh on every draw moved the rows about even with the
+        right widgets being measured. Nothing is kept until the tree can say
+        where its first row actually is, which it can only do once it is on
+        screen with rows in it.
+        """
+        if self._row_offset is not None:
+            return self._row_offset
+
+        try:
+            rows_top, settled = self._task_rows_top()
+            frame_top = self.chart_frame.winfo_rooty()
+        except (tk.TclError, AttributeError):
+            return CHART_TOP_MARGIN
+
+        offset = int(rows_top - frame_top)
+        if offset <= 0 or not settled:
+            # Not laid out yet; the chart's own margin stands in, and
+            # nothing is remembered
+            return CHART_TOP_MARGIN
+
+        self._row_offset = offset
+        logger.debug("Chart rows start %dpx down, to match the task list",
+                     offset)
+        return offset
+
+    def _task_rows_top(self):
+        """
+        Where the task list's first row begins, in screen pixels.
+
+        RETURNS:
+        --------
+        tuple
+            (y, settled). The tree answers bbox for a row only once it is on
+            screen, so a box coming back is what says the panes have been
+            laid out and the answer is worth keeping.
+
+        The box is relative to the tree, and counts the column heading above
+        it. With nothing to ask about the heading is taken to be one row
+        tall, which is what ttk draws it as.
+        """
+        tree = self.task_list.tree
+        top = tree.winfo_rooty()
+
+        rows = tree.get_children('')
+        if rows:
+            box = tree.bbox(rows[0])
+            if box:
+                return top + int(box[1]), True
+
+        return top + self.task_list.GRID_ROW_HEIGHT, False
 
     def _figure_settings(self):
         """

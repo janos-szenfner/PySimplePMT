@@ -69,6 +69,57 @@ class TestDialogConstruction(unittest.TestCase):
         except Exception:
             pass
 
+    def test_the_settings_dialog_builds(self):
+        """
+        Opening the chart settings does not raise.
+
+        _update_theme_preview was called while the dialog was being built,
+        four rows before the colour boxes it writes into existed, so
+        View -> Settings raised AttributeError on task_color_entry every
+        time and the dialog never came up.
+        """
+        from gantt_app.views.gantt_chart import GanttChart
+        from gantt_app.views.ganttsettingsw import GanttChartSettingsDialog
+
+        chart = GanttChart(self.root, self.project)
+        dialog = GanttChartSettingsDialog(self.root, chart)
+
+        self.assertTrue(dialog.winfo_exists())
+        self.assertTrue(hasattr(dialog, 'task_color_entry'))
+
+    def test_the_settings_dialog_opens_on_the_saved_colours(self):
+        """
+        Not on the theme's, which would discard what was chosen before.
+
+        The initial paint touches the swatch alone; taking a theme's colours
+        is what the theme menu does.
+        """
+        from gantt_app.views.gantt_chart import GanttChart
+        from gantt_app.views.ganttsettingsw import GanttChartSettingsDialog
+
+        chart = GanttChart(self.root, self.project)
+        chart.task_color = '#abcdef'
+        dialog = GanttChartSettingsDialog(self.root, chart)
+
+        self.assertEqual(dialog.task_color_entry.get(), '#abcdef')
+
+    def test_choosing_a_theme_fills_the_colour_boxes(self):
+        """Which is the thing the initial call was trying to do too early."""
+        from gantt_app.views.gantt_chart import GanttChart
+        from gantt_app.views.ganttsettingsw import (
+            GanttChartSettingsDialog, MERMAID_THEMES,
+        )
+
+        chart = GanttChart(self.root, self.project)
+        dialog = GanttChartSettingsDialog(self.root, chart)
+        name = list(MERMAID_THEMES)[1]
+
+        dialog.theme_var.set(name)
+        dialog._update_theme_preview()
+
+        self.assertEqual(dialog.task_color_entry.get(),
+                         MERMAID_THEMES[name]['task_color'])
+
     def test_create_task_dialog_builds(self):
         """Creating a task opens a complete form."""
         from gantt_app.views.taskdialogs import CreateTaskDialog

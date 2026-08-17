@@ -124,7 +124,7 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
         # Theme Preview
         self.theme_preview = ctk.CTkFrame(main_frame, height=40, corner_radius=5)
         self.theme_preview.grid(row=5, column=0, columnspan=2, sticky=tk.EW, padx=10, pady=(0, 15))
-        self._update_theme_preview()
+        self._paint_theme_preview()
         
         # Task Color
         ctk.CTkLabel(main_frame, text="Task Bar Color:", font=ctk.CTkFont(weight="bold")).grid(row=6, column=0, sticky=tk.W, pady=(10, 5))
@@ -184,27 +184,51 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
         self.font_size_label.configure(text=f"Font Size: {size}px")
         self.settings["font_size"] = size
     
-    def _update_theme_preview(self, event=None):
-        """Update theme preview color."""
-        theme_name = self.theme_var.get()
-        theme = MERMAID_THEMES.get(theme_name, MERMAID_THEMES["Default"])
+    #: The colour boxes a theme fills in, by the setting each one holds.
+    COLOUR_FIELDS = (
+        ('task_color_entry', 'task_color'),
+        ('milestone_color_entry', 'milestone_color'),
+        ('dependency_color_entry', 'dependency_color'),
+        ('bg_color_entry', 'bg_color'),
+        ('grid_color_entry', 'grid_color'),
+    )
+
+    def _paint_theme_preview(self):
+        """
+        Show the background of the theme now chosen.
+
+        The swatch alone. Opening the dialog paints it and touches nothing
+        else, so the colours already saved are what the boxes show.
+        """
+        theme = MERMAID_THEMES.get(self.theme_var.get(),
+                                   MERMAID_THEMES["Default"])
         self.theme_preview.configure(fg_color=theme["bg_color"])
-        
-        # Update all settings from theme
+
+    def _update_theme_preview(self, event=None):
+        """
+        Take the colours of the theme just chosen.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what the theme menu does, and only what the theme menu does.
+        It used to be called while the dialog was being built as well, four
+        rows before the boxes it writes into existed, so opening the settings
+        raised AttributeError on task_color_entry every time and the dialog
+        never came up at all.
+        """
+        theme = MERMAID_THEMES.get(self.theme_var.get(),
+                                   MERMAID_THEMES["Default"])
+        self._paint_theme_preview()
+
         for key, value in theme.items():
             self.settings[key] = value
-        
-        # Update entry fields to match theme
-        self.task_color_entry.delete(0, tk.END)
-        self.task_color_entry.insert(0, theme["task_color"])
-        self.milestone_color_entry.delete(0, tk.END)
-        self.milestone_color_entry.insert(0, theme["milestone_color"])
-        self.dependency_color_entry.delete(0, tk.END)
-        self.dependency_color_entry.insert(0, theme["dependency_color"])
-        self.bg_color_entry.delete(0, tk.END)
-        self.bg_color_entry.insert(0, theme["bg_color"])
-        self.grid_color_entry.delete(0, tk.END)
-        self.grid_color_entry.insert(0, theme["grid_color"])
+
+        for attribute, key in self.COLOUR_FIELDS:
+            entry = getattr(self, attribute, None)
+            if entry is None or key not in theme:
+                continue
+            entry.delete(0, tk.END)
+            entry.insert(0, theme[key])
     
     def _pick_task_color(self):
         """Open color picker for task color."""
