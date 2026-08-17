@@ -562,6 +562,72 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
             self.assertEqual(state, 'disabled')
             self.assertEqual(background, TaskFormDialog.FIELD_BG_DISABLED)
 
+    def test_every_box_on_the_form_is_painted_by_the_same_rule(self):
+        """
+        None left on the toolkit's own theme colours.
+
+        Painting only the boxes something greys out left the rest on
+        CustomTkinter's defaults, so two live boxes on one form could be
+        different shades of white.
+        """
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+        ours = (TaskFormDialog.FIELD_BG, TaskFormDialog.FIELD_BG_DISABLED)
+
+        boxes = {
+            'name': dialog.name_entry,
+            'start date': dialog.start_date_entry,
+            'end date': dialog.end_date_entry,
+            'duration': dialog.duration_entry,
+            'progress': dialog.progress_entry,
+            'notes': dialog.details_text,
+            'earliest begin': dialog.earliest_begin_entry,
+        }
+        for label, widget in boxes.items():
+            background = dialog._entry_of(widget).cget('fg_color')
+
+            self.assertIn(background, ours,
+                          f"the {label} box is on a theme colour")
+
+    def test_painting_a_field_does_not_wake_it_up(self):
+        """
+        The colour is read off the widget, not decided again.
+
+        A field painted with its own state cannot quietly re-enable one
+        that was built disabled.
+        """
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+        dialog._paint_field(dialog.end_date_entry)
+
+        entry = dialog._entry_of(dialog.end_date_entry)
+
+        self.assertEqual(str(entry.cget('state')), 'disabled')
+        self.assertEqual(entry.cget('fg_color'),
+                         TaskFormDialog.FIELD_BG_DISABLED)
+
+    def test_the_earliest_begin_date_waits_for_its_tick_box(self):
+        """
+        It means nothing until it is asked for, so it is greyed until then.
+
+        Which is what the reference this form follows does with it.
+        """
+        from gantt_app.views.taskform import TaskFormDialog
+
+        dialog = self.edit_dialog()
+        entry = dialog._entry_of(dialog.earliest_begin_entry)
+
+        self.assertEqual(str(entry.cget('state')), 'disabled')
+        self.assertEqual(entry.cget('fg_color'),
+                         TaskFormDialog.FIELD_BG_DISABLED)
+
+        dialog.earliest_begin_var.set(True)
+
+        self.assertEqual(str(entry.cget('state')), 'normal')
+        self.assertEqual(entry.cget('fg_color'), TaskFormDialog.FIELD_BG)
+
     def test_a_caption_goes_back_to_black_when_its_box_comes_back(self):
         """Greying is undone, not only applied."""
         from gantt_app.views.taskform import TaskFormDialog

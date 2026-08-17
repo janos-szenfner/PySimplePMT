@@ -242,11 +242,14 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if widget is not None:
             widget.grid(row=row, column=1, sticky=sticky, pady=5)
             self._field_labels[widget] = caption
+            # Painted as it goes in, so every box on the form is coloured by
+            # the same rule rather than only the ones something greys out
+            self._paint_field(widget)
         return row
 
     def _set_field_enabled(self, widget, enabled: bool):
         """
-        Grey a field out, or bring it back.
+        Let a field be filled in, or stop it, and paint it to say which.
 
         PARAMETERS:
         -----------
@@ -257,13 +260,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         DEVELOPMENT NOTES:
         ------------------
-        A disabled CustomTkinter box is only very slightly paler than a live
-        one - the end date, greyed out because the mode is working it out
-        for you, looked exactly like the start date you are meant to fill in.
-        So the box is given a shaded background and its caption goes grey
-        with it, which is how every other form says a field is not yours to
-        fill in.
-
         A DateEntry passes state on to the box and the calendar button it is
         made of; see datepicker.DateEntry.configure.
         """
@@ -275,8 +271,41 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         except (tk.TclError, ValueError):
             logger.debug("Could not set the state of %s", widget)
 
+        self._paint_field(widget, enabled)
+
+    def _paint_field(self, widget, enabled: Optional[bool] = None):
+        """
+        Colour a field to say whether it is the user's to fill in.
+
+        PARAMETERS:
+        -----------
+        widget : widget
+            The box, menu or tick box on the row.
+        enabled : Optional[bool]
+            Left out, it is read off the widget - so painting a field never
+            changes whether it can be typed in, only how it looks.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every field is painted, not only the ones something disables. A
+        disabled CustomTkinter box is barely paler than a live one, so the
+        end date being derived for you looked exactly like the start date
+        you are meant to type; and painting only the greyed ones left the
+        rest on the toolkit's own theme colours, so two live boxes on the
+        same form could be different shades of white.
+
+        The caption goes with the box. That is what the eye reads first, and
+        a grey label over a shaded box is how every other form says a field
+        is not yours to fill in.
+        """
+        if widget is None:
+            return
+
+        if enabled is None:
+            enabled = self._field_is_live(widget)
+
         entry = self._entry_of(widget)
-        if isinstance(entry, ctk.CTkEntry):
+        if isinstance(entry, (ctk.CTkEntry, ctk.CTkTextbox)):
             try:
                 entry.configure(
                     fg_color=(self.FIELD_BG if enabled
@@ -291,6 +320,19 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if caption is not None:
             caption.configure(text_color=(self.FIELD_TEXT if enabled
                                           else self.FIELD_TEXT_DISABLED))
+
+    def _field_is_live(self, widget) -> bool:
+        """
+        Whether a field can be typed in as it stands.
+
+        Read off the widget rather than worked out again, so that painting a
+        field cannot quietly re-enable one that was built disabled - the
+        type menu on a sub-task being the one that would have noticed.
+        """
+        try:
+            return str(self._entry_of(widget).cget('state')) != tk.DISABLED
+        except (tk.TclError, ValueError, AttributeError):
+            return True
 
     def _create_form(self):
         """
@@ -829,6 +871,24 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self._field(frame, "Earliest begin:", row_frame, sticky=tk.W)
 
+        # The date and the button beside it mean nothing until the box is
+        # ticked, so they are greyed until it is. _field paints the row's
+        # frame, which is not a box, so these are painted by name.
+        self._earliest_begin_button = copy_button
+        self.earliest_begin_var.trace_add(
+            'write', lambda *_args: self._update_earliest_begin())
+        self._update_earliest_begin()
+
+    def _update_earliest_begin(self):
+        """Let the earliest begin date be set only when it is asked for."""
+        wanted = bool(self.earliest_begin_var.get())
+        self._set_field_enabled(self.earliest_begin_entry, wanted)
+        try:
+            self._earliest_begin_button.configure(
+                state=tk.NORMAL if wanted else tk.DISABLED)
+        except (tk.TclError, ValueError):
+            logger.debug("Could not set the state of Copy begin date")
+
     def _copy_begin_date(self):
         """Copy the start date to the earliest begin date."""
         if hasattr(self, 'start_date_entry') and self.start_date_entry:
@@ -916,6 +976,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self.details_text = ctk.CTkTextbox(pane, wrap='word')
         self.details_text.grid(row=1, column=0, sticky=tk.NSEW)
+        # Painted like every other box on the form. It is not placed by
+        # _field, having a column to itself rather than a row.
+        self._paint_field(self.details_text)
         if self.template.details:
             self.details_text.insert("1.0", self.template.details)
 
