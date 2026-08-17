@@ -46,7 +46,7 @@ class TestDeepSubtaskCreation(unittest.TestCase):
         """The data model tracks a parent chain of any depth."""
         self.assertEqual(self.level3.parent_task_id, self.level2.id)
         self.assertEqual(self.level2.parent_task_id, self.level1.id)
-        self.assertEqual(self.level3.task_type, "Sub-Task")
+        self.assertEqual(self.level3.task_type, "Subtask")
 
         self.assertEqual([t.id for t in self.project.get_root_tasks()],
                          [self.level1.id])
@@ -55,19 +55,31 @@ class TestDeepSubtaskCreation(unittest.TestCase):
         self.assertEqual(self.project.get_parent_task(self.level3.id).id,
                          self.level2.id)
 
-    def test_subtasks_are_offered_as_parents(self):
-        """A sub-task can be chosen as the parent of a new sub-task."""
+    def test_only_container_types_are_offered_as_parents(self):
+        """Only container types (Phase, Deliverable, Task) can be parents."""
         offered = {t.id for t in candidate_parents(self.project)}
 
+        # Level 1 is a Task (container) - should be offered
         self.assertIn(self.level1.id, offered)
-        self.assertIn(self.level2.id, offered)
-        self.assertIn(self.level3.id, offered)
+        # Level 2 and Level 3 are Subtasks (not containers) - should NOT be offered
+        self.assertNotIn(self.level2.id, offered)
+        self.assertNotIn(self.level3.id, offered)
 
     def test_candidates_are_in_hierarchy_order(self):
         """Parents are listed before their own descendants."""
+        # Add a Phase as well to test ordering
+        phase = Task.create_task("Phase", self.start,
+                                self.start + timedelta(days=30))
+        phase.task_type = "Phase"
+        self.project.add_task(phase)
+        
         names = [t.name for t in candidate_parents(self.project)]
 
-        self.assertEqual(names, ["Level 1", "Level 2", "Level 3"])
+        # Only Phase and Level 1 (Task) should be offered as parents
+        self.assertIn("Phase", names)
+        self.assertIn("Level 1", names)
+        self.assertNotIn("Level 2", names)
+        self.assertNotIn("Level 3", names)
 
     def test_milestones_are_not_offered_as_parents(self):
         """A milestone has no span for a child to sit inside."""
@@ -83,12 +95,12 @@ class TestDeepSubtaskCreation(unittest.TestCase):
         self.assertEqual(task_depth(self.project, self.level2), 1)
         self.assertEqual(task_depth(self.project, self.level3), 2)
 
-    def test_orphaned_subtask_is_still_offered(self):
-        """A sub-task whose parent is gone is not lost from the list."""
+    def test_orphaned_task_with_container_type_is_still_offered(self):
+        """A task with container type whose parent is gone is not lost from the list."""
         orphan = Task(
             id="orphan", name="Orphan", start_date=self.start,
             end_date=self.start + timedelta(days=2),
-            task_type="Sub-Task", parent_task_id="missing-parent"
+            task_type="Task", parent_task_id="missing-parent"
         )
         self.project.add_task(orphan)
 
@@ -101,13 +113,14 @@ class TestDeepSubtaskCreation(unittest.TestCase):
                      end_date=self.start + timedelta(days=1))
         second = Task(id="b", name="B", start_date=self.start,
                       end_date=self.start + timedelta(days=1),
-                      task_type="Sub-Task", parent_task_id="a")
+                      task_type="Task", parent_task_id="a")
         first.parent_task_id = "b"
-        first.task_type = "Sub-Task"
+        first.task_type = "Task"
 
         project = Project(name="Cyclic", tasks=[first, second])
 
         self.assertIsInstance(task_depth(project, first), int)
+        # Both are Tasks (container types), so both should be offered
         self.assertEqual(len(candidate_parents(project)), 2)
 
 
@@ -128,6 +141,77 @@ class TestDeepHierarchyFromImport(unittest.TestCase):
         self.assertEqual(project.get_summary_task_ids(), {root.id, mid.id})
         # The leaf is the only real work, so it is the whole critical path
         self.assertEqual([t.name for t in project.get_critical_path()], ["Leaf"])
+
+
+class TestTaskTypeCompatibility(unittest.TestCase):
+    """Tests for task type compatibility with parent-child relationships."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.start = datetime(2024, 1, 1)
+        self.project = Project(name="Type Test")
+
+    def test_phase_can_have_children(self):
+        """Phase tasks can have children."""
+        phase = Task.create_task("Phase", self.start,
+                                self.start + timedelta(days=10))
+        phase.task_type = "Phase"
+        self.project.add_task(phase)
+        
+        self.assertTrue(phase.can_have_children)
+
+    def test_deliverable_can_have_children(self):
+        """Deliverable tasks can have children."""
+        deliverable = Task.create_task("Deliverable", self.start,
+                                        self.start + timedelta(days=10))
+        deliverable.task_type = "Deliverable"
+        self.project.add_task(deliverable)
+        
+        self.assertTrue(deliverable.can_have_children)
+
+    def test_task_can_have_children(self):
+        """Task can have children."""
+        task = Task.create_task("Task", self.start,
+                                self.start + timedelta(days=10))
+        self.project.add_task(task)
+        
+        self.assertTrue(task.can_have_children)
+
+    def test_subtask_cannot_have_children(self):
+        """Subtask cannot have children."""
+        parent = Task.create_task("Parent", self.start,
+                                  self.start + timedelta(days=10))
+        subtask = Task.create_subtask("Subtask", parent_task=parent)
+        self.project.add_task(subtask)
+        
+        self.assertFalse(subtask.can_have_children)
+
+    def test_milestone_cannot_have_children(self):
+        """Milestone cannot have children."""
+        milestone = Task.create_milestone("Milestone", self.start)
+        self.project.add_task(milestone)
+        
+        self.assertFalse(milestone.can_have_children)
+
+    def test_subtask_is_leaf(self):
+        """Subtask is a leaf node."""
+        parent = Task.create_task("Parent", self.start,
+                                  self.start + timedelta(days=10))
+        subtask = Task.create_subtask("Subtask", parent_task=parent)
+        self.assertTrue(subtask.is_leaf)
+
+    def test_milestone_is_leaf(self):
+        """Milestone is a leaf node."""
+        milestone = Task.create_milestone("Milestone", self.start)
+        self.assertTrue(milestone.is_leaf)
+
+    def test_phase_is_container(self):
+        """Phase is a container (not leaf)."""
+        phase = Task.create_task("Phase", self.start,
+                                self.start + timedelta(days=10))
+        phase.task_type = "Phase"
+        self.assertFalse(phase.is_leaf)
+        self.assertTrue(phase.is_container)
 
 
 if __name__ == '__main__':
