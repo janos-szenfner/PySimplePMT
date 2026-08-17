@@ -151,3 +151,158 @@ def get_icon_svg(icon_name: str, viewbox: str = "0 0 24 24") -> str:
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="{path_data}"/>
 </svg>'''
+
+
+# =============================================================================
+# DRAWN ICONS
+# =============================================================================
+#
+# WHY THESE EXIST:
+# ----------------
+# The toolbar set its buttons in "Segoe UI Emoji" and put an emoji character
+# on each one. That font ships with Windows and with nothing else, and a
+# stock Linux desktop has no emoji font at all, so every button on the row
+# came out blank - which is what the icon toolbar looked like on Linux.
+#
+# datepicker.py met the same thing and answered it the same way: the glyph is
+# drawn, so it depends on no font being installed. Pillow is already required
+# for the chart exports, so this costs no new dependency.
+#
+# Each icon is a few strokes in a square running 0 to 1, so the drawing is
+# independent of the size it ends up at. They are painted at four times the
+# size and reduced, which keeps the edges clean on a HiDPI screen.
+
+from typing import Optional, Tuple
+
+from PIL import Image, ImageDraw
+
+#: The strokes each icon is made of, in a unit square.
+#:
+#: 'line' is a polyline through the points given, 'shape' a closed outline,
+#: 'ellipse' the oval within the two corners, and 'fill' a solid rectangle.
+ICON_STROKES: Dict[str, List[tuple]] = {
+    'open': [
+        ('shape', [(0.08, 0.28), (0.42, 0.28), (0.50, 0.40),
+                   (0.92, 0.40), (0.92, 0.84), (0.08, 0.84)]),
+    ],
+    'new_project': [
+        ('shape', [(0.22, 0.10), (0.62, 0.10), (0.78, 0.28),
+                   (0.78, 0.90), (0.22, 0.90)]),
+        ('line', [(0.50, 0.46), (0.50, 0.72)]),
+        ('line', [(0.37, 0.59), (0.63, 0.59)]),
+    ],
+    'save': [
+        ('shape', [(0.12, 0.12), (0.74, 0.12), (0.88, 0.26),
+                   (0.88, 0.88), (0.12, 0.88)]),
+        ('shape', [(0.30, 0.12), (0.66, 0.12), (0.66, 0.40), (0.30, 0.40)]),
+        ('shape', [(0.28, 0.56), (0.72, 0.56), (0.72, 0.88), (0.28, 0.88)]),
+    ],
+    'edit': [
+        ('line', [(0.16, 0.84), (0.24, 0.62), (0.68, 0.18),
+                  (0.84, 0.34), (0.40, 0.78), (0.16, 0.84)]),
+        ('line', [(0.60, 0.26), (0.76, 0.42)]),
+    ],
+    'task': [
+        ('shape', [(0.12, 0.34), (0.88, 0.34), (0.88, 0.66), (0.12, 0.66)]),
+        ('fill', [(0.12, 0.34), (0.46, 0.66)]),
+    ],
+    'subtask': [
+        ('line', [(0.14, 0.18), (0.14, 0.62), (0.34, 0.62)]),
+        ('shape', [(0.34, 0.44), (0.90, 0.44), (0.90, 0.78), (0.34, 0.78)]),
+    ],
+    'milestone': [
+        ('shape', [(0.50, 0.12), (0.88, 0.50), (0.50, 0.88), (0.12, 0.50)]),
+    ],
+    'cut': [
+        ('line', [(0.24, 0.14), (0.72, 0.72)]),
+        ('line', [(0.76, 0.14), (0.28, 0.72)]),
+        ('ellipse', [(0.14, 0.68), (0.36, 0.90)]),
+        ('ellipse', [(0.64, 0.68), (0.86, 0.90)]),
+    ],
+    'copy': [
+        ('shape', [(0.12, 0.12), (0.62, 0.12), (0.62, 0.62), (0.12, 0.62)]),
+        ('shape', [(0.38, 0.38), (0.88, 0.38), (0.88, 0.88), (0.38, 0.88)]),
+    ],
+    'paste': [
+        ('shape', [(0.18, 0.18), (0.82, 0.18), (0.82, 0.90), (0.18, 0.90)]),
+        ('shape', [(0.36, 0.08), (0.64, 0.08), (0.64, 0.26), (0.36, 0.26)]),
+        ('line', [(0.34, 0.50), (0.66, 0.50)]),
+        ('line', [(0.34, 0.68), (0.66, 0.68)]),
+    ],
+    'delete': [
+        ('line', [(0.14, 0.26), (0.86, 0.26)]),
+        ('shape', [(0.24, 0.26), (0.76, 0.26), (0.70, 0.90), (0.30, 0.90)]),
+        ('line', [(0.40, 0.14), (0.60, 0.14)]),
+        ('line', [(0.44, 0.44), (0.44, 0.74)]),
+        ('line', [(0.56, 0.44), (0.56, 0.74)]),
+    ],
+    'undo': [
+        ('line', [(0.14, 0.38), (0.60, 0.38), (0.74, 0.50),
+                  (0.74, 0.64), (0.60, 0.76), (0.30, 0.76)]),
+        ('line', [(0.32, 0.20), (0.14, 0.38), (0.32, 0.56)]),
+    ],
+    'redo': [
+        ('line', [(0.86, 0.38), (0.40, 0.38), (0.26, 0.50),
+                  (0.26, 0.64), (0.40, 0.76), (0.70, 0.76)]),
+        ('line', [(0.68, 0.20), (0.86, 0.38), (0.68, 0.56)]),
+    ],
+}
+
+#: Drawings already made, by (icon, size, colour).
+_DRAWN: Dict[tuple, Image.Image] = {}
+
+
+def draw_icon(name: str, size: int = 20,
+              color: Tuple[int, int, int] = (28, 29, 31)) -> Optional[Image.Image]:
+    """
+    Paint one toolbar icon.
+
+    PARAMETERS:
+    -----------
+    name : str
+        One of ICON_STROKES.
+    size : int
+        The width and height to paint it at, in pixels.
+    color : tuple
+        The stroke colour, as RGB.
+
+    RETURNS:
+    --------
+    Optional[Image.Image]
+        The icon on a transparent square, or None for a name with no
+        strokes defined - the caller falls back to a letter.
+    """
+    strokes = ICON_STROKES.get(name)
+    if not strokes:
+        return None
+
+    key = (name, size, color)
+    if key in _DRAWN:
+        return _DRAWN[key]
+
+    scale = 4
+    edge = size * scale
+    image = Image.new('RGBA', (edge, edge), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    width = max(1, round(size * scale / 12))
+    ink = (*color, 255)
+
+    def points(pairs):
+        """Unit-square points at the size being drawn."""
+        return [(x * edge, y * edge) for x, y in pairs]
+
+    for kind, pairs in strokes:
+        placed = points(pairs)
+        if kind == 'line':
+            draw.line(placed, fill=ink, width=width, joint='curve')
+        elif kind == 'shape':
+            draw.line(placed + [placed[0]], fill=ink, width=width,
+                      joint='curve')
+        elif kind == 'ellipse':
+            draw.ellipse([placed[0], placed[1]], outline=ink, width=width)
+        elif kind == 'fill':
+            draw.rectangle([placed[0], placed[1]], fill=ink)
+
+    icon = image.resize((size, size), Image.LANCZOS)
+    _DRAWN[key] = icon
+    return icon

@@ -63,6 +63,8 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self.configure(fg_color=WIN_DROPDOWN_BG, corner_radius=8)
         
         self.items = items
+        #: The submenu this menu has open, if any. See _handle_submenu.
+        self._submenu = None
         self._create_widgets()
         
         # Bind global click to dismiss menu when clicking outside
@@ -205,44 +207,51 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self._close_all_menus()
 
     def _handle_submenu(self, item: Dict, submenu_items: List[Dict], row):
-        # Close any existing submenu first
-        self._close_all_menus()
-        
+        """
+        Open a submenu beside the row that asks for it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Where it goes is worked out before anything is torn down. This began
+        by calling _close_all_menus, which destroys this menu, and then
+        asked the destroyed menu where it was: every press of Create, Import
+        or Export raised "bad window path name" and no submenu ever opened.
+
+        Only the submenu already showing is closed. Destroying this menu
+        would take the row that was just clicked with it, and the submenu
+        being opened is this menu's child.
+        """
         if not submenu_items:
             return
-            
-        # Calculate position to the right of the current menu
+
         x = self.winfo_rootx() + self.winfo_width() - 4
-        y = self.winfo_rooty() + row.winfo_rooty() - self.winfo_rooty()
-        
+        y = row.winfo_rooty()
+
+        self._close_submenu()
+
         self._in_submenu = True
-        submenu = CTkDropdownMenu(self, items=submenu_items)
-        submenu.geometry(f"+{x}+{y}")
-        submenu.focus_set()
+        self._submenu = CTkDropdownMenu(self, items=submenu_items)
+        self._submenu.geometry(f"+{x}+{y}")
+        self._submenu.focus_set()
         self._in_submenu = False
+
+    def _close_submenu(self):
+        """Close the submenu this menu has open, if any."""
+        submenu = getattr(self, '_submenu', None)
+        if submenu is None:
+            return
+        self._submenu = None
+        try:
+            submenu.destroy()
+        except tk.TclError:
+            pass
 
     def _on_submenu_hover(self, submenu_items: List[Dict], row, button):
         """Handle hover to open submenu after a short delay."""
         if not submenu_items:
             return
             
-        # Close any existing submenus
-        for child in self.winfo_children():
-            if isinstance(child, CTkDropdownMenu) and child != self:
-                try:
-                    child.destroy()
-                except:
-                    pass
-                    
-        # Calculate position to the right of the current menu
-        x = self.winfo_rootx() + self.winfo_width() - 4
-        y = self.winfo_rooty() + row.winfo_rooty() - self.winfo_rooty()
-        
-        self._in_submenu = True
-        submenu = CTkDropdownMenu(self, items=submenu_items)
-        submenu.geometry(f"+{x}+{y}")
-        submenu.focus_set()
-        self._in_submenu = False
+        self._handle_submenu(None, submenu_items, row)
 
     def _on_focus_out(self):
         """Handle focus out to close the menu."""
@@ -251,7 +260,8 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self._close_all_menus()
 
     def _close_all_menus(self):
-        """Close this menu and any submenus."""
+        """Close this menu and any submenu under it."""
+        self._close_submenu()
         try:
             self.destroy()
         except tk.TclError:
@@ -321,35 +331,41 @@ class CustomMenuBar(ctk.CTkFrame):
         )
         
     def _on_click_elsewhere(self, event):
-        """Close the menu when the click lands outside it."""
+        """
+        Close the menu when the click lands outside it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Whether the click was inside is answered from the widget's place in
+        the tree. This asked winfo_containing, which takes a point on the
+        screen and answers which widget is under it - it was handed a window
+        id as its only argument, so every click anywhere in the application
+        while a menu was open raised TypeError, and the menu did not close.
+
+        A widget's path names its ancestors, so a click inside the dropdown
+        or on the button that opened it has that widget's path as a prefix.
+        """
         if not self.active_dropdown or not self.active_dropdown.winfo_exists():
             return
-        
-        # Check if click is inside the menu or the opener button
-        if event.widget is self:
+
+        widget = getattr(event, 'widget', None)
+        if widget is None or widget is self:
             return
-            
-        # Try to find if the click is inside any menu or menu button
-        widget = event.widget
-        is_inside_menu = False
-        
-        # Check if widget is inside the active dropdown
+
+        inside = [self.active_dropdown, *getattr(self, 'menu_buttons', [])]
+        if any(self._is_within(widget, part) for part in inside):
+            return
+
+        self._close_all_dropdowns()
+
+    @staticmethod
+    def _is_within(widget, container) -> bool:
+        """Whether a widget is the given one, or sits inside it."""
         try:
-            menu_window = self.active_dropdown
-            if widget.winfo_containing(menu_window.winfo_id()):
-                is_inside_menu = True
-        except:
-            pass
-            
-        # Check if widget is one of our menu buttons
-        if hasattr(self, 'menu_buttons'):
-            for btn in self.menu_buttons:
-                if widget is btn or widget.winfo_containing(btn.winfo_id()):
-                    is_inside_menu = True
-                    break
-                    
-        if not is_inside_menu:
-            self._close_all_dropdowns()
+            return str(widget) == str(container) or \
+                str(widget).startswith(f"{container}.")
+        except tk.TclError:
+            return False
 
     def _close_all_dropdowns(self):
         """Close all open dropdown menus."""
@@ -619,27 +635,39 @@ class Toolbar(ctk.CTkFrame):
         arrangement can be read at a glance instead of being spread across a
         builder per menu. An entry with a 'submenu' opens a nested level.
         """
-        # Convert existing menu definitions to new format
+        # Two rows, one above the other.
+        #
+        # They used to be packed side by side down one row, each asking to
+        # expand, so the menus took half the width and the icons were
+        # squeezed into what was left - a strip of empty space with the
+        # buttons crushed at one end of it.
+        #
+        # They are different things and read as different things: the menu
+        # bar names everything the application can do, the way a menu bar on
+        # any desktop does, and the action bar under it carries the handful
+        # of actions worth reaching for without opening a menu.
         menu_config = self._convert_to_new_menu_format()
-        
-        # Create graphical icon toolbar
+
+        self.menu_row = ctk.CTkFrame(self, fg_color=WIN_MENU_BG,
+                                     corner_radius=0)
+        self.menu_row.pack(side=tk.TOP, fill=tk.X)
+
+        self.menu_bar = CustomMenuBar(self.menu_row, menu_config=menu_config)
+        self.menu_bar.pack(side=tk.LEFT)
+
+        # The Log button sits at the end of the menu row, away from the
+        # actions, being a thing to look at rather than a thing to do
+        self._create_theme_log_buttons()
+
         self.icon_toolbar = IconToolbar(
             self, self.project,
             on_project_changed=self.on_project_changed,
             undo_redo_manager=self.undo_redo_manager,
             clipboard_manager=self.clipboard_manager
         )
-        self.icon_toolbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # Connect icon toolbar actions to toolbar methods
-        self._connect_icon_toolbar()
-        
-        # Create Windows-style menu bar (keep for dropdown menus)
-        self.menu_bar = CustomMenuBar(self, menu_config=menu_config)
-        self.menu_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.icon_toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        # Theme toggle and Log buttons
-        self._create_theme_log_buttons()
+        self._connect_icon_toolbar()
     
     def _connect_icon_toolbar(self):
         """Connect the icon toolbar button actions to the toolbar's methods."""
@@ -821,9 +849,9 @@ class Toolbar(ctk.CTkFrame):
         return button
 
     def _create_theme_log_buttons(self):
-        """Create the log button."""
-        theme_frame = ctk.CTkFrame(self)
-        theme_frame.pack(side=tk.RIGHT, padx=5, pady=5)
+        """Create the log button, at the far end of the menu row."""
+        theme_frame = ctk.CTkFrame(self.menu_row, fg_color='transparent')
+        theme_frame.pack(side=tk.RIGHT, padx=5)
 
         # Log viewer
         self.log_button = ctk.CTkButton(
@@ -1635,13 +1663,12 @@ class IconToolbar(ctk.CTkFrame):
         # Store button references for state management
         self.icon_buttons = {}
         
-        # Import icons from resources
+        # Which icons are live with no project open, and which need one
         from gantt_app.resources.icons import (
-            ALWAYS_ACTIVE, ACTIVE_WHEN_PROJECT_OPEN, ICON_EMOJIS
+            ALWAYS_ACTIVE, ACTIVE_WHEN_PROJECT_OPEN
         )
         self.ALWAYS_ACTIVE = ALWAYS_ACTIVE
         self.ACTIVE_WHEN_PROJECT_OPEN = ACTIVE_WHEN_PROJECT_OPEN
-        self.ICON_EMOJIS = ICON_EMOJIS
         
         # Create UI
         self._create_ui()
@@ -1715,36 +1742,42 @@ class IconToolbar(ctk.CTkFrame):
         command : Callable
             Function to call when button is clicked
         """
-        # Create frame for the button
+        from gantt_app.resources.icons import draw_icon
+
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(side="left", padx=1, pady=2)
-        
-        # Get emoji icon
-        icon_char = self.ICON_EMOJIS.get(icon_name, '?')
-        
-        # Create button with emoji icon
-        # Use a larger font for better visibility
-        try:
-            # Try using the system emoji font
-            font = ("Segoe UI Emoji", 16)
-        except:
-            font = ("Arial", 16)
-        
+
+        # Drawn rather than set as an emoji in "Segoe UI Emoji". That font
+        # ships with Windows and with nothing else, so on a stock Linux
+        # desktop every button on this row came out blank.
+        drawing = draw_icon(icon_name, self.ICON_SIZE)
+        image = None
+        if drawing is not None:
+            image = ctk.CTkImage(light_image=drawing, dark_image=drawing,
+                                 size=(self.ICON_SIZE, self.ICON_SIZE))
+        else:
+            logger.debug("No drawing for the %s icon; showing its initial",
+                         icon_name)
+
         btn = ctk.CTkButton(
             btn_frame,
-            text=icon_char,
+            text="" if image is not None else icon_name[:1].upper(),
+            image=image,
             width=self.BUTTON_SIZE,
             height=self.BUTTON_SIZE,
             fg_color="transparent",
             hover_color=WIN_MENU_HOVER,
+            text_color=WIN_MENU_TEXT,
             corner_radius=4,
             command=command,
-            font=font
         )
-        
+
         btn.pack(side="left", padx=2, pady=2)
-        btn.tooltip = tooltip  # Store tooltip for future use
-        
+        # Kept from the garbage collector: a CTkImage that is collected
+        # takes the picture off the button with it
+        btn.icon_image = image
+        btn.tooltip = tooltip
+
         # Store button reference
         self.icon_buttons[icon_name] = btn
     

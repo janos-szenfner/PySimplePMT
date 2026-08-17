@@ -33,9 +33,13 @@ logger = get_logger(__name__)
 
 
 class EditTaskDialog(TaskFormDialog):
-    """Dialog for editing an existing task."""
+    """
+    Dialog for editing an existing task.
 
-    GEOMETRY = "620x640"
+    It opens at TaskFormDialog's size. Both dialogs used to narrow it, from
+    when the form was one column; the notes now sit beside the fields and a
+    620-wide window squeezed them both.
+    """
 
     def __init__(self, master, task: Task, project: Project,
                  on_save: Callable[[Task], None], on_delete: Callable[[str], None],
@@ -203,8 +207,6 @@ class EditTaskDialog(TaskFormDialog):
 
 class CreateTaskDialog(TaskFormDialog):
     """Dialog for creating a task, sub-task or milestone."""
-
-    GEOMETRY = "620x720"
 
     #: How long a new task runs by default, in days.
     DEFAULT_LENGTH = 7

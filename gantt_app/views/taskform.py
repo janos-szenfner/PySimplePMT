@@ -88,8 +88,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     #: narrower than the minimum is silently widened to it by the window
     #: manager, which left center_window placing the window from a width it
     #: was never given and every dialog opening off centre.
-    GEOMETRY = "680x680"
-    MINSIZE = (680, 480)
+    GEOMETRY = "980x660"
+    MINSIZE = (860, 520)
     DATE_FORMAT = '%Y-%m-%d'
 
 
@@ -236,13 +236,29 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.tabs.add("General")
         self.tabs.add("Dependency")
 
+        # The General tab is two columns: the fields on the left, the notes
+        # beside them on the right.
+        #
+        # The notes used to be the last row of the field grid, so a box
+        # meant for paragraphs sat under everything else at the height of
+        # one - a scroll away from the name of the task it describes, and
+        # squeezing every field above it to make room. Beside the fields it
+        # has the height of the form to fill, which is what a notes panel is
+        # for, and neither column crowds the other.
         general = self.tabs.tab("General")
-        scroller = ScrollFrame(general)
+        columns = ctk.CTkFrame(general, fg_color='transparent')
+        columns.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
+        columns.grid_rowconfigure(0, weight=1)
+        columns.grid_columnconfigure(0, weight=3, uniform='pane')
+        columns.grid_columnconfigure(1, weight=2, uniform='pane')
+
+        scroller = ScrollFrame(columns)
         main_frame = scroller.content
         main_frame.columnconfigure(1, weight=1)
 
         self._build_general(main_frame)
-        scroller.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
+        scroller.grid(row=0, column=0, sticky=tk.NSEW)
+        self._build_details(columns)
         self._build_problem_line(general)
         self._build_dependency_tab()
         self._build_buttons()
@@ -308,9 +324,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         # Appearance group
         self._build_color(frame)
-
-        # Details group
-        self._build_details(frame)
 
     def _build_identity(self, frame):
         """Show the task ID. Only an existing task has one."""
@@ -790,17 +803,27 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if not self._should_show_progress():
             self.progress_entry.configure(state=tk.DISABLED)
 
-    def _build_details(self, frame):
-        """The details text area."""
-        self.details_text = ctk.CTkTextbox(frame, height=80, width=400)
+    def _build_details(self, parent):
+        """
+        The notes panel, filling the column beside the fields.
+
+        PARAMETERS:
+        -----------
+        parent : widget
+            The two-column frame; this takes the right-hand one.
+        """
+        pane = ctk.CTkFrame(parent, fg_color='transparent')
+        pane.grid(row=0, column=1, sticky=tk.NSEW, padx=(10, 0))
+        pane.grid_rowconfigure(1, weight=1)
+        pane.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(pane, text="Notes", anchor=tk.W).grid(
+            row=0, column=0, sticky=tk.EW, pady=(0, 4))
+
+        self.details_text = ctk.CTkTextbox(pane, wrap='word')
+        self.details_text.grid(row=1, column=0, sticky=tk.NSEW)
         if self.template.details:
             self.details_text.insert("1.0", self.template.details)
-        # Span across both columns
-        row = self._next_row()
-        ctk.CTkLabel(frame, text="Details:").grid(
-            row=row, column=0, sticky=tk.NW, pady=5)
-        self.details_text.grid(row=row, column=1, sticky=tk.EW, pady=5)
-        frame.columnconfigure(1, weight=1)
 
     def _build_dependency_tab(self):
         """

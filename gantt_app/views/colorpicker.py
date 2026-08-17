@@ -422,10 +422,7 @@ class ColorPickerPopup(ctk.CTkToplevel):
             button.grid_propagate(False)
             button.bind('<Button-1>', lambda _e, v=value: self.pick(v))
             self._buttons[value] = button
-            
-            # Tooltip-like debug info
-            button.bind('<Enter>',
-                        lambda _e, n=name: logger.debug("Color %s", n))
+
 
     def _show_selection(self):
         """Outline the selected swatch and clear the others."""

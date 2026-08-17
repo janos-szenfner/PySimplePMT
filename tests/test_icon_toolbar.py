@@ -181,13 +181,35 @@ class TestIconToolbarButtonProperties(unittest.TestCase):
         for icon_name, btn in self.toolbar.icon_buttons.items():
             self.assertEqual(btn.cget("hover_color"), WIN_MENU_HOVER)
 
-    def test_buttons_have_emoji_text(self):
-        """Test that buttons display emoji characters."""
+    def test_every_button_carries_a_drawn_icon(self):
+        """
+        The picture is drawn, so no font has to have it.
+
+        The buttons used to be set in "Segoe UI Emoji" with an emoji
+        character on each. That font ships with Windows and with nothing
+        else, so on a stock Linux desktop every button on the row came out
+        blank - a row of empty rectangles where the toolbar should be.
+        """
         for icon_name, btn in self.toolbar.icon_buttons.items():
-            btn_text = btn.cget("text")
-            expected_emoji = ICON_EMOJIS.get(icon_name, '?')
-            self.assertEqual(btn_text, expected_emoji,
-                          f"Button '{icon_name}' has incorrect text")
+            self.assertIsNotNone(btn.cget("image"),
+                                 f"Button '{icon_name}' has no drawing")
+
+    def test_a_drawn_button_carries_no_text(self):
+        """The picture says it; a letter beside it would only crowd it."""
+        for icon_name, btn in self.toolbar.icon_buttons.items():
+            self.assertEqual(btn.cget("text"), "",
+                             f"Button '{icon_name}' shows text as well")
+
+    def test_the_drawing_is_kept_from_the_collector(self):
+        """
+        A CTkImage that is collected takes the picture off the button.
+
+        Held only by the call that made it, the icons vanished the moment
+        Python got round to tidying up.
+        """
+        for icon_name, btn in self.toolbar.icon_buttons.items():
+            self.assertIsNotNone(getattr(btn, 'icon_image', None),
+                                 f"Button '{icon_name}' does not hold its image")
 
     def test_buttons_have_tooltips(self):
         """Test that buttons have tooltip information."""
