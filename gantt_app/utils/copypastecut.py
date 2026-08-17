@@ -29,6 +29,29 @@ ENTITY_TYPES = ('task', 'deliverable', 'phase', 'subtask', 'milestone')
 #: Container types that can accept pasted items
 CONTAINER_TYPES = ('phase', 'deliverable', 'task')
 
+#: What separates the readable summary on the desktop clipboard from the
+#: JSON after it. See ClipboardService._clipboard_text.
+CLIPBOARD_MARKER = '\n--- PySimplePMT tasks ---\n'
+
+#: What each kind of item may be pasted into, by the type of the row it
+#: would go under. An empty tuple means the top level and nowhere else.
+#:
+#: The plan runs Phase, Deliverable, Task, Subtask, and pasting is held to
+#: that: a phase is a top-level scope and does not go inside a task, a
+#: sub-task belongs to a task and to nothing else. Paste is greyed out on
+#: the menu where this says no, rather than being offered and then refused.
+#:
+#: A Task may go under a Task. Sub-tasks are the usual thing to find there,
+#: but a plan nested deeper than the four levels is one this application has
+#: always allowed and imported files arrive carrying.
+ALLOWED_PARENT_TYPES = {
+    'phase': (),
+    'deliverable': ('phase',),
+    'task': ('phase', 'deliverable', 'task'),
+    'subtask': ('task',),
+    'milestone': ('phase', 'deliverable', 'task'),
+}
+
 
 @dataclass
 class ClipboardItem:
@@ -91,6 +114,9 @@ class ClipboardService:
         self.project = project
         self.active_payload: Optional[ClipboardPayload] = None
         self.cut_item_ids: Set[str] = set()
+        #: Any Tk widget, used only to reach the desktop clipboard. Without
+        #: one this window's own clipboard still works.
+        self.clipboard_widget = None
         
     def get_selected_ids(self) -> List[str]:
         """
@@ -212,7 +238,7 @@ class ClipboardService:
         
         self._write_to_system_clipboard()
     
-    def paste(self, target_container_id: Optional[str] = None, insert_index: Optional[int] = None) -> None:
+    def paste(self, target_container_id: Optional[str] = None, insert_index: Optional[int] = None) -> List[str]:
         """
         Paste items from the clipboard to the target container.
         
@@ -231,18 +257,18 @@ class ClipboardService:
         """
         if not self.project:
             logger.warning("Cannot paste: no plan is open")
-            return
+            return []
 
         payload = self._resolve_payload()
         if not payload or not payload.items:
             logger.info("Paste did nothing: the clipboard is empty")
-            return
+            return []
 
         entity_types = [item.type for item in payload.items]
         if not self._can_accept_types(target_container_id, entity_types):
-            logger.info("Refused to paste %s into %s: it takes no children",
+            logger.info("Refused to paste %s into %s: it does not belong there",
                         entity_types, target_container_id or "the top level")
-            return
+            return []
 
         if payload.operation == 'cut' and any(
                 self._is_self_or_descendant(target_container_id, item.id)
@@ -250,23 +276,27 @@ class ClipboardService:
             logger.warning(
                 "Refused to paste %s into %s: it would sit inside itself",
                 [item.id for item in payload.items], target_container_id)
-            return
+            return []
 
         where = target_container_id or "the top level"
         logger.info("Pasting %d %s item(s) into %s",
                     len(payload.items), payload.operation, where)
 
         if payload.operation == 'copy':
-            self._paste_copy(payload, target_container_id, insert_index)
+            pasted = self._paste_copy(payload, target_container_id, insert_index)
         elif payload.operation == 'cut':
-            self._paste_cut(payload, target_container_id, insert_index)
+            pasted = self._paste_cut(payload, target_container_id, insert_index)
         else:
             logger.error("Unknown clipboard operation %r; nothing pasted",
                          payload.operation)
+            return []
+
+        logger.info("Pasted %s", pasted)
+        return pasted
     
     def _paste_copy(self, payload: ClipboardPayload,
                     target_container_id: Optional[str],
-                    insert_index: Optional[int] = None) -> None:
+                    insert_index: Optional[int] = None) -> List[str]:
         """
         Paste copied items as new tasks under the target.
 
@@ -283,7 +313,7 @@ class ClipboardService:
         that reads 001, 002, 4f3c8a91-... in the same table does not.
         """
         if not self.project:
-            return
+            return []
 
         new_tasks = []
         for item in payload.items:
@@ -300,21 +330,35 @@ class ClipboardService:
         
         for task in new_tasks:
             self.project.add_task(task)
+        return [task.id for task in new_tasks]
     
-    def _paste_cut(self, payload: ClipboardPayload, 
-                   target_container_id: Optional[str], 
-                   insert_index: Optional[int] = None) -> None:
-        """Handle paste operation for cut items."""
+    def _paste_cut(self, payload: ClipboardPayload,
+                   target_container_id: Optional[str],
+                   insert_index: Optional[int] = None) -> List[str]:
+        """
+        Move the cut items under the target.
+
+        RETURNS:
+        --------
+        List[str]
+            The rows that moved, for the caller to select.
+
+        The clipboard is emptied afterwards: a cut is one move, and the
+        dimming that marks the rows as pending goes with it.
+        """
         if not self.project:
-            return
-        
+            return []
+
+        moved = []
         for item in payload.items:
             task = self._get_task_by_id(item.id)
             if task:
                 task.parent_task_id = target_container_id
-        
+                moved.append(task.id)
+
         self.clear_cut_state()
         self.active_payload = None
+        return moved
     
     def clear_cut_state(self) -> None:
         """Clear the cut visual state for all previously cut items."""
@@ -348,69 +392,124 @@ class ClipboardService:
         return len(selected_ids) > 0
     
     def _resolve_payload(self) -> Optional[ClipboardPayload]:
-        """Resolve the clipboard payload from in-memory store or system clipboard."""
+        """
+        The clipboard to paste from: this window's, or the desktop's.
+
+        RETURNS:
+        --------
+        Optional[ClipboardPayload]
+            None when neither holds anything of ours.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This window's own comes first. It holds the whole item and whether
+        the operation was a cut, which the text on the desktop clipboard
+        cannot say as exactly.
+        """
         if self.active_payload:
             return self.active_payload
-        
+
+        text = self._read_system_clipboard()
+        if not text:
+            return None
+
+        _summary, _, encoded = text.rpartition(CLIPBOARD_MARKER)
+        if not encoded:
+            logger.debug("The desktop clipboard holds text, but not a plan "
+                         "of ours")
+            return None
+
         try:
-            import pyperclip
-            text = pyperclip.paste()
-            payload_data = json.loads(text)
-            
+            data = json.loads(encoded)
             return ClipboardPayload(
-                operation=payload_data.get('operation', 'copy'),
-                source_container_id=payload_data.get('source_container_id'),
+                operation=data.get('operation', 'copy'),
+                source_container_id=data.get('source_container_id'),
                 items=[
-                    ClipboardItem(
-                        id=item['id'],
-                        type=item['type'],
-                        payload=item['payload']
-                    ) for item in payload_data.get('items', [])
+                    ClipboardItem(id=item['id'], type=item['type'],
+                                  payload=item['payload'])
+                    for item in data.get('items', [])
                 ]
             )
-        except ImportError:
-            # pyperclip is not a dependency of this application; without it
-            # the in-memory clipboard is the only one, which is all that
-            # copying inside one window needs
-            logger.debug("No pyperclip, so no system clipboard to read")
-            return None
         except (json.JSONDecodeError, KeyError, TypeError):
-            logger.debug("The system clipboard holds something that is not "
-                         "a plan of ours; ignoring it")
+            logger.debug("The desktop clipboard carries our marker but not "
+                         "something that reads back as tasks")
             return None
-        except Exception:
-            logger.exception("Could not read the system clipboard")
-            return None
-    
+
+    def _clipboard_text(self) -> str:
+        """
+        What to put on the desktop clipboard for the current payload.
+
+        RETURNS:
+        --------
+        str
+            A readable list of what was copied, then a marker line, then the
+            same thing as JSON.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Both at once, because the two readers want different things. Pasted
+        into a mail or a note, the top of it is a list of task names and
+        dates somebody can read. Pasted back into this application, the part
+        after the marker is what is read, and carries everything a task has.
+
+        Tk's clipboard holds one string per selection, and which MIME types
+        a platform will offer alongside it differs by platform - so this is
+        one string that answers both rather than two that only work on X11.
+        """
+        payload = self.active_payload
+        lines = [f"{len(payload.items)} item(s) "
+                 f"{'cut' if payload.operation == 'cut' else 'copied'} "
+                 f"from {self.project.name}:"]
+        for item in payload.items:
+            name = item.payload.get('name', item.id)
+            lines.append(f"  - {name} ({item.type})")
+
+        encoded = json.dumps({
+            'operation': payload.operation,
+            'source_container_id': payload.source_container_id,
+            'items': [
+                {'id': item.id, 'type': item.type, 'payload': item.payload}
+                for item in payload.items
+            ],
+        })
+        return "\n".join(lines) + f"\n{CLIPBOARD_MARKER}" + encoded
+
     def _write_to_system_clipboard(self) -> None:
-        """Write the current payload to the system clipboard."""
-        if not self.active_payload:
+        """
+        Put the current payload on the desktop clipboard.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Through Tk, which every window here already has, rather than through
+        pyperclip. pyperclip was imported and is not a dependency of this
+        application, so the import failed every time and was caught every
+        time: nothing this application copied ever reached the desktop
+        clipboard, and nothing said so.
+
+        Failing to reach it is not worth losing the copy over - the window's
+        own clipboard is already written by now - so it is noted and stepped
+        over.
+        """
+        if not self.active_payload or self.clipboard_widget is None:
             return
-        
+
         try:
-            import pyperclip
-            payload_dict = {
-                'operation': self.active_payload.operation,
-                'source_container_id': self.active_payload.source_container_id,
-                'items': [
-                    {
-                        'id': item.id,
-                        'type': item.type,
-                        'payload': item.payload
-                    } for item in self.active_payload.items
-                ]
-            }
-            pyperclip.copy(json.dumps(payload_dict))
-        except ImportError:
-            logger.debug("No pyperclip, so nothing written to the system "
-                         "clipboard; copying within the window still works")
+            self.clipboard_widget.clipboard_clear()
+            self.clipboard_widget.clipboard_append(self._clipboard_text())
         except Exception:
-            # A machine with no clipboard mechanism at all raises from
-            # pyperclip itself. Losing the system clipboard is not worth
-            # losing the copy over, so it is noted and the paste goes on
-            # from the in-memory one.
-            logger.exception("Could not write to the system clipboard")
-    
+            logger.exception("Could not write to the desktop clipboard")
+
+    def _read_system_clipboard(self) -> str:
+        """The desktop clipboard's text, or '' when there is none to read."""
+        if self.clipboard_widget is None:
+            return ''
+        try:
+            return self.clipboard_widget.clipboard_get()
+        except Exception:
+            # Empty, or holding something that is not text at all
+            logger.debug("Nothing readable on the desktop clipboard")
+            return ''
+
     def _get_task_by_id(self, task_id: str) -> Optional['Task']:
         """Get task by ID from the project."""
         if self.project:
@@ -478,23 +577,46 @@ class ClipboardService:
             seen += 1
         return False
 
-    def _can_accept_types(self, container_id: Optional[str], entity_types: List[str]) -> bool:
-        """Check if a container can accept the given entity types."""
+    def _can_accept_types(self, container_id: Optional[str],
+                          entity_types: List[str]) -> bool:
+        """
+        Whether a row can hold the kinds of item on the clipboard.
+
+        PARAMETERS:
+        -----------
+        container_id : Optional[str]
+            The row the paste would go under; None is the top of the plan.
+        entity_types : List[str]
+            The lowercased types being pasted.
+
+        RETURNS:
+        --------
+        bool
+            True only when every one of them belongs there.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every type was accepted by every container. A phase could be pasted
+        inside a task, which reads as a task containing a phase of the
+        project - and the levels the plan totals its progress through stop
+        meaning anything if they can be arranged in any order.
+        """
         if container_id is None:
+            # The top of the plan takes anything, including a phase, which
+            # goes nowhere else
             return True
-        
+
         container = self._get_task_by_id(container_id)
         if not container:
+            logger.info("Cannot paste into %s: no such task", container_id)
             return False
-        
+
         container_type = container.task_type.lower()
-        if container_type in ('phase', 'deliverable', 'task'):
-            return True
-        
-        if container_type in ('subtask', 'milestone'):
-            return False
-        
-        return True
+        return all(
+            container_type in ALLOWED_PARENT_TYPES.get(
+                entity_type.lower(), CONTAINER_TYPES)
+            for entity_type in entity_types
+        )
     
     def _task_to_dict(self, task: 'Task') -> Dict[str, Any]:
         """Convert a Task object to a dictionary."""
@@ -572,7 +694,25 @@ class ClipboardManager:
     def set_project(self, project: 'Project') -> None:
         """Set the project for the clipboard service."""
         self.service.project = project
-    
+
+    def set_clipboard_widget(self, widget) -> None:
+        """
+        Give the clipboard a way to reach the desktop's.
+
+        PARAMETERS:
+        -----------
+        widget : tk.Misc
+            Any widget of the application's; only its clipboard methods are
+            used. Without one, copying still works within this window.
+        """
+        self.service.clipboard_widget = widget
+
+    @property
+    def cut_item_ids(self):
+        """The rows marked as cut and awaiting a paste."""
+        return self.service.cut_item_ids
+
+
     def copy(self, selected_ids: Optional[List[str]] = None) -> None:
         """Copy selected items to clipboard."""
         self.service.copy(selected_ids)
@@ -581,9 +721,10 @@ class ClipboardManager:
         """Cut selected items to clipboard."""
         self.service.cut(selected_ids)
     
-    def paste(self, target_container_id: Optional[str] = None, insert_index: Optional[int] = None) -> None:
-        """Paste items from clipboard to target container."""
-        self.service.paste(target_container_id, insert_index)
+    def paste(self, target_container_id: Optional[str] = None,
+              insert_index: Optional[int] = None) -> List[str]:
+        """Paste from the clipboard, and say which rows arrived."""
+        return self.service.paste(target_container_id, insert_index)
     
     def clear(self) -> None:
         """Clear the clipboard."""

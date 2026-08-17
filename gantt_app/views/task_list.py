@@ -69,6 +69,9 @@ class DragDropTaskList(ctk.CTkFrame):
     #: Pointer shown while dragging a row.
     DRAG_CURSOR = 'hand2'
 
+    #: Text colour of a row that has been cut and not yet pasted.
+    CUT_ROW_TEXT = '#9aa0a6'
+
     def _apply_grid_style(self):
         """
         Give the task table a light grey grid.
@@ -240,6 +243,12 @@ class DragDropTaskList(ctk.CTkFrame):
         # Alternating row shading, which is what makes the rows read as a grid
         self.tree.tag_configure('oddrow', background=self.GRID_ROW_ALT)
         self.tree.tag_configure('evenrow', background=self.GRID_ROW_BASE)
+
+        # A row that has been cut and is waiting to be pasted somewhere.
+        # A Treeview row cannot be made half transparent the way a web page
+        # would fade one, so it is greyed instead - the same thing said in
+        # the way this widget can say it.
+        self.tree.tag_configure('cut', foreground=self.CUT_ROW_TEXT)
         
         # Bind events
         self.tree.bind('<Double-1>', self.on_double_click)
@@ -362,6 +371,20 @@ class DragDropTaskList(ctk.CTkFrame):
         logger.info("Deleting task %s %r", task.id, task.name)
         self.remove_task(task_id)
 
+    def _cut_task_ids(self) -> set:
+        """
+        The rows waiting to be pasted somewhere, so they can be greyed.
+
+        Empty when there is no clipboard, which is how the task list is
+        built in the tests and wherever it is used without one.
+        """
+        if self.clipboard_manager is None:
+            return set()
+        try:
+            return set(self.clipboard_manager.cut_item_ids)
+        except AttributeError:
+            return set()
+
     def get_selected_task_ids(self) -> List[str]:
         """
         The tasks the user has picked out, in the order they are shown.
@@ -424,11 +447,25 @@ class DragDropTaskList(ctk.CTkFrame):
         target_container_id : Optional[str]
             ID of the target container (parent task ID), or None for root level
         """
-        if self.clipboard_manager:
-            self.clipboard_manager.paste(target_container_id)
-            self.update_task_list()
-            if self.on_project_changed:
-                self.on_project_changed()
+        if not self.clipboard_manager:
+            return
+
+        pasted = self.clipboard_manager.paste(target_container_id)
+        self.update_task_list()
+
+        # What has just arrived is what the user is about to move, rename or
+        # drag somewhere else, so it is what is left selected
+        if pasted:
+            try:
+                self.tree.selection_set(*pasted)
+                self.tree.focus(pasted[0])
+                self.tree.see(pasted[0])
+            except tk.TclError:
+                logger.debug("Pasted rows %s are not on show to select",
+                             pasted)
+
+        if self.on_project_changed:
+            self.on_project_changed()
 
     def can_copy_or_cut(self, selected_ids: List[str]) -> bool:
         """
@@ -1168,6 +1205,8 @@ class DragDropTaskList(ctk.CTkFrame):
         tags = [band]
         if task.task_type == 'Subtask':
             tags.append('subtask')
+        if task.id in self._cut_task_ids():
+            tags.append('cut')
         self.tree.item(item_id, tags=tuple(tags))
 
         return item_id

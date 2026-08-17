@@ -264,6 +264,9 @@ class GanttApp(ctk.CTk):
         )
         self.status_bar.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
         
+        # The clipboard needs a widget to reach the desktop's own
+        self.clipboard_manager.set_clipboard_widget(self)
+
         # Set up clipboard keyboard bindings
         # These will be properly initialized after task_list is created
         self._setup_clipboard_bindings()

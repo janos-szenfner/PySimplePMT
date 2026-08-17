@@ -560,13 +560,33 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
 
     def test_paste_multiple_tasks_into_container(self):
         """Test pasting multiple tasks into a container."""
-        self.service.copy(["T001", "ST001"])
-        
+        second = Task.create_task(
+            name="Task 2", start_date=datetime(2024, 1, 1),
+            end_date=datetime(2024, 1, 6), task_id="T002")
+        second.parent_task_id = "P001"
+        self.project.add_task(second)
+
+        self.service.copy(["T001", "T002"])
+
         initial_count = len(self.project.tasks)
         self.service.paste("P001")
-        
+
         # Should have 2 new tasks
         self.assertEqual(len(self.project.tasks), initial_count + 2)
+
+    def test_a_mixed_selection_is_refused_where_one_does_not_belong(self):
+        """
+        A subtask does not go into a phase, so neither does the pair.
+
+        Pasting only the half that fits would leave the user with some of
+        what they picked out and no word about the rest.
+        """
+        self.service.copy(["T001", "ST001"])
+
+        initial_count = len(self.project.tasks)
+        self.service.paste("P001")
+
+        self.assertEqual(len(self.project.tasks), initial_count)
 
 
 class TestOnlyWhatIsSelected(unittest.TestCase):
@@ -670,6 +690,164 @@ class TestOnlyWhatIsSelected(unittest.TestCase):
         pasted = self.project.tasks[-2:]
 
         self.assertNotEqual(pasted[0].id, pasted[1].id)
+
+
+class TestWhatMayGoWhere(unittest.TestCase):
+    """
+    The levels of the plan are an order, and pasting keeps to it.
+
+    WHY THESE EXIST:
+    ================
+    Every container accepted every type. A phase could be pasted inside a
+    task, which reads as a task containing a phase of the project - and the
+    levels the plan totals its progress through stop meaning anything if
+    they can be arranged in any order.
+    """
+
+    def setUp(self):
+        """One row of each type, each under the one above it."""
+        self.project = Project(name="Test Project")
+        self.service = ClipboardService(self.project)
+
+        today = datetime(2024, 1, 1)
+        for task_id, kind, parent in (("P", "Phase", None),
+                                      ("D", "Deliverable", "P"),
+                                      ("T", "Task", "D"),
+                                      ("S", "Subtask", "T"),
+                                      ("M", "Milestone", "T")):
+            task = Task.create_task(name=kind, start_date=today,
+                                    end_date=today + timedelta(days=1),
+                                    task_id=task_id)
+            task.task_type = kind
+            task.parent_task_id = parent
+            self.project.add_task(task)
+
+    def test_a_phase_belongs_at_the_top_and_nowhere_else(self):
+        """It is the outermost scope; nothing contains it."""
+        self.assertTrue(self.service._can_accept_types(None, ["phase"]))
+        for container in ("P", "D", "T", "S", "M"):
+            self.assertFalse(
+                self.service._can_accept_types(container, ["phase"]),
+                f"a phase should not go inside {container}")
+
+    def test_a_deliverable_belongs_in_a_phase(self):
+        """Or at the top, before it is filed under one."""
+        self.assertTrue(self.service._can_accept_types("P", ["deliverable"]))
+        self.assertTrue(self.service._can_accept_types(None, ["deliverable"]))
+        self.assertFalse(self.service._can_accept_types("T", ["deliverable"]))
+
+    def test_a_subtask_belongs_to_a_task(self):
+        """It is a tick on that task's checklist and on nobody else's."""
+        self.assertTrue(self.service._can_accept_types("T", ["subtask"]))
+        self.assertFalse(self.service._can_accept_types("P", ["subtask"]))
+        self.assertFalse(self.service._can_accept_types("D", ["subtask"]))
+
+    def test_a_task_goes_under_the_three_that_hold_work(self):
+        """A phase, a deliverable, or another task."""
+        for container in ("P", "D", "T"):
+            self.assertTrue(
+                self.service._can_accept_types(container, ["task"]),
+                f"a task should go inside {container}")
+
+    def test_nothing_goes_inside_a_leaf(self):
+        """A sub-task and a milestone hold nothing."""
+        for container in ("S", "M"):
+            for kind in ("task", "subtask", "milestone"):
+                self.assertFalse(
+                    self.service._can_accept_types(container, [kind]),
+                    f"{kind} should not go inside {container}")
+
+    def test_a_phase_pasted_into_a_task_changes_nothing(self):
+        """The rule is applied, not merely reported."""
+        self.service.copy(["P"])
+        before = len(self.project.tasks)
+
+        self.service.paste("T")
+
+        self.assertEqual(len(self.project.tasks), before)
+
+
+class TestSayingWhatWasPasted(unittest.TestCase):
+    """
+    Paste answers with the rows that arrived.
+
+    The task list selects them, so that what the user has just pasted is
+    what they can immediately drag, rename or move again.
+    """
+
+    def setUp(self):
+        """A phase with one task under it."""
+        self.project = Project(name="Test Project")
+        self.service = ClipboardService(self.project)
+
+        today = datetime(2024, 1, 1)
+        for task_id, kind, parent in (("P", "Phase", None),
+                                      ("T", "Task", "P")):
+            task = Task.create_task(name=kind, start_date=today,
+                                    end_date=today + timedelta(days=1),
+                                    task_id=task_id)
+            task.task_type = kind
+            task.parent_task_id = parent
+            self.project.add_task(task)
+
+    def test_a_copy_answers_with_the_new_rows(self):
+        """The new IDs, not the ones copied from."""
+        self.service.copy(["T"])
+
+        pasted = self.service.paste("P")
+
+        self.assertEqual(len(pasted), 1)
+        self.assertNotIn("T", pasted)
+        self.assertIsNotNone(self.project.get_task_by_id(pasted[0]))
+
+    def test_a_cut_answers_with_the_rows_it_moved(self):
+        """Those keep their IDs, having moved rather than been remade."""
+        self.service.cut(["T"])
+
+        pasted = self.service.paste(None)
+
+        self.assertEqual(pasted, ["T"])
+
+    def test_a_refused_paste_answers_with_nothing(self):
+        """Nothing arrived, so there is nothing to select."""
+        self.service.copy(["P"])
+
+        self.assertEqual(self.service.paste("T"), [])
+
+
+class TestTheCutRowsAreMarked(unittest.TestCase):
+    """A cut row is held apart until it is pasted somewhere."""
+
+    def setUp(self):
+        """A plan with two rows, and a clipboard over it."""
+        self.project = Project(name="Test Project")
+        self.service = ClipboardService(self.project)
+
+        today = datetime(2024, 1, 1)
+        for task_id in ("001", "002"):
+            self.project.add_task(Task.create_task(
+                name=f"Task {task_id}", start_date=today,
+                end_date=today + timedelta(days=1), task_id=task_id))
+
+    def test_cutting_marks_the_rows(self):
+        """They are noted as pending so the list can grey them."""
+        self.service.cut(["001"])
+
+        self.assertEqual(self.service.cut_item_ids, {"001"})
+
+    def test_copying_clears_a_previous_cut(self):
+        """A copy replaces a cut, and the dimming goes with it."""
+        self.service.cut(["001"])
+        self.service.copy(["002"])
+
+        self.assertEqual(self.service.cut_item_ids, set())
+
+    def test_pasting_a_cut_clears_the_marking(self):
+        """The move is done, so nothing is pending any longer."""
+        self.service.cut(["001"])
+        self.service.paste(None)
+
+        self.assertEqual(self.service.cut_item_ids, set())
 
 
 class TestPastingIntoItself(unittest.TestCase):
