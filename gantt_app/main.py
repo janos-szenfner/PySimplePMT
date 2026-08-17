@@ -8,6 +8,7 @@ import sys
 import os
 from datetime import datetime
 from typing import Optional
+import tkinter as tk
 
 import customtkinter as ctk
 
@@ -18,6 +19,7 @@ from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
+from utils.copypastecut import ClipboardManager, setup_keyboard_bindings
 from gantt_app.utils.log import (
     setup_logging, get_logger, install_exception_hook, get_log_file_path
 )
@@ -94,6 +96,9 @@ class GanttApp(ctk.CTk):
         
         # Create project state tracker for easier undo/redo integration
         self.project_tracker = ProjectStateTracker(self.project, self.undo_redo_manager)
+        
+        # Create clipboard manager
+        self.clipboard_manager = ClipboardManager(self.project)
         
         # Create sample data
         self._create_sample_data()
@@ -230,7 +235,8 @@ class GanttApp(ctk.CTk):
             on_task_select=self.on_task_select,
             on_task_edit=self.edit_task,
             on_project_changed=self.update_all,
-            project_tracker=self.project_tracker
+            project_tracker=self.project_tracker,
+            clipboard_manager=self.clipboard_manager
         )
         self.content_panes.add(self.task_list, weight=2)
 
@@ -253,6 +259,10 @@ class GanttApp(ctk.CTk):
             height=25, padx=10
         )
         self.status_bar.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
+        
+        # Set up clipboard keyboard bindings
+        # These will be properly initialized after task_list is created
+        self._setup_clipboard_bindings()
     
     def _configure_sash_style(self):
         """
@@ -272,6 +282,49 @@ class GanttApp(ctk.CTk):
                             lightcolor='#e8e8e8', darkcolor='#b0b0b0')
         except tk.TclError:
             logger.debug("Could not style the pane divider on this platform")
+
+    def _setup_clipboard_bindings(self):
+        """
+        Set up keyboard bindings for copy, cut, and paste operations.
+        
+        DEVELOPMENT NOTES:
+        ------------------
+        This sets up Ctrl/Cmd+C, Ctrl/Cmd+X, and Ctrl/Cmd+V keyboard shortcuts
+        for copy, cut, and paste operations on tasks.
+        """
+        def get_selected_ids():
+            """Get currently selected task IDs from the task list."""
+            if hasattr(self, 'task_list') and self.task_list:
+                selection = self.task_list.tree.selection()
+                return list(selection) if selection else []
+            return []
+        
+        def get_target_container():
+            """
+            Get the target container ID for paste operations.
+            
+            For now, this returns None (root level) as the default.
+            In a more sophisticated implementation, this could determine
+            the container based on the current focus or selection context.
+            """
+            # Check if there's a selected task that can be a container
+            selected_ids = get_selected_ids()
+            if selected_ids:
+                first_task = self.project.get_task_by_id(selected_ids[0])
+                if first_task and first_task.can_have_children:
+                    return first_task.id
+            return None
+        
+        def on_clipboard_change():
+            """Callback when clipboard state changes."""
+            # Update the UI to reflect clipboard state changes
+            self.update_all()
+        
+        # Set up the keyboard bindings
+        setup_keyboard_bindings(
+            self, self.clipboard_manager,
+            get_selected_ids, get_target_container, on_clipboard_change
+        )
 
     def _set_initial_sash(self):
         """Put the divider at a sensible starting position."""

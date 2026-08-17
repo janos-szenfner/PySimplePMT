@@ -23,7 +23,7 @@ from tkinter import ttk
 # See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
 # to match the application on X11
 from gantt_app.views import dialogs as messagebox
-from typing import Callable
+from typing import Callable, Optional, List
 
 import customtkinter as ctk
 
@@ -130,7 +130,8 @@ class DragDropTaskList(ctk.CTkFrame):
                  on_task_select: Callable[[Task], None] = None,
                  on_task_edit: Callable[[Task], None] = None,
                  on_project_changed: Callable[[], None] = None,
-                 project_tracker: ProjectStateTracker = None):
+                 project_tracker: ProjectStateTracker = None,
+                 clipboard_manager=None):
         super().__init__(master)
         
         self.master = master
@@ -139,6 +140,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.on_task_edit = on_task_edit
         self.on_project_changed = on_project_changed
         self.project_tracker = project_tracker
+        self.clipboard_manager = clipboard_manager
         
         # Track dragged task
         self.dragged_task_id = None
@@ -260,6 +262,11 @@ class DragDropTaskList(ctk.CTkFrame):
             on_redo=self.redo,
             can_undo=self.can_undo,
             can_redo=self.can_redo,
+            on_copy=self.copy_tasks,
+            on_cut=self.cut_tasks,
+            on_paste=self.paste_tasks,
+            can_copy_or_cut=self.can_copy_or_cut,
+            can_paste=self.can_paste,
         )
 
     def on_double_click(self, event):
@@ -354,6 +361,81 @@ class DragDropTaskList(ctk.CTkFrame):
 
         logger.info("Deleting task %s %r", task.id, task.name)
         self.remove_task(task_id)
+
+    def copy_tasks(self, selected_ids: List[str]):
+        """
+        Copy selected tasks to clipboard.
+        
+        PARAMETERS:
+        -----------
+        selected_ids : List[str]
+            List of task IDs to copy
+        """
+        if self.clipboard_manager:
+            self.clipboard_manager.copy(selected_ids)
+            self.update_task_list()
+
+    def cut_tasks(self, selected_ids: List[str]):
+        """
+        Cut selected tasks to clipboard.
+        
+        PARAMETERS:
+        -----------
+        selected_ids : List[str]
+            List of task IDs to cut
+        """
+        if self.clipboard_manager:
+            self.clipboard_manager.cut(selected_ids)
+            self.update_task_list()
+
+    def paste_tasks(self, target_container_id: Optional[str]):
+        """
+        Paste tasks from clipboard to target container.
+        
+        PARAMETERS:
+        -----------
+        target_container_id : Optional[str]
+            ID of the target container (parent task ID), or None for root level
+        """
+        if self.clipboard_manager:
+            self.clipboard_manager.paste(target_container_id)
+            self.update_task_list()
+            if self.on_project_changed:
+                self.on_project_changed()
+
+    def can_copy_or_cut(self, selected_ids: List[str]) -> bool:
+        """
+        Check if copy or cut operations are possible.
+        
+        PARAMETERS:
+        -----------
+        selected_ids : List[str]
+            List of task IDs to check
+            
+        RETURNS:
+        --------
+        bool
+            True if copy/cut is possible
+        """
+        return len(selected_ids) > 0
+
+    def can_paste(self, target_container_id: Optional[str]) -> bool:
+        """
+        Check if paste operation is possible for the target container.
+        
+        PARAMETERS:
+        -----------
+        target_container_id : Optional[str]
+            ID of the target container
+            
+        RETURNS:
+        --------
+        bool
+            True if paste is possible
+        """
+        if not self.clipboard_manager:
+            return False
+        return self.clipboard_manager.can_paste(target_container_id)
 
 
     def on_select(self, event):

@@ -75,6 +75,19 @@ class TaskContextMenu:
     on_delete : callable, optional
         Called with the task ID when Delete is chosen. Omitted, the entry is
         greyed out.
+    on_copy : callable, optional
+        Called with selected task IDs when Copy is chosen. Omitted, the entry is
+        greyed out.
+    on_cut : callable, optional
+        Called with selected task IDs when Cut is chosen. Omitted, the entry is
+        greyed out.
+    on_paste : callable, optional
+        Called with target container ID when Paste is chosen. Omitted, the entry is
+        greyed out.
+    can_copy_or_cut : callable, optional
+        Returns True if copy/cut operations are possible. Used to enable/disable menu items.
+    can_paste : callable, optional
+        Returns True if paste operation is possible. Used to enable/disable menu items.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -87,7 +100,9 @@ class TaskContextMenu:
                  on_indent=None, on_outdent=None,
                  on_edit=None, on_delete=None,
                  on_create=None, on_undo=None, on_redo=None,
-                 can_undo=None, can_redo=None):
+                 can_undo=None, can_redo=None,
+                 on_copy=None, on_cut=None, on_paste=None,
+                 can_copy_or_cut=None, can_paste=None):
         self.tree = tree
         self._project_getter = project_getter
         self._on_move = on_move
@@ -100,6 +115,11 @@ class TaskContextMenu:
         self._on_redo = on_redo
         self._can_undo = can_undo
         self._can_redo = can_redo
+        self._on_copy = on_copy
+        self._on_cut = on_cut
+        self._on_paste = on_paste
+        self._can_copy_or_cut = can_copy_or_cut
+        self._can_paste = can_paste
         self._menu = None
         self._windowing = 'x11'
 
@@ -298,6 +318,34 @@ class TaskContextMenu:
 
         menu.add_separator()
 
+        # Add Copy, Cut, Paste menu items
+        # Get selected IDs from the tree
+        selected_ids = self.tree.selection()
+        can_copy_cut = (self._can_copy_or_cut and self._can_copy_or_cut(selected_ids)) if has_task else False
+        
+        menu.add_command(
+            label="Copy",
+            state=tk.NORMAL if (can_copy_cut and self._on_copy) else tk.DISABLED,
+            command=lambda: self._invoke_copy(selected_ids),
+        )
+        menu.add_command(
+            label="Cut",
+            state=tk.NORMAL if (can_copy_cut and self._on_cut) else tk.DISABLED,
+            command=lambda: self._invoke_cut(selected_ids),
+        )
+        
+        # For paste, check if we can paste into the clicked task (as container) or root
+        target_container_id = task_id if (has_task and self._can_accept_paste(task_id)) else None
+        can_paste = (self._can_paste and self._can_paste(target_container_id)) if self._can_paste else False
+        
+        menu.add_command(
+            label="Paste",
+            state=tk.NORMAL if (can_paste and self._on_paste) else tk.DISABLED,
+            command=lambda: self._invoke_paste(target_container_id),
+        )
+
+        menu.add_separator()
+
         menu.add_command(
             label="Undo",
             state=tk.NORMAL if (self._can_undo and self._can_undo())
@@ -380,6 +428,58 @@ class TaskContextMenu:
             self._on_delete(task_id)
         except Exception:
             logger.exception("Could not delete task %s", task_id)
+
+    def _invoke_copy(self, selected_ids):
+        """Copy selected tasks to clipboard."""
+        if not self._on_copy:
+            return
+        logger.info("Context menu: copy tasks %s", selected_ids)
+        try:
+            self._on_copy(selected_ids)
+        except Exception:
+            logger.exception("Could not copy tasks %s", selected_ids)
+
+    def _invoke_cut(self, selected_ids):
+        """Cut selected tasks to clipboard."""
+        if not self._on_cut:
+            return
+        logger.info("Context menu: cut tasks %s", selected_ids)
+        try:
+            self._on_cut(selected_ids)
+        except Exception:
+            logger.exception("Could not cut tasks %s", selected_ids)
+
+    def _invoke_paste(self, target_container_id):
+        """Paste from clipboard to target container."""
+        if not self._on_paste:
+            return
+        logger.info("Context menu: paste to container %s", target_container_id)
+        try:
+            self._on_paste(target_container_id)
+        except Exception:
+            logger.exception("Could not paste to container %s", target_container_id)
+
+    def _can_accept_paste(self, task_id: str) -> bool:
+        """
+        Check if a task can accept pasted items (i.e., it's a container type).
+        
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task ID to check
+            
+        RETURNS:
+        --------
+        bool
+            True if the task can have children (and thus accept paste)
+        """
+        project = self._project_getter()
+        if not project or not task_id:
+            return False
+        task = project.get_task_by_id(task_id)
+        if not task:
+            return False
+        return task.can_have_children
 
     def _close(self):
         """Tear down the previous menu, if one is still around."""
