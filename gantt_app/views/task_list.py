@@ -438,19 +438,26 @@ class DragDropTaskList(ctk.CTkFrame):
             self.clipboard_manager.cut(selected_ids)
             self.update_task_list()
 
-    def paste_tasks(self, target_container_id: Optional[str]):
+    def paste_tasks(self, target_container_id: Optional[str],
+                    anchor_id: Optional[str] = None):
         """
-        Paste tasks from clipboard to target container.
-        
+        Paste tasks from the clipboard into a container.
+
         PARAMETERS:
         -----------
         target_container_id : Optional[str]
-            ID of the target container (parent task ID), or None for root level
+            ID of the target container (parent task ID), or None for root
+            level.
+        anchor_id : Optional[str]
+            The row the paste was asked for from. Rows that land beside it
+            are placed directly after it rather than at the end of the
+            branch. None - from the toolbar, or a shortcut over empty space
+            - leaves them where they land.
         """
         if not self.clipboard_manager:
             return
 
-        pasted = self.clipboard_manager.paste(target_container_id)
+        pasted = self.clipboard_manager.paste(target_container_id, anchor_id)
         self.update_task_list()
 
         # What has just arrived is what the user is about to move, rename or

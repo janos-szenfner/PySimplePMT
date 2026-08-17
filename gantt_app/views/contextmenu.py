@@ -82,8 +82,8 @@ class TaskContextMenu:
         Called with selected task IDs when Cut is chosen. Omitted, the entry is
         greyed out.
     on_paste : callable, optional
-        Called with target container ID when Paste is chosen. Omitted, the entry is
-        greyed out.
+        Called with (target container ID, clicked row ID) when Paste is
+        chosen. Omitted, the entry is greyed out.
     can_copy_or_cut : callable, optional
         Returns True if copy/cut operations are possible. Used to enable/disable menu items.
     can_paste : callable, optional
@@ -350,7 +350,7 @@ class TaskContextMenu:
         menu.add_command(
             label="Paste",
             state=tk.NORMAL if (can_paste and self._on_paste) else tk.DISABLED,
-            command=lambda: self._invoke_paste(target_container_id),
+            command=lambda: self._invoke_paste(target_container_id, task_id),
         )
 
         menu.add_separator()
@@ -458,13 +458,25 @@ class TaskContextMenu:
         except Exception:
             logger.exception("Could not cut tasks %s", selected_ids)
 
-    def _invoke_paste(self, target_container_id):
-        """Paste from clipboard to target container."""
+    def _invoke_paste(self, target_container_id, anchor_id=None):
+        """
+        Paste from the clipboard into the target container.
+
+        PARAMETERS:
+        -----------
+        target_container_id : Optional[str]
+            The row the pasted items go under, or None for the top level.
+        anchor_id : Optional[str]
+            The row the menu was opened over. Rows that land beside it are
+            placed after it rather than at the end of the branch, which is
+            what Create already does from this menu.
+        """
         if not self._on_paste:
             return
-        logger.info("Context menu: paste to container %s", target_container_id)
+        logger.info("Context menu: paste to container %s, after %s",
+                    target_container_id, anchor_id)
         try:
-            self._on_paste(target_container_id)
+            self._on_paste(target_container_id, anchor_id)
         except Exception:
             logger.exception("Could not paste to container %s", target_container_id)
 

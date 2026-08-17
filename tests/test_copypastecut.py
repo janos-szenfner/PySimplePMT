@@ -850,6 +850,112 @@ class TestTheCutRowsAreMarked(unittest.TestCase):
         self.assertEqual(self.service.cut_item_ids, set())
 
 
+class TestWhereThePastedRowsLand(unittest.TestCase):
+    """
+    They go beside the row the paste was asked for from.
+
+    WHY THESE EXIST:
+    ================
+    Paste appended to the end of the branch, so pasting from the middle of a
+    long phase put the rows at the bottom of it and left the user to go and
+    find them. Creating a task from the same menu has always placed the new
+    row beside the one it was created from - see
+    DragDropTaskList._save_created - and paste was the one action that did
+    not.
+    """
+
+    def setUp(self):
+        """A phase holding four tasks in a known order."""
+        self.project = Project(name="Test Project")
+        self.service = ClipboardService(self.project)
+
+        today = datetime(2024, 1, 1)
+        phase = Task.create_task(name="Phase", start_date=today,
+                                 end_date=today + timedelta(days=30),
+                                 task_id="P")
+        phase.task_type = "Phase"
+        self.project.add_task(phase)
+
+        for number in ("A", "B", "C", "D"):
+            task = Task.create_task(name=f"Task {number}", start_date=today,
+                                    end_date=today + timedelta(days=2),
+                                    task_id=number)
+            task.parent_task_id = "P"
+            self.project.add_task(task)
+
+    def order(self):
+        """The IDs of the phase's children, in the order they read."""
+        return [task.id for task in self.project.tasks
+                if task.parent_task_id == "P"]
+
+    def test_a_pasted_row_lands_after_the_row_it_came_from(self):
+        """Not at the bottom of the branch."""
+        self.service.copy(["A"])
+
+        pasted = self.service.paste("P", after_task_id="B")
+
+        self.assertEqual(self.order(), ["A", "B", pasted[0], "C", "D"])
+
+    def test_several_pasted_rows_keep_their_order(self):
+        """
+        A, B pasted after C read A, B - not backwards.
+
+        Each row is placed after the one before it rather than all of them
+        after the anchor, which would reverse them.
+        """
+        self.service.copy(["A", "B"])
+
+        pasted = self.service.paste("P", after_task_id="C")
+
+        self.assertEqual(self.order(),
+                         ["A", "B", "C", pasted[0], pasted[1], "D"])
+
+    def test_without_an_anchor_they_land_at_the_end(self):
+        """A paste from the toolbar has no row behind it."""
+        self.service.copy(["A"])
+
+        pasted = self.service.paste("P")
+
+        self.assertEqual(self.order(), ["A", "B", "C", "D", pasted[0]])
+
+    def test_a_row_pasted_under_the_anchor_is_left_where_it_is(self):
+        """
+        A child of the anchor is already where it belongs.
+
+        Pasting a sub-task into the task that was right-clicked makes it a
+        child of that row, not its neighbour, so there is nothing to move.
+        """
+        subtask = Task.create_task(name="Subtask", start_date=datetime(2024, 1, 1),
+                                   end_date=datetime(2024, 1, 2), task_id="S")
+        subtask.task_type = "Subtask"
+        subtask.parent_task_id = "A"
+        self.project.add_task(subtask)
+
+        self.service.copy(["S"])
+        pasted = self.service.paste("A", after_task_id="A")
+
+        children = [task.id for task in self.project.tasks
+                    if task.parent_task_id == "A"]
+
+        self.assertEqual(children, ["S", pasted[0]])
+
+    def test_a_cut_row_moves_to_beside_the_anchor(self):
+        """The same placement applies to a move, not only to a copy."""
+        self.service.cut(["D"])
+
+        self.service.paste("P", after_task_id="A")
+
+        self.assertEqual(self.order(), ["A", "D", "B", "C"])
+
+    def test_an_anchor_that_has_gone_is_ignored(self):
+        """A stale row ID leaves the paste where it landed."""
+        self.service.copy(["A"])
+
+        pasted = self.service.paste("P", after_task_id="nonexistent")
+
+        self.assertEqual(self.order(), ["A", "B", "C", "D", pasted[0]])
+
+
 class TestPastingIntoItself(unittest.TestCase):
     """
     A cut task cannot be pasted inside its own subtree.

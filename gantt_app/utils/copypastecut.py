@@ -220,13 +220,16 @@ class ClipboardService:
         
         self._write_to_system_clipboard()
     
-    def paste(self, target_container_id: Optional[str] = None, insert_index: Optional[int] = None) -> List[str]:
+    def paste(self, target_container_id: Optional[str] = None,
+              after_task_id: Optional[str] = None) -> List[str]:
         """
         Paste items from the clipboard to the target container.
         
         Args:
             target_container_id: ID of the destination container (parent task ID)
-            insert_index: Optional insertion index for the pasted items
+            after_task_id: The row the paste was asked for from. Rows that
+                land beside it are placed directly after it rather than at
+                the end of the branch - see _place_after.
         
         Process:
             1. Retrieve payload from in-memory store (or fallback to system clipboard).
@@ -265,20 +268,21 @@ class ClipboardService:
                     len(payload.items), payload.operation, where)
 
         if payload.operation == 'copy':
-            pasted = self._paste_copy(payload, target_container_id, insert_index)
+            pasted = self._paste_copy(payload, target_container_id)
         elif payload.operation == 'cut':
-            pasted = self._paste_cut(payload, target_container_id, insert_index)
+            pasted = self._paste_cut(payload, target_container_id)
         else:
             logger.error("Unknown clipboard operation %r; nothing pasted",
                          payload.operation)
             return []
 
+        self._place_after(pasted, after_task_id)
+
         logger.info("Pasted %s", pasted)
         return pasted
     
     def _paste_copy(self, payload: ClipboardPayload,
-                    target_container_id: Optional[str],
-                    insert_index: Optional[int] = None) -> List[str]:
+                    target_container_id: Optional[str]) -> List[str]:
         """
         Paste copied items as new tasks under the target.
 
@@ -315,8 +319,7 @@ class ClipboardService:
         return [task.id for task in new_tasks]
     
     def _paste_cut(self, payload: ClipboardPayload,
-                   target_container_id: Optional[str],
-                   insert_index: Optional[int] = None) -> List[str]:
+                   target_container_id: Optional[str]) -> List[str]:
         """
         Move the cut items under the target.
 
@@ -500,6 +503,52 @@ class ClipboardService:
         """Get the entity type from a Task object."""
         return task.task_type.lower()
     
+    def _place_after(self, pasted: List[str],
+                     anchor_id: Optional[str]) -> None:
+        """
+        Put the pasted rows directly after the row they were pasted from.
+
+        PARAMETERS:
+        -----------
+        pasted : List[str]
+            The rows that arrived, in the order they should read.
+        anchor_id : Optional[str]
+            The row the paste was asked for from. None means the paste came
+            from somewhere with no row behind it - the toolbar, a keyboard
+            shortcut over empty space - and the rows stay where they landed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Creating a task already works this way: choosing Create from a row's
+        menu puts the new task beside that row rather than at the end of the
+        plan - see DragDropTaskList._save_created, whose two lines these
+        are. Paste was the one action that still appended, so pasting from
+        the middle of a long phase put the rows at the bottom of it and left
+        the user to go and find them.
+
+        Only rows that end up beside the anchor are moved. Pasting a
+        sub-task into the task that was right-clicked makes it a child of
+        the anchor rather than its neighbour, and a child is already where
+        it belongs.
+
+        The anchor walks forward as the rows are placed, so three pasted
+        rows read in the order they were copied rather than backwards.
+        """
+        if not anchor_id or not pasted:
+            return
+
+        anchor = self._get_task_by_id(anchor_id)
+        if anchor is None:
+            return
+
+        for task_id in pasted:
+            task = self._get_task_by_id(task_id)
+            if task is None or task.parent_task_id != anchor.parent_task_id:
+                continue
+            if self.project.move_task_before(task_id, anchor.id):
+                self.project.move_task(task_id, 'down')
+                anchor = task
+
     def _next_id(self, pending: List['Task']) -> str:
         """
         The next free task ID, counting the ones about to be added.
@@ -702,9 +751,9 @@ class ClipboardManager:
         self.service.cut(selected_ids)
     
     def paste(self, target_container_id: Optional[str] = None,
-              insert_index: Optional[int] = None) -> List[str]:
+              after_task_id: Optional[str] = None) -> List[str]:
         """Paste from the clipboard, and say which rows arrived."""
-        return self.service.paste(target_container_id, insert_index)
+        return self.service.paste(target_container_id, after_task_id)
     
     def clear(self) -> None:
         """Clear the clipboard."""
