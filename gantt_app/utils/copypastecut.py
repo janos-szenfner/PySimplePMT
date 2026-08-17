@@ -118,24 +118,12 @@ class ClipboardService:
         #: one this window's own clipboard still works.
         self.clipboard_widget = None
         
-    def get_selected_ids(self) -> List[str]:
-        """
-        Get the array of currently selected item IDs.
-        
-        This should be connected to the application's selection state.
-        For now, returns an empty list - should be implemented by the UI.
-        
-        Returns:
-            List[str]: Array of selected entity IDs
-        """
-        return []
-    
     def copy(self, selected_ids: Optional[List[str]] = None) -> None:
         """
         Copy selected items to the clipboard.
         
         Args:
-            selected_ids: Array of entity IDs to copy. If None, uses currently selected IDs.
+            selected_ids: Array of entity IDs to copy.
         
         Process:
             1. Fetch full entity objects for all selected IDs.
@@ -144,9 +132,6 @@ class ClipboardService:
             4. Write the payload to the in-memory application clipboard store.
             5. Serialize to system clipboard (if available).
         """
-        if selected_ids is None:
-            selected_ids = self.get_selected_ids()
-
         if not self.project:
             logger.warning("Cannot copy: no plan is open")
             return
@@ -188,7 +173,7 @@ class ClipboardService:
         Cut selected items to the clipboard.
         
         Args:
-            selected_ids: Array of entity IDs to cut. If None, uses currently selected IDs.
+            selected_ids: Array of entity IDs to cut.
         
         Process:
             1. Fetch full entity objects for selected IDs.
@@ -197,9 +182,6 @@ class ClipboardService:
             4. Apply visual feedback to cut items (e.g., reduce opacity).
             5. Write serialized JSON to system clipboard.
         """
-        if selected_ids is None:
-            selected_ids = self.get_selected_ids()
-
         if not self.project:
             logger.warning("Cannot cut: no plan is open")
             return
@@ -387,9 +369,7 @@ class ClipboardService:
     
     def can_copy_or_cut(self, selected_ids: Optional[List[str]] = None) -> bool:
         """Check if copy or cut operations are possible."""
-        if selected_ids is None:
-            selected_ids = self.get_selected_ids()
-        return len(selected_ids) > 0
+        return bool(selected_ids)
     
     def _resolve_payload(self) -> Optional[ClipboardPayload]:
         """
@@ -759,7 +739,6 @@ def setup_keyboard_bindings(root: Any, clipboard_manager: ClipboardManager,
     """
     def handle_key_press(event: Any) -> None:
         """Handle keyboard shortcuts."""
-        import tkinter as tk
         focused = root.focus_get()
         if focused and hasattr(focused, 'winfo_class'):
             widget_class = focused.winfo_class()

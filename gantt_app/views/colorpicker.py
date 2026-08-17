@@ -483,15 +483,3 @@ class ColorPickerPopup(ctk.CTkToplevel):
             self.destroy()
         except tk.TclError:
             pass
-
-
-class ColorPickerDialog:
-    """
-    Kept for the name alone.
-
-    It never was a dialog - it held one static copy of normalise, which two
-    other classes held copies of as well. The function is the module's now;
-    this stays so that anything reaching for the old name still finds it.
-    """
-
-    _normalise = staticmethod(normalise)

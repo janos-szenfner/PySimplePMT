@@ -599,6 +599,12 @@ class Toolbar(ctk.CTkFrame):
         self.gantt_chart = gantt_chart
         self.undo_redo_manager = undo_redo_manager
         self.clipboard_manager = clipboard_manager
+
+        # Set by set_task_list once the list exists, which is after this
+        # runs. Left unset, every action that asks what is selected -
+        # Copy, Cut, Paste, Delete - raised AttributeError instead of
+        # finding nothing selected.
+        self.task_list = None
         
         # Create UI
         self._create_ui()
@@ -898,7 +904,6 @@ class Toolbar(ctk.CTkFrame):
     
     def add_subtask(self):
         """Add a new subtask to the project with undo support."""
-        from gantt_app.models import Task
         from gantt_app.views.taskdialogs import CreateTaskDialog
         
         # Any task can be a parent, including an existing sub-task, so that
@@ -1644,45 +1649,58 @@ class IconToolbar(ctk.CTkFrame):
         # Update button states
         self._update_button_states()
     
-    def _create_ui(self):
-        """Create the icon toolbar user interface."""
-        # Icon button order based on screenshot: 
-        # folder, floppy, clock, person, X, i, scissors, copy, paste, undo, redo
-        # Modified per user request:
-        # folder (open), floppy (save), edit (replaces i), 
-        # task (replaces clock), milestone (replaces person), 
-        # delete (X), cut (scissors), copy, paste, undo, redo
-        
-        icon_order = [
-            ('open', 'Open Project', 'load_project'),
-            ('new_project', 'New Project', 'new_project'),
-            ('save', 'Save Project', 'save_project'),
-            ('edit', 'Edit', 'edit_project_info'),
-            ('task', 'Create Task', 'add_task'),
-            ('subtask', 'Create Subtask', 'add_subtask'),
-            ('milestone', 'Create Milestone', 'add_milestone'),
-            ('cut', 'Cut', 'cut_tasks'),
-            ('copy', 'Copy', 'copy_tasks'),
-            ('paste', 'Paste', 'paste_tasks'),
-            ('delete', 'Delete', 'delete_selected'),
-            ('undo', 'Undo', 'undo'),
-            ('redo', 'Redo', 'redo'),
-        ]
+    #: The icons along the row, in order: the icon's name, its tooltip, and
+    #: the action it stands for.
+    #:
+    #: The action is a name, looked up when the button is pressed. The
+    #: handlers themselves belong to Toolbar, which puts them here through
+    #: _connect_icon_toolbar once this row is built - so binding a method of
+    #: this class to a button would bind the wrong thing, and did.
+    ICON_ACTIONS = (
+        ('open', 'Open Project', 'load_project'),
+        ('new_project', 'New Project', 'new_project'),
+        ('save', 'Save Project', 'save_project'),
+        ('edit', 'Edit', 'edit_project_info'),
+        ('task', 'Create Task', 'add_task'),
+        ('subtask', 'Create Subtask', 'add_subtask'),
+        ('milestone', 'Create Milestone', 'add_milestone'),
+        ('cut', 'Cut', 'cut_tasks'),
+        ('copy', 'Copy', 'copy_tasks'),
+        ('paste', 'Paste', 'paste_tasks'),
+        ('delete', 'Delete', 'delete_selected'),
+        ('undo', 'Undo', 'undo'),
+        ('redo', 'Redo', 'redo'),
+    )
 
-        # Named, and looked up when the button is pressed.
-        #
-        # Handed self.add_task here instead, each button kept the bound
-        # method it was built with, and Toolbar._connect_icon_toolbar - which
-        # puts the real handlers in place afterwards - changed nothing the
-        # buttons could see. Every icon ran this class's own stub: pressing
-        # Create Task added a task called "New Task" with no dialog and no
-        # undo behind it, and Open and Save opened their own file choosers
-        # rather than the application's.
-        for icon_name, tooltip, method in icon_order:
+    def _create_ui(self):
+        """Build the row of icon buttons."""
+        for icon_name, tooltip, action in self.ICON_ACTIONS:
             self._create_icon_button(
                 icon_name, tooltip,
-                lambda name=method: getattr(self, name)(),
+                lambda name=action: self._perform(name),
             )
+
+    def _perform(self, action: str):
+        """
+        Run the handler Toolbar connected for an icon.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This class used to carry a handler of its own for every icon - its
+        own file choosers, its own task creation - none of which ever ran.
+        Toolbar replaces every one of them in _connect_icon_toolbar, so they
+        were a second implementation of the toolbar's actions that no button
+        could reach: the copy that skipped the create dialog and the undo
+        history sat here unused, and the copy that works sat in Toolbar.
+
+        A row built without a Toolbar to connect it has nothing behind its
+        buttons, which is said rather than half-done.
+        """
+        handler = getattr(self, action, None)
+        if not callable(handler):
+            logger.warning("The %s icon has no handler connected", action)
+            return
+        handler()
     
     def _create_icon_button(self, icon_name: str, tooltip: str, command: Callable):
         """
@@ -1755,149 +1773,3 @@ class IconToolbar(ctk.CTkFrame):
         self.task_list = task_list
         self._update_button_states()
     
-    # Methods for button actions
-    def new_project(self):
-        """Create a new project."""
-        if hasattr(self, '_new_project_impl'):
-            self._new_project_impl()
-        else:
-            # Default implementation
-            self.project = Project(name="New Project")
-            if self.on_project_changed:
-                self.on_project_changed()
-            self._update_button_states()
-    
-    def load_project(self):
-        """Load a project from file."""
-        if hasattr(self, '_load_project_impl'):
-            self._load_project_impl()
-        else:
-            file_path = filedialog.askopenfilename(
-                filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
-                title="Open Project"
-            )
-            if file_path:
-                try:
-                    self.project = load_project(file_path)
-                    if self.on_project_changed:
-                        self.on_project_changed()
-                    self._update_button_states()
-                except Exception as e:
-                    messagebox.showerror("Error", f"Failed to load project: {e}")
-    
-    def save_project(self):
-        """Save the current project."""
-        if hasattr(self, '_save_project_impl'):
-            self._save_project_impl()
-        else:
-            if self.project:
-                file_path = filedialog.asksaveasfilename(
-                    defaultextension=".json",
-                    filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
-                    title="Save Project"
-                )
-                if file_path:
-                    try:
-                        save_project(self.project, file_path)
-                    except Exception as e:
-                        messagebox.showerror("Error", f"Failed to save project: {e}")
-    
-    def edit_project_info(self):
-        """Edit project information."""
-        if hasattr(self, '_edit_project_info_impl'):
-            self._edit_project_info_impl()
-        else:
-            # Default implementation
-            if self.project:
-                new_name = simpledialog.askstring("Edit Project", "Project Name:", 
-                                                   initialvalue=self.project.name)
-                if new_name:
-                    self.project.name = new_name
-                    if self.on_project_changed:
-                        self.on_project_changed()
-    
-    def add_task(self):
-        """Add a new task."""
-        if hasattr(self, '_add_task_impl'):
-            self._add_task_impl()
-        else:
-            if self.project:
-                from gantt_app.models import Task
-                task = Task.create_task(name="New Task")
-                self.project.add_task(task)
-                if self.on_project_changed:
-                    self.on_project_changed()
-    
-    def add_subtask(self):
-        """Add a new subtask."""
-        if hasattr(self, '_add_subtask_impl'):
-            self._add_subtask_impl()
-        else:
-            self.add_task()  # Default: same as task for now
-    
-    def add_milestone(self):
-        """Add a new milestone."""
-        if hasattr(self, '_add_milestone_impl'):
-            self._add_milestone_impl()
-        else:
-            if self.project:
-                from gantt_app.models import Task
-                task = Task.create_milestone(name="New Milestone")
-                self.project.add_task(task)
-                if self.on_project_changed:
-                    self.on_project_changed()
-    
-    def cut_tasks(self):
-        """Cut selected tasks to clipboard."""
-        if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
-            selected_ids = self.task_list.get_selected_task_ids()
-            if selected_ids:
-                self.clipboard_manager.cut(selected_ids)
-                self._update_button_states()
-    
-    def copy_tasks(self):
-        """Copy selected tasks to clipboard."""
-        if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
-            selected_ids = self.task_list.get_selected_task_ids()
-            if selected_ids:
-                self.clipboard_manager.copy(selected_ids)
-                self._update_button_states()
-    
-    def paste_tasks(self):
-        """Paste tasks from clipboard."""
-        if self.clipboard_manager and self.clipboard_manager.can_paste():
-            target_container_id = None
-            if hasattr(self.task_list, 'get_selected_task_ids'):
-                selected_ids = self.task_list.get_selected_task_ids()
-                if selected_ids:
-                    target_container_id = selected_ids[0]
-            
-            self.clipboard_manager.paste(target_container_id)
-            if self.on_project_changed:
-                self.on_project_changed()
-            self._update_button_states()
-    
-    def delete_selected(self):
-        """Delete selected tasks."""
-        if hasattr(self.task_list, 'get_selected_task_ids'):
-            selected_ids = self.task_list.get_selected_task_ids()
-            if selected_ids and self.project:
-                if messagebox.askyesno("Delete", f"Delete {len(selected_ids)} selected task(s)?"):
-                    for task_id in selected_ids:
-                        self.project.remove_task(task_id)
-                    if self.on_project_changed:
-                        self.on_project_changed()
-    
-    def undo(self):
-        """Undo the last action."""
-        if self.undo_redo_manager:
-            self.undo_redo_manager.undo()
-            if self.on_project_changed:
-                self.on_project_changed()
-    
-    def redo(self):
-        """Redo the last undone action."""
-        if self.undo_redo_manager:
-            self.undo_redo_manager.redo()
-            if self.on_project_changed:
-                self.on_project_changed()

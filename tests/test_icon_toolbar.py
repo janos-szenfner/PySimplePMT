@@ -283,7 +283,22 @@ class TestIconToolbarStateManagement(unittest.TestCase):
 
 
 class TestIconToolbarActions(unittest.TestCase):
-    """Test icon toolbar button actions."""
+    """
+    What the icons do, and what they do when nothing is behind them.
+
+    WHY THESE LOOK LIKE THIS:
+    =========================
+    They used to assert that IconToolbar had a method of each action's name,
+    which was true only because it carried a handler of its own for every
+    icon - its own file choosers, its own task creation. None of those ever
+    ran: Toolbar replaces every one of them once the row is built. Asserting
+    they existed was asserting that the dead copy was still there.
+
+    What matters is that every icon names an action, that pressing one with
+    nothing connected is harmless, and that pressing one with a handler
+    connected calls it - which is the thing that was broken, the buttons
+    having kept the methods they were built with.
+    """
 
     def setUp(self):
         """Set up test fixtures."""
@@ -297,57 +312,57 @@ class TestIconToolbarActions(unittest.TestCase):
         self.toolbar.destroy()
         self.root.destroy()
 
-    def test_new_project_action(self):
-        """Test new project action."""
-        self.assertTrue(callable(self.toolbar.new_project))
+    def test_every_icon_names_an_action(self):
+        """No icon is drawn with nothing to invoke."""
+        for icon_name, tooltip, action in self.toolbar.ICON_ACTIONS:
+            self.assertTrue(action, f"{icon_name} names no action")
 
-    def test_load_project_action(self):
-        """Test load project action."""
-        self.assertTrue(callable(self.toolbar.load_project))
+    def test_the_row_offers_the_expected_actions(self):
+        """The actions Toolbar connects are the actions the row asks for."""
+        actions = [action for _icon, _tip, action in self.toolbar.ICON_ACTIONS]
 
-    def test_save_project_action(self):
-        """Test save project action."""
-        self.assertTrue(callable(self.toolbar.save_project))
+        self.assertEqual(actions, [
+            'load_project', 'new_project', 'save_project', 'edit_project_info',
+            'add_task', 'add_subtask', 'add_milestone',
+            'cut_tasks', 'copy_tasks', 'paste_tasks', 'delete_selected',
+            'undo', 'redo',
+        ])
 
-    def test_edit_project_info_action(self):
-        """Test edit project info action."""
-        self.assertTrue(callable(self.toolbar.edit_project_info))
+    def test_an_unconnected_action_does_nothing(self):
+        """
+        A row built without a Toolbar has nothing behind its buttons.
 
-    def test_add_task_action(self):
-        """Test add task action."""
-        self.assertTrue(callable(self.toolbar.add_task))
+        It says so in the log rather than half-doing the action, which is
+        what the handlers it used to carry did: Create Task added a task
+        called "New Task" with no dialog and no undo behind it.
+        """
+        self.toolbar._perform('add_task')
 
-    def test_add_subtask_action(self):
-        """Test add subtask action."""
-        self.assertTrue(callable(self.toolbar.add_subtask))
+        self.assertEqual(len(self.project.tasks), 0)
 
-    def test_add_milestone_action(self):
-        """Test add milestone action."""
-        self.assertTrue(callable(self.toolbar.add_milestone))
+    def test_a_connected_action_is_called(self):
+        """
+        What Toolbar connects is what the button runs.
 
-    def test_cut_tasks_action(self):
-        """Test cut tasks action."""
-        self.assertTrue(callable(self.toolbar.cut_tasks))
+        The buttons used to be built with this class's own bound methods, so
+        connecting the real handlers afterwards changed nothing they could
+        see and every icon ran the wrong thing.
+        """
+        called = []
+        self.toolbar.add_task = lambda: called.append('add_task')
 
-    def test_copy_tasks_action(self):
-        """Test copy tasks action."""
-        self.assertTrue(callable(self.toolbar.copy_tasks))
+        self.toolbar._perform('add_task')
 
-    def test_paste_tasks_action(self):
-        """Test paste tasks action."""
-        self.assertTrue(callable(self.toolbar.paste_tasks))
+        self.assertEqual(called, ['add_task'])
 
-    def test_delete_selected_action(self):
-        """Test delete selected action."""
-        self.assertTrue(callable(self.toolbar.delete_selected))
+    def test_pressing_the_button_runs_the_connected_action(self):
+        """The same, through the button rather than past it."""
+        called = []
+        self.toolbar.add_task = lambda: called.append('add_task')
 
-    def test_undo_action(self):
-        """Test undo action."""
-        self.assertTrue(callable(self.toolbar.undo))
+        self.toolbar.icon_buttons['task'].invoke()
 
-    def test_redo_action(self):
-        """Test redo action."""
-        self.assertTrue(callable(self.toolbar.redo))
+        self.assertEqual(called, ['add_task'])
 
 
 class TestIconToolbarIntegration(unittest.TestCase):
