@@ -243,8 +243,6 @@ class GanttApp(ctk.CTk):
         
         # Set task list reference in toolbar for copy/paste functionality
         self.toolbar.set_task_list(self.task_list)
-        # The chart draws the rows the list is showing, so the two line up
-        self.gantt_chart.set_task_list(self.task_list)
 
         # Create Gantt chart
         self.gantt_chart = GanttChart(
@@ -258,6 +256,12 @@ class GanttApp(ctk.CTk):
         
         # Set Gantt chart reference in toolbar for export functionality
         self.toolbar.set_gantt_chart(self.gantt_chart)
+
+        # The chart draws the rows the task list is showing, so the two line
+        # up. Both have to exist first: this went in beside the toolbar's
+        # set_task_list above, three lines before the chart was built, and
+        # the application would not start at all.
+        self.gantt_chart.set_task_list(self.task_list)
         
         # Create status bar
         self.status_bar = ctk.CTkLabel(
