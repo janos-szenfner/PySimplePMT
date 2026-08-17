@@ -41,6 +41,337 @@ MENU_BORDER = "#3b4759"
 LOG_ACCENT = "#b8860b"      # the Log button stays distinct
 LOG_ACCENT_HOVER = "#966d09"
 
+# Windows-style menu bar colors
+WIN_MENU_BG = "#F1F3F5"     # light gray background for menu bar
+WIN_MENU_HOVER = "#E9ECEF"  # hover color for menu items
+WIN_MENU_TEXT = "#1C1D1F"   # dark text color
+WIN_DROPDOWN_BG = "#F8F9FA" # light background for dropdown menus
+
+
+class CTkDropdownMenu(ctk.CTkToplevel):
+    """Floating dropdown menu window for CustomTkinter with Windows-style appearance."""
+    
+    ITEM_HEIGHT = 28
+    MENU_PADDING = 4
+    
+    def __init__(self, master, items: List[Dict], **kwargs):
+        super().__init__(master, **kwargs)
+        
+        # Window setup for floating overlay
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.configure(fg_color=WIN_DROPDOWN_BG, corner_radius=8)
+        
+        self.items = items
+        self._create_widgets()
+        
+        # Bind global click to dismiss menu when clicking outside
+        self.bind("<FocusOut>", lambda e: self._on_focus_out())
+        self.bind("<Escape>", lambda e: self.destroy())
+        
+        # Track if we're in a submenu operation to prevent premature closing
+        self._in_submenu = False
+        
+    def _create_widgets(self):
+        container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=8)
+        container.pack(fill="both", expand=True, padx=self.MENU_PADDING, pady=self.MENU_PADDING)
+
+        for item in self.items:
+            self._create_menu_item(container, item)
+            
+    def _create_menu_item(self, container, item: Dict):
+        """Create a single menu item based on its type."""
+        # Determine item type - check if it has submenu/items first
+        if item.get("type") == "separator":
+            item_type = "separator"
+        elif "submenu" in item or "items" in item:
+            item_type = "submenu"
+        elif item.get("type") == "toggle":
+            item_type = "toggle"
+        else:
+            item_type = "action"
+            
+        label_text = item.get("label", item.get("text", ""))
+        
+        # Row container
+        row = ctk.CTkFrame(container, fg_color="transparent", corner_radius=6, height=self.ITEM_HEIGHT)
+        row.pack(fill="x", pady=1)
+
+        if item_type == "separator":
+            # Create a separator line
+            separator = ctk.CTkFrame(row, height=1, fg_color="#6C757D", corner_radius=0)
+            separator.pack(fill="x", pady=4)
+            return
+
+        if item_type == "toggle":
+            var = item.get("variable")
+            check_str = "✓" if (var and var.get()) else " "
+            
+            # Create handler to avoid lambda scoping issues
+            def make_toggle_handler(i, v):
+                return lambda: self._handle_toggle(i, v)
+            
+            btn = ctk.CTkButton(
+                row,
+                text=f"{check_str}  {label_text}",
+                anchor="w",
+                fg_color="transparent",
+                text_color=WIN_MENU_TEXT,
+                hover_color=WIN_MENU_HOVER,
+                height=self.ITEM_HEIGHT - 2,
+                corner_radius=6,
+                command=make_toggle_handler(item, var)
+            )
+            btn.pack(fill="x", expand=True)
+
+        elif item_type == "action":
+            # Create handler to avoid lambda scoping issues
+            def make_action_handler(i):
+                return lambda: self._handle_action(i)
+            
+            btn = ctk.CTkButton(
+                row,
+                text=f"    {label_text}",
+                anchor="w",
+                fg_color="transparent",
+                text_color=WIN_MENU_TEXT,
+                hover_color=WIN_MENU_HOVER,
+                height=self.ITEM_HEIGHT - 2,
+                corner_radius=6,
+                command=make_action_handler(item)
+            )
+            btn.pack(fill="x", expand=True)
+
+        elif item_type == "submenu":
+            submenu_items = item.get("submenu", item.get("items", []))
+            
+            # Create handler to avoid lambda scoping issues
+            def make_submenu_handler(i, s, r):
+                return lambda: self._handle_submenu(i, s, r)
+            
+            btn = ctk.CTkButton(
+                row,
+                text=f"    {label_text}",
+                anchor="w",
+                fg_color="transparent",
+                text_color=WIN_MENU_TEXT,
+                hover_color=WIN_MENU_HOVER,
+                height=self.ITEM_HEIGHT - 2,
+                corner_radius=6,
+                command=make_submenu_handler(item, submenu_items, row)
+            )
+            btn.pack(side="left", fill="x", expand=True)
+            
+            arrow = ctk.CTkLabel(row, text=">", text_color="#6C757D", width=20)
+            arrow.pack(side="right", padx=5)
+            
+            # Store submenu reference for hover support
+            btn.submenu_items = submenu_items
+            btn.row_frame = row
+            
+            # Bind hover events for submenu - use a wrapper to avoid scoping issues
+            def make_hover_handler(s_items, r, b):
+                return lambda e: self._on_submenu_hover(s_items, r, b)
+            
+            btn.bind("<Enter>", make_hover_handler(submenu_items, row, btn))
+            row.bind("<Enter>", make_hover_handler(submenu_items, row, btn))
+
+    def _handle_toggle(self, item: Dict, var: Optional[ctk.BooleanVar]):
+        if var is not None:
+            var.set(not var.get())
+        if "command" in item and callable(item["command"]):
+            try:
+                item["command"](var.get() if var else None)
+            except Exception:
+                logger.exception("Menu action failed")
+                messagebox.showerror(
+                    "Action Failed",
+                    "That action could not be completed. "
+                    "See the Log window for details."
+                )
+        self._close_all_menus()
+
+    def _handle_action(self, item: Dict):
+        if "command" in item and callable(item["command"]):
+            try:
+                item["command"]()
+            except Exception:
+                logger.exception("Menu action failed")
+                messagebox.showerror(
+                    "Action Failed",
+                    "That action could not be completed. "
+                    "See the Log window for details."
+                )
+        self._close_all_menus()
+
+    def _handle_submenu(self, item: Dict, submenu_items: List[Dict], row):
+        # Close any existing submenu first
+        self._close_all_menus()
+        
+        if not submenu_items:
+            return
+            
+        # Calculate position to the right of the current menu
+        x = self.winfo_rootx() + self.winfo_width() - 4
+        y = self.winfo_rooty() + row.winfo_rooty() - self.winfo_rooty()
+        
+        self._in_submenu = True
+        submenu = CTkDropdownMenu(self, items=submenu_items)
+        submenu.geometry(f"+{x}+{y}")
+        submenu.focus_set()
+        self._in_submenu = False
+
+    def _on_submenu_hover(self, submenu_items: List[Dict], row, button):
+        """Handle hover to open submenu after a short delay."""
+        if not submenu_items:
+            return
+            
+        # Close any existing submenus
+        for child in self.winfo_children():
+            if isinstance(child, CTkDropdownMenu) and child != self:
+                try:
+                    child.destroy()
+                except:
+                    pass
+                    
+        # Calculate position to the right of the current menu
+        x = self.winfo_rootx() + self.winfo_width() - 4
+        y = self.winfo_rooty() + row.winfo_rooty() - self.winfo_rooty()
+        
+        self._in_submenu = True
+        submenu = CTkDropdownMenu(self, items=submenu_items)
+        submenu.geometry(f"+{x}+{y}")
+        submenu.focus_set()
+        self._in_submenu = False
+
+    def _on_focus_out(self):
+        """Handle focus out to close the menu."""
+        if self._in_submenu:
+            return
+        self._close_all_menus()
+
+    def _close_all_menus(self):
+        """Close this menu and any submenus."""
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
+
+
+class CustomMenuBar(ctk.CTkFrame):
+    """Horizontal navigation bar holding root menu triggers with Windows-style appearance."""
+    
+    def __init__(self, master, menu_config: Dict[str, List[Dict]], **kwargs):
+        super().__init__(master, height=35, corner_radius=0, fg_color=WIN_MENU_BG, **kwargs)
+        self.menu_config = menu_config
+        self.active_dropdown: Optional[CTkDropdownMenu] = None
+        self._dismiss_binding = None
+        
+        # Store references to all menu buttons for state management
+        self.menu_buttons = []
+        self._build_bar()
+        
+    def _build_bar(self):
+        for title, items in self.menu_config.items():
+            btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+            btn_frame.pack(side="left", padx=2, pady=4)
+            
+            # Create a bound method for this specific button and items
+            def create_handler(btn_title, menu_items):
+                def handler():
+                    # Find the button by title
+                    for btn in self.menu_buttons:
+                        if btn.cget("text") == btn_title:
+                            self._show_dropdown(btn, menu_items)
+                            break
+                return handler
+            
+            btn = ctk.CTkButton(
+                btn_frame,
+                text=title,
+                width=60,
+                height=26,
+                fg_color="transparent",
+                text_color=WIN_MENU_TEXT,
+                hover_color=WIN_MENU_HOVER,
+                corner_radius=6,
+                command=create_handler(title, items)
+            )
+            btn.pack(side="left", padx=5, pady=5)
+            self.menu_buttons.append(btn)
+            
+    def _show_dropdown(self, button_widget: ctk.CTkButton, items: List[Dict]):
+        # Close any existing dropdown
+        self._close_all_dropdowns()
+        
+        # Calculate position directly below root button
+        x = button_widget.winfo_rootx()
+        y = button_widget.winfo_rooty() + button_widget.winfo_height() + 2
+        
+        self.active_dropdown = CTkDropdownMenu(self, items=items)
+        self.active_dropdown.geometry(f"+{x}+{y}")
+        self.active_dropdown.focus_set()
+        
+        # Store reference to the button that opened this menu
+        self.active_dropdown.opener_button = button_widget
+        
+        # Bind global click to dismiss menu when clicking outside
+        self._dismiss_binding = self.winfo_toplevel().bind(
+            "<Button-1>", self._on_click_elsewhere, add="+"
+        )
+        
+    def _on_click_elsewhere(self, event):
+        """Close the menu when the click lands outside it."""
+        if not self.active_dropdown or not self.active_dropdown.winfo_exists():
+            return
+        
+        # Check if click is inside the menu or the opener button
+        if event.widget is self:
+            return
+            
+        # Try to find if the click is inside any menu or menu button
+        widget = event.widget
+        is_inside_menu = False
+        
+        # Check if widget is inside the active dropdown
+        try:
+            menu_window = self.active_dropdown
+            if widget.winfo_containing(menu_window.winfo_id()):
+                is_inside_menu = True
+        except:
+            pass
+            
+        # Check if widget is one of our menu buttons
+        if hasattr(self, 'menu_buttons'):
+            for btn in self.menu_buttons:
+                if widget is btn or widget.winfo_containing(btn.winfo_id()):
+                    is_inside_menu = True
+                    break
+                    
+        if not is_inside_menu:
+            self._close_all_dropdowns()
+
+    def _close_all_dropdowns(self):
+        """Close all open dropdown menus."""
+        # Clean up the dismiss binding
+        if hasattr(self, '_dismiss_binding') and self._dismiss_binding:
+            try:
+                self.winfo_toplevel().unbind("<Button-1>", self._dismiss_binding)
+            except tk.TclError:
+                pass
+            self._dismiss_binding = None
+            
+        if self.active_dropdown and self.active_dropdown.winfo_exists():
+            try:
+                self.active_dropdown.destroy()
+            except tk.TclError:
+                pass
+        self.active_dropdown = None
+        
+        # Reset button states
+        for btn in self.menu_buttons:
+            btn.configure(fg_color="transparent")
+
 
 class DropdownButton(ctk.CTkButton):
     """Custom dropdown button that shows a menu when clicked."""
@@ -258,7 +589,8 @@ class Toolbar(ctk.CTkFrame):
     def __init__(self, master, project: Project,
                  on_project_changed: Callable[[], None] = None,
                  gantt_chart=None,
-                 undo_redo_manager: UndoRedoManager = None):
+                 undo_redo_manager: UndoRedoManager = None,
+                 clipboard_manager=None):
         super().__init__(master)
         
         self.master = master
@@ -266,6 +598,7 @@ class Toolbar(ctk.CTkFrame):
         self.on_project_changed = on_project_changed
         self.gantt_chart = gantt_chart
         self.undo_redo_manager = undo_redo_manager
+        self.clipboard_manager = clipboard_manager
         
         # Create UI
         self._create_ui()
@@ -280,11 +613,75 @@ class Toolbar(ctk.CTkFrame):
         arrangement can be read at a glance instead of being spread across a
         builder per menu. An entry with a 'submenu' opens a nested level.
         """
-        for definition in self._menu_definitions():
-            self._add_menu(definition['text'], definition['items'])
+        # Convert existing menu definitions to new format
+        menu_config = self._convert_to_new_menu_format()
+        
+        # Create Windows-style menu bar
+        self.menu_bar = CustomMenuBar(self, menu_config=menu_config)
+        self.menu_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Theme toggle and Log buttons
         self._create_theme_log_buttons()
+
+    def _convert_to_new_menu_format(self):
+        """
+        Convert the existing menu definitions to the new Windows-style format.
+        
+        RETURNS:
+        --------
+        Dict[str, List[Dict]]
+            Menu configuration for CustomMenuBar with 'label', 'type', etc.
+        """
+        config = {}
+        
+        for definition in self._menu_definitions():
+            menu_name = definition['text']
+            config[menu_name] = self._convert_items_to_new_format(definition['items'])
+        
+        return config
+        
+    def _convert_items_to_new_format(self, items):
+        """
+        Convert a list of menu items from old format to new format.
+        
+        PARAMETERS:
+        -----------
+        items : List[Dict]
+            List of menu items in old format
+            
+        RETURNS:
+        --------
+        List[Dict]
+            List of menu items in new format
+        """
+        new_items = []
+        
+        for item in items:
+            # Skip separator items in the old format - they're handled differently
+            if item.get('type') == 'separator':
+                continue
+                
+            new_item = {}
+            
+            if 'submenu' in item:
+                # This is a submenu item
+                new_item['label'] = item['text']
+                new_item['type'] = 'submenu'
+                new_item['items'] = self._convert_items_to_new_format(item['submenu'])
+            elif 'command' in item:
+                # This is an action item
+                new_item['label'] = item['text']
+                new_item['type'] = 'action'
+                new_item['command'] = item['command']
+            else:
+                # Fallback - treat as action
+                new_item['label'] = item.get('text', item.get('label', ''))
+                new_item['type'] = 'action'
+                new_item['command'] = item.get('command')
+                
+            new_items.append(new_item)
+            
+        return new_items
 
     def _menu_definitions(self):
         """
@@ -341,6 +738,9 @@ class Toolbar(ctk.CTkFrame):
                 'items': [
                     {"text": "Undo", "command": self.undo},
                     {"text": "Redo", "command": self.redo},
+                    {"text": "Cut", "command": self.cut_tasks},
+                    {"text": "Copy", "command": self.copy_tasks},
+                    {"text": "Paste", "command": self.paste_tasks},
                 ],
             },
             {
@@ -1098,3 +1498,40 @@ class Toolbar(ctk.CTkFrame):
     def set_project(self, project: Project):
         """Set a new project for the toolbar."""
         self.project = project
+        
+    def copy_tasks(self):
+        """Copy selected tasks to clipboard."""
+        if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
+            selected_ids = self.task_list.get_selected_task_ids()
+            if selected_ids:
+                self.clipboard_manager.copy(selected_ids)
+                logger.info("Copied %d tasks to clipboard", len(selected_ids))
+        
+    def cut_tasks(self):
+        """Cut selected tasks to clipboard."""
+        if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
+            selected_ids = self.task_list.get_selected_task_ids()
+            if selected_ids:
+                self.clipboard_manager.cut(selected_ids)
+                logger.info("Cut %d tasks to clipboard", len(selected_ids))
+        
+    def paste_tasks(self):
+        """Paste tasks from clipboard."""
+        if self.clipboard_manager and self.clipboard_manager.can_paste():
+            # Get the target container - for now, paste to root (None)
+            target_container_id = None
+            if hasattr(self.task_list, 'get_selected_task_ids'):
+                selected_ids = self.task_list.get_selected_task_ids()
+                if selected_ids:
+                    # Paste as child of selected task if one is selected
+                    target_container_id = selected_ids[0]
+            
+            self.clipboard_manager.paste(target_container_id)
+            logger.info("Pasted tasks from clipboard")
+            
+            if self.on_project_changed:
+                self.on_project_changed()
+        
+    def set_task_list(self, task_list):
+        """Set the task list reference for copy/paste operations."""
+        self.task_list = task_list

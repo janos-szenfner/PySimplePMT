@@ -127,9 +127,9 @@ class TestMenuContents(unittest.TestCase):
         self.assertNotIn('Project Info', view)
 
     def test_edit_menu(self):
-        """Undo and Redo stay together under Edit."""
+        """Undo, Redo, Cut, Copy, and Paste are available under Edit."""
         self.assertEqual(labels(find(self.tree, 'Edit')['items']),
-                         ['Undo', 'Redo'])
+                         ['Undo', 'Redo', 'Cut', 'Copy', 'Paste'])
 
 
 class TestMenuCommands(unittest.TestCase):

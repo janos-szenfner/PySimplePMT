@@ -209,7 +209,8 @@ class GanttApp(ctk.CTk):
         self.toolbar = Toolbar(
             self, self.project,
             on_project_changed=self.update_all,
-            undo_redo_manager=self.undo_redo_manager
+            undo_redo_manager=self.undo_redo_manager,
+            clipboard_manager=self.clipboard_manager
         )
         self.toolbar.grid(row=0, column=0, sticky=tk.EW, padx=10, pady=10)
         
@@ -239,6 +240,9 @@ class GanttApp(ctk.CTk):
             clipboard_manager=self.clipboard_manager
         )
         self.content_panes.add(self.task_list, weight=2)
+        
+        # Set task list reference in toolbar for copy/paste functionality
+        self.toolbar.set_task_list(self.task_list)
 
         # Create Gantt chart
         self.gantt_chart = GanttChart(
