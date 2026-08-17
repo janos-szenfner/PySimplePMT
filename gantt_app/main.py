@@ -19,7 +19,7 @@ from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
-from utils.copypastecut import ClipboardManager, setup_keyboard_bindings
+from gantt_app.utils.copypastecut import ClipboardManager, setup_keyboard_bindings
 from gantt_app.utils.log import (
     setup_logging, get_logger, install_exception_hook, get_log_file_path
 )

@@ -15,7 +15,7 @@ import uuid
 import copy
 
 from gantt_app.models import Task, Project, Dependency
-from utils.copypastecut import (
+from gantt_app.utils.copypastecut import (
     ClipboardService,
     ClipboardManager,
     ClipboardPayload,
