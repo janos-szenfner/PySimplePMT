@@ -120,6 +120,75 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.task_color_entry.get(),
                          MERMAID_THEMES[name]['task_color'])
 
+    def test_the_settings_dialog_opens_on_what_was_applied(self):
+        """
+        Every setting, not only the three colours it read off the chart.
+
+        Font size, theme and the background and grid colours were written
+        here as defaults, so reopening showed 12px and the Default theme
+        however the chart had been set.
+        """
+        from gantt_app.views.gantt_chart import GanttChart
+        from gantt_app.views.ganttsettingsw import (
+            GanttChartSettingsDialog, MERMAID_THEMES,
+        )
+
+        chart = GanttChart(self.root, self.project)
+        first = GanttChartSettingsDialog(self.root, chart)
+        theme = [name for name in MERMAID_THEMES if name != 'Default'][0]
+        first.theme_var.set(theme)
+        first._update_theme_preview()
+        first.font_size_slider.set(18)
+        first.apply()
+
+        reopened = GanttChartSettingsDialog(self.root, chart)
+
+        self.assertEqual(int(reopened.font_size_slider.get()), 18)
+        self.assertEqual(reopened.theme_var.get(), theme)
+        self.assertEqual(reopened.bg_color_entry.get(),
+                         MERMAID_THEMES[theme]['bg_color'])
+        self.assertEqual(reopened.grid_color_entry.get(),
+                         MERMAID_THEMES[theme]['grid_color'])
+
+    def test_reapplying_without_a_change_changes_nothing(self):
+        """
+        Which is what made the defaults actively harmful.
+
+        Opening the dialog and pressing Apply wrote its hardcoded font size,
+        theme and background back over whatever had been chosen before.
+        """
+        from gantt_app.views.gantt_chart import GanttChart
+        from gantt_app.views.ganttsettingsw import (
+            GanttChartSettingsDialog, MERMAID_THEMES,
+        )
+
+        chart = GanttChart(self.root, self.project)
+        setup = GanttChartSettingsDialog(self.root, chart)
+        setup.theme_var.set(
+            [name for name in MERMAID_THEMES if name != 'Default'][0])
+        setup._update_theme_preview()
+        setup.font_size_slider.set(20)
+        setup.apply()
+        before = chart.current_settings()
+
+        GanttChartSettingsDialog(self.root, chart).apply()
+
+        self.assertEqual(chart.current_settings(), before)
+
+    def test_the_chart_answers_with_every_setting(self):
+        """
+        current_settings names them all, so nothing has to be defaulted twice.
+
+        It is what the renderers draw with and what the dialog opens on.
+        """
+        from gantt_app.utils.chart_figure import DEFAULT_SETTINGS
+        from gantt_app.views.gantt_chart import GanttChart
+
+        chart = GanttChart(self.root, self.project)
+
+        self.assertEqual(set(chart.current_settings()) & set(DEFAULT_SETTINGS),
+                         set(DEFAULT_SETTINGS))
+
     def test_create_task_dialog_builds(self):
         """Creating a task opens a complete form."""
         from gantt_app.views.taskdialogs import CreateTaskDialog

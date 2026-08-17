@@ -78,17 +78,15 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
         grab_when_visible(self)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         
-        # Store current settings
-        self.settings = {
-            "font_size": 12,
-            "task_color": gantt_chart.task_color,
-            "milestone_color": gantt_chart.milestone_color,
-            "dependency_color": gantt_chart.dependency_color,
-            "theme": "Default",
-            "bg_color": "#ffffff",
-            "text_color": "#000000",
-            "grid_color": "#ecf0f1"
-        }
+        # What the chart is drawing with, which is what the dialog opens on.
+        #
+        # Three of these used to be read off the chart and the other five
+        # written here as defaults, so reopening the dialog showed a font
+        # size of 12 and the Default theme however the chart had been set -
+        # and pressing Apply without touching anything wrote those defaults
+        # back over whatever the user had chosen.
+        self.settings = dict(gantt_chart.current_settings())
+        self.settings.setdefault("theme", "Default")
         
         # Create UI
         self._create_ui()
@@ -293,7 +291,8 @@ class GanttChartSettingsDialog(ctk.CTkToplevel):
         self.gantt_chart.milestone_color = self.settings["milestone_color"]
         self.gantt_chart.dependency_color = self.settings["dependency_color"]
         
-        # Store settings for persistence (could save to config file)
+        # Kept on the chart, which current_settings reads back - so the
+        # dialog opens next time on what was applied this time
         self.gantt_chart.chart_settings = self.settings.copy()
         
         logger.info("Applied chart settings: theme=%s font=%spx",

@@ -98,22 +98,47 @@ class TestTheApplicationStarts(unittest.TestCase):
         two different widgets, and a window still settling reports positions
         that go on changing. Clicking a task redraws the chart, and the bars
         stepped out of line with the rows they belong to.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The offset is settled first. Until the panes have been laid out there
+        is nothing to measure and the chart's own margin stands in, so the
+        first draw of a window still coming up is expected to differ from
+        the ones after it - that is the measurement arriving, not the rows
+        moving. What must not change is anything from there on.
         """
         chart = self.app.gantt_chart
-        first = chart._drawn_top_margin
+        chart.draw_chart()
+        self.app.update_idletasks()
+        settled = chart._drawn_top_margin
 
         self.app.task_list.tree.selection_set(
             self.app.task_list.visible_rows()[0])
         self.app.update_all()
         self.app.update_idletasks()
-        second = chart._drawn_top_margin
+        after_a_click = chart._drawn_top_margin
 
         chart.draw_chart()
         self.app.update_idletasks()
-        third = chart._drawn_top_margin
+        after_a_redraw = chart._drawn_top_margin
 
-        self.assertEqual([first, second], [second, third],
+        self.assertEqual([settled, settled], [after_a_click, after_a_redraw],
                          "the chart's first row moved between draws")
+
+    def test_the_chart_keeps_room_for_its_own_axis(self):
+        """
+        The bars never start above the title and the date ticks.
+
+        Lining up with a task list whose rows begin higher than the chart's
+        own furniture needs would draw the first bar over the dates.
+        """
+        from gantt_app.views.gantt_chart import CHART_TOP_MARGIN
+
+        self.app.gantt_chart.draw_chart()
+        self.app.update_idletasks()
+
+        self.assertGreaterEqual(self.app.gantt_chart._drawn_top_margin,
+                                CHART_TOP_MARGIN)
 
     def test_the_rows_still_match_after_a_redraw(self):
         """The chart draws the list's rows however often it is redrawn."""

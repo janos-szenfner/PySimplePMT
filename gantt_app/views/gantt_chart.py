@@ -22,7 +22,9 @@ import customtkinter as ctk
 import plotly.graph_objects as go
 
 from gantt_app.models import Project
-from gantt_app.utils.chart_figure import build_gantt_figure, DEFAULT_WIDTH
+from gantt_app.utils.chart_figure import (
+    build_gantt_figure, DEFAULT_WIDTH, DEFAULT_SETTINGS,
+)
 from PIL import ImageTk
 
 from gantt_app.utils.chart_render import (
@@ -494,10 +496,16 @@ class GanttChart(ctk.CTkFrame):
             return CHART_TOP_MARGIN
 
         offset = int(rows_top - frame_top)
-        if offset <= 0 or not settled:
+        if not settled:
             # Not laid out yet; the chart's own margin stands in, and
             # nothing is remembered
             return CHART_TOP_MARGIN
+
+        # The chart carries a title and a row of dates above its first bar,
+        # and they need the room. Where the list's rows begin higher up than
+        # that, the two cannot be lined up without drawing bars over the date
+        # axis - so the axis keeps its room and the panes go slightly out.
+        offset = max(offset, CHART_TOP_MARGIN)
 
         self._row_offset = offset
         logger.debug("Chart rows start %dpx down, to match the task list",
@@ -530,22 +538,45 @@ class GanttChart(ctk.CTkFrame):
 
         return top + self.task_list.GRID_ROW_HEIGHT, False
 
-    def _figure_settings(self):
+    def current_settings(self):
         """
-        Collect the appearance settings passed to the renderers.
+        The appearance settings the chart is drawing with.
+
+        RETURNS:
+        --------
+        dict
+            Every key chart_figure.DEFAULT_SETTINGS names, with whatever has
+            been applied on top.
 
         DEVELOPMENT NOTES:
         ------------------
-        The settings dialog writes both into chart_settings and onto the
-        individual colour attributes, so both are merged here rather than the
-        renderer having to know about the widget.
+        The one answer to what the chart looks like. The settings live in two
+        places - a dict for most of it and three loose attributes for the
+        colours the dialog used to set directly - so they are merged here
+        rather than every caller having to know about both.
+
+        The settings dialog seeds itself from this. It used to build its own
+        dict instead, taking three colours from the attributes and hardcoding
+        the other five, so reopening it showed a font size of 12 and the
+        Default theme however the chart had been set - and pressing Apply
+        without touching anything wrote those defaults back over what the
+        user had chosen.
         """
-        settings = dict(getattr(self, 'chart_settings', {}) or {})
-        settings.setdefault('task_color', self.task_color)
-        settings.setdefault('milestone_color', self.milestone_color)
+        # Three layers, each overriding the one before it: what a chart
+        # looks like by default, then the colours held on this widget, then
+        # whatever was last applied through the settings dialog - which sets
+        # both, so the two agree from then on.
+        settings = dict(DEFAULT_SETTINGS)
+        settings['task_color'] = self.task_color
+        settings['milestone_color'] = self.milestone_color
         settings['dependency_color'] = self.dependency_color
         settings['critical_path_color'] = self.critical_path_color
+        settings.update(getattr(self, 'chart_settings', {}) or {})
         return settings
+
+    def _figure_settings(self):
+        """The settings handed to the renderers; see current_settings."""
+        return self.current_settings()
 
     def _release_photo(self):
         """
