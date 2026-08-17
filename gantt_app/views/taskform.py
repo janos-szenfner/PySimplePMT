@@ -25,7 +25,7 @@ from typing import Optional, Callable
 
 import customtkinter as ctk
 
-from gantt_app.models import Task, Project, TASK_TYPES
+from gantt_app.models import Task, Project, TASK_TYPES, CONTAINER_TYPES
 from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
@@ -194,15 +194,40 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """Whether the type menu is fixed."""
         return False
 
+    def _chosen_task_type(self) -> str:
+        """
+        The type the form is currently set to.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The menu rather than the task behind it, so choosing Phase greys the
+        boxes a Phase does not own straight away. Read off the template, these
+        answered for the type the task was *saved* as: a task switched to Phase
+        kept live date boxes until it had been saved and reopened.
+
+        Falls back to the template while the form is still being built, and for
+        the create dialog's milestone form, which has no type menu at all.
+        """
+        variable = getattr(self, 'task_type_var', None)
+        chosen = variable.get() if variable is not None else ''
+        return chosen or self.form_template().task_type
+
+    def _chosen_milestone(self) -> bool:
+        """Whether the form is currently describing a milestone."""
+        variable = getattr(self, 'is_milestone_var', None)
+        if variable is not None:
+            return bool(variable.get())
+        return self.form_template().effective_milestone
+
     def _should_show_dates(self) -> bool:
         """Whether date fields should be shown and editable."""
-        template = self.form_template()
-        return template.can_edit_dates
+        return self._chosen_task_type() not in CONTAINER_TYPES
 
     def _should_show_duration(self) -> bool:
         """Whether duration field should be shown and editable."""
-        template = self.form_template()
-        return template.can_edit_duration
+        if self._chosen_task_type() in CONTAINER_TYPES:
+            return False
+        return not self._chosen_milestone()
 
     def _should_show_progress(self) -> bool:
         """Whether progress field should be shown and editable."""
@@ -380,6 +405,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 5))
 
         self._watch_fields()
+        self._watch_type()
         self._check_fields()
 
     def _build_general(self, frame):
@@ -449,6 +475,25 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
         self._field(frame, "Type:", self.task_type_menu)
+
+    def _watch_type(self):
+        """
+        Re-apply which boxes are live when the type changes.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Attached once the form is built rather than in _build_type, which the
+        create dialog replaces with one of its own - the trace would have gone
+        with it, and only the edit dialog would have kept up.
+
+        A Phase or a Deliverable takes its dates and its length from the work
+        inside it, so those boxes stop being the user's the moment the type is
+        chosen rather than the next time the form happens to update.
+        """
+        variable = getattr(self, 'task_type_var', None)
+        if variable is None:
+            return                      # a milestone has no type menu
+        variable.trace_add("write", lambda *_args: self._update_field_states())
 
     def _build_parent(self, frame):
         """Name the parent, or offer a choice of one."""
@@ -635,7 +680,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """
         if self._recalculating:
             return
-        if getattr(self, 'duration_entry', None) is None:
+        if (getattr(self, 'duration_entry', None) is None
+                or getattr(self, 'scheduling_options_var', None) is None):
             return                      # the form is still being built
 
         self._recalculating = True
@@ -767,18 +813,16 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         while a pair of dates is being retyped, and putting "-87" in the box
         on the way would leave it there if the user stopped at that point.
         The end date falling before the start is what the form says instead.
+
+        Written through the variable rather than into the widget. A disabled
+        entry refuses delete() and insert() outright, which is why the state
+        was being flipped around them, and the variable is what the box shows
+        either way - so the box the mode has greyed out still updates.
         """
         if days < 1:
             return
 
-        entry = self.duration_entry
-        disabled = str(entry.cget('state')) == tk.DISABLED
-        if disabled:
-            entry.configure(state=tk.NORMAL)
-        entry.delete(0, tk.END)
-        entry.insert(0, str(days))
-        if disabled:
-            entry.configure(state=tk.DISABLED)
+        self.duration_var.set(str(days))
 
     def _read_schedule(self):
         """
@@ -848,10 +892,26 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._recalculate_schedule()
 
     def _build_duration(self, frame):
-        """The duration entry field."""
+        """
+        The duration entry field.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Watched through a variable, like the checked fields in formcheck, so
+        the box the mode is deriving fills itself in as the duration is typed.
+        The three date fields were watched and this one was not, so on the
+        setting every task opens with - End date is calculated - typing a
+        duration changed nothing on screen. The end date caught up only when
+        Save read the form, which meant the number in front of the user and
+        the date beside it disagreed right up until the task was saved.
+
+        The initial value is set before the trace is attached. The scheduling
+        menu is built after this box, so a trace firing here would run
+        _fill_calculated_field before there was a mode for it to read.
+        """
         # Check if duration should be editable for this task type
         duration_editable = self._should_show_duration()
-        
+
         duration = self.template.duration
         if duration is None:
             # Calculate from dates if not manually set
@@ -863,14 +923,33 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             # task with two dates on the same form reads as a mistake
             duration = self.working_calendar.working_days_between(
                 self.template.start_date, self.template.end_date)
-        self.duration_entry = ctk.CTkEntry(frame)
-        if duration is not None:
-            self.duration_entry.insert(0, str(duration))
+
+        self.duration_var = ctk.StringVar(
+            value="" if duration is None else str(duration)
+        )
+        self.duration_entry = ctk.CTkEntry(frame,
+                                           textvariable=self.duration_var)
+        self.duration_var.trace_add('write', self._duration_edited)
         self._field(frame, "Duration:", self.duration_entry)
-        
+
         # A milestone has no length, and a container's is its children's
         if not duration_editable:
             self._set_field_enabled(self.duration_entry, False)
+
+    def _duration_edited(self, *_args):
+        """
+        Work the calculated box out again, the duration having changed.
+
+        Guarded like formcheck's watcher: a variable's trace can fire while
+        the dialog is being torn down, when the boxes it would read are gone.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        self._recalculate_schedule()
 
     def _build_earliest_begin(self, frame):
         """
@@ -1110,16 +1189,21 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         Un-ticking counts as having been in the end date box: the user has
         just asked for a task that needs one, so an empty box is worth
         pointing at right away rather than waiting for them to click into it.
+
+        Which boxes are live is left to _update_field_states rather than being
+        decided here. Enabling the end date directly handed it back even when
+        the scheduling mode was deriving it, so the box was typable and then
+        overwritten. Working the schedule out afterwards is what fills the end
+        date in the moment a milestone becomes a task again, rather than
+        leaving the box empty until something else is typed.
         """
         if not self.end_date_entry:
             return
-        milestone = self.is_milestone_var.get()
-        self.end_date_entry.configure(
-            state=tk.DISABLED if milestone else tk.NORMAL
-        )
-        if not milestone:
+        if not self.is_milestone_var.get():
             self._touched.add('end_date')
-        self._check_fields()
+
+        self._update_field_states()
+        self._recalculate_schedule()
 
 
 

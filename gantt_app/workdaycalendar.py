@@ -54,6 +54,7 @@ below comes from the standard library directly.
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, Optional, Set, Tuple, Union
+import importlib.util
 import logging
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,111 @@ DEFAULT_NON_WORKING_DAYS: Set[int] = {SATURDAY, SUNDAY}
 #: as several million days would otherwise spin here rather than being drawn
 #: wrong and noticed.
 MAX_STEPS = 200_000
+
+#: The 27 EU member states, by ISO 3166-1 alpha-2 code.
+#:
+#: Held here rather than in the dialog that lists them: which countries a
+#: calendar can observe is a property of the calendar, and the dialog is one
+#: way of choosing among them.
+EU_COUNTRIES: Dict[str, str] = {
+    "AT": "Austria", "BE": "Belgium", "BG": "Bulgaria", "HR": "Croatia",
+    "CY": "Cyprus", "CZ": "Czechia", "DK": "Denmark", "EE": "Estonia",
+    "FI": "Finland", "FR": "France", "DE": "Germany", "GR": "Greece",
+    "HU": "Hungary", "IE": "Ireland", "IT": "Italy", "LV": "Latvia",
+    "LT": "Lithuania", "LU": "Luxembourg", "MT": "Malta", "NL": "Netherlands",
+    "PL": "Poland", "PT": "Portugal", "RO": "Romania", "SK": "Slovakia",
+    "SI": "Slovenia", "ES": "Spain", "SE": "Sweden",
+}
+
+#: Whether the missing-package warning has already been given. Resolving a
+#: year of holidays is attempted on every redraw of a plan whose calendar
+#: names a country, and a log line per attempt would bury everything else.
+_holidays_package_reported = False
+
+
+def holidays_available() -> bool:
+    """
+    Whether public holidays can be looked up at all.
+
+    RETURNS:
+    --------
+    bool
+        True when the optional `holidays` package is installed. The dialog
+        asks so it can say why the countries it is offering will not take
+        effect, rather than letting the user tick 27 boxes for nothing.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Asks the import system rather than importing, which is both cheaper and
+    honest about what is being tested: whether the package is there, not
+    whether it works. A package that is present but broken raises where it is
+    actually used, in country_holidays, which already copes.
+    """
+    try:
+        return importlib.util.find_spec('holidays') is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def country_holidays(codes: Iterable[str], year: int) -> Set[date]:
+    """
+    Every public holiday in the given countries for one year.
+
+    PARAMETERS:
+    -----------
+    codes : Iterable[str]
+        ISO 3166-1 alpha-2 country codes.
+    year : int
+        The calendar year to resolve.
+
+    RETURNS:
+    --------
+    Set[date]
+        The union across the countries: a date that is a holiday in any of
+        them is in the set. Empty when the `holidays` package is missing.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The package is asked rather than a table being kept here, because roughly
+    half of these are Easter-dependent - Good Friday, Easter Monday, Whit
+    Monday - and computing the paschal full moon per country per year is not
+    something to reimplement badly. It also tracks the one-off substitutions
+    that several member states make when a holiday falls on a weekend.
+
+    `country_holidays()` is the package's documented entry point. The obvious
+    `getattr(holidays, code)` works too but reaches into whatever the module
+    happens to expose, and a code that is not a country - or one that collides
+    with something else in the namespace - fails in a way that is hard to read.
+
+    A code the package does not know is skipped with a warning rather than
+    raising. The calendar is loaded from a project file, and one unknown code
+    in it should cost that country's holidays, not the plan.
+    """
+    global _holidays_package_reported
+
+    try:
+        import holidays as holidays_package
+    except ImportError:
+        if not _holidays_package_reported:
+            _holidays_package_reported = True
+            logger.warning(
+                "The 'holidays' package is not installed, so public holidays "
+                "are not applied and plans are scheduled on weekends alone. "
+                "Install it with: pip install holidays"
+            )
+        return set()
+
+    merged: Set[date] = set()
+    for code in codes:
+        try:
+            found = holidays_package.country_holidays(code, years=year)
+        except (NotImplementedError, KeyError, AttributeError):
+            logger.warning("No holiday calendar for country %r; ignoring it",
+                           code)
+            continue
+        merged.update(found.keys())
+
+    return merged
 
 
 def as_date(value: DateLike) -> date:
@@ -102,6 +208,12 @@ class WorkingCalendar:
         (month, day) pairs not worked in any year - the fixed-date national
         holidays a plan spanning several years would otherwise have to list
         once per year.
+    countries : Set[str]
+        ISO country codes whose public holidays are not worked. The union
+        applies: a date that is a holiday in any of them is a holiday here.
+        Resolved a year at a time through the `holidays` package - see
+        country_holidays - which is what gets Easter Monday and the rest of
+        the movable feasts right without any of them being listed.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -111,12 +223,20 @@ class WorkingCalendar:
     such a calendar is treated as working every day and says so in the log:
     an unusable calendar should degrade to plain calendar-day arithmetic, not
     take the window down with it.
+
+    The four sources of a non-working day are deliberately all in one class.
+    Country holidays could have been a calendar of their own - the obvious
+    shape, and the wrong one: everything that schedules would then have to know
+    which kind of calendar it had, and the arithmetic would exist twice. A
+    calendar answers is_working_day; where the answer came from is its own
+    business.
     """
 
     def __init__(self,
                  non_working_days: Optional[Iterable[int]] = None,
                  holidays: Optional[Iterable[DateLike]] = None,
-                 recurring_holidays: Optional[Iterable[Tuple[int, int]]] = None):
+                 recurring_holidays: Optional[Iterable[Tuple[int, int]]] = None,
+                 countries: Optional[Iterable[str]] = None):
         self.non_working_days: Set[int] = (
             set(non_working_days) if non_working_days is not None
             else set(DEFAULT_NON_WORKING_DAYS)
@@ -125,10 +245,61 @@ class WorkingCalendar:
         self.recurring_holidays: Set[Tuple[int, int]] = {
             (int(month), int(day)) for month, day in (recurring_holidays or ())
         }
+        self.countries: Set[str] = {
+            str(code).strip().upper() for code in (countries or ())
+            if str(code).strip()
+        }
         #: Whether the "no weekday is worked" warning has already been given.
         #: It is answered on every date the calendar is asked about, and a
         #: single redraw asks about thousands.
         self._empty_week_reported = False
+        #: Public holidays already worked out, by year; see _country_holidays.
+        self._country_cache: Dict[int, Set[date]] = {}
+
+    # ---- public holidays by country ------------------------------------
+
+    def set_countries(self, codes: Iterable[str]) -> None:
+        """
+        Choose whose public holidays this calendar observes.
+
+        PARAMETERS:
+        -----------
+        codes : Iterable[str]
+            ISO 3166-1 alpha-2 country codes. An empty list observes none.
+        """
+        self.countries = {
+            str(code).strip().upper() for code in codes if str(code).strip()
+        }
+        self._country_cache.clear()
+
+    def _country_holidays(self, year: int) -> Set[date]:
+        """
+        Every public holiday in the selected countries for one year.
+
+        RETURNS:
+        --------
+        Set[date]
+            The union across the selected countries. Empty when none are
+            selected, or when the `holidays` package is not installed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Worked out a year at a time and kept, because is_working_day is called
+        for every day of every task on every redraw and building a country's
+        year is not free.
+
+        The `holidays` package is an optional dependency, like openpyxl for the
+        spreadsheets. Missing, the countries are simply not observed and the
+        plan is scheduled on weekends alone - a wrong holiday list is worth
+        less than a plan that will not open. It is said once, not once per
+        date.
+        """
+        if not self.countries:
+            return frozenset()
+
+        if year not in self._country_cache:
+            self._country_cache[year] = country_holidays(self.countries, year)
+        return self._country_cache[year]
 
     # ---- what the calendar is ------------------------------------------
 
@@ -144,8 +315,9 @@ class WorkingCalendar:
         RETURNS:
         --------
         bool
-            False for a non-working weekday, a listed holiday or a recurring
-            holiday; True otherwise.
+            False for a non-working weekday, a listed holiday, a recurring
+            holiday, or a public holiday in any country the calendar observes;
+            True otherwise.
         """
         if not self.works_any_weekday:
             # See the note on the class: an empty week is no calendar at all
@@ -164,6 +336,8 @@ class WorkingCalendar:
         if (day.month, day.day) in self.recurring_holidays:
             return False
         if day in self.holidays:
+            return False
+        if day in self._country_holidays(day.year):
             return False
         return True
 
@@ -318,13 +492,20 @@ class WorkingCalendar:
     # ---- storage --------------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the calendar to a JSON-safe dictionary."""
+        """
+        Convert the calendar to a JSON-safe dictionary.
+
+        The countries are saved, not the dates they resolve to. A plan reopened
+        in a later year needs that year's holidays, and a list of dates worked
+        out today would run out; the codes go on answering for any year.
+        """
         return {
             'non_working_days': sorted(self.non_working_days),
             'holidays': sorted(day.isoformat() for day in self.holidays),
             'recurring_holidays': sorted(
                 [month, day] for month, day in self.recurring_holidays
             ),
+            'countries': sorted(self.countries),
         }
 
     @classmethod
@@ -364,8 +545,14 @@ class WorkingCalendar:
                 logger.warning("Ignoring unreadable recurring holiday %r",
                                entry)
 
+        countries = []
+        for entry in data.get('countries') or ():
+            code = str(entry).strip().upper()
+            if code:
+                countries.append(code)
+
         return cls(non_working_days=non_working, holidays=holidays,
-                   recurring_holidays=recurring)
+                   recurring_holidays=recurring, countries=countries)
 
     def __eq__(self, other: object) -> bool:
         """Two calendars are the same when they name the same days."""
@@ -373,12 +560,14 @@ class WorkingCalendar:
             return NotImplemented
         return (self.non_working_days == other.non_working_days
                 and self.holidays == other.holidays
-                and self.recurring_holidays == other.recurring_holidays)
+                and self.recurring_holidays == other.recurring_holidays
+                and self.countries == other.countries)
 
     def __repr__(self) -> str:
         return (f"WorkingCalendar(non_working_days={sorted(self.non_working_days)}, "
                 f"holidays={len(self.holidays)}, "
-                f"recurring_holidays={len(self.recurring_holidays)})")
+                f"recurring_holidays={len(self.recurring_holidays)}, "
+                f"countries={sorted(self.countries)})")
 
 
 #: The calendar used when nothing else has been said: Monday to Friday, no

@@ -82,6 +82,11 @@ bundle('plotly')
 bundle('tkinterweb')
 bundle('tkinterweb_tkhtml')
 
+# Every country calendar is its own module, imported by name at runtime, so
+# nothing static references them and PyInstaller would bundle none of them.
+# Optional: without it the EU holiday calendar degrades to weekends alone.
+bundle('holidays', optional=True)
+
 hiddenimports += [
     'plotly.graph_objects',
     'plotly.io',

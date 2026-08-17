@@ -914,6 +914,7 @@ class Toolbar(ctk.CTkFrame):
                     # Renaming the project is not a create action, so it sits
                     # beside Create rather than inside it
                     {"text": "Project Title...", "command": self.edit_project_info},
+                    {"text": "EU Holidays...", "command": self.edit_eu_holidays},
                 ],
             },
             {
@@ -1223,6 +1224,39 @@ class Toolbar(ctk.CTkFrame):
                 if self.on_project_changed:
                     self.on_project_changed()
     
+    def edit_eu_holidays(self):
+        """
+        Choose whose public holidays the plan observes.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The dialog hands back country codes and nothing else; what they mean
+        is the calendar's - see gantt_app.workdaycalendar. Setting them on the
+        project's calendar is enough to change every date in the plan, because
+        every date in the plan is worked out through it.
+
+        Applied through Project.set_holiday_countries rather than by writing to
+        the calendar directly, so every task keeps the work it holds and its
+        finish moves instead - see that method. The chart is redrawn afterwards
+        through on_project_changed.
+        """
+        from gantt_app.views.holidaydialog import choose_eu_holidays
+
+        def apply(codes):
+            """Observe the chosen countries, and settle the plan on them."""
+            if set(codes) == self.project.calendar.countries:
+                return
+
+            self.project.set_holiday_countries(codes)
+            logger.info("Project %r now observes holidays for %s",
+                        self.project.name,
+                        ', '.join(sorted(codes)) if codes else 'no countries')
+            if self.on_project_changed:
+                self.on_project_changed()
+
+        choose_eu_holidays(self.master,
+                           sorted(self.project.calendar.countries), apply)
+
     def save_project(self):
         """Save the current project to a JSON file."""
         # Ask for file path

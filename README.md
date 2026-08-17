@@ -30,6 +30,7 @@ This is a complete implementation of a project management tool with:
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
+- **EU Public Holidays**: Actions → EU Holidays... picks any of the 27 member states, and a date that is a public holiday in *any* of them becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Ctrl/Cmd+C, X and V. Copying a phase copies the phase row, not the work underneath it; cut rows are greyed until they are pasted, and what arrives lands beside the row you pasted from and is left selected. Paste is offered only where the item belongs - a phase does not go inside a task. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
@@ -59,6 +60,7 @@ gantt_app/
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
+│   ├── holidaydialog.py   # Picks whose public holidays the plan observes
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── log_window.py      # Application log viewer
@@ -120,8 +122,9 @@ schedule wrong over a weekend:
 A duration is stated in the first and drawn in the second. The rules:
 
 1. **The calendar** names the non-working weekdays - Saturday and Sunday by
-   default - plus any holidays, either on fixed dates or recurring every year.
-   It belongs to the project and is saved with it, so a plan imported from a
+   default - plus any holidays: fixed dates, dates recurring every year, and
+   the public holidays of any countries the project observes (see below). It
+   belongs to the project and is saved with it, so a plan imported from a
    GanttProject file keeps the holidays that file declared.
 2. **A finish is walked, not added.** Starting at the start date, the calendar
    is stepped through a day at a time and one day of duration is spent only on
@@ -144,6 +147,38 @@ Everything that turns a duration into dates goes through it - the task form's
 three scheduling modes, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
+
+#### Public holidays across the EU (`views/holidaydialog.py`)
+
+**Actions → EU Holidays...** opens a picker listing the 27 member states, with
+All and Clear buttons for the whole list. The selection is saved with the
+project.
+
+The rule is the **union**: a date that is a public holiday in *any* selected
+country is a non-working day for the plan. That is what a project worked in
+several countries at once needs - work does not happen on a day half the team
+is off. Selecting nothing leaves the plan on weekends alone.
+
+Holidays are resolved a calendar year at a time through the
+[`holidays`](https://pypi.org/project/holidays/) package, which is why the
+Easter-dependent ones - Good Friday, Easter Monday, Whit Monday - and the
+substitutions several member states make when a holiday falls on a weekend all
+come out right without anything being listed by hand. What is stored is the
+country codes, not the dates: a plan reopened in a later year needs that year's
+holidays, and a list worked out today would run out.
+
+Applying a selection goes through `Project.set_holiday_countries()`, which reads
+every task's working duration under the *old* calendar and rebuilds its dates
+under the new one. A day that has just become a holiday therefore pushes
+finishes out rather than quietly eating the work that was planned for it - ten
+days of work stay ten days of work. Changing the selection back moves the plan
+back, which is how the change is undone; it is not on the undo stack.
+
+`holidays` is an optional dependency, like openpyxl for the spreadsheets.
+Without it the picker still opens and still saves the selection - so a plan
+carrying one is not silently emptied - but it says on the face of it that the
+choice takes effect once the package is installed, and the plan is scheduled on
+weekends alone until then.
 
 ### Completion
 
@@ -265,8 +300,8 @@ on any desktop does:
 - **Project**: New Project, Load Project, Save Project
 - **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (Mermaid, HTML, SVG,
   PNG, PDF, XLSX)
-- **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone), and
-  Project Title
+- **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
+  Project Title, and EU Holidays
 - **Edit**: Undo, Redo, Cut, Copy, Paste
 - **View**: Toggle Theme, Settings
 - **Log**: Opens the application log window, at the end of the row
@@ -403,7 +438,7 @@ Print the active path with `pysimplepmt --log-file`.
 
 ### Required Dependencies
 ```bash
-pip install customtkinter plotly tkinterweb pillow openpyxl
+pip install customtkinter plotly tkinterweb pillow openpyxl holidays
 ```
 
 Or install everything from the requirements file:
@@ -413,6 +448,10 @@ pip install -r requirements.txt
 
 `openpyxl` is required for Excel XLSX import and export. Without it the app
 still runs, but the Import XLSX and Export XLSX actions report an error.
+
+`holidays` supplies the public holidays behind Actions → EU Holidays.... Without
+it the app still runs and the picker still saves a selection, but no holiday is
+applied and plans are scheduled on weekends alone.
 
 ### Optional Dependencies
 ```bash
@@ -901,12 +940,15 @@ belongs to the `Project`, is saved alongside it, and is what every duration in
 the application is counted against, so a plan created in the editor is
 scheduled the same way one imported from GanttProject is. What that leaves:
 
-- **Editing the calendar from the application**: the weekend rule and the
-  holiday list can be carried in from an imported file, but there is no dialog
-  for changing them afterwards.
-- **Holiday presets**: GanttProject ships regional calendars (the sample file
-  carries a Hungarian one); the same list could be offered when starting a
-  project from scratch.
+- **Editing the weekend rule from the application**: public holidays are
+  chosen through Actions → EU Holidays..., but which weekdays are worked can
+  only be carried in from an imported file, not changed afterwards. A plan
+  worked Sunday to Thursday is expressible in the model and not yet in the UI.
+- **Countries outside the EU**: the picker offers the 27 member states. The
+  calendar itself takes any ISO country code the `holidays` package knows, so
+  widening the list is a change to the dialog alone.
+- **Undo for a calendar change**: changing the selection back moves the plan
+  back, but it is not on the undo stack with the task edits.
 - **GAN export**: durations can now be reconstructed in working days, so the
   export the importer has no counterpart for has what it needs.
 - **Full critical path analysis**: `get_critical_path()` measures accumulated
@@ -918,5 +960,5 @@ scheduled the same way one imported from GanttProject is. What that leaves:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.24.0
+**Version**: 1.25.0
 **Last Updated**: 2026-08-17

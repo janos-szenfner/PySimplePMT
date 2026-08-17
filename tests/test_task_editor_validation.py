@@ -641,6 +641,132 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
 
         self.assertEqual(caption, TaskFormDialog.FIELD_TEXT)
 
+class TestTheCalculatedBoxKeepsUp(EditorTestCase):
+    """
+    The box the mode is deriving updates as the form is filled in.
+
+    WHY THESE EXIST:
+    ================
+    The three date fields were watched through a variable and the duration box
+    was not, so on the setting every task opens with - End date is calculated -
+    typing a duration changed nothing on screen. The end date caught up only
+    when Save read the form back, which meant the number in front of the user
+    and the date beside it disagreed right up until the task was saved.
+
+    Dates here are read against a Monday-to-Friday calendar: the fixture task
+    starts on Monday 5 January 2026.
+    """
+
+    def setUp(self):
+        """Move the fixture onto a Monday so the weekends are predictable."""
+        super().setUp()
+        self.task.start_date = datetime(2026, 1, 5)
+        self.task.end_date = datetime(2026, 1, 7)
+
+    def shown(self, widget):
+        """What a box currently shows."""
+        from gantt_app.views.datepicker import DateEntry
+
+        entry = widget.entry if isinstance(widget, DateEntry) else widget
+        return entry.get()
+
+    def test_typing_a_duration_moves_the_end_date(self):
+        """Ten days from the Monday reaches the Friday of the second week."""
+        dialog = self.edit_dialog()
+
+        self.type_into(dialog.duration_entry, "10")
+
+        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-16")
+        self.assertEqual(self.callback_errors, [])
+
+    def test_typing_a_duration_moves_the_start_date(self):
+        """The mirror, for a plan working back from a finish date."""
+        dialog = self.edit_dialog()
+        dialog.scheduling_options_var.set("Start date is calculated")
+
+        self.type_into(dialog.duration_entry, "3")
+
+        self.assertEqual(self.shown(dialog.start_date_entry), "2026-01-05")
+
+    def test_typing_a_date_moves_the_duration(self):
+        """The other direction was already watched, and stays watched."""
+        dialog = self.edit_dialog()
+        dialog.scheduling_options_var.set("Duration is calculated")
+
+        self.type_into(dialog.end_date_entry, "2026-01-09")
+
+        self.assertEqual(self.shown(dialog.duration_entry), "5")
+
+    def test_the_end_date_follows_the_start_date_too(self):
+        """Moving the start with a duration typed moves the finish with it."""
+        dialog = self.edit_dialog()
+
+        self.type_into(dialog.duration_entry, "5")
+        self.type_into(dialog.start_date_entry, "2026-01-12")
+
+        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-16")
+
+    def test_a_weekend_is_crossed_as_the_duration_is_typed(self):
+        """
+        What the box shows is what the scheduler would settle on.
+
+        Five days from a Thursday ends on the following Wednesday. A form
+        working in calendar days would have shown the Monday, and saving it
+        would then have moved the task - the form disagreeing with the plan
+        the moment it was saved.
+        """
+        dialog = self.edit_dialog()
+
+        self.type_into(dialog.start_date_entry, "2026-01-01")
+        self.type_into(dialog.duration_entry, "5")
+
+        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-07")
+
+    def test_an_unreadable_duration_leaves_the_date_alone(self):
+        """
+        Half-typed input is what typing looks like.
+
+        The box is written to on every keystroke, so a duration that is not a
+        number yet cannot be allowed to raise or to blank the date beside it.
+        """
+        dialog = self.edit_dialog()
+        before = self.shown(dialog.end_date_entry)
+
+        self.type_into(dialog.duration_entry, "")
+        self.type_into(dialog.duration_entry, "nonsense")
+
+        self.assertEqual(self.shown(dialog.end_date_entry), before)
+        self.assertEqual(self.callback_errors, [])
+
+    def test_un_ticking_milestone_fills_the_end_date_in(self):
+        """
+        A milestone becoming a task again gets its finish worked out.
+
+        The end date box was enabled directly rather than through the form's
+        own rules, so it came back empty and typable even though the mode was
+        deriving it.
+        """
+        dialog = self.edit_dialog()
+        dialog.is_milestone_var.set(True)
+        dialog.toggle_milestone()
+        dialog.is_milestone_var.set(False)
+        dialog.toggle_milestone()
+
+        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-07")
+        self.assertEqual(self.callback_errors, [])
+
+    def test_choosing_a_container_type_greys_what_it_rolls_up(self):
+        """A Phase takes its dates and its length from the work inside it."""
+        import tkinter as tk
+
+        dialog = self.edit_dialog()
+        dialog.task_type_var.set("Phase")
+
+        for widget in (dialog.start_date_entry, dialog.end_date_entry,
+                       dialog.duration_entry):
+            entry = dialog._entry_of(widget)
+            self.assertEqual(str(entry.cget('state')), tk.DISABLED)
+
 
 if __name__ == '__main__':
     unittest.main()

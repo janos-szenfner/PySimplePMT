@@ -20,6 +20,7 @@ plotly>=6.9.0,<7.0.0            # Every Gantt chart: on screen and exported
 tkinterweb>=4.25.3,<5.0.0       # Embeds the Plotly chart inside Tkinter
 pillow>=12.3.0,<13.0.0          # Draws the PNG and PDF exports
 openpyxl>=3.1.5,<4.0.0          # XLSX import and export
+holidays>=0.83,<1.0.0           # Public holidays behind the EU holiday calendar
 
 # --- Transitive dependencies ---------------------------------------------
 # Listed explicitly so the packaged set is auditable and reproducible rather

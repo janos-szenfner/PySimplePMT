@@ -1879,6 +1879,92 @@ class Project:
 
         return changed
 
+    def apply_calendar(self, calendar: WorkingCalendar) -> bool:
+        """
+        Change which days the project works, holding what every task contains.
+
+        PARAMETERS:
+        -----------
+        calendar : WorkingCalendar
+            The calendar to schedule on from now on.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every task's working duration is read under the *old* calendar and its
+        dates rebuilt under the new one, so a day that has just become a
+        holiday pushes finishes out rather than quietly eating the work that
+        was planned for it.
+
+        That is the whole reason this exists rather than the caller assigning
+        to `calendar` and calling reschedule. enforce_working_calendar derives
+        a task's duration from its dates every time, which is what makes it
+        idempotent and safe to run in a loop - but it also means that adding a
+        holiday in the middle of a ten day task would have left the task where
+        it was, now holding nine days of work. The task got shorter because the
+        calendar changed, which is backwards: the work does not go away, the
+        finish moves.
+
+        Containers are skipped; their dates come from the children, which are
+        rebuilt here, and roll_up_summaries brings them along afterwards.
+        """
+        durations = {task.id: self.working_duration(task)
+                     for task in self.tasks}
+
+        self.calendar = calendar
+        moved = False
+
+        for task in self.tasks:
+            if task.is_container:
+                continue
+
+            new_start = calendar.get_next_working_day(task.start_date)
+            if task.effective_milestone or task.end_date is None:
+                new_end = None
+            else:
+                new_end = calendar.add_working_days(new_start,
+                                                    durations[task.id])
+
+            if new_start == task.start_date and new_end == task.end_date:
+                continue
+
+            task.start_date = new_start
+            task.end_date = new_end
+            moved = True
+
+        settled = self.reschedule()
+        if moved or settled:
+            self._update_dates()
+        return moved or settled
+
+    def set_holiday_countries(self, codes) -> bool:
+        """
+        Observe the public holidays of the given countries.
+
+        PARAMETERS:
+        -----------
+        codes : Iterable[str]
+            ISO 3166-1 alpha-2 country codes. A date that is a public holiday
+            in any of them becomes a non-working day; an empty list observes
+            none and leaves the plan on weekends.
+
+        RETURNS:
+        --------
+        bool
+            True when the plan moved.
+        """
+        calendar = WorkingCalendar(
+            non_working_days=self.calendar.non_working_days,
+            holidays=self.calendar.holidays,
+            recurring_holidays=self.calendar.recurring_holidays,
+            countries=codes,
+        )
+        return self.apply_calendar(calendar)
+
     def enforce_working_calendar(self) -> bool:
         """
         Put every task on working days, without changing what it holds.

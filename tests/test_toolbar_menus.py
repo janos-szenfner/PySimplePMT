@@ -93,11 +93,25 @@ class TestMenuContents(unittest.TestCase):
                           'PNG...', 'PDF...', 'XLSX...'])
 
     def test_actions_nests_create(self):
-        """Actions carries Create as a submenu, then Project Title."""
+        """Actions carries Create as a submenu, then the project-wide entries."""
         items = find(self.tree, 'Actions')['items']
 
-        self.assertEqual(labels(items), ['Create', 'Project Title...'])
+        self.assertEqual(labels(items),
+                         ['Create', 'Project Title...', 'EU Holidays...'])
         self.assertIn('submenu', items[0])
+
+    def test_eu_holidays_sits_directly_under_actions(self):
+        """
+        Choosing whose holidays the plan observes is not a create action.
+
+        It belongs beside Project Title: both change something about the whole
+        project rather than adding a row to it.
+        """
+        items = find(self.tree, 'Actions')['items']
+        entry = next(i for i in items if i['text'] == 'EU Holidays...')
+
+        self.assertNotIn('submenu', entry)
+        self.assertTrue(callable(entry['command']))
 
     def test_create_submenu_holds_only_the_create_actions(self):
         """Create offers the three things that can be created, nothing else."""

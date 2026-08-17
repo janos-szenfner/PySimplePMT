@@ -16,10 +16,15 @@ because "2026-01-03" tells a later reader nothing on its own.
 import unittest
 from datetime import date, datetime, timedelta
 
+from unittest import mock
+
 from gantt_app.models import Project, Task
 from gantt_app.workdaycalendar import (
-    CalendarTask, WorkingCalendar, default_calendar,
+    CalendarTask, EU_COUNTRIES, WorkingCalendar, country_holidays,
+    default_calendar, holidays_available,
 )
+
+HAVE_HOLIDAYS = holidays_available()
 
 
 class TestWorkingDays(unittest.TestCase):
@@ -486,6 +491,216 @@ class TestEnforcingTheCalendar(unittest.TestCase):
         self.project.enforce_working_calendar()
 
         self.assertEqual(task.end_date, datetime(2026, 1, 8))
+
+
+@unittest.skipUnless(HAVE_HOLIDAYS, "needs the holidays package")
+class TestCountryHolidays(unittest.TestCase):
+    """
+    Public holidays, taken from whichever countries the plan observes.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The dates asserted here are real national holidays, chosen because they
+    exercise the three things a hand-written list gets wrong: one country
+    having a holiday another does not, a movable Easter feast, and the union
+    across several countries.
+    """
+
+    def test_a_fixed_national_holiday_is_not_worked(self):
+        """23 October is Hungary's national day, and a Friday in 2026."""
+        calendar = WorkingCalendar(countries=["HU"])
+
+        self.assertFalse(calendar.is_working_day(date(2026, 10, 23)))
+        # The Thursday before it is an ordinary working day
+        self.assertTrue(calendar.is_working_day(date(2026, 10, 22)))
+
+    def test_a_movable_easter_holiday_is_not_worked(self):
+        """
+        Easter Monday moves every year and is never listed anywhere.
+
+        This is the reason the holidays package is asked rather than a table
+        being kept: computing the paschal full moon per country per year is
+        not something to reimplement.
+        """
+        calendar = WorkingCalendar(countries=["DE"])
+
+        self.assertFalse(calendar.is_working_day(date(2026, 4, 6)))
+        self.assertFalse(calendar.is_working_day(date(2027, 3, 29)))
+
+    def test_countries_are_merged_as_a_union(self):
+        """
+        A holiday in any selected country is a holiday for the plan.
+
+        Epiphany is a public holiday in Austria and an ordinary working day in
+        Hungary, so a plan worked in both cannot count on it.
+        """
+        hungary = WorkingCalendar(countries=["HU"])
+        both = WorkingCalendar(countries=["HU", "AT"])
+        epiphany = date(2026, 1, 6)
+
+        self.assertTrue(hungary.is_working_day(epiphany))
+        self.assertFalse(both.is_working_day(epiphany))
+
+    def test_a_holiday_lengthens_a_task_without_lengthening_its_duration(self):
+        """
+        The rule weekends already follow, applied to holidays.
+
+        Ten days of work from Monday 30 March run to the Friday of the second
+        week. In Hungary they reach the Tuesday after it instead: Good Friday
+        and Easter Monday fall inside the span and neither is worked.
+        """
+        plain = WorkingCalendar()
+        hungary = WorkingCalendar(countries=["HU"])
+        monday = date(2026, 3, 30)
+
+        self.assertEqual(plain.add_working_days(monday, 10), date(2026, 4, 10))
+        self.assertEqual(hungary.add_working_days(monday, 10),
+                         date(2026, 4, 14))
+
+    def test_a_start_on_a_holiday_moves_to_the_next_working_day(self):
+        """
+        Start-date enforcement does not care why a day is not worked.
+
+        New Year's Day 2026 is a Thursday, Hungary takes the Friday with it,
+        and the weekend follows - so work begins on the Monday.
+        """
+        calendar = WorkingCalendar(countries=["HU"])
+
+        self.assertEqual(calendar.get_next_working_day(date(2026, 1, 1)),
+                         date(2026, 1, 5))
+
+    def test_selecting_no_countries_leaves_weekends_alone(self):
+        """Clearing the list is a plan on weekends only."""
+        calendar = WorkingCalendar(countries=[])
+
+        self.assertTrue(calendar.is_working_day(date(2026, 10, 23)))
+        self.assertEqual(calendar.working_days_between(date(2026, 3, 30),
+                                                       date(2026, 4, 10)), 10)
+
+    def test_the_countries_can_be_changed_afterwards(self):
+        """Applying a new selection takes effect at once."""
+        calendar = WorkingCalendar()
+        epiphany = date(2026, 1, 6)
+        self.assertTrue(calendar.is_working_day(epiphany))
+
+        calendar.set_countries(["AT"])
+
+        self.assertFalse(calendar.is_working_day(epiphany))
+
+    def test_changing_the_countries_clears_what_was_worked_out(self):
+        """
+        The cached year is dropped, not reused.
+
+        Holidays are resolved a year at a time and kept, because is_working_day
+        runs for every day of every task on every redraw. A cache that survived
+        a change of country would answer for the old selection forever.
+        """
+        calendar = WorkingCalendar(countries=["AT"])
+        epiphany = date(2026, 1, 6)
+        self.assertFalse(calendar.is_working_day(epiphany))
+
+        calendar.set_countries(["HU"])
+
+        self.assertTrue(calendar.is_working_day(epiphany))
+
+    def test_every_eu_country_resolves(self):
+        """All 27 are known to the package; none of them is a typo here."""
+        for code in EU_COUNTRIES:
+            with self.subTest(country=code):
+                self.assertTrue(country_holidays([code], 2026))
+
+    def test_the_selection_survives_a_save(self):
+        """The codes are saved, so a plan reopened next year still knows."""
+        project = Project(name="EU",
+                          calendar=WorkingCalendar(countries=["HU", "DE"]))
+
+        reloaded = Project.from_dict(project.to_dict())
+
+        self.assertEqual(reloaded.calendar.countries, {"HU", "DE"})
+        self.assertFalse(reloaded.calendar.is_working_day(date(2026, 4, 6)))
+
+    def test_a_holiday_pushes_a_scheduled_task_out(self):
+        """
+        The whole point: the plan moves when the calendar does.
+
+        Ten days of work keep being ten days of work. Good Friday and Easter
+        Monday appearing inside the task push its finish from the Friday to
+        the Tuesday rather than costing it two days of what it holds.
+        """
+        project = Project(name="EU")
+        project.add_task(Task(id="A", name="A",
+                              start_date=datetime(2026, 3, 30),
+                              end_date=datetime(2026, 4, 10)))
+
+        project.reschedule()
+        self.assertEqual(project.get_task_by_id("A").end_date,
+                         datetime(2026, 4, 10))
+
+        project.set_holiday_countries(["HU"])
+
+        self.assertEqual(project.get_task_by_id("A").end_date,
+                         datetime(2026, 4, 14))
+        self.assertEqual(project.working_duration(project.get_task_by_id("A")),
+                         10)
+
+    def test_dropping_a_country_pulls_the_plan_back_in(self):
+        """The change is undoable by making the opposite change."""
+        project = Project(name="EU", calendar=WorkingCalendar(countries=["HU"]))
+        project.add_task(Task(id="A", name="A",
+                              start_date=datetime(2026, 3, 30),
+                              end_date=datetime(2026, 4, 14)))
+        project.reschedule()
+
+        project.set_holiday_countries([])
+
+        self.assertEqual(project.get_task_by_id("A").end_date,
+                         datetime(2026, 4, 10))
+        self.assertEqual(project.working_duration(project.get_task_by_id("A")),
+                         10)
+
+    def test_a_milestone_moves_off_a_holiday(self):
+        """A date nobody works is not a date to mark something on."""
+        project = Project(name="EU")
+        project.add_task(Task(id="M", name="M",
+                              start_date=datetime(2026, 4, 6),
+                              is_milestone=True))
+
+        project.set_holiday_countries(["DE"])
+
+        self.assertEqual(project.get_task_by_id("M").start_date,
+                         datetime(2026, 4, 7))
+        self.assertIsNone(project.get_task_by_id("M").end_date)
+
+
+class TestWithoutTheHolidaysPackage(unittest.TestCase):
+    """
+    The optional dependency being absent costs holidays, not the plan.
+
+    A wrong holiday list is worth less than a project that will not open, so a
+    missing package is logged once and the calendar carries on with weekends.
+    """
+
+    def test_an_unresolvable_country_is_simply_not_observed(self):
+        """Nothing raises, and the weekend rule still applies."""
+        calendar = WorkingCalendar(countries=["HU"])
+
+        with mock.patch('gantt_app.workdaycalendar.country_holidays',
+                        return_value=set()):
+            self.assertTrue(calendar.is_working_day(date(2026, 3, 16)))
+            self.assertFalse(calendar.is_working_day(date(2026, 3, 14)))
+            self.assertEqual(calendar.add_working_days(date(2026, 3, 9), 10),
+                             date(2026, 3, 20))
+
+    def test_an_unknown_country_code_is_skipped(self):
+        """One bad code in a saved file costs that country, not the plan."""
+        self.assertEqual(country_holidays(["ZZ"], 2026), set())
+
+    def test_the_selection_is_still_saved(self):
+        """A plan carrying countries is not silently emptied without them."""
+        calendar = WorkingCalendar(countries=["HU", "DE"])
+
+        self.assertEqual(WorkingCalendar.from_dict(calendar.to_dict()).countries,
+                         {"HU", "DE"})
 
 
 if __name__ == '__main__':
