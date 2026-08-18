@@ -42,6 +42,7 @@ from gantt_app.models import (
 # only from a button is exactly what goes missing from a frozen build
 # without anyone noticing until someone clicks it
 from gantt_app.help.dependencyhelp import DependencyHelpWindow
+from gantt_app import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -144,7 +145,7 @@ class DependencyEditor(ctk.CTkFrame):
         # tasks follow calendars of their own gives "2" three different
         # meanings unless it is spelt out which week counts it.
         ctk.CTkLabel(add_row, text="project working days",
-                     text_color="#6b7280").grid(
+                     text_color=theme.MUTED_TEXT).grid(
             row=1, column=4, columnspan=2, sticky=tk.W, padx=(4, 8),
             pady=(4, 8))
 

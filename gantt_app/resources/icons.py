@@ -13,6 +13,11 @@ Available icons:
 - task, subtask, milestone, phase, deliverable
 - cut, copy, paste, delete
 - undo, redo
+- sun, moon (the light and dark appearances)
+
+Everything here is drawn from coordinates in this file with Pillow. There is
+no bundled artwork and nothing is fetched, so the icons carry no licence of
+their own beyond this project's.
 """
 
 from typing import Dict, List
@@ -43,6 +48,8 @@ ICON_EMOJIS: Dict[str, str] = {
     'undo': '\U0001f519',          # Counterclockwise arrows
     'redo': '\U0001f51a',          # Clockwise arrows
     'info': '\U00002139',          # Information
+    'sun': '\U00002600',           # Day: the light appearance
+    'moon': '\U0001f319',          # Night: the dark appearance
 }
 
 # SVG paths (Feather Icons - open source)
@@ -263,6 +270,29 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('line', [(0.44, 0.44), (0.44, 0.74)]),
         ('line', [(0.56, 0.44), (0.56, 0.74)]),
     ],
+    # Day: a disc with eight rays. Drawn rather than set as an emoji so it
+    # matches the weight of every other icon on the bar, and so it renders
+    # the same on a machine with no colour emoji font - which is most Linux
+    # desktops, where the emoji comes out as a dotted box.
+    'sun': [
+        ('disc', [(0.34, 0.34), (0.66, 0.66)]),
+        ('line', [(0.50, 0.06), (0.50, 0.18)]),
+        ('line', [(0.50, 0.82), (0.50, 0.94)]),
+        ('line', [(0.06, 0.50), (0.18, 0.50)]),
+        ('line', [(0.82, 0.50), (0.94, 0.50)]),
+        ('line', [(0.19, 0.19), (0.28, 0.28)]),
+        ('line', [(0.72, 0.72), (0.81, 0.81)]),
+        ('line', [(0.81, 0.19), (0.72, 0.28)]),
+        ('line', [(0.28, 0.72), (0.19, 0.81)]),
+    ],
+    # Night: a disc with a second one taken out of it, which is the only way
+    # to get a crescent with a filled shape and no arc primitive. The bite is
+    # offset up and right so the crescent opens down and left, the way a
+    # waxing moon is drawn everywhere.
+    'moon': [
+        ('disc', [(0.12, 0.12), (0.88, 0.88)]),
+        ('erase', [(0.34, 0.00), (1.10, 0.76)]),
+    ],
     'undo': [
         ('line', [(0.14, 0.38), (0.60, 0.38), (0.74, 0.50),
                   (0.74, 0.64), (0.60, 0.76), (0.30, 0.76)]),
@@ -329,6 +359,13 @@ def draw_icon(name: str, size: int = 20,
             draw.ellipse([placed[0], placed[1]], outline=ink, width=width)
         elif kind == 'fill':
             draw.rectangle([placed[0], placed[1]], fill=ink)
+        elif kind == 'disc':
+            draw.ellipse([placed[0], placed[1]], fill=ink)
+        elif kind == 'erase':
+            # Written, not composited: ImageDraw sets the pixels it covers,
+            # so a fully transparent fill takes a bite out of what is already
+            # there. That is what turns a disc into a crescent.
+            draw.ellipse([placed[0], placed[1]], fill=(0, 0, 0, 0))
 
     icon = image.resize((size, size), Image.LANCZOS)
     _DRAWN[key] = icon

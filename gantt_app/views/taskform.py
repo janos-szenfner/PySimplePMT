@@ -25,6 +25,7 @@ from typing import Optional, Callable
 
 import customtkinter as ctk
 
+from gantt_app import theme
 from gantt_app.calendarregistry import describe_week
 from gantt_app.models import Task, Project, TASK_TYPES, CONTAINER_TYPES
 from gantt_app.priority import PRIORITY_LEVELS
@@ -115,10 +116,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     #: deriving it - looked exactly like the start date you are meant to
     #: type in. A shaded background and a grey caption is how every other
     #: form says a field is not yours to fill.
-    FIELD_BG = '#ffffff'
-    FIELD_BG_DISABLED = '#ebecee'
-    FIELD_TEXT = '#1a1a1a'
-    FIELD_TEXT_DISABLED = '#8a8f96'
+    #: (light, dark) pairs, from gantt_app.theme. Written as single strings
+    #: these were used in both appearances, so the form that read perfectly
+    #: in light turned into near-black labels on a near-black panel in dark.
+    FIELD_BG = theme.FIELD_BG
+    FIELD_BG_DISABLED = theme.FIELD_BG_DISABLED
+    FIELD_TEXT = theme.FIELD_TEXT
+    FIELD_TEXT_DISABLED = theme.FIELD_TEXT_DISABLED
 
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {

@@ -33,6 +33,7 @@ This is a complete implementation of a project management tool with:
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Day / Night Theme**: follows the desktop by default and keeps following it — the window switches when the OS does. The toolbar's ☀ **Day** / 🌙 **Night** button flips it by hand and detaches from the OS; **Sync with system** appears beside it only while that override is in force. Also under View → System UI mode. The choice is remembered between runs
 - **Per-Task Calendars**: a task may follow a calendar of its own instead of the plan's — a weekend-only shift for a migration that can only touch production on a Saturday, a 24/7 run for an unattended load test. Set from the task editor's **Working calendar** dropdown, which re-dates the task as soon as it is picked. Three presets come with every plan; a task that names none follows the project's calendar exactly as before
 - **Working Week**: Actions → Calendar Settings... → Working Week sets which weekdays are worked at all — a six-day week, a four-day week, or the standard Monday to Friday. Durations are held and finishes move, so putting Saturday to work pulls finishes in rather than lengthening tasks. A week with no working day in it is refused
 - **Manual Date Overrides**: Actions → Calendar Settings... → Manual Overrides rules on one named date at a time, and **outranks everything else** — a Saturday named as a make-up day is worked, and an ordinary Tuesday named as a company shutdown is not, whatever the weekend and holiday rules say. Each carries an optional reason, and deleting one puts the date back under the ordinary rules. Saved with the project
@@ -52,6 +53,7 @@ gantt_app/
 ├── models.py              # Task and Project data models
 ├── workdaycalendar.py     # Working days, weekends, holidays, overrides
 ├── calendarregistry.py    # Named calendars, and which one a task follows
+├── theme.py               # Light or dark, who decides it, and the palette
 ├── main.py                # Main application entry point
 ├── run.py                 # Entry point script
 │
@@ -172,6 +174,58 @@ Everything that turns a duration into dates goes through it - the task form's
 three scheduling modes, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
+
+#### Light and dark (`theme.py`)
+
+Two things decide what the window looks like, and they are deliberately
+separate: the **mode** is what the user asked for, and the **appearance** is
+what that resolves to today. Only one mode can have the two drift apart.
+
+| Mode | Appearance | Follows the OS |
+| --- | --- | --- |
+| `system` (default) | whatever the desktop says | yes, continuously |
+| `light` | always Day | no |
+| `dark` | always Night | no |
+
+**The toolbar control** sits at the end of the icon row behind its own
+divider — it is a setting rather than an action on the plan. It shows a sun
+and *Day* while light, a moon and *Night* while dark: the appearance it is
+**in**, not what a press would do, which is the only reading that makes sense
+next to a sun. Pressing it flips the appearance and takes manual control.
+
+**Sync with system** appears beside it *only while a manual choice is in
+force*, and its presence is the status indicator. A permanent "Following
+system" badge is chrome nobody reads after the first day; a control that
+appears when — and only when — there is something to undo says the same thing
+and costs nothing the rest of the time. The same three modes are under
+**View → System UI mode**.
+
+The desktop setting is **polled**, once every few seconds, and only while the
+mode is `system`. There is no portable way to subscribe to it, and
+CustomTkinter's own `set_appearance_mode("system")` re-reads it thirty times a
+second — which on Linux means running `gsettings` in a subprocess thirty times
+a second, for a setting that changes about twice a day. That is why this
+application stopped using it. An explicit light or dark choice stops the poll
+entirely, since there is then nothing for it to discover.
+
+**Every colour is a (light, dark) pair.** That is the whole of the second
+half of this module, and it is not a style preference. CustomTkinter uses a
+colour written as a *single* string in **both** appearances, so a form full of
+them reads perfectly to whoever wrote it and turns into near-black labels on a
+near-black panel for everyone in dark mode — which is exactly what the task
+editor did. The light half of every pair is the colour the application already
+used, so the Day appearance is unchanged to the pixel; the dark half is chosen
+to hold the same *contrast* against its own background rather than the same
+hue. A test measures the WCAG ratio of every text-on-background combination in
+both appearances, because eyes are what missed it the first time.
+
+The toolbar icons are drawn **twice**, once in each ink. `CTkImage` picks
+between a light and a dark image, and handing it the same near-black drawing
+for both made every icon on the row vanish into the bar the moment the window
+went dark. The sun and moon are drawn from coordinates in
+`resources/icons.py` like every other icon — nothing is bundled and nothing is
+fetched, so they carry no licence beyond this project's, and they render on a
+desktop with no colour emoji font, where `☀️` comes out as a dotted box.
 
 #### Per-task calendars (`calendarregistry.py`)
 
@@ -1358,7 +1412,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1287 tests, all passing.
+1333 tests, all passing.
 
 ## Known Limitations
 
@@ -1414,5 +1468,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.36.0
+**Version**: 1.37.0
 **Last Updated**: 2026-08-18

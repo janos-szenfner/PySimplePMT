@@ -69,6 +69,7 @@ from gantt_app.workdaycalendar import (
     DEFAULT_NON_WORKING_DAYS, DateOverride, EU_COUNTRIES, WorkingCalendar,
     holidays_available, split_country, subdivisions, supported_countries,
 )
+from gantt_app import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -280,7 +281,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         self.summary_label = ctk.CTkLabel(
             self.tab_holidays, anchor=tk.W, justify=tk.LEFT, text="",
-            text_color="#6b7280",
+            text_color=theme.MUTED_TEXT,
         )
         self.summary_label.pack(fill=tk.X, padx=5, pady=(6, 0))
 
@@ -294,7 +295,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
                       "dates cannot be worked out. Your selection is saved "
                       "with the project and takes effect once you run: "
                       "pip install holidays"),
-                text_color="#b45309",
+                text_color=theme.WARNING_TEXT,
             ).pack(fill=tk.X, padx=5, pady=(6, 0))
 
     def _build_countries(self, chosen):
@@ -521,7 +522,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         self.override_error_label = ctk.CTkLabel(
             self.tab_overrides, anchor=tk.W, justify=tk.LEFT, text="",
-            wraplength=520, text_color="#b45309",
+            wraplength=520, text_color=theme.WARNING_TEXT,
         )
         self.override_error_label.pack(fill=tk.X, padx=5, pady=(4, 0))
 
@@ -549,7 +550,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
                                     ("Reason", 0, True),
                                     ("", 40, False)):
             label = ctk.CTkLabel(headings, text=text, anchor=tk.W,
-                                 text_color="#6b7280",
+                                 text_color=theme.MUTED_TEXT,
                                  font=ctk.CTkFont(size=11, weight="bold"))
             if expand:
                 label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
@@ -579,7 +580,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         if not self.overrides:
             ctk.CTkLabel(
                 self.override_list, anchor=tk.W, justify=tk.LEFT,
-                wraplength=500, text_color="#6b7280",
+                wraplength=500, text_color=theme.MUTED_TEXT,
                 text=("No overrides. Weekends and the public holidays chosen "
                       "on the other tab apply as they stand."),
             ).pack(fill=tk.X, padx=6, pady=8)
@@ -616,7 +617,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         # Packed after the button so the reason yields the space rather than
         # pushing the delete button off the right edge on a long note.
         ctk.CTkLabel(row, text=override.reason, anchor=tk.W,
-                     text_color="#6b7280"
+                     text_color=theme.MUTED_TEXT
                      ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6,
                             pady=4)
 
@@ -711,7 +712,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             self.tab_week, anchor=tk.W, justify=tk.LEFT, wraplength=520,
-            text_color="#6b7280",
+            text_color=theme.MUTED_TEXT,
             text=("The base rule the whole plan is scheduled on. Public "
                   "holidays and manual overrides are read on top of it."),
         ).pack(fill=tk.X, padx=5, pady=(0, 8))
@@ -737,7 +738,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         self.week_summary_label = ctk.CTkLabel(
             self.tab_week, anchor=tk.W, justify=tk.LEFT, wraplength=520,
-            text="", text_color="#6b7280",
+            text="", text_color=theme.MUTED_TEXT,
         )
         self.week_summary_label.pack(fill=tk.X, padx=5, pady=(10, 0))
 
@@ -775,7 +776,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
             self.week_summary_label.configure(
                 text=("No days are worked. At least one has to be, or there "
                       "is no calendar to schedule against."),
-                text_color="#b45309")
+                text_color=theme.WARNING_TEXT)
             return
 
         names = dict(self.WEEKDAYS)
@@ -787,7 +788,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
             text = (f"{len(worked)} days worked: "
                     f"{', '.join(names[index] for index in worked)}.")
 
-        self.week_summary_label.configure(text=text, text_color="#6b7280")
+        self.week_summary_label.configure(text=text, text_color=theme.MUTED_TEXT)
 
     # ---- choosing which calendar the tabs edit --------------------------
 
@@ -835,7 +836,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         self.selector_note = ctk.CTkLabel(self, text="", anchor=tk.W,
                                           justify=tk.LEFT, wraplength=560,
-                                          text_color="#6b7280")
+                                          text_color=theme.MUTED_TEXT)
         self.selector_note.pack(fill=tk.X, padx=15, pady=(4, 0))
 
         self._rebuild_selector()

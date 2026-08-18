@@ -25,6 +25,7 @@ from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
 from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.views.modal import grab_when_visible
+from gantt_app import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -41,12 +42,15 @@ MENU_BORDER = "#3b4759"
 LOG_ACCENT = "#b8860b"      # the Log button stays distinct
 LOG_ACCENT_HOVER = "#966d09"
 
-# Windows-style menu bar colors
-WIN_MENU_BG = "#F1F3F5"     # light gray background for menu bar
-WIN_MENU_HOVER = "#E9ECEF"  # hover color for menu items
-WIN_MENU_TEXT = "#1C1D1F"   # dark text color
-WIN_DROPDOWN_BG = "#F8F9FA" # light background for dropdown menus
-SEPARATOR_COLOR = "#C8CDD2" # the hairline between groups of icons
+# The menu bar and its dropdowns. Every one is a (light, dark) pair from
+# gantt_app.theme: written as single colours the whole bar stayed light on a
+# dark desktop, which is why the window used to be half one thing and half
+# the other.
+WIN_MENU_BG = theme.MENU_BG
+WIN_MENU_HOVER = theme.MENU_HOVER
+WIN_MENU_TEXT = theme.MENU_TEXT
+WIN_DROPDOWN_BG = theme.DROPDOWN_BG
+SEPARATOR_COLOR = theme.ICON_SEPARATOR
 
 #: What a menu entry looks like under the pointer: the application's own
 #: blue, which is what every other selected thing here uses. The grey it
@@ -160,7 +164,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
 
         if item_type == "separator":
             # Create a separator line
-            separator = ctk.CTkFrame(row, height=1, fg_color="#6C757D", corner_radius=0)
+            separator = ctk.CTkFrame(row, height=1, fg_color=theme.SEPARATOR, corner_radius=0)
             separator.pack(fill="x", pady=4)
             return
 
@@ -226,7 +230,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             highlight_on_hover(btn)
             btn.pack(side="left", fill="x", expand=True)
             
-            arrow = ctk.CTkLabel(row, text=">", text_color="#6C757D", width=20)
+            arrow = ctk.CTkLabel(row, text=">", text_color=theme.SEPARATOR, width=20)
             arrow.pack(side="right", padx=5)
             
             # Store submenu reference for hover support
@@ -708,7 +712,8 @@ class Toolbar(ctk.CTkFrame):
                  on_project_changed: Callable[[], None] = None,
                  gantt_chart=None,
                  undo_redo_manager: UndoRedoManager = None,
-                 clipboard_manager=None):
+                 clipboard_manager=None,
+                 theme_controller=None):
         super().__init__(master)
         
         self.master = master
@@ -717,6 +722,13 @@ class Toolbar(ctk.CTkFrame):
         self.gantt_chart = gantt_chart
         self.undo_redo_manager = undo_redo_manager
         self.clipboard_manager = clipboard_manager
+        #: Who decides light or dark; see gantt_app.theme. Set before the
+        #: menus are built, because the View menu is ticked from it. A
+        #: toolbar built without one - which the tests do - simply has no
+        #: theme entries that do anything.
+        self.theme_controller = (
+            theme_controller
+            or theme.ThemeController(apply=lambda _a: None, persist=False))
 
         # Set by set_task_list once the list exists, which is after this
         # runs. Left unset, every action that asks what is selected -
@@ -765,7 +777,8 @@ class Toolbar(ctk.CTkFrame):
             self, self.project,
             on_project_changed=self.on_project_changed,
             undo_redo_manager=self.undo_redo_manager,
-            clipboard_manager=self.clipboard_manager
+            clipboard_manager=self.clipboard_manager,
+            theme_controller=self.theme_controller,
         )
         self.icon_toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -947,7 +960,14 @@ class Toolbar(ctk.CTkFrame):
             {
                 'text': 'View',
                 'items': [
-                    {"text": "Toggle Theme", "command": self.toggle_theme},
+                    {"text": "System UI mode", "submenu": [
+                        {"text": "Sync with system",
+                         "command": self.use_system_theme},
+                        {"text": "Always Day (light)",
+                         "command": self.use_light_theme},
+                        {"text": "Always Night (dark)",
+                         "command": self.use_dark_theme},
+                    ]},
                     {"text": "Settings...", "command": self.open_gantt_chart_settings},
                 ],
             },
@@ -1767,12 +1787,42 @@ class Toolbar(ctk.CTkFrame):
                 if self.on_project_changed:
                     self.on_project_changed()
     
+    def _set_theme_mode(self, mode: str):
+        """
+        Put the application into one of the three modes.
+
+        The three entries under View > System UI mode are separate named
+        methods rather than one parameterised entry, because every menu leaf
+        has to name a real method - see test_every_leaf_names_a_real_method,
+        which is what stops an entry pointing at a command that was renamed
+        out from under it.
+        """
+        if self.theme_controller is None:
+            return
+        self.theme_controller.set_mode(mode)
+
+    def use_system_theme(self):
+        """View > System UI mode > Sync with system."""
+        self._set_theme_mode(theme.MODE_SYSTEM)
+
+    def use_light_theme(self):
+        """View > System UI mode > Always Day."""
+        self._set_theme_mode(theme.MODE_LIGHT)
+
+    def use_dark_theme(self):
+        """View > System UI mode > Always Night."""
+        self._set_theme_mode(theme.MODE_DARK)
+
     def toggle_theme(self):
-        """Toggle between light and dark themes."""
-        current_theme = ctk.get_appearance_mode()
-        new_theme = "dark" if current_theme == "light" else "light"
-        ctk.set_appearance_mode(new_theme)
-        logger.info("Switched appearance to %s mode", new_theme)
+        """
+        Flip between day and night, taking manual control.
+
+        Kept as a method because the Log row's theme button and any caller
+        that predates the View submenu still reach for it by name.
+        """
+        if self.theme_controller is None:
+            return
+        self.theme_controller.toggle()
     
     def open_gantt_chart_settings(self):
         """Open the Gantt chart settings dialog."""
@@ -1873,6 +1923,7 @@ class IconToolbar(ctk.CTkFrame):
                  on_project_changed: Callable[[], None] = None,
                  undo_redo_manager: UndoRedoManager = None,
                  clipboard_manager=None,
+                 theme_controller=None,
                  **kwargs):
         super().__init__(master, height=40, fg_color=WIN_MENU_BG, **kwargs)
         
@@ -1881,6 +1932,12 @@ class IconToolbar(ctk.CTkFrame):
         self.on_project_changed = on_project_changed
         self.undo_redo_manager = undo_redo_manager
         self.clipboard_manager = clipboard_manager
+        #: Set before _create_ui runs, which builds the day/night control
+        #: from it. A row built without one still draws the control; it just
+        #: has nothing behind it - see _theme_controller.
+        self.theme_controller = (
+            theme_controller
+            or theme.ThemeController(apply=lambda _a: None, persist=False))
         self.task_list = None
         
         # Store button references for state management
@@ -1948,6 +2005,113 @@ class IconToolbar(ctk.CTkFrame):
                 lambda name=action: self._perform(name),
             )
 
+        self._create_separator()
+        self._create_theme_control()
+
+    # ---- the day / night control ----------------------------------------
+
+    def _create_theme_control(self):
+        """
+        The sun/moon toggle, and the way back to following the desktop.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Two widgets, and the second one is usually not there. The toggle is
+        always shown and says which appearance the window is *in* - a sun and
+        Day while light, a moon and Night while dark. "Sync with system" is
+        packed only while a manual choice is in force, because that is the
+        only time it does anything: offered permanently it is a button that
+        is a no-op on the default setting, and it is exactly the sort of
+        chrome that makes a toolbar unreadable.
+
+        Its presence is also the status indicator. A window following the
+        desktop looks like it always did; one that has been overridden grows
+        a control saying so, which is a quieter way of saying "manual" than a
+        permanent badge nobody reads after the first day.
+        """
+        self.theme_button = ctk.CTkButton(
+            self, text="", width=86, height=self.BUTTON_SIZE,
+            fg_color="transparent", hover_color=WIN_MENU_HOVER,
+            text_color=WIN_MENU_TEXT, corner_radius=4, anchor="w",
+            command=self._toggle_theme,
+        )
+        self.theme_button.pack(side="left", padx=2, pady=2)
+
+        self.theme_sync_button = ctk.CTkButton(
+            self, text="Sync with system", width=124,
+            height=self.BUTTON_SIZE, fg_color="transparent",
+            hover_color=WIN_MENU_HOVER, text_color=theme.MUTED_TEXT,
+            corner_radius=4, command=self._sync_theme,
+        )
+        # Packed by _refresh_theme_control when a manual choice is in force.
+
+        controller = self._theme_controller()
+        if controller is not None:
+            controller.subscribe(
+                lambda _mode, _appearance: self._refresh_theme_control())
+        self._refresh_theme_control()
+
+    def _theme_controller(self):
+        """
+        The application's theme controller, or None before there is one.
+
+        Looked up rather than held, because this row is built before the
+        window has finished assembling itself and a test may build it with no
+        application at all.
+        """
+        return getattr(self, 'theme_controller', None)
+
+    def _toggle_theme(self):
+        """Flip between day and night, and take manual control."""
+        controller = self._theme_controller()
+        if controller is None:
+            return
+        controller.toggle()
+
+    def _sync_theme(self):
+        """Hand the decision back to the desktop."""
+        controller = self._theme_controller()
+        if controller is None:
+            return
+        controller.sync_with_system()
+
+    def _refresh_theme_control(self):
+        """
+        Put the toggle's icon, caption and the sync button in step.
+
+        Guarded, because this is a subscriber: it goes on being called after
+        the toolbar it belongs to has been destroyed, and writing to a dead
+        widget raises.
+        """
+        controller = self._theme_controller()
+        button = getattr(self, 'theme_button', None)
+        if controller is None or button is None:
+            return
+
+        try:
+            if not button.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        image = self._icon_image(controller.icon_name())
+        button.configure(text=f" {controller.button_text()}", image=image)
+        # Kept from the garbage collector: a collected CTkImage takes the
+        # picture off the button with it.
+        button.icon_image = image
+        button.tooltip = (
+            f"{controller.button_text()} mode"
+            + ("" if controller.following_system else " (manual)")
+        )
+
+        sync = getattr(self, 'theme_sync_button', None)
+        if sync is None:
+            return
+        if controller.following_system:
+            sync.pack_forget()
+        elif not sync.winfo_manager():
+            sync.pack(side="left", padx=2, pady=2)
+
     def _create_separator(self):
         """
         A divider between two groups of icons.
@@ -1984,6 +2148,37 @@ class IconToolbar(ctk.CTkFrame):
             return
         handler()
     
+    def _icon_image(self, icon_name: str):
+        """
+        One icon, drawn once for each appearance.
+
+        RETURNS:
+        --------
+        Optional[ctk.CTkImage]
+            The icon, or None when nothing is defined for the name - the
+            caller falls back to a letter.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Two drawings, not one. CustomTkinter picks between light_image and
+        dark_image by appearance, and this used to hand it the same near-black
+        drawing for both - so every icon on the row disappeared into the bar
+        the moment the window went dark. Pillow knows nothing about appearance
+        modes, so the ink is chosen here and the strokes are drawn twice.
+
+        Drawn rather than set as an emoji in "Segoe UI Emoji": that font ships
+        with Windows and with nothing else, so on a stock Linux desktop every
+        button on this row came out blank.
+        """
+        from gantt_app.resources.icons import draw_icon
+
+        light = draw_icon(icon_name, self.ICON_SIZE, theme.ICON_INK_LIGHT)
+        dark = draw_icon(icon_name, self.ICON_SIZE, theme.ICON_INK_DARK)
+        if light is None or dark is None:
+            return None
+        return ctk.CTkImage(light_image=light, dark_image=dark,
+                            size=(self.ICON_SIZE, self.ICON_SIZE))
+
     def _create_icon_button(self, icon_name: str, tooltip: str, command: Callable):
         """
         Create a single icon button.
@@ -1997,20 +2192,11 @@ class IconToolbar(ctk.CTkFrame):
         command : Callable
             Function to call when button is clicked
         """
-        from gantt_app.resources.icons import draw_icon
-
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(side="left", padx=1, pady=2)
 
-        # Drawn rather than set as an emoji in "Segoe UI Emoji". That font
-        # ships with Windows and with nothing else, so on a stock Linux
-        # desktop every button on this row came out blank.
-        drawing = draw_icon(icon_name, self.ICON_SIZE)
-        image = None
-        if drawing is not None:
-            image = ctk.CTkImage(light_image=drawing, dark_image=drawing,
-                                 size=(self.ICON_SIZE, self.ICON_SIZE))
-        else:
+        image = self._icon_image(icon_name)
+        if image is None:
             logger.debug("No drawing for the %s icon; showing its initial",
                          icon_name)
 

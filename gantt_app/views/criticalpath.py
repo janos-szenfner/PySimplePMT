@@ -34,6 +34,7 @@ import customtkinter as ctk
 from gantt_app.models import Project
 from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.modal import grab_when_visible
+from gantt_app import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -113,7 +114,7 @@ class CriticalPathWindow(ctk.CTkToplevel):
                   "calendar's working days, including for tasks that follow "
                   "a calendar of their own, so every task is measured "
                   "against the same ruler."),
-            text_color="#6b7280",
+            text_color=theme.MUTED_TEXT,
         )
         self.explain_label.pack(fill=tk.X, padx=15, pady=(4, 8))
 

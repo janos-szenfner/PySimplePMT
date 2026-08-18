@@ -139,8 +139,23 @@ class TestMenuContents(unittest.TestCase):
         """View no longer offers Project Info."""
         view = labels(find(self.tree, 'View')['items'])
 
-        self.assertEqual(view, ['Toggle Theme', 'Settings...'])
+        self.assertEqual(view, ['System UI mode', 'Settings...'])
         self.assertNotIn('Project Info', view)
+
+    def test_the_theme_modes_sit_under_system_ui_mode(self):
+        """
+        All three, so the choice is visible rather than a hidden toggle.
+
+        The old entry was a single Toggle Theme that flipped whatever was on
+        screen, with no way to say "follow the desktop again" and no sign of
+        which of the two you were in.
+        """
+        view = find(self.tree, 'View')['items']
+        entry = next(i for i in view if i['text'] == 'System UI mode')
+
+        self.assertEqual(labels(entry['submenu']),
+                         ['Sync with system', 'Always Day (light)',
+                          'Always Night (dark)'])
 
     def test_edit_menu(self):
         """Undo, Redo, Cut, Copy, and Paste are available under Edit."""
