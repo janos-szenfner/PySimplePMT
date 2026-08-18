@@ -82,10 +82,11 @@ content = generate_mermaid_content(project)
 print(content)
 """
 
+import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.log import get_logger
@@ -263,6 +264,140 @@ def _sort_tasks_for_dependencies(project: Project) -> List[Task]:
     return sorted_tasks
 
 
+#: The marker on the comment line carrying what Mermaid cannot say.
+#:
+#: '%%' opens a comment in Mermaid, so every renderer ignores this line and
+#: the chart is a plain, valid Mermaid chart. What travels in it is only the
+#: part the syntax has nowhere to put: the work item types, the levels below
+#: the one section a chart can show, the exact percentage behind "active",
+#: the colours, and which kind of link a dependency is.
+#:
+#: Without it a plan exported and reimported came back flattened, untyped and
+#: at nought per cent - the file said what Mermaid could draw and threw away
+#: the rest of what the user had entered.
+METADATA_MARKER = '%% pysimplepmt:'
+
+#: Version of the metadata format, so a newer file can be recognised by an
+#: older build rather than half-read.
+METADATA_VERSION = 1
+
+
+def _metadata_line(project: Project, tasks: List[Task],
+                   id_to_mermaid_id: Dict[str, str]) -> str:
+    """
+    The comment carrying everything the chart itself cannot hold.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The plan being written.
+    tasks : List[Task]
+        Every task in it, containers included - a Phase has no task line of
+        its own, only a section heading, so without this it could not be
+        rebuilt at all.
+    id_to_mermaid_id : Dict[str, str]
+        The IDs used in the chart, so the metadata points at the same rows.
+
+    RETURNS:
+    --------
+    str
+        One '%%' line of JSON.
+    """
+    def reference(task_id: Optional[str]) -> Optional[str]:
+        """A task ID as the chart writes it."""
+        if task_id is None:
+            return None
+        return id_to_mermaid_id.get(task_id, task_id)
+
+    entries = []
+    for task in tasks:
+        entry = {
+            'id': reference(task.id),
+            'name': task.name,
+            'type': task.task_type,
+            'parent': reference(task.parent_task_id),
+        }
+        if task.progress:
+            entry['progress'] = task.progress
+        if task.color:
+            entry['color'] = task.color
+        if task.priority:
+            entry['priority'] = task.priority
+
+        links = [[reference(link.task_id), link.dep_type, link.hardness,
+                  link.lag]
+                 for link in task.dependencies
+                 if reference(link.task_id) is not None]
+        if links:
+            entry['deps'] = links
+
+        entries.append(entry)
+
+    payload = {'version': METADATA_VERSION, 'tasks': entries}
+    return METADATA_MARKER + json.dumps(payload, separators=(',', ':'),
+                                        ensure_ascii=False)
+
+
+def _progress_tag(task: Task) -> str:
+    """
+    The Mermaid tag saying how far along a task is, ready to prefix its ID.
+
+    RETURNS:
+    --------
+    str
+        "done, " for finished work, "active, " for work under way, and
+        nothing at all for work not started.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Mermaid has two states where the model has a percentage, so this is the
+    most the chart itself can say - a task at 30% and one at 70% both render
+    as active. The exact figure travels in the metadata comment instead, so
+    what this application reads back is the number the user typed while what
+    Mermaid renders is still right.
+    """
+    if task.effective_milestone:
+        return ''
+    if task.progress >= 100:
+        return 'done, '
+    if task.progress > 0:
+        return 'active, '
+    return ''
+
+
+def _after_reproduces_the_start(task: Task, predecessor: Optional[Task],
+                                project: Project) -> bool:
+    """
+    Whether "after <predecessor>" lands on the date the task actually has.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    "after X" is Mermaid's only link and it says one thing: start the day
+    after X finishes. A Start-Start link, a Finish-Finish one, or any lag
+    means something else, and writing "after" for them produced a chart on
+    dates the plan never held - a task that starts alongside its predecessor
+    came back starting after it had finished.
+
+    So the chain is checked against the answer before it is used, the same
+    way the spreadsheet export checks its WORKDAY formulas. Where it does not
+    agree, the date itself is written and the link is simply not drawn -
+    Mermaid has no way to draw it correctly.
+    """
+    if predecessor is None or task.start_date is None:
+        return False
+
+    link = task.get_dependency(predecessor.id)
+    if link is None or link.dep_type != 'FS' or link.lag:
+        return False
+
+    finish = predecessor.end_date or predecessor.start_date
+    if finish is None:
+        return False
+
+    expected = project.calendar.get_next_working_day(finish + timedelta(days=1))
+    return expected.date() == task.start_date.date()
+
+
 def _section_task_for(task: Task, project: Project) -> Optional[Task]:
     """
     Get the summary task whose section a task belongs to.
@@ -398,6 +533,12 @@ def generate_mermaid_content(project: Project,
     for task in project.tasks:
         mermaid_id = _generate_task_id(task, used_ids)
         id_to_mermaid_id[task.id] = mermaid_id
+
+    # What the chart cannot say, on a line every renderer treats as a
+    # comment. Written before the rows so a reader of the file meets it
+    # first and can see the chart is carrying more than it draws.
+    lines.append("    " + _metadata_line(project, list(project.tasks),
+                                         id_to_mermaid_id))
     
     # Sort tasks topologically based on dependencies
     sorted_tasks = _sort_tasks_for_dependencies(project)
@@ -426,29 +567,30 @@ def generate_mermaid_content(project: Project,
         valid_deps = [dep_id for dep_id in task.dependency_ids
                       if dep_id in defined_task_ids and dep_id not in summary_ids]
 
+        # "after X" means the day after X finishes, and nothing else. Used
+        # for a link that does not mean that - a Start-Start one, or one
+        # carrying a lag - it writes a date the plan never had. The start is
+        # written out instead wherever the chain would not reproduce it; see
+        # _after_reproduces_the_start.
+        follows = None
+        if len(valid_deps) == 1:
+            predecessor = project.get_task_by_id(valid_deps[0])
+            if _after_reproduces_the_start(task, predecessor, project):
+                follows = id_to_mermaid_id.get(valid_deps[0], valid_deps[0])
+
+        when = f"after {follows}" if follows else _format_date(task.start_date)
+        tags = _progress_tag(task)
+
         if task.is_milestone:
-            date_str = _format_date(task.start_date)
-            if valid_deps and len(valid_deps) == 1:
-                # Use after syntax for single dependency
-                dep_mermaid_id = id_to_mermaid_id.get(valid_deps[0], valid_deps[0])
-                lines.append(f"    milestone {task.name} :{mermaid_id}, after {dep_mermaid_id}")
-            else:
-                # Use explicit date
-                lines.append(f"    milestone {task.name} :{mermaid_id}, {date_str}")
+            lines.append(f"    milestone {task.name} :{tags}{mermaid_id}, {when}")
         else:
-            date_str = _format_date(task.start_date)
             duration_days = _get_task_duration_days(task)
             if duration_days is None or duration_days <= 0:
                 duration_days = 1
-            
-            if valid_deps and len(valid_deps) == 1:
-                # Use after syntax for single dependency
-                dep_mermaid_id = id_to_mermaid_id.get(valid_deps[0], valid_deps[0])
-                lines.append(f"    {task.name} :{mermaid_id}, after {dep_mermaid_id}, {duration_days}d")
-            else:
-                # Use explicit date and duration
-                lines.append(f"    {task.name} :{mermaid_id}, {date_str}, {duration_days}d")
-        
+            lines.append(
+                f"    {task.name} :{tags}{mermaid_id}, {when}, {duration_days}d"
+            )
+
         # Mark this task as defined
         defined_task_ids.add(task.id)
     

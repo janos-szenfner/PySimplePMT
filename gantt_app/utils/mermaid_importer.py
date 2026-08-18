@@ -19,6 +19,7 @@ gantt
 ```
 """
 
+import json
 import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
@@ -173,6 +174,39 @@ class MermaidImporter:
         name = line[len('section'):].strip()
         return name or None
 
+    #: The tags Mermaid allows in front of a task's ID.
+    #:
+    #: They say what state the bar is in and how to colour it, and any
+    #: combination of them may appear. They are not IDs, which is what this
+    #: read them as - so "done" became a task of its own and the row that
+    #: carried it lost the ID it should have had.
+    STATE_TAGS = frozenset({'done', 'active', 'crit', 'milestone', 'vert'})
+
+    #: What a state tag says about progress, for a chart that carries no
+    #: metadata of ours. Mermaid has two states where a plan has a
+    #: percentage, so "active" can only mean somewhere in the middle.
+    TAG_PROGRESS = {'done': 100, 'active': 50}
+
+    #: A duration, as Mermaid writes one.
+    DURATION_FIELD = re.compile(r'^\d+\s*[a-z]*$', re.IGNORECASE)
+
+    def _is_schedule_field(self, field: str) -> bool:
+        """
+        Whether a field says when a task runs rather than what it is called.
+
+        Used to tell an omitted ID from a real one: a row may name no ID at
+        all, and the field sitting where one would be is then the start date,
+        a duration, or an "after" reference.
+        """
+        text = (field or '').strip()
+        if not text:
+            return True
+        if text.lower().startswith('after'):
+            return True
+        if self._parse_date(text) is not None:
+            return True
+        return bool(self.DURATION_FIELD.match(text))
+
     def _extract_task_info(self, line: str) -> Optional[Dict[str, Any]]:
         """Extract task information from a Mermaid Gantt line."""
         line = self._strip_indentation(line)
@@ -198,12 +232,44 @@ class MermaidImporter:
         name = match.group(1).strip()
         task_id = match.group(2).strip()
         rest = match.group(3).strip()
-        
+
+        # Mermaid allows state tags before the ID - "Task :done, crit, a1,
+        # 2024-01-01, 5d" - and any of them may be there or not. Read as the
+        # ID, "done" became a task in its own right and the row it belonged
+        # to lost the one it should have had.
+        tags = []
+        while task_id.lower() in self.STATE_TAGS:
+            tags.append(task_id.lower())
+            head, _, remainder = rest.partition(',')
+            task_id = head.strip()
+            rest = remainder.strip()
+            if not rest:
+                break
+
+        # Mermaid lets a row leave its ID out entirely - "Another task
+        # :active, after a1, 20d" names no ID at all. Taking the next field
+        # regardless made "after a1" the ID and lost the dependency with it,
+        # so a field that is plainly a date, a duration or an "after" is put
+        # back and the row is given an ID of its own.
+        if self._is_schedule_field(task_id):
+            rest = f"{task_id}, {rest}" if rest else task_id
+            task_id = ''
+
+        if 'milestone' in tags:
+            is_milestone = True
+
         task_info = {
             'name': name,
             'id': task_id,
-            'is_milestone': is_milestone
+            'is_milestone': is_milestone,
+            'tags': tags,
         }
+        if not is_milestone:
+            progress = self.TAG_PROGRESS.get(
+                next((tag for tag in tags if tag in self.TAG_PROGRESS), '')
+            )
+            if progress is not None:
+                task_info['progress'] = progress
         
         after_match = re.match(r'after\s+([^,]+),\s*(.+)$', rest, re.IGNORECASE)
         if after_match:
@@ -455,6 +521,10 @@ class MermaidImporter:
                 task_info = self._extract_task_info(line)
                 if task_info:
                     task_info['section'] = current_section
+                    if not task_info.get('id'):
+                        # A row that named no ID of its own; it still needs
+                        # one to be pointed at and to be found again
+                        task_info['id'] = f"row_{len(tasks_info) + 1}"
                     tasks_info.append(task_info)
 
             tasks = []
@@ -485,7 +555,10 @@ class MermaidImporter:
                     name=name,
                     start_date=start_date,
                     end_date=end_date,
-                    progress=0,
+                    # From a 'done' or 'active' tag where the chart carries
+                    # one; the metadata line replaces it with the exact
+                    # figure when this application wrote the file
+                    progress=int(info.get('progress', 0)),
                     dependencies=[],
                     color=color,
                     is_milestone=is_milestone
@@ -503,10 +576,26 @@ class MermaidImporter:
             
             self._calculate_task_dates(tasks_info, task_map)
 
-            if self.group_by_section:
-                tasks = self._build_section_hierarchy(tasks_info, task_map, tasks)
+            carried = self._read_metadata(content)
+            if carried:
+                # A file this application wrote carries what Mermaid cannot
+                # say. Applied instead of the section grouping, which is a
+                # guess at a hierarchy the metadata states outright.
+                tasks = self._apply_metadata(carried, tasks, task_map)
+            elif self.group_by_section:
+                tasks = self._build_section_hierarchy(tasks_info, task_map,
+                                                      tasks)
 
             project = Project(name=project_name, tasks=tasks)
+
+            if carried:
+                # A Phase has no row in the chart, so the one rebuilt from
+                # the metadata has no dates of its own. It spans the work
+                # inside it, which is what the roll-up is for - without this
+                # it came back dated today.
+                project.roll_up_summaries()
+                project._update_dates()
+
             return project
             
         except Exception as e:
@@ -515,6 +604,139 @@ class MermaidImporter:
             traceback.print_exc()
             return None
     
+    #: The comment line carrying what the chart itself cannot hold; see
+    #: mermaid_exporter.METADATA_MARKER.
+    METADATA_MARKER = '%% pysimplepmt:'
+
+    def _read_metadata(self, content: str) -> Optional[Dict[str, Any]]:
+        """
+        Read the comment this application writes alongside the chart.
+
+        RETURNS:
+        --------
+        Optional[Dict[str, Any]]
+            What was carried, or None for a chart written by anything else -
+            which is most of them, and which still imports exactly as it did
+            before this existed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Mermaid has one grouping level, two states of progress and one kind
+        of link, where a plan has four levels, a percentage and four kinds.
+        Exported and reimported without this, a plan came back flattened,
+        untyped and at nought per cent.
+
+        A line that is there but unreadable is ignored rather than fatal: the
+        chart beside it is still a chart, and refusing to open the file would
+        cost the user everything to save the extra.
+        """
+        for line in content.split('\n'):
+            stripped = line.strip()
+            if not stripped.startswith(self.METADATA_MARKER):
+                continue
+            payload = stripped[len(self.METADATA_MARKER):].strip()
+            try:
+                found = json.loads(payload)
+            except ValueError:
+                logger.warning("The metadata line could not be read; the "
+                               "chart is imported without it")
+                return None
+            if not isinstance(found, dict) or 'tasks' not in found:
+                return None
+            return found
+        return None
+
+    def _apply_metadata(self, carried: Dict[str, Any], tasks: List[Task],
+                        task_map: Dict[str, Task]) -> List[Task]:
+        """
+        Put back the types, levels, percentages, colours and link kinds.
+
+        PARAMETERS:
+        -----------
+        carried : Dict[str, Any]
+            What _read_metadata found.
+        tasks : List[Task]
+            The tasks built from the chart's own rows.
+        task_map : Dict[str, Task]
+            Those tasks by their Mermaid ID.
+
+        RETURNS:
+        --------
+        List[Task]
+            Every task, containers included and in hierarchy order. A Phase
+            has no row of its own in the chart - only a section heading - so
+            it is rebuilt here or not at all.
+        """
+        entries = carried.get('tasks') or []
+        rebuilt: List[Task] = []
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            task_id = entry.get('id')
+            if not task_id:
+                continue
+
+            task = task_map.get(str(task_id))
+            if task is None:
+                # A container: the chart drew it as a section heading, which
+                # carries a name and nothing else
+                task = Task(
+                    id=str(task_id),
+                    name=str(entry.get('name') or task_id),
+                    start_date=datetime.now(),
+                    end_date=None,
+                    task_type=str(entry.get('type') or 'Task'),
+                )
+                task_map[str(task_id)] = task
+            else:
+                task.task_type = str(entry.get('type') or task.task_type)
+
+            task.parent_task_id = entry.get('parent')
+            if entry.get('color'):
+                task.color = str(entry['color'])
+            if entry.get('priority'):
+                task.priority = str(entry['priority'])
+            if 'progress' in entry:
+                try:
+                    task.progress = max(0, min(100, int(entry['progress'])))
+                except (TypeError, ValueError):
+                    pass
+
+            task.is_milestone = task.task_type == 'Milestone'
+            if task.is_milestone:
+                task.end_date = None
+
+            rebuilt.append(task)
+
+        # The links, once every task exists to be pointed at
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            task = task_map.get(str(entry.get('id')))
+            if task is None:
+                continue
+            links = entry.get('deps') or []
+            if not links:
+                continue
+            task.dependencies = []
+            for link in links:
+                try:
+                    other, dep_type, hardness, lag = (list(link) + [0])[:4]
+                except (TypeError, ValueError):
+                    continue
+                if str(other) in task_map:
+                    task.add_dependency(str(other), str(dep_type),
+                                        str(hardness), int(lag))
+
+        # Anything the chart drew that the metadata did not mention stays,
+        # rather than being dropped for not being listed
+        listed = {task.id for task in rebuilt}
+        rebuilt.extend(task for task in tasks if task.id not in listed)
+
+        logger.debug("Restored %d task(s) from the metadata line", len(rebuilt))
+        return rebuilt
+
     def import_mermaid(self, filepath: str) -> Optional[Project]:
         """Import a Mermaid file and convert it to a Project object."""
         try:

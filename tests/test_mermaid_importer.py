@@ -377,20 +377,55 @@ class TestMermaidExporter(unittest.TestCase):
         self.assertIn("2024-01-10", content)
     
     def test_export_with_dependencies(self):
-        """Test exporting a project with dependencies."""
+        """
+        A Finish-Start chain is written as Mermaid's "after".
+
+        The plan is settled first, which is what the application does the
+        moment one is loaded. "after X" means the day after X finishes and
+        nothing else, so it is only written where it reproduces the date the
+        task actually has - and an unsettled fixture whose successor starts
+        on a Sunday is exactly the case where it would not.
+        """
         project = Project(name="Project with Deps")
         start_date = datetime(2024, 1, 1)
-        
+
         task1 = Task.create_task("Task 1", start_date, start_date + timedelta(days=5))
         project.add_task(task1)
-        
+
         task2 = Task.create_task("Task 2", start_date + timedelta(days=6), start_date + timedelta(days=10))
         task2.dependencies = [task1.id]
         project.add_task(task2)
-        
+        project.reschedule()
+
         content = self.exporter.export_mermaid_content(project)
-        
+
         self.assertIn("after", content.lower())
+
+    def test_a_link_that_after_cannot_express_is_written_as_a_date(self):
+        """
+        A Start-Start link, or one with a lag, means something else.
+
+        Written as "after" it produced a chart on dates the plan never held -
+        a task starting alongside its predecessor came back starting once
+        that predecessor had finished.
+        """
+        project = Project(name="Overlapping")
+        start_date = datetime(2024, 1, 1)
+
+        first = Task.create_task("First", start_date, start_date + timedelta(days=4))
+        project.add_task(first)
+        second = Task.create_task("Second", start_date, start_date + timedelta(days=9))
+        second.add_dependency(first.id, 'SS', 'Hard')
+        project.add_task(second)
+        project.reschedule()
+
+        content = self.exporter.export_mermaid_content(project)
+
+        rows = [line for line in content.splitlines()
+                if 'Second' in line and not line.strip().startswith('%%')]
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn('after', rows[0])
+        self.assertIn(second.start_date.strftime('%Y-%m-%d'), rows[0])
     
     def test_export_to_file(self):
         """Test exporting to a file."""
@@ -604,6 +639,186 @@ class TestMermaidRoundTrip(unittest.TestCase):
         finally:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+class TestTheRoundTripIsFaithful(unittest.TestCase):
+    """
+    A plan exported and read back is the plan that was exported.
+
+    WHY THESE EXIST:
+    ================
+    It was not. Mermaid has one grouping level where a plan has four, two
+    states of progress where it has a percentage, and one kind of link where
+    it has four - so a plan came back flattened, untyped, at nought per cent
+    and, worst of all, on dates it never held: "after X" was written for
+    Start-Start links, which means something else entirely.
+
+    What Mermaid can draw is now drawn correctly, and what it cannot say
+    travels in a '%%' comment line that every renderer ignores. The chart is
+    still a plain, valid Mermaid chart; it just carries more than it draws.
+    """
+
+    def build(self):
+        """A plan with every level, a percentage, a colour and a typed link."""
+        base = datetime(2026, 8, 17)
+        project = Project(name="Round trip")
+
+        def add(task_id, name, task_type, parent, days,
+                progress=0, milestone=False, colour="#1f6aa5"):
+            task = Task(
+                id=task_id, name=name, task_type=task_type,
+                parent_task_id=parent, start_date=base,
+                end_date=None if milestone else base + timedelta(days=days),
+                progress=progress, is_milestone=milestone, color=colour,
+            )
+            project.add_task(task)
+            return task
+
+        add("P1", "Planning", "Phase", None, 0)
+        add("D1", "Signed contract", "Deliverable", "P1", 0)
+        add("T1", "Business case", "Subtask", "D1", 4, progress=30,
+            colour="#ff0000")
+        add("T2", "Procurement", "Subtask", "D1", 9).add_dependency(
+            "T1", 'FS', 'Hard')
+        add("P2", "Delivery", "Phase", None, 0)
+        add("T3", "Build", "Subtask", "P2", 9, progress=100).add_dependency(
+            "T2", 'SS', 'Hard', 2)
+        add("M1", "Go-Live", "Milestone", "P2", 0,
+            milestone=True).add_dependency("T3", 'FS', 'Hard')
+
+        project.reschedule()
+        return project
+
+    def round_trip(self, project):
+        """Export a plan and read it back."""
+        handle = tempfile.NamedTemporaryFile(suffix='.mmd', delete=False)
+        path = handle.name
+        handle.close()
+        try:
+            self.assertTrue(export_mermaid_file(project, path))
+            reimported = import_mermaid_file(path)
+            self.assertIsNotNone(reimported)
+            reimported.reschedule()
+            return reimported
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def snapshot(self, project):
+        """Everything about a plan that ought to survive."""
+        return [
+            (task.id, task.name, task.task_type, task.parent_task_id,
+             task.progress, task.color, task.start_date,
+             task.end_date, task.is_milestone,
+             sorted((link.task_id, link.dep_type, link.hardness, link.lag)
+                    for link in task.dependencies))
+            for task in project.tasks
+        ]
+
+    def test_nothing_is_lost(self):
+        """The whole plan, compared field by field."""
+        original = self.build()
+
+        self.assertEqual(self.snapshot(self.round_trip(original)),
+                         self.snapshot(original))
+
+    def test_the_levels_survive(self):
+        """Mermaid has one grouping level; a plan has four."""
+        reimported = self.round_trip(self.build())
+
+        types = {task.id: task.task_type for task in reimported.tasks}
+        self.assertEqual(types["P1"], "Phase")
+        self.assertEqual(types["D1"], "Deliverable")
+        self.assertEqual(reimported.get_task_by_id("D1").parent_task_id, "P1")
+        self.assertEqual(reimported.get_task_by_id("T1").parent_task_id, "D1")
+
+    def test_the_exact_percentage_survives(self):
+        """"active" says only that work has started."""
+        reimported = self.round_trip(self.build())
+
+        self.assertEqual(reimported.get_task_by_id("T1").progress, 30)
+        self.assertEqual(reimported.get_task_by_id("T3").progress, 100)
+
+    def test_the_link_kinds_survive(self):
+        """Including the lag, which "after" has nowhere to put."""
+        link = self.round_trip(self.build()).get_task_by_id("T3").dependencies[0]
+
+        self.assertEqual((link.dep_type, link.lag), ('SS', 2))
+
+    def test_a_start_start_link_keeps_its_date(self):
+        """
+        Written as "after" it moved the task to where the chain said.
+
+        This is the one that changed the plan rather than merely thinning
+        it: a task starting alongside its predecessor came back starting
+        once that predecessor had finished.
+        """
+        original = self.build()
+        reimported = self.round_trip(original)
+
+        self.assertEqual(reimported.get_task_by_id("T3").start_date,
+                         original.get_task_by_id("T3").start_date)
+
+    def test_the_chart_itself_is_still_a_chart(self):
+        """
+        The metadata is a comment, so a renderer sees ordinary Mermaid.
+
+        Every row is still there with its dates, so the file opens in
+        anything that draws Mermaid.
+        """
+        content = MermaidExporter().export_mermaid_content(self.build())
+
+        lines = [line.strip() for line in content.splitlines()]
+        self.assertEqual(lines[0], 'gantt')
+        self.assertTrue(any(line.startswith('%%') for line in lines))
+        self.assertTrue(any(line.startswith('section ') for line in lines))
+        self.assertIn('Business case :active, T1, 2026-08-17, 5d', lines)
+
+    def test_a_chart_from_anywhere_else_still_imports(self):
+        """
+        No metadata line, and it reads exactly as it did before.
+
+        Mermaid's own documented example, tags and all - including a row
+        that names no ID, which used to be read as one and lose its link.
+        """
+        content = """gantt
+    title A Gantt Diagram
+    dateFormat YYYY-MM-DD
+    section Section
+    A task           :done, a1, 2014-01-01, 30d
+    Another task     :active, after a1, 20d
+    Future task      :         des3, after a1, 5d
+    milestone Review :milestone, m1, after des3
+"""
+        project = MermaidImporter()._parse_mermaid_content(content)
+
+        names = {task.name: task for task in project.tasks}
+        self.assertEqual(names["A task"].progress, 100)
+        self.assertEqual(names["Another task"].progress, 50)
+        self.assertEqual(names["Another task"].dependency_ids, ["a1"])
+        self.assertTrue(names["Review"].is_milestone)
+
+    def test_an_unreadable_metadata_line_is_stepped_over(self):
+        """
+        The chart beside it is still a chart.
+
+        Refusing to open the file would cost the user everything to save the
+        extra.
+        """
+        content = """gantt
+    title Damaged
+    dateFormat YYYY-MM-DD
+    %% pysimplepmt:{not json at all
+    Task one :t1, 2024-01-01, 5d
+"""
+        project = MermaidImporter()._parse_mermaid_content(content)
+
+        self.assertIsNotNone(project)
+        self.assertEqual([task.name for task in project.tasks], ["Task one"])
 
 
 if __name__ == '__main__':

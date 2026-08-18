@@ -385,6 +385,30 @@ came out blank on Linux. Drawing depends on no font being installed.
 - **Optional Dependency**: Requires openpyxl, and reports a clear error when it is missing
 
 ### Mermaid Exporter (`utils/mermaid_exporter.py`)
+
+**The round trip is lossless.** Mermaid has one grouping level where a plan has
+four, two states of progress where it has a percentage, and one kind of link
+where it has four — so a plan exported and read back came home flattened,
+untyped, at 0% and, worst of all, on dates it never held.
+
+Two things fix that:
+
+- **The chart itself is written correctly.** `after X` means "the day after X
+  finishes" and nothing else, so it is only written where it reproduces the
+  date the task actually has — checked against the answer first, the same way
+  the spreadsheet export checks its `WORKDAY` formulas. A Start-Start link, or
+  one carrying a lag, gets the date written out instead. Progress is written as
+  Mermaid's own `done` and `active` tags.
+- **What Mermaid cannot say travels in a `%%` comment**, which every renderer
+  ignores: the work item types, the levels below the one section a chart can
+  show, the exact percentage behind `active`, the colours, and which kind of
+  link each dependency is.
+
+The file is still plain, valid Mermaid — it just carries more than it draws. A
+chart written by anything else imports exactly as before, including its `done`
+/ `active` / `crit` tags and rows that name no ID; an unreadable metadata line
+is stepped over rather than costing the whole file.
+
 - **Syntax Generation**: Creates valid Mermaid Gantt chart syntax
 - **Topological Sorting**: Orders tasks based on dependencies
 - **Section Output**: Parent tasks are written as `section` headers rather than as tasks, so hierarchy survives an export/import round-trip; tasks are grouped so each header appears once
@@ -1108,7 +1132,7 @@ Unit tests cover:
 - ✅ **Models**: Task and Project classes, serialization, the schedule
 - ✅ **File I/O**: JSON save/load, datetime handling, error cases
 - ✅ **GAN Import**: Real GanttProject 3.x fixtures - working-day calendar, nested sub-tasks, successor-to-predecessor edge reversal, milestones, colors, namespaced files
-- ✅ **Mermaid Import/Export**: Inclusive working-day durations, dependency chains, section grouping, frontmatter, round-trip
+- ✅ **Mermaid Import/Export**: Inclusive working-day durations, dependency chains, section grouping, frontmatter, state tags, rows with no ID, and a round trip that loses nothing - levels, types, exact progress, colours, link kinds and dates all compared field by field
 - ✅ **XLSX Import**: Header detection, column aliases, Excel serial dates, working-day durations, phase grouping, dependency resolution, lossless export round-trip
 - ✅ **Task Hierarchy**: Sub-task creation, parent candidate ordering, cycle safety, the type a task takes when it is indented or outdented between levels, and moving several selected rows at once in the order that keeps them together
 - ✅ **Logging**: Buffer capacity and filtering, file output, failure paths, importer errors reaching the log
@@ -1191,5 +1215,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.31.0
+**Version**: 1.32.0
 **Last Updated**: 2026-08-18
