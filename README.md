@@ -20,7 +20,7 @@ This is a complete implementation of a project management tool with:
 - **JSON Storage**: Save and load projects in JSON format
 - **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
-- **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and tasks to Excel XLSX
+- **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Rows that line up**: the chart draws the rows the task list is showing, in its order and at its row height, so a bar sits on the line of the task it belongs to. Fold a branch away and its bars go with it; scroll the list and the chart follows
@@ -92,7 +92,7 @@ gantt_app/
 │   ├── chart_figure.py     # Shared Plotly figure builder
 │   ├── image_export.py     # PNG, PDF, SVG and HTML export
 │   ├── chart_render.py     # Browser-free static chart drawing
-│   └── xlsx_exporter.py     # Excel XLSX export for tasks data
+│   └── xlsx_exporter.py     # Excel XLSX export as a live plan sheet
 │
 └── assets/                # For icons, themes, etc.
 ```
@@ -380,12 +380,54 @@ that delegates here, so the two cannot drift apart.
 - **Directory Creation**: Automatically creates parent directories
 
 ### XLSX Exporter (`utils/xlsx_exporter.py`)
-- **Excel Export**: Creates Excel XLSX files with comprehensive task data
-- **Multiple Worksheets**: Tasks, Dependencies, and Summary sheets for organized data
-- **Complete Data Export**: All task properties including hierarchy, dependencies, dates, progress
-- **Professional Styling**: Headers with background colors, borders, and proper alignment
-- **Auto-Sizing**: Automatic column width adjustment based on content
-- **Project Statistics**: Summary sheet with task counts, progress breakdown, and project metrics
+
+Writes the project as a **plan sheet** - the layout project plans are actually
+kept in - rather than as a dump of the model. A spreadsheet is where a plan
+gets circulated and argued over, and three sheets of raw fields (which is what
+this used to write) were a faithful record and no use to anybody who wanted to
+look at the plan.
+
+The sheet carries a title, an editable project start date, one row per piece
+of work grouped by phase, and a week-by-week bar chart drawn in the cells to
+the right:
+
+| Column | Holds |
+| --- | --- |
+| ID | Row number, which the `Pred.` column points at |
+| Phase | The phase the work sits under, colour-banded down the sheet |
+| Task | The work itself |
+| Responsible (A) | Left blank for the reader to fill in; the model has no owner field |
+| Key Deliverable | The Deliverable the row sits under, or the task's notes |
+| Pred. | Predecessor row numbers - `4`, `4SS`, `4FS+2` |
+| Duration (wd) | Working days, editable (shaded, blue text) |
+| Start / End | `WORKDAY` formulas over the duration |
+| Status | Not started / Ongoing / Done, from progress |
+| … | One column per week, drawing the bar |
+
+**The sheet is live.** Duration is a number the reader can change; Start and
+End are WORKDAY formulas over it, so re-planning in Excel behaves the way
+re-planning here does - weekends are skipped, and a task pushed out drags the
+chain behind it. The timeline bars are formulas over Start and End, so they
+follow. Changing the one start-date cell moves the whole plan.
+
+**A formula is only written where it reproduces the date this application
+already worked out.** The arithmetic is done first, with the project's own
+calendar, and where a WORKDAY chain could not say what the plan says - a task
+with no predecessor, or one held by a Start-Start or Finish-Finish link, or
+one with a lag - the real date is written instead. A sheet that is live but
+wrong would be worse than one that is merely static.
+
+Where the project observes public holidays, they are written to a hidden
+`Holidays` sheet and the formulas become `WORKDAY(…, Holidays!$A:$A)`, so
+Excel recalculates onto the same dates this application schedules.
+
+Rows are the **leaves** of the plan: the work. A Phase or a Deliverable
+brackets other rows rather than being work of its own, so it appears as the
+Phase column and the colour banding, which is how this layout expresses
+grouping. Nesting deeper than that is flattened - the layout has one grouping
+column - and the Key Deliverable column names the deliverable a row sits under
+so the level stays readable.
+
 - **Optional Dependency**: Gracefully handles missing openpyxl library
 - **Directory Creation**: Automatically creates parent directories
 
@@ -740,11 +782,24 @@ duration is the minimum):
 | Status / Státusz | Mapped to progress when no Progress column exists |
 | Milestone / Type / Color | Milestone flag, task type, bar colour |
 
-Files produced by this application's own XLSX export can be read back, since
-its `ID` / `Name` / `Parent Task` / `Start Date` / `End Date` headers are
-recognised too. The round-trip is lossless: task count, project name (read
-from the `Project Name:` label on the Summary sheet), dates, progress,
-milestone flags, colours, dependencies and hierarchy all survive.
+Files produced by this application's own XLSX export can be read back: the
+export writes this same `ID` / `Phase` / `Task` / `Pred.` / `Duration (wd)` /
+`Start` / `End` / `Status` layout.
+
+Its date columns are formulas, and openpyxl reads a formula's *cached* value -
+which a file that has never been opened by Excel does not have. So a row whose
+dates read as empty is placed at the plan's start date (taken from the
+`Project Start Date:` cell, parsed from its `DATE()` call if need be) and left
+for the scheduler: the duration is a plain number and the predecessors are
+plain row references, and the Finish-Start rule the scheduler applies is the
+same rule the WORKDAY chain encodes, so the rows land where the formulas would
+have put them.
+
+What survives the round trip: task count, project name (read from the
+`Project Name:` label on the Summary sheet), dates, progress, milestone flags,
+dependencies, and the phase grouping. What does not: the `Responsible (A)`
+column and any nesting below the phase level, neither of which the model has
+somewhere to keep.
 
 Dependencies are exported as task **names**. The importer therefore tries the
 whole cell as a single name before splitting it, so a task called
@@ -909,7 +964,8 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 2. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
 4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
-5. **XLSX Import**: Reads cached formula results, so a workbook generated without a calculation pass will have empty date columns
+5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
+6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
 
 ## Future Enhancements
 
@@ -960,5 +1016,5 @@ scheduled the same way one imported from GanttProject is. What that leaves:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.25.0
+**Version**: 1.25.1
 **Last Updated**: 2026-08-17

@@ -1270,7 +1270,21 @@ class DragDropTaskList(ctk.CTkFrame):
         milestone_str = 'Yes' if task.is_milestone else 'No'
         
         # Format duration
-        duration = task.duration_days
+        #
+        # A Phase or a Deliverable answers 0 from duration_days: it holds no
+        # work of its own, only the work beneath it. Printing that 0 beside a
+        # row whose two dates are a fortnight apart said the deliverable took
+        # no time, which is the one thing it does not mean. The working days
+        # it spans is what the row is showing dates for, so that is the
+        # number in the column.
+        #
+        # It is a span, not a total. Children that overlap - two sub-tasks
+        # linked Start-Start run together - span less than their efforts add
+        # up to, and that is the point of a summary bracketing them.
+        if task.is_container:
+            duration = self.project.working_duration(task)
+        else:
+            duration = task.duration_days
         duration_str = str(duration) if duration is not None else 'N/A'
         
         # Format task type

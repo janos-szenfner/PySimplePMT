@@ -368,6 +368,12 @@ class TestXLSXRoundTrip(unittest.TestCase):
         self.temp_files.append(source)
 
         self.original = import_xlsx_file(source)
+        # Settled before exporting, which is what the application does the
+        # moment a plan is loaded. A re-imported plan comes back settled -
+        # the sheet's dates are formulas, so the scheduler is what places the
+        # rows - and comparing a settled plan against an unsettled one would
+        # differ on the summary rows, whose progress is rolled up.
+        self.original.reschedule()
 
         handle = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
         self.exported_path = handle.name

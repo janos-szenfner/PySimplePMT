@@ -88,9 +88,19 @@ class TaskListTestCase(unittest.TestCase):
         self.fail(f"no {label!r} entry in the menu")
 
     def invoke_entry(self, task_id, label):
-        """Build the menu for a task and invoke one of its entries."""
+        """
+        Build the menu for a task and invoke one of its entries.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The idle queue is drained afterwards. Entries that open a window -
+        Create, Edit, Delete - schedule themselves there rather than running
+        inside the menu's own event loop; see TaskContextMenu._after_menu.
+        Without the drain those entries would appear to do nothing here.
+        """
         menu = self.task_list.context_menu._build(self.project, task_id)
         menu.invoke(self.entry_index(menu, label))
+        self.root.update_idletasks()
         return menu
 
     def rows(self):
@@ -944,6 +954,40 @@ class TestContextMenu(TaskListTestCase):
             self.assertIn('<Control-Button-1>', bound)
         else:
             self.assertIn('<Button-3>', bound)
+
+    def test_a_window_opening_entry_waits_for_the_menu_to_close(self):
+        """
+        Create, Edit and Delete are scheduled, not run where they stand.
+
+        A menu entry's command runs inside the menu's own event loop, and on
+        macOS that loop is the system's own: a dialog built in there comes up
+        underneath a menu that has not finished tracking, so the first click
+        looked like it had done nothing and the second one worked. The entries
+        that open a window schedule themselves onto the idle queue instead.
+        """
+        opened = []
+        self.task_list.on_task_edit = opened.append
+
+        menu = self.task_list.context_menu._build(self.project, "003")
+        menu.invoke(self.entry_index(menu, "Edit"))
+
+        self.assertEqual(opened, [], "the window opened inside the menu loop")
+
+        self.root.update_idletasks()
+
+        self.assertEqual([task.id for task in opened], ["003"])
+
+    def test_a_move_still_happens_where_it_stands(self):
+        """
+        Only the entries that open a window are deferred.
+
+        A move changes the tree and nothing else, so making it wait would be
+        latency for its own sake.
+        """
+        menu = self.task_list.context_menu._build(self.project, "003")
+        menu.invoke(self.entry_index(menu, "Move to top"))
+
+        self.assertEqual(self.rows()[0], "003")
 
     def test_edit_opens_the_edit_window(self):
         """Choosing Edit hands the clicked task to the edit callback."""

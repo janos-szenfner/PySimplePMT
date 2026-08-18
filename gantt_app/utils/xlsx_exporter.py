@@ -1,69 +1,52 @@
 """
-XLSX Exporter for the Gantt Project Management Tool.
-
-This module provides functionality to export projects to Excel XLSX format.
+XLSX export: the project as a plan sheet somebody can work in.
 
 WHY THIS MODULE EXISTS:
 ======================
-This module was created to provide Excel spreadsheet export capability,
-allowing users to analyze project data in spreadsheet applications like
-Microsoft Excel, Google Sheets, or LibreOffice Calc.
+A spreadsheet is where a plan gets circulated, argued over and edited by
+people who do not have this application. What it exports therefore has to be
+a plan, not a database dump. The first version wrote three sheets of raw
+fields - Tasks, Dependencies, Summary - which was a faithful record of the
+model and no use at all to anybody who wanted to look at the plan.
 
-By separating XLSX export into its own module, we achieve:
+This writes the layout project plans are actually kept in: a title, an
+editable project start date, one row per piece of work grouped by phase, and
+a week-by-week bar chart drawn in the cells to the right.
 
-1. **Separation of Concerns**: The main application and data models focus on
-   project management, while this module focuses solely on Excel export.
+WHAT MAKES IT A SPREADSHEET RATHER THAN A PICTURE:
+==================================================
+The sheet is live. Duration is a number the reader can change; Start and End
+are WORKDAY formulas over it, so re-planning in Excel behaves the way
+re-planning here does - weekends are skipped and a task pushed out drags the
+chain behind it. The timeline bars are formulas over Start and End, so they
+follow. Changing the start date in one cell moves the whole plan.
 
-2. **Optional Dependency**: Excel export requires the openpyxl library, which
-   is not required for basic application functionality. This keeps the
-   core dependencies minimal.
+A formula is only written where it reproduces the date this application
+already worked out; see _start_formula. Anywhere it would not - a task with
+no predecessor, or one held by a Start-Start or Finish-Finish link, neither
+of which a WORKDAY chain can express - the real date is written instead. A
+sheet that is live but wrong would be worse than one that is merely static.
 
-3. **Reusability**: The export logic can be reused independently of the GUI
-   components, making it easier to test and integrate with other systems.
+DEVELOPMENT NOTES:
+------------------
+Rows are the leaves of the plan: the work. A Phase or a Deliverable is a
+bracket over other rows rather than work of its own, so it appears as the
+Phase column beside its work and as the colour banding down the sheet, which
+is how the format expresses grouping. Nesting deeper than that is flattened -
+the layout has one grouping column - and the Key Deliverable column names the
+deliverable a row sits under so the level is still readable.
 
-4. **Extensibility**: New export formats can be added following the same
-   pattern without modifying existing code.
-
-5. **Comprehensive Data Export**: Exports all task information including
-   hierarchy, dependencies, dates, progress, and custom properties.
-
-DESIGN DECISIONS:
-================
-- Uses openpyxl library for Excel file creation (most popular Python Excel library)
-- Creates a new workbook for each export to avoid conflicts
-- Exports data in a structured format with multiple worksheets:
-  - Tasks: Main task data with all properties
-  - Dependencies: Dependency relationships between tasks
-  - Summary: Project overview and statistics
-- Automatically creates parent directories if they don't exist
-- Returns boolean success/failure for easy error handling
-- Gracefully handles missing optional dependencies
-- Uses pandas-compatible data structures for potential future integration
-
-USAGE:
-======
-from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
-
-# Export a project to Excel
-success = export_project_to_xlsx(project, "/path/to/output.xlsx")
-if success:
-    print("Export successful!")
-
-# Get Excel content as bytes (without saving to file)
-from gantt_app.utils.xlsx_exporter import generate_xlsx_bytes
-xlsx_bytes = generate_xlsx_bytes(project)
+Optional Dependency: needs openpyxl, and says so rather than failing
+obscurely when it is missing.
 """
 
-import os
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 try:
-    import openpyxl
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-    from openpyxl.styles.colors import Color
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
     OPENPYXL_AVAILABLE = True
 except ImportError:
@@ -76,373 +59,684 @@ from gantt_app.utils.log import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    # For type hints only - this won't cause import errors at runtime
     if OPENPYXL_AVAILABLE:
         from openpyxl import Workbook as WorkbookType
     else:
         WorkbookType = Any  # type: ignore
 
 
-def _get_task_data_dict(task: Task, project: Project) -> Dict[str, Any]:
+# ---------------------------------------------------------------------------
+# The look of the sheet
+# ---------------------------------------------------------------------------
+
+#: Every colour the sheet uses, as Excel ARGB.
+HEADER_BG = 'FF1F4E79'          # the dark blue header band
+HEADER_TEXT = 'FFFFFFFF'
+TITLE_TEXT = 'FF1F4E79'
+NOTE_TEXT = 'FF808080'
+EDITABLE_BG = 'FFFFF2CC'        # the pale yellow of a cell meant to be typed in
+EDITABLE_TEXT = 'FF0000FF'      # and its blue text, the spreadsheet convention
+BAR_TEXT = 'FF2E75B6'           # the timeline bars
+
+#: Banding down the Phase column, one colour per phase, cycled.
+PHASE_FILLS = ('FFDDEBF7', 'FFE2EFDA', 'FFFCE4D6', 'FFEDEDED', 'FFFFF2CC',
+               'FFE4DFEC')
+
+#: Status wording, and the fill that goes with it.
+STATUS_NOT_STARTED = 'Not started'
+STATUS_ONGOING = 'Ongoing'
+STATUS_DONE = 'Done'
+STATUS_FILLS = {
+    STATUS_NOT_STARTED: 'FFFFF2CC',
+    STATUS_ONGOING: 'FFC6EFCE',
+    STATUS_DONE: 'FFA9D08E',
+}
+
+#: The character a timeline cell draws a covered week with.
+BAR_GLYPH = '█'
+
+FONT_NAME = 'Arial'
+
+#: Where the fixed part of the sheet sits.
+ROW_TITLE = 1
+ROW_START_DATE = 3
+ROW_HEADER = 5
+ROW_FIRST_TASK = 6
+
+#: Column letters for the fields, and the first timeline column.
+COL_ID, COL_PHASE, COL_TASK, COL_OWNER = 'A', 'B', 'C', 'D'
+COL_DELIVERABLE, COL_PRED, COL_DURATION = 'E', 'F', 'G'
+COL_START, COL_END, COL_STATUS = 'H', 'I', 'J'
+FIRST_TIMELINE_COL = 11         # K
+
+#: The header row's captions, in order from column A.
+HEADINGS = ('ID', 'Phase', 'Task', 'Responsible (A)', 'Key Deliverable',
+            'Pred.', 'Duration (wd)', 'Start', 'End', 'Status')
+
+#: Column widths, by letter. The timeline columns share FIRST_TIMELINE_COL's.
+COLUMN_WIDTHS = {
+    'A': 4, 'B': 32, 'C': 42, 'D': 26, 'E': 46, 'F': 8,
+    'G': 10, 'H': 11, 'I': 11, 'J': 12,
+}
+TIMELINE_WIDTH = 3.66
+
+#: How many weeks of timeline to draw, whatever the plan is. A short plan
+#: still wants a chart, and a very long one is capped so the sheet does not
+#: become tens of thousands of cells of formula.
+MIN_TIMELINE_WEEKS = 8
+MAX_TIMELINE_WEEKS = 104
+
+DATE_FORMAT = 'yyyy\\-mm\\-dd'
+WEEK_FORMAT = 'mm\\-dd'
+
+#: What goes in the Pred. column when there is nothing to point at.
+NO_PREDECESSOR = '–'
+
+#: Name of the sheet holding the holiday dates, when the project has any.
+HOLIDAY_SHEET = 'Holidays'
+
+
+def _thin_border():
+    """The hairline box every cell in the table wears."""
+    side = Side(style='thin')
+    return Border(left=side, right=side, top=side, bottom=side)
+
+
+def _sheet_title(project: Project) -> str:
     """
-    Convert a Task object to a dictionary of exportable data.
-    
+    A worksheet name Excel will accept for this project.
+
+    Excel forbids []:*?/\\ in a sheet name and caps it at 31 characters, and
+    it refuses to open a file that breaks either rule.
+    """
+    name = (project.name or 'Project Plan').strip() or 'Project Plan'
+    for bad in '[]:*?/\\':
+        name = name.replace(bad, ' ')
+    return name[:31].strip() or 'Project Plan'
+
+
+# ---------------------------------------------------------------------------
+# Working out what goes in the rows
+# ---------------------------------------------------------------------------
+
+def _plan_rows(project: Project) -> List[Task]:
+    """
+    The tasks that get a row: the work, in the order the plan holds it.
+
+    RETURNS:
+    --------
+    List[Task]
+        Every task with nothing hanging off it. A Phase or a Deliverable with
+        children is a bracket over other rows rather than work of its own, so
+        it becomes the Phase column and the colour banding instead of a row.
+        One with nothing inside it is work that has not been broken down yet,
+        and does get a row.
+    """
+    with_children = project.get_summary_task_ids()
+    return [task for task in project.tasks if task.id not in with_children]
+
+
+def _ancestors(project: Project, task: Task) -> List[Task]:
+    """
+    A task's parents, nearest first, guarded against a broken parent chain.
+    """
+    found: List[Task] = []
+    seen = {task.id}
+    current = task
+    while current.parent_task_id and current.parent_task_id not in seen:
+        parent = project.get_task_by_id(current.parent_task_id)
+        if parent is None:
+            break
+        seen.add(parent.id)
+        found.append(parent)
+        current = parent
+    return found
+
+
+def _phase_of(project: Project, task: Task) -> str:
+    """
+    The name to put in the Phase column.
+
+    The nearest ancestor that is a Phase, or failing that the outermost
+    ancestor of any kind - a plan grouped only into Deliverables still wants
+    its grouping shown. A task at the top level has no phase.
+    """
+    ancestors = _ancestors(project, task)
+    for ancestor in ancestors:
+        if ancestor.task_type == 'Phase':
+            return ancestor.name
+    return ancestors[-1].name if ancestors else ''
+
+
+def _deliverable_of(project: Project, task: Task) -> str:
+    """
+    The name to put in the Key Deliverable column.
+
+    The nearest ancestor Deliverable, which is the level the Phase column
+    cannot show. With none, the task's own notes stand in - that is where a
+    plan built without Deliverables says what a task produces.
+    """
+    for ancestor in _ancestors(project, task):
+        if ancestor.task_type == 'Deliverable':
+            return ancestor.name
+    return (task.details or '').strip().splitlines()[0] if task.details else ''
+
+
+def _status_of(task: Task) -> str:
+    """The Status wording for a task's progress."""
+    if task.progress >= 100:
+        return STATUS_DONE
+    if task.progress > 0:
+        return STATUS_ONGOING
+    return STATUS_NOT_STARTED
+
+
+def _predecessor_text(task: Task, numbers: Dict[str, int]) -> str:
+    """
+    The Pred. cell: the row numbers this task follows.
+
     PARAMETERS:
     -----------
     task : Task
-        The task to convert
-    project : Project
-        The project containing the task (for dependency name resolution)
-        
+        The dependent task.
+    numbers : Dict[str, int]
+        Task ID to the number in the ID column.
+
     RETURNS:
     --------
-    Dict[str, Any]
-        Dictionary containing task data suitable for Excel export
-        
+    str
+        Numbers joined with ';', each carrying its link type and lag where
+        those are not the plain Finish-Start with no lag that a bare number
+        means - "4", "4SS", "4FS+2". That is MS Project's notation, which is
+        what a reader of a plan expects and what the importer reads back.
+
     DEVELOPMENT NOTES:
     ------------------
-    This function extracts all relevant task data and formats it appropriately
-    for Excel export. It handles special cases like milestones, subtasks,
-    and missing end dates.
+    A predecessor that has no row of its own - a summary, which this layout
+    does not give rows to - is left out. Pointing at a row number that is not
+    in the sheet would be worse than saying nothing.
     """
-    # Get parent task name for subtasks
-    parent_name = ""
-    if task.parent_task_id:
-        parent_task = project.get_task_by_id(task.parent_task_id)
-        if parent_task:
-            parent_name = parent_task.name
-    
-    # Get dependency names
-    dependency_names = []
-    for dep_id in task.dependency_ids:
-        dep_task = project.get_task_by_id(dep_id)
-        if dep_task:
-            dependency_names.append(dep_task.name)
-    
-    # Format dates
-    start_date_str = task.start_date.strftime('%Y-%m-%d') if task.start_date else ""
-    end_date_str = task.end_date.strftime('%Y-%m-%d') if task.end_date else ""
-    
-    # Calculate duration. It is working days - see gantt_app.workdaycalendar -
-    # and the column says so, because that is what tells xlsx_importer how to
-    # read it back. Written as "Duration (Days)" the same number came back in as
-    # calendar days, and a task exported and reimported lost its weekends.
-    duration_days = task.duration_days
-    duration_str = str(duration_days) if duration_days is not None else ""
-    
-    return {
-        'ID': task.id,
-        'Name': task.name,
-        'Type': task.task_type,
-        'Parent Task': parent_name,
-        'Start Date': start_date_str,
-        'End Date': end_date_str,
-        'Duration (WD)': duration_str,
-        'Progress (%)': task.progress,
-        'Dependencies': ', '.join(dependency_names) if dependency_names else "",
-        'Milestone': 'Yes' if task.is_milestone else 'No',
-        'Color': task.color,
-    }
+    parts = []
+    for dependency in task.dependencies:
+        number = numbers.get(dependency.task_id)
+        if number is None:
+            continue
+        text = str(number)
+        # The type is spelt out whenever anything follows it. A bare "1+3"
+        # is not the notation - the reader cannot tell the lag from the
+        # reference, and the importer's own reference pattern wants the type
+        # before the sign, so the link came back pointing at nothing.
+        if dependency.dep_type != 'FS' or dependency.lag:
+            text += dependency.dep_type
+        if dependency.lag:
+            text += f"{dependency.lag:+d}"
+        parts.append(text)
+    return ';'.join(parts) if parts else NO_PREDECESSOR
+
+
+def _followed_rows(task: Task, rows: Dict[str, int]) -> List[int]:
+    """
+    The sheet rows a task follows by a plain Finish-Start link.
+
+    RETURNS:
+    --------
+    List[int]
+        Row numbers, empty when the task has no such link. Only these can be
+        expressed as a WORKDAY chain: a Start-Start or Finish-Finish link
+        places the task somewhere the formula has no way to say, and a lag
+        would need the formula to count days the chain does not.
+    """
+    followed = []
+    for dependency in task.dependencies:
+        if dependency.dep_type != 'FS' or dependency.lag:
+            return []
+        row = rows.get(dependency.task_id)
+        if row is None:
+            return []
+        followed.append(row)
+    return followed
+
+
+def _workday(expression: str, days: str, holidays: bool) -> str:
+    """WORKDAY over the project's holiday list, when it has one."""
+    if holidays:
+        return f"WORKDAY({expression},{days},{HOLIDAY_SHEET}!$A:$A)"
+    return f"WORKDAY({expression},{days})"
+
+
+def _start_formula(task: Task, project: Project, rows: Dict[str, int],
+                   holidays: bool) -> Optional[str]:
+    """
+    The Start cell's formula, or None to write the date itself.
+
+    RETURNS:
+    --------
+    Optional[str]
+        A WORKDAY expression chaining this task onto the rows it follows, or
+        '=$C$3' for a task that starts the project. None when no formula
+        would land on the date the task actually has.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The formula is checked against the answer before it is written. A live
+    sheet is worth having, but only while it agrees with the plan it came
+    from: a WORKDAY chain over the wrong links would open in Excel showing
+    dates this application never scheduled, and the reader has no way to tell
+    which of the two is the plan.
+
+    So the arithmetic is done here first, with the project's own calendar -
+    which is what WORKDAY implements for a Monday-to-Friday week - and the
+    formula is written only where the two agree.
+    """
+    calendar = project.calendar
+    followed = _followed_rows(task, rows)
+
+    if not followed:
+        if project.start_date is None:
+            return None
+        if task.start_date.date() != project.start_date.date():
+            return None
+        return "=$C$3"
+
+    predecessors = [project.get_task_by_id(d.task_id) for d in task.dependencies]
+    finishes = [(p.end_date or p.start_date) for p in predecessors if p]
+    if not finishes:
+        return None
+
+    expected = calendar.get_next_working_day(max(finishes) + timedelta(days=1))
+    if expected.date() != task.start_date.date():
+        return None
+
+    cells = ','.join(f"{COL_END}{row}" for row in sorted(followed))
+    inner = cells if len(followed) == 1 else f"MAX({cells})"
+    return "=" + _workday(inner, "1", holidays)
+
+
+def _timeline_weeks(project: Project) -> int:
+    """How many weekly columns the chart needs to cover the plan."""
+    if project.start_date is None or project.end_date is None:
+        return MIN_TIMELINE_WEEKS
+    days = max((project.end_date - project.start_date).days, 0)
+    weeks = days // 7 + 2
+    return max(MIN_TIMELINE_WEEKS, min(weeks, MAX_TIMELINE_WEEKS))
+
+
+def _project_holidays(project: Project) -> List[date]:
+    """
+    Every non-working date the plan spans that is not a weekend.
+
+    RETURNS:
+    --------
+    List[date]
+        Sorted holidays inside the plan's span, for the sheet WORKDAY is
+        pointed at. Empty when the calendar declares none, in which case no
+        holiday sheet is written and the formulas skip weekends only.
+    """
+    calendar = project.calendar
+    if not (calendar.holidays or calendar.recurring_holidays
+            or calendar.countries):
+        return []
+
+    if project.start_date is None or project.end_date is None:
+        return []
+
+    found = []
+    current = project.start_date.date()
+    last = project.end_date.date() + timedelta(days=30)
+    while current <= last:
+        if (current.weekday() not in calendar.non_working_days
+                and not calendar.is_working_day(current)):
+            found.append(current)
+        current += timedelta(days=1)
+    return found
+
+
+# ---------------------------------------------------------------------------
+# Drawing the sheet
+# ---------------------------------------------------------------------------
+
+def _write_title(sheet, project: Project) -> None:
+    """The name of the plan, and the start date box that drives it."""
+    title = sheet.cell(row=ROW_TITLE, column=1,
+                       value=f"{project.name or 'Project'} – Project Plan")
+    title.font = Font(name=FONT_NAME, size=14, bold=True, color=TITLE_TEXT)
+    sheet.row_dimensions[ROW_TITLE].height = 18
+
+    label = sheet.cell(row=ROW_START_DATE, column=1, value="Project Start Date:")
+    label.font = Font(name=FONT_NAME, size=10, bold=True)
+
+    start = project.start_date or datetime.now()
+    box = sheet[f"{COL_TASK}{ROW_START_DATE}"]
+    box.value = f"=DATE({start.year},{start.month},{start.day})"
+    box.font = Font(name=FONT_NAME, size=10, color=EDITABLE_TEXT)
+    box.fill = PatternFill('solid', fgColor=EDITABLE_BG)
+    box.border = _thin_border()
+    box.number_format = DATE_FORMAT
+
+    note = sheet.cell(row=ROW_START_DATE, column=4,
+                      value="◄ Editable (working days follow automatically "
+                            "via WORKDAY)")
+    note.font = Font(name=FONT_NAME, size=9, color=NOTE_TEXT)
+
+
+def _write_header(sheet, weeks: int) -> None:
+    """The field captions, then a column per week of the plan."""
+    fill = PatternFill('solid', fgColor=HEADER_BG)
+    border = _thin_border()
+
+    for index, caption in enumerate(HEADINGS, start=1):
+        cell = sheet.cell(row=ROW_HEADER, column=index, value=caption)
+        cell.font = Font(name=FONT_NAME, size=10, bold=True, color=HEADER_TEXT)
+        cell.fill = fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center', vertical='center',
+                                   wrap_text=True)
+
+    for offset in range(weeks):
+        column = FIRST_TIMELINE_COL + offset
+        cell = sheet.cell(row=ROW_HEADER, column=column)
+        if offset == 0:
+            cell.value = f"=${COL_TASK}${ROW_START_DATE}"
+        else:
+            previous = get_column_letter(column - 1)
+            cell.value = f"={previous}{ROW_HEADER}+7"
+        cell.font = Font(name=FONT_NAME, size=8, bold=True, color=HEADER_TEXT)
+        cell.fill = fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center')
+        cell.number_format = WEEK_FORMAT
+
+    sheet.row_dimensions[ROW_HEADER].height = 90
+
+
+def _write_task_row(sheet, row: int, task: Task, project: Project,
+                    number: int, numbers: Dict[str, int],
+                    rows: Dict[str, int], phase_fill: Optional[str],
+                    weeks: int, holidays: bool) -> None:
+    """One piece of work, across the fields and the timeline."""
+    border = _thin_border()
+    body = Font(name=FONT_NAME, size=10)
+    centred = Alignment(horizontal='center')
+    wrapped = Alignment(vertical='center', wrap_text=True)
+
+    identifier = sheet.cell(row=row, column=1, value=number)
+    identifier.font = body
+    identifier.alignment = centred
+    identifier.border = border
+
+    phase = sheet.cell(row=row, column=2, value=_phase_of(project, task))
+    phase.font = Font(name=FONT_NAME, size=9)
+    phase.alignment = Alignment(vertical='center', wrap_text=True)
+    phase.border = border
+    if phase_fill:
+        phase.fill = PatternFill('solid', fgColor=phase_fill)
+
+    for column, value in ((3, task.name),
+                          (4, ''),                      # Responsible: the
+                                                        # model has no owner,
+                                                        # so the column is
+                                                        # there to be filled in
+                          (5, _deliverable_of(project, task))):
+        cell = sheet.cell(row=row, column=column, value=value)
+        cell.font = body
+        cell.alignment = wrapped
+        cell.border = border
+
+    predecessors = sheet.cell(row=row, column=6,
+                              value=_predecessor_text(task, numbers))
+    predecessors.font = body
+    predecessors.alignment = centred
+    predecessors.border = border
+
+    # A milestone marks a moment and takes no time, which a duration of
+    # nought days is how this format says. Everything else holds at least a
+    # day of work.
+    length = 0 if task.effective_milestone else max(
+        project.working_duration(task), 1)
+    duration = sheet.cell(row=row, column=7, value=length)
+    duration.font = Font(name=FONT_NAME, size=10, color=EDITABLE_TEXT)
+    duration.fill = PatternFill('solid', fgColor=EDITABLE_BG)
+    duration.alignment = centred
+    duration.border = border
+
+    start = sheet.cell(row=row, column=8)
+    formula = _start_formula(task, project, rows, holidays)
+    start.value = formula if formula else task.start_date
+    start.font = body
+    start.alignment = centred
+    start.border = border
+    start.number_format = DATE_FORMAT
+
+    end = sheet.cell(row=row, column=9)
+    if task.effective_milestone:
+        # No length, so it ends the day it starts
+        end.value = f"=${COL_START}{row}"
+    elif formula:
+        end.value = "=" + _workday(f"{COL_START}{row}", f"{COL_DURATION}{row}-1",
+                                   holidays)
+    else:
+        end.value = task.end_date or task.start_date
+    end.font = body
+    end.alignment = centred
+    end.border = border
+    end.number_format = DATE_FORMAT
+
+    status_text = _status_of(task)
+    status = sheet.cell(row=row, column=10, value=status_text)
+    status.font = Font(name=FONT_NAME, size=10, color=EDITABLE_TEXT)
+    status.fill = PatternFill('solid', fgColor=STATUS_FILLS[status_text])
+    status.alignment = Alignment(vertical='center')
+    status.border = border
+
+    _write_timeline(sheet, row, weeks)
+    sheet.row_dimensions[row].height = 30
+
+
+def _write_timeline(sheet, row: int, weeks: int) -> None:
+    """
+    The bar, as one formula per week.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Each cell asks whether its week overlaps the task at all - the week starts
+    on or before the finish, and ends on or after the start - and draws a
+    block if it does. Written as formulas over the Start and End cells rather
+    than as fixed marks, so editing a duration redraws the chart.
+    """
+    border = _thin_border()
+    font = Font(name=FONT_NAME, size=10, color=BAR_TEXT)
+    centred = Alignment(horizontal='center')
+
+    for offset in range(weeks):
+        column = get_column_letter(FIRST_TIMELINE_COL + offset)
+        cell = sheet.cell(row=row, column=FIRST_TIMELINE_COL + offset)
+        cell.value = (
+            f'=IF(AND({column}${ROW_HEADER}<=${COL_END}{row},'
+            f'{column}${ROW_HEADER}+6>=${COL_START}{row}),"{BAR_GLYPH}","")'
+        )
+        cell.font = font
+        cell.alignment = centred
+        cell.border = border
+
+
+def _write_holiday_sheet(workbook, holidays: List[date]) -> None:
+    """
+    The dates WORKDAY is told to skip beyond the weekend.
+
+    Kept on its own sheet because that is what WORKDAY's third argument
+    wants - a range - and hidden, because it is machinery rather than plan.
+    """
+    sheet = workbook.create_sheet(HOLIDAY_SHEET)
+    sheet.cell(row=1, column=1, value="Non-working dates")
+    sheet.cell(row=1, column=1).font = Font(name=FONT_NAME, bold=True)
+    for index, day in enumerate(holidays, start=2):
+        cell = sheet.cell(row=index, column=1, value=day)
+        cell.number_format = DATE_FORMAT
+    sheet.column_dimensions['A'].width = 18
+    sheet.sheet_state = 'hidden'
+
+
+def _write_summary_sheet(workbook, project: Project) -> None:
+    """
+    The project's totals, for whoever wants the numbers rather than the plan.
+
+    The project name lives here too, which is how the importer recovers it -
+    the plan sheet's title cell is prose and the sheet's own name is capped
+    at 31 characters.
+    """
+    sheet = workbook.create_sheet("Summary")
+    milestones = sum(1 for t in project.tasks if t.effective_milestone)
+    containers = sum(1 for t in project.tasks if t.is_container)
+
+    rows = [
+        ("Project Summary", ""),
+        ("Project Name:", project.name),
+        ("Total Tasks:", len(project.tasks)),
+        ("Phases and Deliverables:", containers),
+        ("Milestones:", milestones),
+        ("Start Date:", project.start_date.strftime('%Y-%m-%d')
+         if project.start_date else ''),
+        ("End Date:", project.end_date.strftime('%Y-%m-%d')
+         if project.end_date else ''),
+        ("Completed:", sum(1 for t in project.tasks if t.progress >= 100)),
+        ("In Progress:", sum(1 for t in project.tasks
+                             if 0 < t.progress < 100)),
+        ("Not Started:", sum(1 for t in project.tasks if t.progress == 0)),
+    ]
+    for index, (label, value) in enumerate(rows, start=1):
+        caption = sheet.cell(row=index, column=1, value=label)
+        caption.font = Font(name=FONT_NAME, bold=index == 1)
+        sheet.cell(row=index, column=2, value=value)
+
+    sheet.column_dimensions['A'].width = 26
+    sheet.column_dimensions['B'].width = 30
 
 
 def _create_tasks_workbook(project: Project):
     """
-    Create a workbook with tasks data.
-    
-    PARAMETERS:
-    -----------
-    project : Project
-        The project to export
-        
+    Build the workbook: the plan sheet, and the totals behind it.
+
     RETURNS:
     --------
     Workbook
-        An openpyxl Workbook object with tasks data
-        
-    DEVELOPMENT NOTES:
-    ------------------
-    Creates multiple worksheets:
-    1. Tasks - Main task data
-    2. Dependencies - Dependency relationships
-    3. Summary - Project overview
+        An openpyxl workbook ready to save.
     """
-    wb = Workbook()
-    
-    # Remove default sheet - we'll create our own
-    del wb['Sheet']
-    
-    # Create Tasks worksheet
-    ws_tasks = wb.create_sheet("Tasks")
-    
-    # Define headers
-    headers = [
-        'ID', 'Name', 'Type', 'Parent Task', 'Start Date', 'End Date', 
-        'Duration (WD)', 'Progress (%)', 'Dependencies', 'Milestone', 'Color'
-    ]
-    
-    # Write headers with styling
-    for col_num, header in enumerate(headers, 1):
-        cell = ws_tasks.cell(row=1, column=col_num, value=header)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color='DDDDDD', end_color='DDDDDD', fill_type='solid')
-        cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                             top=Side(style='thin'), bottom=Side(style='thin'))
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-    
-    # Write task data
-    for row_num, task in enumerate(project.tasks, 2):
-        task_data = _get_task_data_dict(task, project)
-        
-        for col_num, header in enumerate(headers, 1):
-            cell = ws_tasks.cell(row=row_num, column=col_num, value=task_data[header])
-            cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                                 top=Side(style='thin'), bottom=Side(style='thin'))
-            
-            # Apply special formatting
-            if header == 'Progress (%)':
-                # Center progress percentages
-                cell.alignment = Alignment(horizontal='center')
-            elif header == 'Milestone':
-                # Center milestone indicator
-                cell.alignment = Alignment(horizontal='center')
-            elif header == 'Duration (WD)':
-                # Right-align numbers
-                cell.alignment = Alignment(horizontal='right')
-    
-    # Auto-adjust column widths
-    for col_num, header in enumerate(headers, 1):
-        max_length = len(header)
-        column_letter = get_column_letter(col_num)
-        
-        # Check all rows for this column
-        for row_num in range(2, len(project.tasks) + 2):
-            cell_value = str(ws_tasks[column_letter + str(row_num)].value or '')
-            max_length = max(max_length, len(cell_value))
-        
-        # Set column width with some padding
-        ws_tasks.column_dimensions[column_letter].width = min(max_length + 2, 50)
-    
-    # Create Dependencies worksheet
-    ws_deps = wb.create_sheet("Dependencies")
-    
-    # Write dependency headers
-    deps_headers = ['Source Task', 'Target Task', 'Dependency Type']
-    for col_num, header in enumerate(deps_headers, 1):
-        cell = ws_deps.cell(row=1, column=col_num, value=header)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color='DDDDDD', end_color='DDDDDD', fill_type='solid')
-        cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                             top=Side(style='thin'), bottom=Side(style='thin'))
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-    
-    # Write dependency data
-    row_num = 2
-    for task in project.tasks:
-        for dep_id in task.dependency_ids:
-            dep_task = project.get_task_by_id(dep_id)
-            if dep_task:
-                ws_deps.cell(row=row_num, column=1, value=task.name)
-                ws_deps.cell(row=row_num, column=2, value=dep_task.name)
-                ws_deps.cell(row=row_num, column=3, value='Finish-to-Start')
-                
-                # Apply borders
-                for col_num in range(1, 4):
-                    cell = ws_deps.cell(row=row_num, column=col_num)
-                    cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                                         top=Side(style='thin'), bottom=Side(style='thin'))
-                
-                row_num += 1
-    
-    # Auto-adjust dependency column widths
-    for col_num, header in enumerate(deps_headers, 1):
-        max_length = len(header)
-        column_letter = get_column_letter(col_num)
-        
-        for row_num in range(2, row_num):  # row_num is one past the last data row
-            cell_value = str(ws_deps[column_letter + str(row_num)].value or '')
-            max_length = max(max_length, len(cell_value))
-        
-        ws_deps.column_dimensions[column_letter].width = min(max_length + 2, 50)
-    
-    # Create Summary worksheet
-    ws_summary = wb.create_sheet("Summary")
-    
-    # Write summary data
-    summary_data = [
-        ['Project Name:', project.name or ''],
-        ['Total Tasks:', len(project.tasks)],
-        ['Start Date:', project.start_date.strftime('%Y-%m-%d') if project.start_date else ''],
-        ['End Date:', project.end_date.strftime('%Y-%m-%d') if project.end_date else ''],
-        ['Project Duration (Days):', (project.end_date - project.start_date).days + 1 if project.start_date and project.end_date else ''],
-    ]
-    
-    # Count task types
-    regular_tasks = [t for t in project.tasks if t.task_type == 'Task' and not t.effective_milestone]
-    subtasks = [t for t in project.tasks if t.task_type == 'Subtask']
-    milestones = [t for t in project.tasks if t.effective_milestone]
-    
-    summary_data.extend([
-        ['Regular Tasks:', len(regular_tasks)],
-        ['Subtasks:', len(subtasks)],
-        ['Milestones:', len(milestones)],
-    ])
-    
-    # Count tasks by progress
-    completed = [t for t in project.tasks if t.progress >= 100]
-    in_progress = [t for t in project.tasks if 0 < t.progress < 100]
-    not_started = [t for t in project.tasks if t.progress == 0]
-    
-    summary_data.extend([
-        ['Completed:', len(completed)],
-        ['In Progress:', len(in_progress)],
-        ['Not Started:', len(not_started)],
-    ])
-    
-    # Write summary data with styling
-    for row_num, (label, value) in enumerate(summary_data, 1):
-        label_cell = ws_summary.cell(row=row_num, column=1, value=label)
-        value_cell = ws_summary.cell(row=row_num, column=2, value=value)
-        
-        label_cell.font = Font(bold=True)
-        label_cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                                   top=Side(style='thin'), bottom=Side(style='thin'))
-        value_cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                                   top=Side(style='thin'), bottom=Side(style='thin'))
-    
-    # Set summary column widths
-    ws_summary.column_dimensions['A'].width = 25
-    ws_summary.column_dimensions['B'].width = 30
-    
-    # Add a title to summary sheet
-    title_cell = ws_summary.cell(row=1, column=1, value='Project Summary')
-    title_cell.font = Font(bold=True, size=14)
-    title_cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-    title_cell.alignment = Alignment(horizontal='center')
-    
-    # Merge title across columns
-    ws_summary.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
-    
-    # Move summary data down one row to accommodate title
-    for row_num, (label, value) in enumerate(summary_data, 2):
-        label_cell = ws_summary.cell(row=row_num, column=1, value=label)
-        value_cell = ws_summary.cell(row=row_num, column=2, value=value)
-        
-        label_cell.font = Font(bold=True)
-        label_cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                                   top=Side(style='thin'), bottom=Side(style='thin'))
-        value_cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                                   top=Side(style='thin'), bottom=Side(style='thin'))
-    
-    return wb
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = _sheet_title(project)
 
+    tasks = _plan_rows(project)
+    weeks = _timeline_weeks(project)
+    holidays = _project_holidays(project)
+
+    _write_title(sheet, project)
+    _write_header(sheet, weeks)
+
+    # Numbered and placed before anything is written, so a row can point at
+    # one further down the sheet - which a plan whose links run backwards up
+    # the list will do.
+    numbers = {task.id: index for index, task in enumerate(tasks, start=1)}
+    rows = {task.id: ROW_FIRST_TASK + index
+            for index, task in enumerate(tasks)}
+
+    phase_colours: Dict[str, str] = {}
+    for index, task in enumerate(tasks):
+        phase = _phase_of(project, task)
+        if phase and phase not in phase_colours:
+            phase_colours[phase] = PHASE_FILLS[len(phase_colours)
+                                               % len(PHASE_FILLS)]
+        _write_task_row(sheet, rows[task.id], task, project,
+                        numbers[task.id], numbers, rows,
+                        phase_colours.get(phase), weeks, bool(holidays))
+
+    for letter, width in COLUMN_WIDTHS.items():
+        sheet.column_dimensions[letter].width = width
+    for offset in range(weeks):
+        letter = get_column_letter(FIRST_TIMELINE_COL + offset)
+        sheet.column_dimensions[letter].width = TIMELINE_WIDTH
+
+    # Everything above the first task stays put while the plan scrolls
+    sheet.freeze_panes = f"A{ROW_FIRST_TASK}"
+
+    if holidays:
+        _write_holiday_sheet(workbook, holidays)
+    _write_summary_sheet(workbook, project)
+
+    logger.info("Built a plan sheet of %d row(s) and %d week(s) for %r",
+                len(tasks), weeks, project.name)
+    return workbook
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
 
 def generate_xlsx_bytes(project: Project) -> Optional[bytes]:
     """
     Generate XLSX content as bytes from a Project.
-    
-    PARAMETERS:
-    -----------
-    project : Project
-        The project to export
-        
+
     RETURNS:
     --------
     Optional[bytes]
-        XLSX file content as bytes, or None if export failed
-        
-    DEVELOPMENT NOTES:
-    ------------------
-    This function creates the Excel workbook in memory and returns it as bytes.
-    This is useful for web applications or when you want to manipulate the
-    data further before saving to disk.
+        The workbook, or None when it could not be built.
     """
     if not OPENPYXL_AVAILABLE:
-        logger.error("Error: openpyxl library is required for Excel export")
+        logger.error("openpyxl is required for Excel export")
         logger.warning("Install it with: pip install openpyxl")
         return None
-    
+
     try:
-        wb = _create_tasks_workbook(project)
-        
-        # Save workbook to bytes
         from io import BytesIO
+
+        workbook = _create_tasks_workbook(project)
         output = BytesIO()
-        wb.save(output)
+        workbook.save(output)
         output.seek(0)
-        
         return output.getvalue()
-        
-    except Exception as e:
-        logger.exception(f"Error generating XLSX: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Could not generate the XLSX for %r", project.name)
         return None
 
 
 def export_project_to_xlsx(project: Project, filepath: str) -> bool:
     """
     Export a Project to Excel XLSX format.
-    
-    This is the main public function for XLSX export. It generates the
-    Excel workbook and saves it to a file.
-    
+
     PARAMETERS:
     -----------
     project : Project
-        The project to export
+        The project to export.
     filepath : str
-        Path where the XLSX file should be saved
-        
+        Where to write the workbook. Parent directories are created.
+
     RETURNS:
     --------
     bool
-        True if export was successful, False otherwise
-        
+        True when the file was written.
+
     EXAMPLE:
     --------
     >>> from gantt_app.models import Project, Task
     >>> from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
     >>> from datetime import datetime, timedelta
-    >>> 
+    >>>
     >>> project = Project(name="My Project")
     >>> start = datetime(2024, 1, 1)
     >>> project.add_task(Task.create_task("Task 1", start, start + timedelta(days=5)))
     >>> export_project_to_xlsx(project, "/path/to/output.xlsx")
     True
-        
-    DEVELOPMENT NOTES:
-    ------------------
-    This function:
-    1. Creates the Excel workbook using _create_tasks_workbook()
-    2. Creates parent directories if they don't exist
-    3. Saves the workbook to the specified file
-    4. Handles any errors gracefully and returns False on failure
-    
-    The Excel file contains:
-    - Tasks worksheet: All task data with full details
-    - Dependencies worksheet: Dependency relationships between tasks
-    - Summary worksheet: Project overview and statistics
-    
-    If openpyxl is not installed, this function will print an error message
-    and return False.
     """
     if not OPENPYXL_AVAILABLE:
-        logger.error("Error: openpyxl library is required for Excel export")
+        logger.error("openpyxl is required for Excel export")
         logger.warning("Install it with: pip install openpyxl")
         return False
-    
+
     try:
-        # Create parent directories if they don't exist
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        
-        # Create and save workbook
-        wb = _create_tasks_workbook(project)
-        wb.save(filepath)
-        
+        workbook = _create_tasks_workbook(project)
+        workbook.save(filepath)
+        logger.info("Exported %r to %s", project.name, filepath)
         return True
-        
-    except Exception as e:
-        logger.exception(f"Error exporting to XLSX: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Could not export %r to %s", project.name, filepath)
         return False

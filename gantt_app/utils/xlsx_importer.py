@@ -420,7 +420,8 @@ class XLSXImporter:
 
     def _build_task(self, values: Dict[str, Any], row_number: int,
                     duration_in_working_days: bool,
-                    used_ids: Optional[set] = None) -> Optional[Task]:
+                    used_ids: Optional[set] = None,
+                    project_start: Optional[datetime] = None) -> Optional[Task]:
         """
         Convert one spreadsheet record into a Task.
 
@@ -435,6 +436,9 @@ class XLSXImporter:
         used_ids : Optional[set]
             IDs already taken. Passing this makes the returned task's ID
             unique and records it.
+        project_start : Optional[datetime]
+            Where to put a row whose dates are formulas the sheet has never
+            had calculated; see the note below.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -475,6 +479,19 @@ class XLSXImporter:
         if start_date is None and end_date is not None and duration:
             start_date = self._start_date_for(end_date, int(duration),
                                              duration_in_working_days)
+
+        # A plan sheet works its dates out with WORKDAY from one editable
+        # start date, and a workbook that has never been through a
+        # spreadsheet application carries no cached results - so every date
+        # cell reads as empty. The row is still fully described: its duration
+        # is a plain number and its predecessors are plain row references. So
+        # it is placed at the project start and left for the scheduler, whose
+        # Finish-Start rule is the same rule the WORKDAY chain encodes.
+        if start_date is None and project_start is not None and duration:
+            logger.debug("Row %d has no calculated dates; placing it at the "
+                         "project start for the scheduler", row_number)
+            start_date = project_start
+
         if start_date is None:
             return None
         if end_date is None and duration is not None:
@@ -639,6 +656,19 @@ class XLSXImporter:
     #: Labels that introduce the project name on a summary sheet.
     PROJECT_NAME_LABELS = {'project name', 'project', 'projekt neve', 'projekt'}
 
+    #: Labels naming the cell a formula-driven plan hangs its dates off.
+    PROJECT_START_LABELS = {
+        'project start date', 'project start', 'start date', 'plan start',
+        'projekt kezdete', 'projekt kezdo datum', 'kezdo datum',
+    }
+
+    #: An Excel DATE() call, which is how a start-date cell is usually
+    #: written so that it stays a date rather than becoming text.
+    DATE_FORMULA = re.compile(
+        r'^=\s*DATE\s*\(\s*(\d{4})\s*,\s*(\d{1,2})\s*,\s*(\d{1,2})\s*\)\s*$',
+        re.IGNORECASE
+    )
+
     def _is_label_cell(self, value: Any) -> bool:
         """
         Check whether a cell reads as a label rather than a column header.
@@ -688,6 +718,86 @@ class XLSXImporter:
                             break
                         return str(candidate).strip()
         return None
+
+    def _parse_start_cell(self, value: Any) -> Optional[datetime]:
+        """A start-date cell, whether it holds a date or a DATE() formula."""
+        parsed = self._parse_cell_date(value)
+        if parsed is not None:
+            return parsed
+
+        if isinstance(value, str):
+            match = self.DATE_FORMULA.match(value.strip())
+            if match:
+                try:
+                    return datetime(*(int(part) for part in match.groups()))
+                except ValueError:
+                    logger.warning("Ignoring unreadable start date %r", value)
+        return None
+
+    def _project_start_from_labels(self, workbook) -> Optional[datetime]:
+        """
+        The date beside a 'Project Start Date:' label, if the sheet has one.
+
+        RETURNS:
+        --------
+        Optional[datetime]
+            The plan's own start date, or None when nothing names one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A plan sheet in this layout hangs every date off one editable cell and
+        works the rest out with WORKDAY. That cell is the only date in the
+        sheet that is not itself a formula, so recovering it is what lets the
+        rest be recovered - see _build_task's fallback placement.
+        """
+        for sheet in workbook.worksheets:
+            for row in sheet.iter_rows(max_row=30, values_only=True):
+                for index, cell in enumerate(row):
+                    if not self._is_label_cell(cell):
+                        continue
+                    if self._normalise_header(cell) not in self.PROJECT_START_LABELS:
+                        continue
+                    for candidate in row[index + 1:]:
+                        if candidate is None or str(candidate).strip() == '':
+                            continue
+                        found = self._parse_start_cell(candidate)
+                        if found is not None:
+                            return found
+                        break
+        return None
+
+    def _project_start_date(self, filepath: str,
+                            workbook) -> Optional[datetime]:
+        """
+        The plan's start date, reading formulas if the values do not have it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The workbook is loaded with data_only=True, which hands back the value
+        Excel last cached for a formula - and a file written by openpyxl has
+        never been opened by Excel, so it has cached nothing. Every formula in
+        our own export therefore reads as empty.
+
+        The start date is the one cell worth going back for: with it, a row
+        whose dates are all formulas can still be placed, because its duration
+        is a plain number and its predecessors are plain row references. So
+        the workbook is opened a second time with the formulas intact, and
+        only when the cached values did not answer.
+        """
+        found = self._project_start_from_labels(workbook)
+        if found is not None:
+            return found
+
+        try:
+            formulas = openpyxl.load_workbook(filepath, data_only=False)
+        except Exception:
+            logger.exception("Could not re-read %s for its formulas", filepath)
+            return None
+
+        try:
+            return self._project_start_from_labels(formulas)
+        finally:
+            formulas.close()
 
     def _extract_project_name(self, sheet, rows: List[Tuple],
                               header_index: int) -> str:
@@ -768,20 +878,30 @@ class XLSXImporter:
                 logger.error("Error: task table contains no rows")
                 return None
 
+            project_start = self._project_start_date(filepath, workbook)
+
             tasks: List[Task] = []
             kept_records: List[Dict[str, Any]] = []
             used_ids: set = set()
+            placed_by_schedule = False
 
             for offset, record in enumerate(records):
+                had_dates = (self._parse_cell_date(record.get('start'))
+                             is not None
+                             or self._parse_cell_date(record.get('end'))
+                             is not None)
                 task = self._build_task(
                     record,
                     header_index + 2 + offset,
                     duration_in_working_days,
-                    used_ids
+                    used_ids,
+                    project_start
                 )
                 if task is not None:
                     tasks.append(task)
                     kept_records.append(record)
+                    if not had_dates:
+                        placed_by_schedule = True
 
             if not tasks:
                 logger.error("Error: no rows carried a usable date")
@@ -797,6 +917,16 @@ class XLSXImporter:
             project_name = (self._project_name_from_labels(workbook)
                             or self._extract_project_name(sheet, rows, header_index))
             project = Project(name=project_name, tasks=tasks)
+
+            # Rows placed at the project start are stacked on top of one
+            # another until the links are applied. Settling the plan is what
+            # spreads them out, and it lands them exactly where the sheet's
+            # WORKDAY chain would have. A plan whose dates were all readable
+            # is left alone: those dates are the file's to state, and moving
+            # them would be this importer editing the plan it is reading.
+            if placed_by_schedule:
+                project.reschedule()
+
             logger.info("Imported %d task(s) from XLSX file %s",
                         len(project.tasks), filepath)
             return project

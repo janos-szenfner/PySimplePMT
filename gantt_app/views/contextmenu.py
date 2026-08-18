@@ -307,7 +307,8 @@ class TaskContextMenu:
             create.add_command(
                 label=task_type,
                 state=tk.NORMAL if can_create else tk.DISABLED,
-                command=lambda t=task_type: self._invoke_create(task_id, t),
+                command=lambda t=task_type: self._after_menu(
+                    self._invoke_create, task_id, t),
             )
         menu.add_cascade(label="Create", menu=create)
         # Held on the menu: a submenu that only the local name refers to is
@@ -317,12 +318,12 @@ class TaskContextMenu:
         menu.add_command(
             label="Edit",
             state=tk.NORMAL if (has_task and self._on_edit) else tk.DISABLED,
-            command=lambda: self._invoke_edit(task_id),
+            command=lambda: self._after_menu(self._invoke_edit, task_id),
         )
         menu.add_command(
             label="Delete",
             state=tk.NORMAL if (has_task and self._on_delete) else tk.DISABLED,
-            command=lambda: self._invoke_delete(task_id),
+            command=lambda: self._after_menu(self._invoke_delete, task_id),
         )
 
         menu.add_separator()
@@ -369,6 +370,42 @@ class TaskContextMenu:
         )
 
         return menu
+
+    def _after_menu(self, action, *args):
+        """
+        Run a menu action once the menu itself has gone.
+
+        PARAMETERS:
+        -----------
+        action : Callable
+            The handler to run.
+        *args
+            What to hand it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A menu entry's command runs inside the menu's own event loop, and on
+        macOS that loop belongs to the system: tk_popup does not return until
+        the native menu has finished tracking. Anything that opens a window
+        from in there - the create form, the edit form, the delete prompt -
+        builds it underneath a menu that is still up, and it does not come
+        forward until the loop unwinds. What the user sees is a first click
+        that appears to do nothing and a second one that works.
+
+        Scheduling on the idle queue puts the window after the menu rather
+        than inside it. Only the entries that open one are deferred; a move or
+        an indent changes the tree and can happen where it stands.
+
+        Callers that have no event loop to schedule on - a torn-down window -
+        fall through and run it directly, since not doing the thing at all is
+        worse than doing it a moment early.
+        """
+        try:
+            self.tree.after_idle(action, *args)
+        except tk.TclError:
+            logger.debug("No event loop to defer %s on; running it now",
+                         getattr(action, '__name__', action))
+            action(*args)
 
     def _invoke_move(self, task_id, target):
         """Run a chosen move, reporting a failure rather than swallowing it."""
