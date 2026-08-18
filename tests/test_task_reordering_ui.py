@@ -1019,6 +1019,90 @@ class TestContextMenu(TaskListTestCase):
         else:
             self.assertIn('<Button-3>', bound)
 
+    def test_opening_a_submenu_does_not_close_the_menu(self):
+        """
+        Clicking Create must open its submenu, not dismiss everything.
+
+        Opening a submenu moves focus into it, which the menu that owns the
+        submenu sees as its own focus going away - so unposting on that event
+        took the whole menu down the instant Create was clicked, and its
+        submenu never appeared.
+        """
+        menu = self.task_list.context_menu._build(self.project, "003")
+        self.task_list.context_menu._menu = menu
+        submenu = menu._create_submenu
+
+        unposted = []
+        self.task_list.context_menu._unpost = lambda: unposted.append(1)
+        menu.focus_get = lambda: submenu
+
+        self.task_list.context_menu._unpost_if_focus_left()
+
+        self.assertEqual(unposted, [], "the menu closed on its own submenu")
+
+    def test_focus_leaving_the_menu_entirely_does_close_it(self):
+        """Clicking away still dismisses it, which is what the binding is for."""
+        menu = self.task_list.context_menu._build(self.project, "003")
+        self.task_list.context_menu._menu = menu
+
+        unposted = []
+        self.task_list.context_menu._unpost = lambda: unposted.append(1)
+        menu.focus_get = lambda: self.task_list.tree
+
+        self.task_list.context_menu._unpost_if_focus_left()
+
+        self.assertEqual(unposted, [1])
+
+    def test_a_menu_with_a_similar_path_is_not_one_of_ours(self):
+        """
+        Compared by path, so the trailing dot matters.
+
+        Without it '.!menu2' would count '.!menu20' - a different menu
+        entirely - as one of its own, and the real menu would never close.
+        """
+        import tkinter as tk
+
+        menu = self.task_list.context_menu._build(self.project, "003")
+        self.task_list.context_menu._menu = menu
+
+        lookalike = tk.Menu(self.root, tearoff=0)
+        lookalike._w = str(menu) + "0"
+
+        self.assertFalse(self.task_list.context_menu._inside_menu(lookalike))
+        self.assertTrue(
+            self.task_list.context_menu._inside_menu(menu._create_submenu))
+
+    def test_macos_leaves_dismissal_to_the_native_menu(self):
+        """
+        No focus binding at all there.
+
+        The native menu dismisses itself on an outside click - the same
+        reason its grab is left alone - and binding focus on top of that is
+        what closed it on its own submenu.
+        """
+        import tkinter as tk
+        from types import SimpleNamespace
+
+        context = self.task_list.context_menu
+        bound = {}
+        original = tk.Menu.tk_popup
+        tk.Menu.tk_popup = lambda self, *a, **k: bound.setdefault('menu', self)
+        try:
+            for windowing in ('aqua', 'x11'):
+                context._windowing = windowing
+                context._menu = None
+                bound.clear()
+                context.show(SimpleNamespace(x=1, y=1, x_root=1, y_root=1))
+                sequences = set(bound['menu'].bind())
+                with self.subTest(windowing=windowing):
+                    self.assertIn('<Key-Escape>', sequences)
+                    if windowing == 'aqua':
+                        self.assertNotIn('<FocusOut>', sequences)
+                    else:
+                        self.assertIn('<FocusOut>', sequences)
+        finally:
+            tk.Menu.tk_popup = original
+
     def test_a_window_opening_entry_waits_for_the_menu_to_close(self):
         """
         Create, Edit and Delete are scheduled, not run where they stand.

@@ -188,11 +188,22 @@ class TaskContextMenu:
         self._close()
         self._menu = self._build(project, task_id)
 
-        # Clicking away, or pressing Escape, takes the menu down. Losing
-        # focus is what a click elsewhere produces, and unposting on it is
-        # what makes the menu dismissable without choosing something.
-        self._menu.bind('<FocusOut>', lambda _e: self._unpost(), add='+')
+        # Escape always takes the menu down.
         self._menu.bind('<Escape>', lambda _e: self._unpost(), add='+')
+
+        # Losing focus is what a click elsewhere produces, and unposting on
+        # it is what makes the menu dismissable without choosing something.
+        #
+        # Not on macOS, where the menu is a native one that dismisses itself
+        # on an outside click - the same reason its grab is left alone below.
+        # Opening a submenu moves focus into that submenu, which the menu
+        # that owns it sees as having lost focus, so this took the whole menu
+        # down the instant Create was clicked and its submenu never appeared.
+        #
+        # Elsewhere the binding is still needed, and asks where the focus
+        # went before acting on it; see _focus_lost.
+        if self._windowing != 'aqua':
+            self._menu.bind('<FocusOut>', self._focus_lost, add='+')
 
         try:
             self._menu.tk_popup(event.x_root, event.y_root)
@@ -206,6 +217,64 @@ class TaskContextMenu:
                 self._menu.grab_release()
 
         return 'break'
+
+    def _focus_lost(self, _event=None):
+        """
+        Take the menu down, unless the focus only moved into a submenu.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Opening a submenu moves focus into it, and the menu that owns the
+        submenu sees that as its own focus going away - so unposting on the
+        event itself closed the whole menu the moment Create was clicked.
+
+        The event says nothing about where the focus went, so the decision
+        waits for the idle queue and then asks. By then the submenu has it,
+        and focus somewhere inside the menu's own tree is not focus having
+        left the menu.
+        """
+        menu = self._menu
+        if menu is None:
+            return
+        try:
+            menu.after_idle(self._unpost_if_focus_left)
+        except tk.TclError:
+            # No event loop to defer on; the menu is going away anyway
+            self._unpost()
+
+    def _unpost_if_focus_left(self):
+        """Unpost only when nothing in the menu's own tree has the focus."""
+        menu = self._menu
+        if menu is None:
+            return
+
+        try:
+            focused = menu.focus_get()
+        except (tk.TclError, KeyError):
+            # focus_get raises for a window Tkinter does not know, which a
+            # menu posted by the window manager can be
+            focused = None
+
+        if focused is not None and self._inside_menu(focused):
+            return
+
+        self._unpost()
+
+    def _inside_menu(self, widget) -> bool:
+        """
+        Whether a widget is the menu or something posted inside it.
+
+        Compared by Tk path rather than by walking parents: a submenu is a
+        child of the menu in the widget tree, so its path starts with the
+        menu's. The trailing dot matters - without it '.!menu2' would count
+        '.!menu20' as one of its own.
+        """
+        try:
+            path = str(widget)
+            root = str(self._menu)
+        except tk.TclError:
+            return False
+        return path == root or path.startswith(root + '.')
 
     def _unpost(self):
         """Take the menu down without running anything."""
