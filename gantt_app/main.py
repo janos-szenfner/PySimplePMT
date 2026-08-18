@@ -95,6 +95,7 @@ class GanttApp(ctk.CTk):
         self.theme_controller = theme.ThemeController()
         ctk.set_appearance_mode(self.theme_controller.appearance)
         self.theme_controller.start_watching(self)
+        self.theme_controller.subscribe(self._theme_changed)
         logger.info("Appearance %s (%s mode)",
                     self.theme_controller.appearance,
                     self.theme_controller.mode)
@@ -240,6 +241,34 @@ class GanttApp(ctk.CTk):
         # sequence that new tasks and imported plans use.
         self.project.renumber_task_ids()
     
+    def _theme_changed(self, _mode, appearance):
+        """
+        Repaint the panes that do not follow the theme on their own.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        CustomTkinter widgets are given (light, dark) pairs and swap over by
+        themselves. The two big panes are not CustomTkinter: the task list is
+        a ttk Treeview, whose style resolves its colours once and keeps them,
+        and the chart is a picture drawn with Pillow, which has the old
+        colours baked into it. Neither notices a theme change without being
+        told, so a flip left a white grid and a white chart inside a dark
+        window.
+
+        Guarded per pane. This runs from the desktop poll as well as from the
+        button, so it can fire while the window is being torn down, and one
+        pane that has already gone must not stop the other being repainted.
+        """
+        for name in ('task_list', 'gantt_chart'):
+            pane = getattr(self, name, None)
+            if pane is None:
+                continue
+            try:
+                pane.apply_theme()
+            except Exception:
+                logger.debug("Could not repaint %s for the %s appearance",
+                             name, appearance, exc_info=True)
+
     def _create_ui(self):
         """Create the user interface."""
         # Main layout

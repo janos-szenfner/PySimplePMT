@@ -70,10 +70,18 @@ class CriticalPathWindow(ctk.CTkToplevel):
     )
 
     #: Row shading: the critical ones, and the ones nearly there.
-    CRITICAL_BG = '#fde2e1'
-    TIGHT_BG = '#fdf4d8'
-    ROW_BG = '#ffffff'
-    ROW_ALT = '#f4f4f4'
+    #: (light, dark) pairs; see gantt_app.theme. Resolved when the rows are
+    #: built, because a Treeview tag holds one colour and knows nothing about
+    #: appearance modes - so this table stayed white on a dark desktop.
+    CRITICAL_BG = theme.GRID_CRITICAL_BG
+    TIGHT_BG = theme.GRID_TIGHT_BG
+    ROW_BG = theme.GRID_ROW_BG
+    ROW_ALT = theme.GRID_ROW_ALT
+
+    #: The ttk style this table uses. Its own rather than the task list's,
+    #: because the two are different widths and the task list sets a row
+    #: height to match its chart.
+    STYLE_NAME = 'CriticalPath.Treeview'
 
     #: Float at or below this, without being zero, counts as tight.
     TIGHT_FLOAT = 2
@@ -123,9 +131,10 @@ class CriticalPathWindow(ctk.CTkToplevel):
         frame = ctk.CTkFrame(self)
         frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
 
+        theme.style_treeview(self.STYLE_NAME)
         self.tree = ttk.Treeview(
             frame, columns=[key for key, *_rest in self.COLUMNS],
-            show='headings',
+            show='headings', style=self.STYLE_NAME,
         )
         for key, heading, width, anchor in self.COLUMNS:
             self.tree.heading(key, text=heading, anchor=tk.W)
@@ -139,10 +148,14 @@ class CriticalPathWindow(ctk.CTkToplevel):
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vertical.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.tree.tag_configure('critical', background=self.CRITICAL_BG)
-        self.tree.tag_configure('tight', background=self.TIGHT_BG)
-        self.tree.tag_configure('plain', background=self.ROW_BG)
-        self.tree.tag_configure('alt', background=self.ROW_ALT)
+        self._apply_row_colours()
+
+    def _apply_row_colours(self):
+        """Colour the row tags for the appearance in force."""
+        self.tree.tag_configure('critical', background=theme.now(self.CRITICAL_BG))
+        self.tree.tag_configure('tight', background=theme.now(self.TIGHT_BG))
+        self.tree.tag_configure('plain', background=theme.now(self.ROW_BG))
+        self.tree.tag_configure('alt', background=theme.now(self.ROW_ALT))
 
     def _build_buttons(self):
         """Refresh, and a way out."""

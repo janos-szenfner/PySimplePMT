@@ -21,6 +21,7 @@ from tkinter import ttk
 import customtkinter as ctk
 import plotly.graph_objects as go
 
+from gantt_app import theme
 from gantt_app.models import Project
 from gantt_app.utils.chart_figure import (
     build_gantt_figure, DEFAULT_WIDTH, DEFAULT_SETTINGS,
@@ -575,8 +576,66 @@ class GanttChart(ctk.CTkFrame):
         return settings
 
     def _figure_settings(self):
-        """The settings handed to the renderers; see current_settings."""
-        return self.current_settings()
+        """
+        The settings the on-screen chart is drawn with.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The screen and the exports part company here, and deliberately. What
+        is drawn in the window follows the light/dark setting like the rest
+        of it; what is *written to a file* does not. A PNG or a PDF is shared
+        and printed, and a dark chart on paper is a page of ink - so
+        export_to_png, export_to_pdf and the HTML export go through
+        current_settings and stay light.
+        """
+        return self.screen_settings()
+
+    def screen_settings(self):
+        """
+        The chart settings with the appearance applied.
+
+        RETURNS:
+        --------
+        dict
+            current_settings, with the background, the text and the gridlines
+            swapped for the ones the window is currently in - unless the user
+            has chosen their own.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A colour the user picked in View > Settings wins over the theme.
+        That is worked out by comparing against the default rather than by
+        holding a "has been customised" flag: the settings dialog writes the
+        whole block back whenever anything in it is applied, including the
+        font size, so a flag would say "customised" the first time somebody
+        changed the type size and the chart would stop following the theme
+        for a reason nobody could see.
+        """
+        settings = self.current_settings()
+
+        for key, palette in (('bg_color', theme.CHART_BG),
+                             ('text_color', theme.CHART_TEXT),
+                             ('grid_color', theme.CHART_GRID)):
+            # The light half is the default this application ships; anything
+            # else in the box is the user's own and is left alone.
+            if settings.get(key) == palette[0]:
+                settings[key] = theme.now(palette)
+
+        return settings
+
+    def apply_theme(self):
+        """
+        Redraw for the appearance now in force.
+
+        The canvas holds a picture that was drawn with the old colours in it,
+        so nothing about it follows a theme change until it is drawn again.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        self.update_chart()
 
     def _release_photo(self):
         """
@@ -631,7 +690,8 @@ class GanttChart(ctk.CTkFrame):
 
         canvas = tk.Canvas(
             container, highlightthickness=0,
-            background=self._figure_settings().get('bg_color', '#ffffff')
+            background=self._figure_settings().get(
+                'bg_color', theme.now(theme.CHART_BG))
         )
         vertical = ttk.Scrollbar(container, orient=tk.VERTICAL,
                                  command=canvas.yview)
@@ -763,8 +823,10 @@ class GanttChart(ctk.CTkFrame):
         is downloaded to produce it.
         """
         from gantt_app.utils.image_export import export_gantt_to_png
+        # current_settings, not the screen's: an exported picture stays light
+        # however the window is set. See _figure_settings.
         return export_gantt_to_png(self.project, filepath,
-                                   settings=self._figure_settings())
+                                   settings=self.current_settings())
 
     def export_to_pdf(self, filepath: str) -> bool:
         """
@@ -785,5 +847,6 @@ class GanttChart(ctk.CTkFrame):
         Delegates to the same Plotly renderer as export_to_png.
         """
         from gantt_app.utils.image_export import export_gantt_to_pdf
+        # Light, like the PNG - a dark chart on paper is a page of ink
         return export_gantt_to_pdf(self.project, filepath,
-                                   settings=self._figure_settings())
+                                   settings=self.current_settings())

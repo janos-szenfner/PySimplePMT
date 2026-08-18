@@ -252,6 +252,20 @@ to hold the same *contrast* against its own background rather than the same
 hue. A test measures the WCAG ratio of every text-on-background combination in
 both appearances, because eyes are what missed it the first time.
 
+**The panes that are not CustomTkinter are told separately.** The task list
+is a ttk Treeview, whose style resolves its colours once and keeps them; the
+critical-path and dependency tables are the same; the chart is a picture
+drawn with Pillow, with the old colours baked into it. None of them notices a
+theme change on its own, so a flip left a white grid and a white chart inside
+a dark window. `GanttApp._theme_changed` repaints them, guarded per pane
+because the desktop poll can fire while the window is being torn down.
+
+**Exports stay light whatever the window is set to.** A PNG or a PDF is
+shared and printed, and a dark chart on paper is a page of ink — so the
+screen and the exporters part company at `GanttChartView.screen_settings`,
+and only the screen follows the theme. A colour the user picked in
+View → Settings beats the theme in both.
+
 The toolbar icons are drawn **twice**, once in each ink. `CTkImage` picks
 between a light and a dark image, and handing it the same near-black drawing
 for both made every icon on the row vanish into the bar the moment the window
@@ -1445,7 +1459,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1364 tests, all passing.
+1373 tests, all passing.
 
 ## Known Limitations
 
@@ -1501,5 +1515,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.38.0
+**Version**: 1.38.1
 **Last Updated**: 2026-08-18

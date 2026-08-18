@@ -118,6 +118,45 @@ DROPDOWN_BG: Tuple[str, str] = ('#F8F9FA', '#2b2d31')
 #: The hairline between groups of icons.
 ICON_SEPARATOR: Tuple[str, str] = ('#C8CDD2', '#43464c')
 
+# ---- the grids -------------------------------------------------------------
+#
+# The task list, the critical path table and the dependency table are ttk
+# Treeviews. ttk knows nothing about appearance modes and takes one colour per
+# thing, so each of these is resolved to a single colour when the grid is
+# styled and re-resolved when the theme changes; see style_treeview.
+
+#: A row, and every other row, giving the banded look.
+GRID_ROW_BG: Tuple[str, str] = ('#ffffff', '#26282c')
+GRID_ROW_ALT: Tuple[str, str] = ('#f4f4f4', '#2b2d31')
+
+#: The column headings above them.
+GRID_HEADING_BG: Tuple[str, str] = ('#e4e4e4', '#34373d')
+
+#: Text in a row, and the hairline between cells.
+GRID_TEXT: Tuple[str, str] = ('#1a1a1a', '#e8eaed')
+GRID_LINE: Tuple[str, str] = ('#d0d0d0', '#3a3d42')
+
+#: A selected row.
+GRID_SELECT_BG: Tuple[str, str] = ('#cfe2f3', '#2f5d86')
+
+#: A row that has been cut and is waiting to be pasted.
+GRID_CUT_TEXT: Tuple[str, str] = ('#9aa0a6', '#71767c')
+
+#: Rows the critical path analysis calls out: no float, and nearly none.
+GRID_CRITICAL_BG: Tuple[str, str] = ('#fde2e1', '#5a2b2a')
+GRID_TIGHT_BG: Tuple[str, str] = ('#fdf4d8', '#544a24')
+
+# ---- the chart -------------------------------------------------------------
+#
+# The on-screen chart only. What is *exported* stays light whatever the window
+# is set to: a PNG or a PDF is shared and printed, and a dark chart on paper
+# is a page of ink. See GanttChartView.screen_settings.
+
+#: The paper the chart is drawn on, the axis labels, and the gridlines.
+CHART_BG: Tuple[str, str] = ('#ffffff', '#232529')
+CHART_TEXT: Tuple[str, str] = ('#000000', '#e8eaed')
+CHART_GRID: Tuple[str, str] = ('#ecf0f1', '#3a3d42')
+
 #: What a toolbar icon is drawn in, as RGB rather than hex - Pillow draws
 #: the strokes and knows nothing about appearance modes, so each appearance
 #: gets its own drawing and CTkImage picks between them. Near-black on the
@@ -143,6 +182,90 @@ def pair(colour: Tuple[str, str]) -> Tuple[str, str]:
         )
     light, dark = colour
     return (light, dark)
+
+
+def current_appearance() -> str:
+    """
+    The appearance CustomTkinter is currently in: LIGHT or DARK.
+
+    Imported locally so this module stays importable with no display and no
+    CustomTkinter - the palette and the controller are both wanted by tests
+    that build no widgets.
+    """
+    try:
+        import customtkinter
+        mode = str(customtkinter.get_appearance_mode()).lower()
+    except Exception:
+        return LIGHT
+    return DARK if mode == 'dark' else LIGHT
+
+
+def now(colour: Tuple[str, str]) -> str:
+    """
+    The half of a pair the window is currently showing.
+
+    For the plain Tk and ttk widgets - a Treeview, a Canvas, a tk.Text -
+    which take one colour and have to be told again when the theme changes.
+    """
+    if isinstance(colour, str):
+        return colour
+    return resolve(colour, current_appearance())
+
+
+def style_treeview(style_name: str, row_height: Optional[int] = None,
+                   font=None, heading_font=None) -> None:
+    """
+    Colour a ttk Treeview style for the appearance in force.
+
+    PARAMETERS:
+    -----------
+    style_name : str
+        The style the grid uses - 'Gantt.Treeview' and so on. Its heading
+        style is derived from it, as ttk names them.
+    row_height, font, heading_font :
+        Passed through when given, so a caller that also sets these does not
+        have to configure the style twice.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Here rather than in each of the three grids that need it. ttk styles are
+    global and the colours are the same everywhere, so three copies of this
+    would be three chances for one of them to be missed the next time the
+    palette moves - which is exactly how the whole application came to be
+    half light and half dark.
+
+    ttk takes one colour per thing and has no notion of appearance modes, so
+    every one of these is resolved now and has to be resolved again when the
+    theme changes. That is what the apply_theme methods on the grids do.
+    """
+    from tkinter import ttk
+
+    style = ttk.Style()
+
+    options = {
+        'background': now(GRID_ROW_BG),
+        'fieldbackground': now(GRID_ROW_BG),
+        'foreground': now(GRID_TEXT),
+    }
+    if row_height is not None:
+        options['rowheight'] = row_height
+    if font is not None:
+        options['font'] = font
+    style.configure(style_name, **options)
+
+    heading_options = {
+        'background': now(GRID_HEADING_BG),
+        'foreground': now(GRID_TEXT),
+    }
+    if heading_font is not None:
+        heading_options['font'] = heading_font
+    style.configure(f'{style_name}.Heading', **heading_options)
+
+    style.map(style_name,
+              background=[('selected', now(GRID_SELECT_BG))],
+              foreground=[('selected', now(GRID_TEXT))])
+    style.map(f'{style_name}.Heading',
+              background=[('active', now(GRID_LINE))])
 
 
 def resolve(colour: Tuple[str, str], appearance: str) -> str:

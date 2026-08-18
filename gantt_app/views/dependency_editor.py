@@ -257,8 +257,11 @@ class DependencyEditor(ctk.CTkFrame):
                 tags=('oddrow' if index % 2 else 'evenrow',)
             )
 
-        self.tree.tag_configure('oddrow', background='#f4f4f4')
-        self.tree.tag_configure('evenrow', background='#ffffff')
+        # The style comes from the task list's 'Gantt.Treeview', which
+        # follows the theme; the banding is a tag colour and does not, so it
+        # is resolved here every time the rows are rebuilt.
+        self.tree.tag_configure('oddrow', background=theme.now(theme.GRID_ROW_ALT))
+        self.tree.tag_configure('evenrow', background=theme.now(theme.GRID_ROW_BG))
 
         candidates = self.candidate_tasks()
         if candidates:

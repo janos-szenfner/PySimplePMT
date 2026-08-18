@@ -27,6 +27,7 @@ from typing import Callable, Optional, List
 
 import customtkinter as ctk
 
+from gantt_app import theme
 from gantt_app.models import Task, Project
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.contextmenu import TaskContextMenu
@@ -49,13 +50,18 @@ class DragDropTaskList(ctk.CTkFrame):
     and hardness that a drag cannot.
     """
 
-    #: Light grey grid palette for the task table.
-    GRID_LINE = '#d0d0d0'        # cell separators
-    GRID_ROW_BASE = '#ffffff'    # even rows
-    GRID_ROW_ALT = '#f4f4f4'     # odd rows, giving the banded grid look
-    GRID_HEADING_BG = '#e4e4e4'
-    GRID_TEXT = '#1a1a1a'
-    GRID_SELECT_BG = '#cfe2f3'
+    #: The grid palette, as (light, dark) pairs from gantt_app.theme.
+    #:
+    #: Resolved to single colours in _apply_grid_style, because ttk takes one
+    #: colour per thing and knows nothing about appearance modes - which is
+    #: why the whole task list stayed white on a dark desktop. They have to
+    #: be resolved again when the theme changes; see apply_theme.
+    GRID_LINE = theme.GRID_LINE
+    GRID_ROW_BASE = theme.GRID_ROW_BG
+    GRID_ROW_ALT = theme.GRID_ROW_ALT
+    GRID_HEADING_BG = theme.GRID_HEADING_BG
+    GRID_TEXT = theme.GRID_TEXT
+    GRID_SELECT_BG = theme.GRID_SELECT_BG
     GRID_ROW_HEIGHT = 26
 
     #: The line marking where a dragged task would land.
@@ -70,7 +76,7 @@ class DragDropTaskList(ctk.CTkFrame):
     DRAG_CURSOR = 'hand2'
 
     #: Text colour of a row that has been cut and not yet pasted.
-    CUT_ROW_TEXT = '#9aa0a6'
+    CUT_ROW_TEXT = theme.GRID_CUT_TEXT
 
     def _apply_grid_style(self):
         """
@@ -96,37 +102,90 @@ class DragDropTaskList(ctk.CTkFrame):
             logger.debug("The 'clam' ttk theme is unavailable; grid lines may "
                          "not render on this platform")
 
+        line = theme.now(self.GRID_LINE)
+        row = theme.now(self.GRID_ROW_BASE)
+        text = theme.now(self.GRID_TEXT)
+
         style.configure(
             'Gantt.Treeview',
-            background=self.GRID_ROW_BASE,
-            fieldbackground=self.GRID_ROW_BASE,
-            foreground=self.GRID_TEXT,
+            background=row,
+            fieldbackground=row,
+            foreground=text,
             rowheight=self.GRID_ROW_HEIGHT,
             borderwidth=1,
             relief='solid',
-            bordercolor=self.GRID_LINE,
-            lightcolor=self.GRID_LINE,
-            darkcolor=self.GRID_LINE
+            bordercolor=line,
+            lightcolor=line,
+            darkcolor=line
         )
         style.configure(
             'Gantt.Treeview.Heading',
-            background=self.GRID_HEADING_BG,
-            foreground=self.GRID_TEXT,
+            background=theme.now(self.GRID_HEADING_BG),
+            foreground=text,
             relief='raised',
             borderwidth=1,
-            bordercolor=self.GRID_LINE
+            bordercolor=line
         )
         style.map(
             'Gantt.Treeview',
-            background=[('selected', self.GRID_SELECT_BG)],
-            foreground=[('selected', self.GRID_TEXT)]
+            background=[('selected', theme.now(self.GRID_SELECT_BG))],
+            foreground=[('selected', text)]
         )
         style.map(
             'Gantt.Treeview.Heading',
-            background=[('active', self.GRID_LINE)]
+            background=[('active', line)]
         )
 
         self.tree.configure(style='Gantt.Treeview')
+
+    def _apply_row_tag_colours(self):
+        """
+        Colour the row tags for the appearance in force.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Tag colours are held per tag rather than on the style, so they are
+        not re-resolved when the style is - which is why this is its own
+        method and why apply_theme calls both. Left out, the banding stayed
+        white on a dark grid and every other row glowed.
+        """
+        # Sub-tasks are ordinary work and read in the same colour as tasks;
+        # the indent and the Type column already mark them as nested
+        self.tree.tag_configure('subtask', foreground=theme.now(self.GRID_TEXT))
+
+        # Alternating row shading, which is what makes the rows read as a grid
+        self.tree.tag_configure('oddrow',
+                                background=theme.now(self.GRID_ROW_ALT))
+        self.tree.tag_configure('evenrow',
+                                background=theme.now(self.GRID_ROW_BASE))
+
+        # A row that has been cut and is waiting to be pasted somewhere.
+        # A Treeview row cannot be made half transparent the way a web page
+        # would fade one, so it is greyed instead - the same thing said in
+        # the way this widget can say it.
+        self.tree.tag_configure('cut',
+                                foreground=theme.now(self.CUT_ROW_TEXT))
+
+    def apply_theme(self):
+        """
+        Re-colour the grid for the appearance now in force.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        ttk resolves a style's colours when it is configured and keeps them,
+        so a Treeview does not follow a theme change on its own - it has to
+        be told, which is what this is for. The row tags are re-applied with
+        it, because the banding and the cut-row shading are tag colours and
+        those are held per row rather than on the style.
+        """
+        try:
+            if not self.tree.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        self._apply_grid_style()
+        self._apply_row_tag_colours()
 
 
     def __init__(self, master, project: Project, 
@@ -240,20 +299,7 @@ class DragDropTaskList(ctk.CTkFrame):
 
         self._apply_grid_style()
 
-        # Configure tags for subtask styling
-        # Sub-tasks are ordinary work and read in the same colour as tasks;
-        # the indent and the Type column already mark them as nested
-        self.tree.tag_configure('subtask', foreground=self.GRID_TEXT)
-
-        # Alternating row shading, which is what makes the rows read as a grid
-        self.tree.tag_configure('oddrow', background=self.GRID_ROW_ALT)
-        self.tree.tag_configure('evenrow', background=self.GRID_ROW_BASE)
-
-        # A row that has been cut and is waiting to be pasted somewhere.
-        # A Treeview row cannot be made half transparent the way a web page
-        # would fade one, so it is greyed instead - the same thing said in
-        # the way this widget can say it.
-        self.tree.tag_configure('cut', foreground=self.CUT_ROW_TEXT)
+        self._apply_row_tag_colours()
         
         # Folding a branch away changes which rows are on show, which the
         # chart beside the list draws from
