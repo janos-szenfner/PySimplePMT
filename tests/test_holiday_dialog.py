@@ -19,6 +19,7 @@ event loop and tests the same code the buttons call.
 
 import unittest
 from datetime import date, datetime
+from unittest import mock
 
 from gantt_app.models import Project, Task
 from gantt_app.workdaycalendar import (
@@ -59,6 +60,7 @@ class HolidayDialogTestCase(unittest.TestCase):
         self.applied = []
         self.applied_overrides = []
         self.applied_weeks = []
+        self.applied_calendars = []
         self.finished = []
 
     def tearDown(self):
@@ -68,15 +70,17 @@ class HolidayDialogTestCase(unittest.TestCase):
         except Exception:
             pass
 
-    def dialog(self, selected=(), overrides=(), non_working_days=None):
-        """The dialog, opened on a given selection, rulings and week."""
+    def dialog(self, selected=(), overrides=(), non_working_days=None,
+               registry=None):
+        """The dialog, opened on a given selection, rulings, week and set."""
         from gantt_app.views.holidaydialog import CalendarSettingsDialog
 
         window = CalendarSettingsDialog(
             self.root, selected, self.applied.append,
             overrides, self.applied_overrides.append,
             non_working_days, self.applied_weeks.append,
-            lambda: self.finished.append(True))
+            lambda: self.finished.append(True),
+            registry, self.applied_calendars.append)
         window.update_idletasks()
         return window
 
@@ -846,6 +850,162 @@ class TestEverythingIsAppliedTogether(HolidayDialogTestCase):
 
         self.assertEqual(self.applied_weeks, [])
         self.assertEqual(self.finished, [])
+
+
+class TestManagingTheCalendars(HolidayDialogTestCase):
+    """Adding, renaming and removing the calendars a task can follow."""
+
+    def setUp(self):
+        """A dialog over the three presets."""
+        super().setUp()
+        from gantt_app.calendarregistry import default_registry
+
+        self.registry = default_registry()
+
+    def named(self, name):
+        """Patch the name prompt to answer with a given name."""
+        return mock.patch('tkinter.simpledialog.askstring', return_value=name)
+
+    def confirmed(self, answer=True):
+        """Patch the delete confirmation."""
+        return mock.patch('gantt_app.views.dialogs.askyesno',
+                          return_value=answer)
+
+    def test_the_selector_lists_the_default_and_every_calendar(self):
+        """The plan's own leads, because it is what most tasks follow."""
+        window = self.dialog(registry=self.registry)
+
+        self.assertEqual(list(window.calendar_selector.cget('values')),
+                         ['Project Default', 'Standard Week',
+                          'Weekend-Only Shift', '24/7 Continuous Run'])
+
+    def test_a_new_calendar_copies_the_one_on_screen(self):
+        """
+        So "New..." doubles as "duplicate this one".
+
+        Building a second weekend shift differing by one holiday is the case
+        that matters, and starting from a bare week means rebuilding it.
+        """
+        window = self.dialog(registry=self.registry)
+        window._on_calendar_selected('Weekend-Only Shift')
+
+        with self.named('Night Shift'):
+            created = window.new_calendar()
+
+        self.assertEqual(created, 'night-shift')
+        self.assertEqual(
+            window.registry.get('night-shift').calendar.non_working_days,
+            {0, 1, 2, 3, 4})
+
+    def test_a_cancelled_prompt_adds_nothing(self):
+        """Closing the name box is not a calendar."""
+        window = self.dialog(registry=self.registry)
+
+        with self.named(None):
+            self.assertIsNone(window.new_calendar())
+
+        self.assertEqual(len(window.registry), 3)
+
+    def test_an_empty_name_is_refused(self):
+        """A calendar nobody could pick again is not worth making."""
+        window = self.dialog(registry=self.registry)
+
+        with self.named('   '):
+            self.assertIsNone(window.new_calendar())
+
+        self.assertEqual(len(window.registry), 3)
+
+    def test_renaming_keeps_the_id(self):
+        """Every task following it names it by id, not by name."""
+        window = self.dialog(registry=self.registry)
+        window._on_calendar_selected('Weekend-Only Shift')
+
+        with self.named('Weekend Cover'):
+            self.assertTrue(window.rename_calendar())
+
+        self.assertIn('weekend-shift', window.registry)
+        self.assertEqual(window.registry.get('weekend-shift').name,
+                         'Weekend Cover')
+        self.assertIn('Weekend Cover',
+                      list(window.calendar_selector.cget('values')))
+
+    def test_deleting_asks_first(self):
+        """And does nothing when the answer is no."""
+        window = self.dialog(registry=self.registry)
+        window._on_calendar_selected('Weekend-Only Shift')
+
+        with self.confirmed(False):
+            self.assertFalse(window.delete_calendar())
+
+        self.assertIn('weekend-shift', window.registry)
+
+    def test_deleting_returns_to_the_project_default(self):
+        """There is nothing else the tabs could sensibly show."""
+        window = self.dialog(registry=self.registry)
+        window._on_calendar_selected('Weekend-Only Shift')
+
+        with self.confirmed():
+            self.assertTrue(window.delete_calendar())
+
+        self.assertIsNone(window.current_calendar_id)
+        self.assertNotIn('weekend-shift', window.registry)
+
+    def test_the_project_default_cannot_be_renamed_or_deleted(self):
+        """It is the fallback every task depends on."""
+        window = self.dialog(registry=self.registry)
+
+        self.assertEqual(str(window.button_rename.cget('state')), 'disabled')
+        self.assertEqual(str(window.button_delete.cget('state')), 'disabled')
+        self.assertFalse(window.rename_calendar())
+        self.assertFalse(window.delete_calendar())
+
+
+class TestAnEmptiedRegistryIsNotADeadEnd(HolidayDialogTestCase):
+    """
+    A plan with no named calendars can still get one.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The selector used not to be built at all without calendars to select,
+    which meant a plan whose calendars had been deleted - and any plan
+    written before they existed - had no way back to the feature at all.
+    """
+
+    def test_the_selector_is_built_even_with_nothing_in_it(self):
+        """It is what New... hangs off."""
+        from gantt_app.calendarregistry import CalendarRegistry
+
+        window = self.dialog(registry=CalendarRegistry())
+
+        self.assertIsNotNone(window.calendar_selector)
+        self.assertEqual(list(window.calendar_selector.cget('values')),
+                         ['Project Default'])
+
+    def test_a_calendar_can_be_added_from_empty(self):
+        """Which is the whole point of it still being there."""
+        from gantt_app.calendarregistry import CalendarRegistry
+
+        window = self.dialog(registry=CalendarRegistry())
+
+        with mock.patch('tkinter.simpledialog.askstring',
+                        return_value='Night Shift'):
+            window.new_calendar()
+
+        self.assertEqual(window.registry.ids(), ['night-shift'])
+
+    def test_the_calendars_reach_the_caller_on_apply(self):
+        """Along with everything else, from the one press."""
+        from gantt_app.calendarregistry import CalendarRegistry
+
+        window = self.dialog(registry=CalendarRegistry())
+        with mock.patch('tkinter.simpledialog.askstring',
+                        return_value='Night Shift'):
+            window.new_calendar()
+
+        window.apply()
+
+        self.assertEqual([named.id for named in self.applied_calendars[0]],
+                         ['night-shift'])
 
 
 if __name__ == '__main__':

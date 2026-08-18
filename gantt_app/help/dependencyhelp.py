@@ -126,6 +126,14 @@ HELP_SECTIONS = (
 
             "Lag applies to whichever end the link type constrains, so a lag "
             "on a Finish - Finish link moves the successor's finish.",
+
+            "The working days counted are the project's own, even where "
+            "either task follows a calendar of its own. A lag is a number "
+            "typed onto a link and it has to mean one thing: counted on the "
+            "successor's week, the same lag of 2 was two days for an "
+            "ordinary task and eight for one on a weekend-only shift. The "
+            "successor's calendar still decides where it may start once the "
+            "wait is over.",
         ],
     ),
     (

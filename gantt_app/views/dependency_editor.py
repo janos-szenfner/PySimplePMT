@@ -140,6 +140,14 @@ class DependencyEditor(ctk.CTkFrame):
         ctk.CTkEntry(add_row, textvariable=self.lag_var, width=56).grid(
             row=1, column=3, sticky=tk.W, padx=4, pady=(4, 8))
 
+        # Said on the form rather than left to be discovered. A plan whose
+        # tasks follow calendars of their own gives "2" three different
+        # meanings unless it is spelt out which week counts it.
+        ctk.CTkLabel(add_row, text="project working days",
+                     text_color="#6b7280").grid(
+            row=1, column=4, columnspan=2, sticky=tk.W, padx=(4, 8),
+            pady=(4, 8))
+
         ctk.CTkLabel(add_row, text="Hardness:").grid(
             row=2, column=0, sticky=tk.W, padx=(8, 4), pady=(0, 8))
         self.hardness_var = ctk.StringVar(value='Hard')

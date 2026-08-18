@@ -1838,13 +1838,13 @@ class Project:
             end_date=end_date,
             tasks=[],  # Start with empty tasks to avoid __post_init__ updating dates prematurely
             calendar=WorkingCalendar.from_dict(data.get('calendar')),
-            # A file written before calendars could be named has no key at
-            # all, and gets the presets - every task in it names none, so
-            # nothing about how it schedules changes. A file whose key is
-            # present but empty had its calendars deleted on purpose, and
-            # keeps them deleted.
-            calendars=(CalendarRegistry.from_dict(data['calendars'])
-                       if 'calendars' in data else default_registry())
+            # Nothing is invented for a file that did not have it. A plan
+            # written before calendars could be named opens with none, and
+            # the settings dialog's New... is one click away if its author
+            # wants some - which is a better answer than three calendars
+            # appearing in a file nobody added them to. Only a brand new
+            # project is seeded; see the field's default.
+            calendars=CalendarRegistry.from_dict(data.get('calendars'))
         )
         
         # Add tasks manually
@@ -1923,12 +1923,9 @@ class Project:
             else:                                   # SF
                 required = predecessor_start
 
-            # The lag is walked on the calendar of the task being placed.
-            # "Wait two working days after this finishes" is a wait the
-            # successor sits out, so it is the successor's week that says how
-            # long two working days is.
-            required = self._shift_working_days(required, dependency.lag,
-                                                self.calendar_for(task))
+            # Counted on the plan's own calendar, whatever week either end
+            # of the link keeps; see _shift_working_days.
+            required = self._shift_working_days(required, dependency.lag)
 
             if dependency.constrains_finish:
                 target = hard_ends if dependency.hardness == 'Hard' else floor_ends
@@ -1955,9 +1952,8 @@ class Project:
         days : int
             Working days of lag; negative is lead time.
         calendar : Optional[WorkingCalendar]
-            The calendar to count them on. The plan's own when not given -
-            a caller with a task in hand passes that task's, since a lag is
-            counted in the working days of whoever is waiting.
+            The calendar to count them on. The plan's own when not given,
+            which is what every caller uses; see the note below.
 
         RETURNS:
         --------
@@ -1974,6 +1970,16 @@ class Project:
 
         The calendar's arithmetic is inclusive - a span of one day ends where
         it starts - so shifting by n days asks it for n + 1.
+
+        The plan's calendar rather than either linked task's, and deliberately.
+        A lag is a number somebody types onto a link, and it has to mean the
+        same thing wherever it is typed: counted on the successor's week, the
+        same "2 days" was two days for an ordinary task, two days for a task
+        on a 24/7 run, and eight calendar days for one on a weekend-only
+        shift - which is not a wait anybody asked for. The successor's own
+        calendar still decides where it may start once the wait is over, so
+        nothing about its week is lost; only the length of the wait is held
+        steady.
         """
         if not days:
             return moment
@@ -2805,15 +2811,29 @@ class Project:
             """
             return max(self.calendar.working_days_between(origin, moment) - 1, 0)
 
-        def length(task: Task) -> int:
-            """Working days a task occupies; a milestone occupies none."""
-            return 0 if task.effective_milestone else self.working_duration(task)
-
         # ---- forward: where each task is, as scheduled ------------------
         early_start = {t.id: offset(t.start_date) for t in tasks}
+
+        # Read off the axis rather than added to the start as a length.
+        #
+        # A task's duration is counted on the calendar that task follows,
+        # and the axis counts the plan's. For a plan on one calendar those
+        # agree exactly and this is the same number either way. For a task
+        # on a calendar of its own they do not: five days of a 24/7 run
+        # spans three of the plan's working days, and adding the five put
+        # the task's finish two days past where it actually is - which came
+        # out as two days of negative float on a task that was never even
+        # late. Both ends are measured with the one ruler instead.
         early_finish = {
-            t.id: early_start[t.id] + max(length(t) - 1, 0) for t in tasks
+            t.id: max(offset(t.end_date or t.start_date), early_start[t.id])
+            for t in tasks
         }
+
+        #: How much of the axis each task covers. Zero for a milestone, and
+        #: for anything else the distance between its own two ends.
+        span = {t.id: 0 if t.effective_milestone
+                else early_finish[t.id] - early_start[t.id]
+                for t in tasks}
 
         finish = max(early_finish.values())
 
@@ -2857,19 +2877,18 @@ class Project:
                         by_id[task_id].name, other.name
                     )
                     continue
-                other_late_start = (late_finish[other.id]
-                                    - max(length(other) - 1, 0))
+                other_late_start = late_finish[other.id] - span[other.id]
                 if link.dep_type == 'FS':
                     allowed = other_late_start - 1 - link.lag
                 elif link.dep_type == 'SS':
                     # Only the start has to clear, so this may run on past it
                     allowed = (other_late_start - link.lag
-                               + max(length(by_id[task_id]) - 1, 0))
+                               + span[task_id])
                 elif link.dep_type == 'FF':
                     allowed = late_finish[other.id] - link.lag
                 else:                                   # SF
                     allowed = (late_finish[other.id] - link.lag
-                               + max(length(by_id[task_id]) - 1, 0))
+                               + span[task_id])
                 limit = min(limit, allowed)
             return limit
 
@@ -2881,14 +2900,13 @@ class Project:
 
         analysis: Dict[str, TaskFloat] = {}
         for task in tasks:
-            span = max(length(task) - 1, 0)
             late = late_finish[task.id]
             total_float = late - early_finish[task.id]
             analysis[task.id] = TaskFloat(
                 task_id=task.id,
                 early_start=early_start[task.id],
                 early_finish=early_finish[task.id],
-                late_start=late - span,
+                late_start=late - span[task.id],
                 late_finish=late,
                 total_float=total_float,
                 is_critical=total_float <= 0,

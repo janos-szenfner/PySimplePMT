@@ -109,7 +109,10 @@ class CriticalPathWindow(ctk.CTkToplevel):
                   "project finishes later. A task with none of it is on the "
                   "critical path - and every such task is listed, not one "
                   "chain through them, so parallel work that is equally "
-                  "critical shows up as such."),
+                  "critical shows up as such. Counted in the project "
+                  "calendar's working days, including for tasks that follow "
+                  "a calendar of their own, so every task is measured "
+                  "against the same ruler."),
             text_color="#6b7280",
         )
         self.explain_label.pack(fill=tk.X, padx=15, pady=(4, 8))
@@ -201,6 +204,14 @@ class CriticalPathWindow(ctk.CTkToplevel):
         The analysis counts in working days from the first day of the plan,
         which is the only unit float means anything in. A reader wants a
         date, so the offset is walked back out over the same calendar.
+
+        The plan's calendar, deliberately, even for a task following one of
+        its own: the axis is what every task's float is compared on, and a
+        task measured against its own week would sit at a different number
+        for the same day - so slack between two tasks on different calendars
+        would come out as whatever the difference between their weeks was.
+        Both ends of every task are read off this one ruler; see
+        Project.schedule_analysis.
         """
         if self.project.start_date is None:
             return '—'

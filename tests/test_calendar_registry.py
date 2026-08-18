@@ -398,5 +398,93 @@ class TestEditingANamedCalendar(unittest.TestCase):
                          date(2026, 9, 13))
 
 
+class TestWhichPlansGetThePresets(unittest.TestCase):
+    """
+    Seeded, but never invented for a file that did not have them.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The presets used to be forced onto every plan including old ones, because
+    without them the dropdown never appeared and there was no way to make a
+    calendar. Calendar Settings can now add one, so an old file is left
+    exactly as its author saved it.
+    """
+
+    def legacy(self, **extra):
+        """A project dictionary, by default without a calendars key at all."""
+        data = {'name': 'Old', 'tasks': [], 'start_date': None,
+                'end_date': None}
+        data.update(extra)
+        return data
+
+    def test_a_new_project_is_seeded(self):
+        """So the feature is there to be found."""
+        self.assertEqual(Project(name="New").calendars.ids(),
+                         ['standard-week', 'weekend-shift', 'continuous'])
+
+    def test_a_plan_written_before_calendars_gets_none(self):
+        """Three calendars in a file nobody added them to is worse."""
+        self.assertEqual(Project.from_dict(self.legacy()).calendars.ids(), [])
+
+    def test_a_deliberately_emptied_registry_stays_empty(self):
+        """Deleting them all has to survive a save."""
+        self.assertEqual(
+            Project.from_dict(self.legacy(calendars=[])).calendars.ids(), [])
+
+    def test_a_seeded_project_round_trips_unchanged(self):
+        """The seeding happens once, not on every open."""
+        project = Project(name="New")
+        project.calendars.remove('continuous')
+
+        reopened = Project.from_dict(project.to_dict())
+
+        self.assertEqual(reopened.calendars.ids(),
+                         ['standard-week', 'weekend-shift'])
+
+
+class TestLagIsCountedOnThePlansCalendar(unittest.TestCase):
+    """
+    One number, one meaning, wherever it is typed.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Counted on the successor's week, the same lag of 2 was two days for an
+    ordinary task, two for a 24/7 run, and eight calendar days for a
+    weekend-only shift - which is not a wait anybody asked for.
+    """
+
+    def plan_with_lag(self, calendar_id):
+        """A Friday finish, a lag of two, and a successor on some calendar."""
+        project = Project(name="Lag")
+        project.add_task(Task(id="a", name="A",
+                              start_date=datetime(2026, 9, 9),
+                              end_date=datetime(2026, 9, 11)))   # to a Friday
+        follower = Task(id="b", name="B", start_date=datetime(2026, 9, 14),
+                        end_date=datetime(2026, 9, 14), duration=1,
+                        calendar_id=calendar_id)
+        follower.add_dependency("a", "FS", "Hard", lag=2)
+        project.add_task(follower)
+        project.reschedule()
+        return project.get_task_by_id("b")
+
+    def test_the_wait_is_the_same_length_on_every_calendar(self):
+        """The Wednesday, twice; only the third can it not work."""
+        self.assertEqual(self.plan_with_lag(None).start_date.date(),
+                         date(2026, 9, 16))
+        self.assertEqual(self.plan_with_lag("continuous").start_date.date(),
+                         date(2026, 9, 16))
+
+    def test_the_successor_still_starts_where_it_can_work(self):
+        """
+        The wait is held steady; where it lands is the successor's own.
+
+        A weekend crew cannot begin on the Wednesday the lag reaches, so it
+        starts on the Saturday after it - the calendar placing the task, not
+        lengthening the wait.
+        """
+        self.assertEqual(self.plan_with_lag("weekend-shift").start_date.date(),
+                         date(2026, 9, 19))
+
+
 if __name__ == '__main__':
     unittest.main()

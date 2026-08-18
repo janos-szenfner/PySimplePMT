@@ -52,6 +52,7 @@ nothing installed to be honoured.
 """
 
 import tkinter as tk
+from tkinter import simpledialog
 from datetime import date, datetime
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
 
@@ -61,8 +62,9 @@ from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.calendarregistry import (
-    CalendarRegistry, NamedCalendar, describe_week,
+    CalendarRegistry, NamedCalendar, PROJECT_DEFAULT_LABEL, describe_week,
 )
+from gantt_app.views import dialogs as messagebox
 from gantt_app.workdaycalendar import (
     DEFAULT_NON_WORKING_DAYS, DateOverride, EU_COUNTRIES, WorkingCalendar,
     holidays_available, split_country, subdivisions, supported_countries,
@@ -105,7 +107,10 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
     """
 
     GEOMETRY = "620x660"
-    MINSIZE = (520, 420)
+    #: Wide enough for the selector row: the calendar menu plus New, Rename
+    #: and Delete come to a little under 500, and a narrower window clipped
+    #: Delete off the right edge.
+    MINSIZE = (580, 420)
 
     #: What the tabs are called. Named here because both the builders and
     #: the tests reach for them, and a tab looked up by a mistyped string
@@ -800,10 +805,6 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         The menu holds labels and the ids are kept beside it, because two
         calendars may be called the same thing while their ids cannot be.
         """
-        if not self.registry:
-            self.calendar_selector = None
-            return
-
         row = ctk.CTkFrame(self, fg_color='transparent')
         row.pack(fill=tk.X, padx=15, pady=(15, 0))
 
@@ -813,21 +814,164 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         #: Label to calendar id, for reading the menu back.
         self._selector_ids: Dict[str, Optional[str]] = {}
-        labels = []
-        for calendar_id, name in self.registry.options():
-            label = name if calendar_id is None else f"{name}"
-            self._selector_ids[label] = calendar_id
-            labels.append(label)
 
-        self.selector_var = ctk.StringVar(value=labels[0])
+        self.selector_var = ctk.StringVar()
         self.calendar_selector = ctk.CTkOptionMenu(
-            row, variable=self.selector_var, values=labels, width=220,
-            command=self._on_calendar_selected)
+            row, variable=self.selector_var, values=[PROJECT_DEFAULT_LABEL],
+            width=200, command=self._on_calendar_selected)
         self.calendar_selector.pack(side=tk.LEFT)
 
-        self.selector_note = ctk.CTkLabel(row, text="", anchor=tk.W,
+        self.button_new = ctk.CTkButton(row, text="New...", width=64,
+                                        command=self.new_calendar)
+        self.button_new.pack(side=tk.LEFT, padx=(6, 0))
+
+        self.button_rename = secondary_button(row, "Rename...",
+                                              self.rename_calendar, width=84)
+        self.button_rename.pack(side=tk.LEFT, padx=(6, 0))
+
+        self.button_delete = secondary_button(row, "Delete",
+                                              self.delete_calendar, width=64)
+        self.button_delete.pack(side=tk.LEFT, padx=(6, 0))
+
+        self.selector_note = ctk.CTkLabel(self, text="", anchor=tk.W,
+                                          justify=tk.LEFT, wraplength=560,
                                           text_color="#6b7280")
-        self.selector_note.pack(side=tk.LEFT, padx=10)
+        self.selector_note.pack(fill=tk.X, padx=15, pady=(4, 0))
+
+        self._rebuild_selector()
+
+    def _rebuild_selector(self):
+        """
+        Put the menu back in step with the registry, and keep the selection.
+
+        Called after anything that adds, renames or removes a calendar. The
+        selection is restored by id rather than by label, because a rename
+        changes the label under it.
+        """
+        self._selector_ids = {}
+        labels = []
+        for calendar_id, name in self.registry.options():
+            self._selector_ids[name] = calendar_id
+            labels.append(name)
+
+        self.calendar_selector.configure(values=labels)
+
+        wanted = self.current_calendar_id
+        if wanted is not None and wanted not in self.registry:
+            wanted = None
+        self.current_calendar_id = wanted
+
+        for label, calendar_id in self._selector_ids.items():
+            if calendar_id == wanted:
+                self.selector_var.set(label)
+                break
+
+        editable = self.current_calendar_id is not None
+        state = tk.NORMAL if editable else tk.DISABLED
+        self.button_rename.configure(state=state)
+        self.button_delete.configure(state=state)
+
+    # ---- adding, renaming and removing calendars ------------------------
+
+    def new_calendar(self):
+        """
+        Add a calendar, starting from the one currently shown.
+
+        RETURNS:
+        --------
+        Optional[str]
+            The new calendar's id, or None when the prompt was cancelled.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A copy of what is on screen rather than a bare Monday-to-Friday week,
+        so "New..." doubles as "duplicate this one" - which is what building
+        a second weekend shift with one different holiday actually needs, and
+        the alternative was rebuilding it from nothing every time.
+
+        The dialog is raised again afterwards. A modal prompt opened over a
+        modal dialog comes back behind it on some window managers, and a
+        settings window that has apparently frozen is the worst version of
+        this.
+        """
+        name = self._ask_name("New calendar", "Name for the new calendar:",
+                              "Weekend Shift")
+        if not name:
+            return None
+
+        self._capture_current_calendar()
+        source = self._working_calendar(self.current_calendar_id)
+        named = self.registry.create(
+            name, WorkingCalendar.from_dict(source.to_dict()))
+
+        self.current_calendar_id = named.id
+        self._rebuild_selector()
+        self._load_current_calendar()
+        logger.info("Added the calendar %r", named.id)
+        return named.id
+
+    def rename_calendar(self):
+        """Change what the selected calendar is called, keeping its id."""
+        if self.current_calendar_id is None:
+            return False
+
+        named = self.registry.get(self.current_calendar_id)
+        name = self._ask_name("Rename calendar", "New name:", named.name)
+        if not name:
+            return False
+
+        self.registry.rename(named.id, name)
+        self._rebuild_selector()
+        return True
+
+    def delete_calendar(self):
+        """
+        Remove the selected calendar, after saying what that does to tasks.
+
+        Tasks following it are not touched and are not listed: they fall back
+        to the project's own calendar the moment it is gone - see
+        CalendarRegistry.resolve - so there is nothing for the reader to
+        repair and nothing they need to be shown before deciding.
+        """
+        if self.current_calendar_id is None:
+            return False
+
+        named = self.registry.get(self.current_calendar_id)
+        if not messagebox.askyesno(
+                "Delete calendar",
+                f"Delete the calendar {named.name!r}?\n\n"
+                f"Any task following it goes back to the project's own "
+                f"calendar.", parent=self):
+            return False
+
+        self.registry.remove(named.id)
+        self.current_calendar_id = None
+        self._rebuild_selector()
+        self._load_current_calendar()
+        logger.info("Removed the calendar %r", named.id)
+        return True
+
+    def _ask_name(self, title: str, prompt: str,
+                  initial: str = "") -> Optional[str]:
+        """
+        Ask for a calendar name, over this dialog rather than behind it.
+
+        RETURNS:
+        --------
+        Optional[str]
+            The name typed, stripped, or None when it was cancelled or left
+            empty - an unnamed calendar is one nobody could pick again.
+        """
+        answer = simpledialog.askstring(title, prompt, parent=self,
+                                        initialvalue=initial)
+        try:
+            self.lift()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+        answer = (answer or '').strip()
+        return answer or None
 
     def _on_calendar_selected(self, label: str):
         """

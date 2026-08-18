@@ -202,8 +202,10 @@ can be removed while tasks still point at it, and a plan that will not open —
 or a task with no calendar at all, which would hang the day-by-day walks — is a
 far worse answer than a task quietly back on the standard week.
 
-Three presets come with every plan, so nobody has to build a weekend calendar
-from scratch to find out what the feature does:
+Three presets come with every **new** plan, so nobody has to build a weekend
+calendar from scratch to find out what the feature does. A plan saved before
+this existed gets none — nothing is invented for a file its author did not put
+it in — and the settings dialog's **New...** is one click away either way:
 
 | Calendar | Week | A 3-day task starting Thu 10 Sep 2026 |
 | --- | --- | --- |
@@ -214,6 +216,23 @@ from scratch to find out what the feature does:
 The weekend row starts on the Saturday, not the Thursday it was given: a task
 cannot begin on a day nobody works, and that rule is now read on the task's own
 calendar rather than the plan's.
+
+**Two things stay on the project's calendar, deliberately.**
+
+*Float*, because it is the one number every task is compared on. Both ends of
+every task are read off that single ruler — a task's finish is looked up on the
+axis rather than added to its start as a length, since the length is counted on
+the task's own week. Adding one to the other reported a 24/7 task as finishing
+two days past where it actually was, which came back as two days of **negative
+float on a task that was never late**. Where a plan runs on one calendar the
+two agree exactly, so no existing plan's numbers move.
+
+*Lag*, because it is a number somebody types onto a link and it has to mean one
+thing. Counted on the successor's week, the same lag of 2 was two days for an
+ordinary task, two for a 24/7 run, and eight calendar days for a weekend-only
+shift. The successor's own calendar still decides where it may start once the
+wait is over, so nothing about its week is lost — only the length of the wait
+is held steady. The dependency editor says so beside the box.
 
 **In the task editor**, a *Working calendar* dropdown lists the plan's default
 and every named calendar, each with its week beside it. Picking one re-dates
@@ -228,6 +247,17 @@ tabs between the project's calendar and each named one, so a weekend calendar
 gets the same working week, public holidays and manual overrides as the plan's.
 Everything is edited on copies and applied together, so Cancel still means
 Cancel.
+
+Beside it, **New...**, **Rename...** and **Delete**. New starts from whatever
+calendar is on screen, so it doubles as "duplicate this one" — building a
+second weekend shift that differs by one holiday is the case that matters, and
+starting from a bare week means rebuilding it. Renaming keeps the id, because
+that is what every task following it names. Deleting asks first and says what
+it does: any task following the calendar goes back to the project's own, which
+is why there is nothing to repair afterwards. The project's own calendar cannot
+be renamed or deleted — it is the fallback everything depends on — and the
+selector is built even when a plan holds no named calendars at all, so an
+emptied registry is not a dead end.
 
 Editing a named calendar goes through `Project.set_calendars()`, which applies
 it the same way the other three do — durations are read under the old calendar
@@ -1328,7 +1358,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1266 tests, all passing.
+1287 tests, all passing.
 
 ## Known Limitations
 
@@ -1384,5 +1414,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.35.0
+**Version**: 1.36.0
 **Last Updated**: 2026-08-18

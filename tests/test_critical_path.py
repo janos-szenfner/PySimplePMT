@@ -467,5 +467,98 @@ class TestTheToolbarOffersIt(unittest.TestCase):
         self.assertIn('Critical Path...', labels(items))
 
 
+class TestTasksOnCalendarsOfTheirOwn(CriticalPathTestCase):
+    """
+    Float has to mean the same thing for every task compared on it.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A task's duration is counted on the calendar that task follows; the axis
+    every task is placed on counts the plan's. For a plan on one calendar the
+    two agree exactly. For a task on a calendar of its own they do not, and
+    adding one to the other put the task's finish past where it actually was.
+    """
+
+    def mixed_plan(self):
+        """A 24/7 task, then an ordinary one hard-linked after it."""
+        project = Project(name="Mixed")
+        start = datetime(2026, 9, 10)           # a Thursday
+        project.add_task(Task(id="A", name="A", start_date=start,
+                              end_date=start, duration=5,
+                              calendar_id="continuous"))
+        follower = Task(id="B", name="B", start_date=start, end_date=start,
+                        duration=2)
+        follower.add_dependency("A", "FS", "Hard")
+        project.add_task(follower)
+        project.reschedule()
+        return project
+
+    def test_a_continuous_task_is_not_given_negative_float(self):
+        """
+        It was, and it had not slipped by so much as a day.
+
+        Five days of a 24/7 run cover three of the plan's working days.
+        Counting the five onto an axis measuring the plan's put the finish
+        two days beyond the real one, which came back as two days of
+        negative float - a task reported as undeliverable that was on time.
+        """
+        project = self.mixed_plan()
+
+        self.assertEqual(self.floats(project)["A"], 0)
+
+    def test_the_axis_agrees_with_the_dates(self):
+        """Both ends of a task measured with the one ruler."""
+        project = self.mixed_plan()
+        analysis = project.schedule_analysis()
+
+        # A runs Thu 10 to Mon 14, which is three of the plan's working days
+        self.assertEqual(analysis["A"].early_start, 0)
+        self.assertEqual(analysis["A"].early_finish, 2)
+        # B follows it on the Tuesday and Wednesday
+        self.assertEqual(analysis["B"].early_start, 3)
+        self.assertEqual(analysis["B"].early_finish, 4)
+
+    def test_a_weekend_task_is_placed_where_it_runs(self):
+        """The other direction: a task whose week is narrower than the plan's."""
+        project = Project(name="Weekend")
+        start = datetime(2026, 9, 10)
+        project.add_task(Task(id="A", name="A", start_date=start,
+                              end_date=start, duration=2,
+                              calendar_id="weekend-shift"))
+        project.reschedule()
+        task = project.get_task_by_id("A")
+        self.assertEqual(task.start_date.date().isoformat(), '2026-09-12')
+
+        analysis = project.schedule_analysis()
+
+        # It runs Sat 12 to Sun 13, neither of which the plan works, so it
+        # covers none of the axis at all - and still has no float, being the
+        # only task in the plan.
+        self.assertEqual(analysis["A"].early_start, analysis["A"].early_finish)
+        self.assertEqual(analysis["A"].total_float, 0)
+
+    def test_a_single_calendar_plan_is_unchanged(self):
+        """
+        The fix must not move the numbers everybody already has.
+
+        Where every task follows the plan's calendar, reading the finish off
+        the axis and adding the duration to the start give the same answer.
+        """
+        project = self.plan([
+            ("A", (2026, 3, 2), (2026, 3, 6), []),
+            ("B", (2026, 3, 9), (2026, 3, 13), [("A", "FS", 0)]),
+            ("C", (2026, 3, 9), (2026, 3, 11), [("A", "FS", 0)]),
+        ])
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+
+        self.assertEqual(analysis["A"].early_start, 0)
+        self.assertEqual(analysis["A"].early_finish, 4)
+        self.assertEqual(analysis["B"].early_start, 5)
+        self.assertEqual(analysis["B"].early_finish, 9)
+        self.assertEqual(self.floats(project)["C"], 2)
+
+
 if __name__ == '__main__':
     unittest.main()
