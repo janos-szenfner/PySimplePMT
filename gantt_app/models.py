@@ -1818,7 +1818,33 @@ class Project:
         duration = self.working_duration(task)
         new_start, new_end = task.start_date, task.end_date
 
-        if required_start is not None:
+        # Both edges held is not a conflict to resolve - it is a span being
+        # stated. Start-Start onto the first task and Finish-Finish onto the
+        # last is how a row is made to cover a stretch of the plan, and there
+        # is nothing else the pair can mean. Honouring only the start and
+        # putting the old length back left such a row the length of whatever
+        # it happened to be before, which for a deliverable linked across two
+        # tasks was the length of the first one.
+        holds_span = (required_start is not None and required_end is not None
+                      and not task.is_milestone
+                      and required_end >= required_start)
+
+        if holds_span:
+            new_start = self.calendar.get_next_working_day(required_start)
+            new_end = self.calendar.get_next_working_day(required_end)
+            if new_end < new_start:
+                # Both landed in the same weekend
+                new_end = new_start
+        elif required_start is not None:
+            if required_end is not None:
+                # A finish required before the start is not a span but a
+                # contradiction. The start still places the task, and saying
+                # so beats silently drawing a bar that runs backwards.
+                logger.warning(
+                    "Task %r is required to finish on %s, before the %s its "
+                    "links require it to start; keeping its length",
+                    task.name, required_end.date(), required_start.date()
+                )
             new_start = self.calendar.get_next_working_day(required_start)
             if preserve_duration and task.end_date is not None:
                 new_end = self.calendar.add_working_days(new_start, duration)

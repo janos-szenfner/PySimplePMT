@@ -114,6 +114,103 @@ class TestDependencyTypes(DependencyTestCase):
                                  'FF': True, 'SF': True})
 
 
+class TestASpanStatedByTwoLinks(DependencyTestCase):
+    """
+    A start link and a finish link together state a span.
+
+    WHY THESE EXIST:
+    ================
+    Start-Start onto the first task and Finish-Finish onto the last is how a
+    row is made to cover a stretch of the plan - a deliverable spanning the
+    work that produces it, without that work being nested inside it.
+
+    Only the start was honoured, and the task's old length was put back on
+    top of it, so such a deliverable came out the length of whatever it
+    happened to be before: the first task's length. The finish it had been
+    given was thrown away.
+    """
+
+    def setUp(self):
+        """Two tasks running back to back, and a row spanning both."""
+        super().setUp()
+        # First runs 1-5 January; make Second follow it rather than overlap
+        self.second.start_date = datetime(2026, 1, 6)
+        self.second.end_date = datetime(2026, 1, 9)
+
+        self.span = Task(id="D", name="Deliverable", task_type="Deliverable",
+                         start_date=datetime(2026, 1, 1),
+                         end_date=datetime(2026, 1, 5))
+        self.project.add_task(self.span)
+
+    def link_across(self):
+        """Span the two tasks: start with the first, finish with the last."""
+        self.span.add_dependency("A", 'SS', 'Hard')
+        self.project.apply_dependency_constraints(self.span)
+        self.span.add_dependency("B", 'FF', 'Hard')
+        self.project.apply_dependency_constraints(self.span)
+
+    def test_it_covers_both_tasks(self):
+        """From the first task's start to the last one's finish."""
+        self.link_across()
+
+        self.assertEqual(self.span.start_date, self.first.start_date)
+        self.assertEqual(self.span.end_date, self.second.end_date)
+
+    def test_its_length_is_the_span_not_what_it_used_to_be(self):
+        """
+        The duration follows from the two dates rather than being preserved.
+
+        The row was five days long before the links were added, and stayed
+        five days long after them - the length of the first task alone.
+        """
+        self.link_across()
+
+        self.assertEqual(self.project.working_duration(self.span),
+                         self.project.calendar.working_days_between(
+                             self.first.start_date, self.second.end_date))
+
+    def test_it_survives_a_reschedule(self):
+        """Settling the plan does not put the old length back."""
+        self.link_across()
+        before = (self.span.start_date, self.span.end_date)
+
+        self.project.reschedule()
+
+        self.assertEqual((self.span.start_date, self.span.end_date), before)
+
+    def test_a_single_link_still_preserves_the_length(self):
+        """
+        One link places the task and keeps what it holds.
+
+        Only a start and a finish together state a span; a start on its own
+        says where the work begins, not how much of it there is.
+        """
+        self.second.dependencies = []
+        self.second.add_dependency("A", 'FS', 'Hard')
+        original = self.project.working_duration(self.second)
+
+        self.project.apply_dependency_constraints(self.second)
+
+        self.assertEqual(self.project.working_duration(self.second), original)
+
+    def test_a_finish_required_before_the_start_keeps_the_length(self):
+        """
+        Contradictory links are not a span, and do not draw a bar backwards.
+
+        The finish is required on the 1st and the start on the 6th, which no
+        task can do. The start places it and its length is kept, which is the
+        behaviour a single start link would have given.
+        """
+        self.span.start_date = datetime(2026, 1, 6)
+        self.span.end_date = datetime(2026, 1, 9)
+        self.span.add_dependency("B", 'SS', 'Hard')     # start on the 6th
+        self.span.add_dependency("A", 'FF', 'Hard')     # finish on the 5th
+
+        self.project.apply_dependency_constraints(self.span)
+
+        self.assertGreaterEqual(self.span.end_date, self.span.start_date)
+
+
 class TestLagAndLead(DependencyTestCase):
     """Lag delays the successor; a negative lag lets it overlap."""
 
