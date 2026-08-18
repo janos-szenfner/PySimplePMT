@@ -275,19 +275,27 @@ class TaskContextMenu:
 
         menu.add_separator()
 
+        # Indent and outdent act on everything selected, as copy and cut do.
+        # Acting on the clicked row alone meant a selection of five rows had
+        # one of them indented and the other four left where they were.
+        level_ids = self._selection_including(task_id)
+
         # Indent needs a row above to go under, and outdent needs a parent to
-        # come out of, so both are greyed out where they would do nothing
+        # come out of, so both are greyed out where they would do nothing.
+        # Enabled when *any* of the chosen rows can move: a selection whose
+        # first row happens to be the top of its group should still indent
+        # the rest, and does.
         level_allowed = {
             'indent': has_task and self._on_indent is not None
-            and project.can_indent(task_id),
+            and any(project.can_indent(chosen) for chosen in level_ids),
             'outdent': has_task and self._on_outdent is not None
-            and project.can_outdent(task_id),
+            and any(project.can_outdent(chosen) for chosen in level_ids),
         }
         for label, action in LEVEL_ACTIONS:
             menu.add_command(
                 label=label,
                 state=tk.NORMAL if level_allowed[action] else tk.DISABLED,
-                command=lambda a=action: self._invoke_level(task_id, a),
+                command=lambda a=action: self._invoke_level(level_ids, a),
             )
 
         menu.add_separator()
@@ -415,17 +423,34 @@ class TaskContextMenu:
         except Exception:
             logger.exception("Could not move task %s to %s", task_id, target)
 
-    def _invoke_level(self, task_id, action):
-        """Indent or outdent the clicked task."""
+    def _selection_including(self, task_id):
+        """
+        The rows an action should act on: the selection, or the clicked row.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        show() already keeps a multi-row selection when the clicked row is
+        part of it, and collapses it onto that row when it is not - so the
+        selection is the right answer wherever there is one. The clicked row
+        is the fallback for a menu opened without the tree having a selection
+        at all, which a right-click on a fresh window produces.
+        """
+        if task_id is None:
+            return []
+        selected = [str(item) for item in self.tree.selection()]
+        return selected if task_id in selected else [task_id]
+
+    def _invoke_level(self, task_ids, action):
+        """Indent or outdent the chosen tasks."""
         handler = (self._on_indent if action == 'indent'
                    else self._on_outdent)
         if not handler:
             return
-        logger.info("Context menu: %s task %s", action, task_id)
+        logger.info("Context menu: %s task(s) %s", action, task_ids)
         try:
-            handler(task_id)
+            handler(task_ids)
         except Exception:
-            logger.exception("Could not %s task %s", action, task_id)
+            logger.exception("Could not %s task(s) %s", action, task_ids)
 
     def _invoke_create(self, task_id, task_type):
         """Create a new task of the chosen type at the clicked row."""

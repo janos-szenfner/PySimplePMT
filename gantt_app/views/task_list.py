@@ -1005,17 +1005,38 @@ class DragDropTaskList(ctk.CTkFrame):
             parent=self.winfo_toplevel(),
         )
 
-    def indent_task(self, task_id: str):
-        """Make a task a sub-task of the row above it."""
-        self._apply_restructure(lambda: self.project.indent_task(task_id),
-                                task_id, "Indent Task")
+    def indent_task(self, task_ids):
+        """
+        Make the chosen tasks sub-tasks of the row above them.
 
-    def outdent_task(self, task_id: str):
-        """Move a task out to sit beside its parent."""
-        self._apply_restructure(lambda: self.project.outdent_task(task_id),
-                                task_id, "Outdent Task")
+        PARAMETERS:
+        -----------
+        task_ids : str or Sequence[str]
+            One row, or every row the menu was opened over. A bare string is
+            still accepted: plenty of callers pass one row.
+        """
+        chosen = self._as_ids(task_ids)
+        label = "Indent Tasks" if len(chosen) > 1 else "Indent Task"
+        self._apply_restructure(lambda: self.project.indent_tasks(chosen),
+                                chosen, label)
 
-    def _apply_restructure(self, change, task_id: str, label: str):
+    def outdent_task(self, task_ids):
+        """Move the chosen tasks out to sit beside their parent."""
+        chosen = self._as_ids(task_ids)
+        label = "Outdent Tasks" if len(chosen) > 1 else "Outdent Task"
+        self._apply_restructure(lambda: self.project.outdent_tasks(chosen),
+                                chosen, label)
+
+    @staticmethod
+    def _as_ids(task_ids) -> List[str]:
+        """One row or several, always as a list."""
+        if task_ids is None:
+            return []
+        if isinstance(task_ids, str):
+            return [task_ids]
+        return [str(task_id) for task_id in task_ids]
+
+    def _apply_restructure(self, change, task_ids, label: str):
         """
         Run a change to the hierarchy, record it for undo and redraw.
 
@@ -1023,10 +1044,12 @@ class DragDropTaskList(ctk.CTkFrame):
         -----------
         change : callable
             Performs the change, returning True when anything moved.
-        task_id : str
-            The task being moved, so it can be reselected afterwards.
+        task_ids : str or Sequence[str]
+            The tasks being moved, so they can be reselected afterwards.
         label : str
-            What to call the change in the undo history.
+            What to call the change in the undo history. One entry however
+            many rows moved: the user pressed Indent once, so Undo has to put
+            all of it back once.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -1054,14 +1077,20 @@ class DragDropTaskList(ctk.CTkFrame):
 
         self._report_dropped_links(self.project.dropped_links(before, after))
 
+        # Every row that moved stays selected, so the group can be indented
+        # again without picking it out a second time
+        chosen = [task_id for task_id in self._as_ids(task_ids)
+                  if self.project.get_task_by_id(task_id) is not None]
         try:
-            parent = self.tree.parent(task_id)
-            while parent:
-                self.tree.item(parent, open=True)
-                parent = self.tree.parent(parent)
-            self.tree.selection_set(task_id)
-            self.tree.focus(task_id)
-            self.tree.see(task_id)
+            for task_id in chosen:
+                parent = self.tree.parent(task_id)
+                while parent:
+                    self.tree.item(parent, open=True)
+                    parent = self.tree.parent(parent)
+            if chosen:
+                self.tree.selection_set(*chosen)
+                self.tree.focus(chosen[0])
+                self.tree.see(chosen[0])
         except tk.TclError:
             pass
 

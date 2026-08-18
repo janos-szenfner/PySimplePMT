@@ -325,5 +325,139 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         self.assertIsNone(project.get_task_by_id("S").parent_task_id)
 
 
+class TestMovingSeveralRowsAtOnce(unittest.TestCase):
+    """
+    Indent and outdent act on everything selected.
+
+    WHY THESE EXIST:
+    ================
+    They acted on the clicked row alone, so selecting five rows and pressing
+    Indent moved the first one and left the other four where they were - which
+    reads as the feature being broken rather than as it having a different
+    scope than the selection suggests.
+
+    Order is the whole difficulty. Indenting moves a row under the sibling
+    above it, so a flat selection worked bottom-up comes out as a staircase
+    rather than a group; outdenting places a row after its old parent's
+    remaining children, so worked top-down it reverses them. The two run in
+    opposite directions for that reason, and both are pinned here.
+    """
+
+    def plan(self, rows):
+        """A project from (id, parent) rows, in hierarchy order."""
+        from datetime import datetime
+        from gantt_app.models import Project, Task
+
+        project = Project(name="Group")
+        for task_id, parent in rows:
+            project.add_task(Task(
+                id=task_id, name=task_id, parent_task_id=parent,
+                task_type="Subtask" if parent else "Task",
+                start_date=datetime(2026, 1, 5),
+                end_date=datetime(2026, 1, 9),
+            ))
+        project.tasks = project._flatten(project._children_by_parent())
+        return project
+
+    def shape(self, project):
+        """Each task as (id, parent), in the order the plan holds them."""
+        return [(task.id, task.parent_task_id) for task in project.tasks]
+
+    def test_every_selected_row_is_indented(self):
+        """Not just the first one."""
+        project = self.plan([("A", None), ("B", None), ("C", None),
+                             ("D", None)])
+
+        self.assertTrue(project.indent_tasks(["B", "C", "D"]))
+
+        self.assertEqual(self.shape(project),
+                         [("A", None), ("B", "A"), ("C", "A"), ("D", "A")])
+
+    def test_they_land_side_by_side_rather_than_in_a_staircase(self):
+        """
+        Worked top to bottom, which is what keeps the group together.
+
+        Bottom to top puts each row under the one above it, and a flat
+        selection of four comes out four levels deep.
+        """
+        project = self.plan([("A", None), ("B", None), ("C", None),
+                             ("D", None)])
+
+        project.indent_tasks(["D", "C", "B"])       # any order given
+
+        parents = {task.id: task.parent_task_id for task in project.tasks}
+        self.assertEqual(parents, {"A": None, "B": "A", "C": "A", "D": "A"})
+
+    def test_outdenting_keeps_them_in_order(self):
+        """
+        Worked bottom to top, which is the order that preserves theirs.
+
+        A row lifted out is placed after its old parent's remaining children,
+        so lifting the first one puts it behind the siblings it was in front
+        of - and doing that down the list reverses them.
+        """
+        project = self.plan([("A", None), ("B", "A"), ("C", "A"), ("D", "A")])
+
+        self.assertTrue(project.outdent_tasks(["B", "C", "D"]))
+
+        self.assertEqual(self.shape(project),
+                         [("A", None), ("B", None), ("C", None), ("D", None)])
+
+    def test_a_row_that_cannot_move_does_not_stop_the_rest(self):
+        """
+        The first row of a group has nothing above it to go under.
+
+        A selection that happens to start at one should still indent
+        everything after it, rather than refusing the lot.
+        """
+        project = self.plan([("A", None), ("B", None), ("C", None)])
+
+        self.assertTrue(project.indent_tasks(["A", "B", "C"]))
+
+        parents = {task.id: task.parent_task_id for task in project.tasks}
+        self.assertEqual(parents, {"A": None, "B": "A", "C": "A"})
+
+    def test_a_branch_moves_once_not_twice(self):
+        """
+        Selecting a parent and its child indents the branch, not both rows.
+
+        The child is carried by its parent; indenting it as well would put it
+        a level deeper than everything it was selected with.
+        """
+        project = self.plan([("A", None), ("B", None), ("C", "B")])
+
+        project.indent_tasks(["B", "C"])
+
+        parents = {task.id: task.parent_task_id for task in project.tasks}
+        self.assertEqual(parents, {"A": None, "B": "A", "C": "B"})
+
+    def test_nothing_selected_moves_nothing(self):
+        """And says so, rather than silently doing something."""
+        project = self.plan([("A", None), ("B", None)])
+
+        self.assertFalse(project.indent_tasks([]))
+        self.assertFalse(project.outdent_tasks([]))
+
+    def test_an_unknown_id_is_ignored(self):
+        """A row deleted since the menu opened is not a reason to fail."""
+        project = self.plan([("A", None), ("B", None)])
+
+        self.assertTrue(project.indent_tasks(["B", "gone"]))
+
+        self.assertEqual(project.get_task_by_id("B").parent_task_id, "A")
+
+    def test_the_types_follow_the_level_each_row_lands_at(self):
+        """The same rule a single indent uses; see child_type_for."""
+        project = self.plan([("P", None), ("T1", None), ("T2", None)])
+        project.get_task_by_id("P").task_type = "Deliverable"
+
+        project.indent_tasks(["T1", "T2"])
+
+        for task_id in ("T1", "T2"):
+            with self.subTest(task=task_id):
+                self.assertEqual(project.get_task_by_id(task_id).task_type,
+                                 "Task")
+
+
 if __name__ == '__main__':
     unittest.main()

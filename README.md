@@ -228,7 +228,7 @@ cannot pull its parent outside it either.
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
 - **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Deliverable, Task, Subtask, Milestone), Edit and Delete, Copy, Cut and Paste, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
-- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. It keeps its own type wherever the new parent can hold it - a `Task` indented under a `Deliverable` stays a `Task` - and only takes a new one where the old is not a level that parent can hold; see *The Levels, and Moving Between Them* above. A branch moves as a whole, and both are undoable
+- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. It keeps its own type wherever the new parent can hold it - a `Task` indented under a `Deliverable` stays a `Task` - and only takes a new one where the old is not a level that parent can hold; see *The Levels, and Moving Between Them* above. **Both act on every selected row**, as Copy and Cut do, and land them side by side rather than in a staircase: indent runs top to bottom so each row goes under the same sibling, outdent runs bottom to top so the rows keep their order. Selecting a parent and its children moves the branch once, not twice. A branch moves as a whole, one press is one undo, and the moved rows stay selected
 - **EditTaskDialog** (`views/taskdialogs.py`): The task form over an existing task. Buttons read Help and Delete (set apart), then Close, Save & Close, Save & New
 - **CreateTaskDialog** (`views/taskdialogs.py`): The same form over a new one, for any of the five work item types
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
@@ -1055,7 +1055,7 @@ Unit tests cover:
 - ✅ **GAN Import**: Real GanttProject 3.x fixtures - working-day calendar, nested sub-tasks, successor-to-predecessor edge reversal, milestones, colors, namespaced files
 - ✅ **Mermaid Import/Export**: Inclusive working-day durations, dependency chains, section grouping, frontmatter, round-trip
 - ✅ **XLSX Import**: Header detection, column aliases, Excel serial dates, working-day durations, phase grouping, dependency resolution, lossless export round-trip
-- ✅ **Task Hierarchy**: Sub-task creation, parent candidate ordering, cycle safety, and the type a task takes when it is indented or outdented between levels
+- ✅ **Task Hierarchy**: Sub-task creation, parent candidate ordering, cycle safety, the type a task takes when it is indented or outdented between levels, and moving several selected rows at once in the order that keeps them together
 - ✅ **Logging**: Buffer capacity and filtering, file output, failure paths, importer errors reaching the log
 - ✅ **Gantt Export**: PNG and PDF rendering
 - ✅ **Undo/Redo**: Command stack behaviour
@@ -1134,5 +1134,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.30.0
+**Version**: 1.30.1
 **Last Updated**: 2026-08-18

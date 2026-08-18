@@ -247,6 +247,70 @@ class TestIndentOutdent(TaskListTestCase):
         """A sub-task can be lifted out."""
         self.assertEqual(self.states("004")["Outdent"], 'normal')
 
+    def test_indent_moves_every_selected_row(self):
+        """
+        Not just the one the menu was opened on.
+
+        The menu acted on the clicked row alone, so a selection of several
+        had its first row indented and the rest left where they were.
+        """
+        self.task_list.tree.selection_set("002", "003")
+
+        self.invoke_entry("002", "Indent")
+
+        levels = self.levels()
+        self.assertEqual(levels["002"][1], "001")
+        self.assertEqual(levels["003"][1], "001")
+
+    def test_the_moved_rows_stay_selected(self):
+        """So the group can be indented again without picking it out twice."""
+        self.task_list.tree.selection_set("002", "003")
+
+        self.invoke_entry("002", "Indent")
+
+        self.assertEqual(set(self.task_list.tree.selection()), {"002", "003"})
+
+    def test_indent_is_offered_when_any_selected_row_can_move(self):
+        """
+        A selection starting at the top of a group still indents the rest.
+
+        Greying the entry out because the first row cannot move would refuse
+        a perfectly ordinary selection.
+        """
+        self.task_list.tree.selection_set("001", "002")
+
+        menu = self.task_list.context_menu._build(self.project, "001")
+
+        index = self.entry_index(menu, "Indent")
+        self.assertEqual(str(menu.entrycget(index, 'state')), 'normal')
+
+    def test_a_multi_row_indent_is_one_undo(self):
+        """
+        One press, one entry in the history.
+
+        Recording an entry per row would make the user press Undo once per
+        row to put back something they did in a single action.
+        """
+        from gantt_app.utils.undoredo import (
+            UndoRedoManager, ProjectStateTracker,
+        )
+
+        manager = UndoRedoManager()
+        manager.set_project(self.project)
+        self.task_list.project_tracker = ProjectStateTracker(self.project,
+                                                             manager)
+
+        self.task_list.tree.selection_set("002", "003")
+        self.invoke_entry("002", "Indent")
+        self.assertEqual(self.levels()["003"][1], "001")
+
+        manager.undo()
+        self.task_list.update_task_list()
+
+        levels = self.levels()
+        self.assertIsNone(levels["002"][1])
+        self.assertIsNone(levels["003"][1])
+
     def test_indenting_reparents_and_retypes(self):
         """The row goes under the one above and becomes a sub-task."""
         self.invoke_entry("002", "Indent")

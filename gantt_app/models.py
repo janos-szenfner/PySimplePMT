@@ -1424,6 +1424,98 @@ class Project:
         self.strip_ancestor_links(task_id)
         return True
 
+    def _topmost(self, task_ids) -> List[str]:
+        """
+        The selected tasks that no other selected task contains.
+
+        RETURNS:
+        --------
+        List[str]
+            The IDs, in the order the plan holds them.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A branch moves as a whole, so moving a task that sits inside another
+        task being moved would move it twice - once carried by its parent and
+        once on its own account, ending a level deeper than everything it was
+        selected with. Selecting a parent and its children and pressing Indent
+        is an ordinary thing to do, and it has to mean the branch.
+        """
+        wanted = {task_id for task_id in task_ids
+                  if self.get_task_by_id(task_id) is not None}
+
+        def has_selected_ancestor(task: Task) -> bool:
+            """Whether anything above this task is selected as well."""
+            seen = {task.id}
+            parent_id = task.parent_task_id
+            while parent_id and parent_id not in seen:
+                if parent_id in wanted:
+                    return True
+                seen.add(parent_id)
+                parent = self.get_task_by_id(parent_id)
+                if parent is None:
+                    break
+                parent_id = parent.parent_task_id
+            return False
+
+        return [task.id for task in self.tasks
+                if task.id in wanted and not has_selected_ancestor(task)]
+
+    def indent_tasks(self, task_ids) -> bool:
+        """
+        Make several tasks sub-tasks of the row above the topmost of them.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Worked top to bottom, which is what keeps the group together. Each
+        indent moves a task under the sibling above it, so once the first has
+        gone under that sibling the next one's sibling above is the same
+        task - and they all land side by side beneath it.
+
+        Bottom to top does something quite different: the last row goes under
+        the second to last, which then goes under the one above that, and a
+        flat selection comes out as a staircase.
+
+        A row that cannot be indented is stepped over rather than stopping
+        the rest. The first row of a group has nothing above it to go under,
+        and a selection that happens to start at one should still indent
+        everything after it.
+        """
+        moved = False
+        for task_id in self._topmost(task_ids):
+            if self.indent_task(task_id):
+                moved = True
+        return moved
+
+    def outdent_tasks(self, task_ids) -> bool:
+        """
+        Move several tasks out to sit beside their parent.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Worked bottom to top, which is the order that keeps them in the order
+        they were in. A task lifted out is placed after its old parent's
+        remaining children, so lifting the first one puts it behind the
+        siblings it used to be in front of - and doing that down the list
+        reverses them. Lifting the last one first leaves nothing behind it to
+        be placed after.
+        """
+        moved = False
+        for task_id in reversed(self._topmost(task_ids)):
+            if self.outdent_task(task_id):
+                moved = True
+        return moved
+
     def outdent_task(self, task_id: str) -> bool:
         """
         Move a task out to sit beside its parent.
