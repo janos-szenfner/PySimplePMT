@@ -32,6 +32,7 @@ from typing import Optional
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
+from gantt_app.views.modal import take_grab
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -277,6 +278,10 @@ class CalendarPopup(ctk.CTkToplevel):
         self.transient(master.winfo_toplevel())
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.bind('<Escape>', lambda _e: self.close())
+
+        # The task form holds a grab, and a grab is exclusive: without taking
+        # it this window receives no clicks at all. See views/modal.take_grab.
+        take_grab(self)
 
         self._build()
         self._draw_month()

@@ -771,27 +771,43 @@ class Toolbar(ctk.CTkFrame):
 
         self._connect_icon_toolbar()
     
+    #: Icon actions whose handler is not a method of this class by that name.
+    ICON_HANDLER_OVERRIDES = {
+        'delete_selected': '_delete_selected_tasks',
+    }
+
     def _connect_icon_toolbar(self):
-        """Connect the icon toolbar button actions to the toolbar's methods."""
+        """
+        Give every icon in the row the handler it names.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Driven from IconToolbar.ICON_ACTIONS rather than from a list written
+        out here. The two were maintained by hand and drifted the first time
+        an icon was added: the critical path icon was in the row, drawn and
+        enabled, and nothing was connected behind it - so pressing it logged
+        a line and did nothing while the same action worked from the menu.
+
+        An action with no method to connect is reported rather than passed
+        over, since that is exactly the failure this replaced.
+        """
         if not hasattr(self, 'icon_toolbar'):
             return
-        
-        # Override the icon toolbar's methods with the toolbar's methods
-        self.icon_toolbar.new_project = self.new_project
-        self.icon_toolbar.load_project = self.load_project
-        self.icon_toolbar.save_project = self.save_project
-        self.icon_toolbar.edit_project_info = self.edit_project_info
-        self.icon_toolbar.add_phase = self.add_phase
-        self.icon_toolbar.add_deliverable = self.add_deliverable
-        self.icon_toolbar.add_task = self.add_task
-        self.icon_toolbar.add_subtask = self.add_subtask
-        self.icon_toolbar.add_milestone = self.add_milestone
-        self.icon_toolbar.cut_tasks = self.cut_tasks
-        self.icon_toolbar.copy_tasks = self.copy_tasks
-        self.icon_toolbar.paste_tasks = self.paste_tasks
-        self.icon_toolbar.delete_selected = lambda: self._delete_selected_tasks()
-        self.icon_toolbar.undo = self.undo
-        self.icon_toolbar.redo = self.redo
+
+        missing = []
+        for _icon, _tooltip, action in self.icon_toolbar.ICON_ACTIONS:
+            if not action:
+                continue                    # a divider
+            name = self.ICON_HANDLER_OVERRIDES.get(action, action)
+            handler = getattr(self, name, None)
+            if not callable(handler):
+                missing.append(action)
+                continue
+            setattr(self.icon_toolbar, action, handler)
+
+        if missing:
+            logger.error("Icon actions with no handler on the toolbar: %s",
+                         ', '.join(missing))
     
     def _delete_selected_tasks(self):
         """Delete selected tasks from the task list."""

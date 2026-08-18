@@ -40,6 +40,7 @@ from typing import Callable, List, Optional, Sequence
 
 import customtkinter as ctk
 
+from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.workdaycalendar import (
     EU_COUNTRIES, holidays_available, split_country, subdivisions,
@@ -334,8 +335,7 @@ class HolidayDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(footer, text="Apply", width=110,
                       command=self.apply).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(footer, text="Cancel", width=110, fg_color='transparent',
-                      border_width=1, command=self.cancel).pack(side=tk.RIGHT)
+        secondary_button(footer, "Cancel", self.cancel).pack(side=tk.RIGHT)
 
     def center_window(self):
         """Place the dialog over the middle of the screen."""

@@ -32,6 +32,7 @@ from typing import Optional
 import customtkinter as ctk
 
 from gantt_app.models import Project
+from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.utils.log import get_logger
 
@@ -146,9 +147,8 @@ class CriticalPathWindow(ctk.CTkToplevel):
 
         ctk.CTkButton(footer, text="Close", width=110,
                       command=self.destroy).pack(side=tk.RIGHT, padx=5)
-        ctk.CTkButton(footer, text="Recalculate", width=110,
-                      fg_color='transparent', border_width=1,
-                      command=self.refresh).pack(side=tk.RIGHT)
+        secondary_button(footer, "Recalculate", self.refresh).pack(
+            side=tk.RIGHT)
 
     # ---- filling it in --------------------------------------------------
 

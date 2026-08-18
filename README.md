@@ -68,7 +68,8 @@ gantt_app/
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── log_window.py      # Application log viewer
-│   ├── modal.py           # Makes a dialog modal once the window manager shows it
+│   ├── modal.py           # Makes a dialog modal, and hands the grab to a popup
+│   ├── buttonstyle.py     # How a secondary button is drawn, in one place
 │   └── toolbar.py         # The menu bar and the icon action bar
 │
 ├── help/
@@ -1003,7 +1004,30 @@ finish, total float, and whether it is critical.
   Emoji and icon fonts are a Windows and macOS assumption: a stock Linux
   desktop has neither, and both came out blank there before they were drawn
 
-### 7. Fields are watched through variables, not the keyboard
+### 7. A popup over a modal dialog takes the grab
+
+A Tk grab is **exclusive**: while a dialog holds one, every click goes to it
+and to the widgets inside it. A popup opened on top — the colour palette, the
+calendar — is a *separate window*, not a child, so it receives nothing. Its
+buttons draw normally, its swatches highlight on hover, and not one of them
+responds.
+
+`views/modal.take_grab()` is the fix: the popup takes the grab for as long as
+it is up and hands it back to whatever held it before, so the dialog
+underneath is not left non-modal either. `<Destroy>` fires for every widget
+inside a window as well as for the window itself, so the handler checks which
+it was given — restoring on a child's teardown would give the grab away while
+the popup was still up.
+
+### 8. Secondary buttons are drawn, not left transparent
+
+`fg_color='transparent'` keeps CustomTkinter's button text colour, which is
+white because it is meant to sit on the filled blue. On a light window that is
+white on white. `views/buttonstyle.secondary_button()` gives the quieter
+button a fill and a text colour of its own, both as (light, dark) pairs so it
+is legible in either appearance mode.
+
+### 9. Fields are watched through variables, not the keyboard
 - The task form checks a field through a Tk variable rather than a
   `<KeyRelease>` binding, so a value arriving from the calendar, from a
   dependency or from the scheduling calculation is seen as readily as a typed
@@ -1070,6 +1094,7 @@ Unit tests cover:
 - ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
 - ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries and a thousand regions, when regions appear, the batch buttons, what Apply hands back and what Cancel does not
 - ✅ **Desktop Integration**: That the packaged icon is named what the desktop entry asks for, at every size the theme wants, and that the window class matches what the entry declares
+- ✅ **Dialog Chrome**: That every toolbar icon reaches a handler, that a secondary button is visible and tells itself apart from the primary one, and that a popup opened over a modal dialog takes the input grab and hands it back
 - ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
 - ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, and that a formula is never written where it would disagree with the plan
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
@@ -1134,5 +1159,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.30.1
+**Version**: 1.30.2
 **Last Updated**: 2026-08-18
