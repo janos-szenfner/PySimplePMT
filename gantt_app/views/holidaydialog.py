@@ -1,5 +1,5 @@
 """
-Choosing whose public holidays the plan observes.
+Which days the plan works: whose public holidays, and which dates by hand.
 
 WHY THIS MODULE EXISTS:
 ======================
@@ -8,7 +8,7 @@ calendar. A task worked in Hungary and Germany at once cannot run on either
 country's national day, and which days those are is not something anybody should be
 typing into a holiday list by hand - about half of them move with Easter.
 
-This is the dialog for picking the countries. The rule it applies is the
+So the first half of this is the country picker. The rule it applies is the
 union: a date that is a public holiday in *any* selected country is a
 non-working day for the whole plan.
 
@@ -19,41 +19,59 @@ Every country the `holidays` package knows is offered - around 250 of them -
 with a search box to find one, and the 27 EU member states behind a single
 button for the case this was first written for.
 
+The second half is the part no country list can answer. Real plans work
+Saturdays to make a deadline, and close for a week in August that no public
+holiday knows about. Those are decisions about one named date, not rules, and
+the only place they can come from is the person running the plan. The
+overrides tab is where they say so: a date, worked or not worked, and why.
+
+The two live in one window under two tabs because they answer the same
+question - is this day worked - and a reader who found the wrong answer should
+not have to guess which of two menu entries holds the fix.
+
 DEVELOPMENT NOTES:
 ------------------
-The dialog only chooses country codes. What a code means, and every piece of
-arithmetic that follows from it, belongs to gantt_app.workdaycalendar - see the
-note on WorkingCalendar about why there is one calendar rather than one per
-source of non-working day. Applying the choice therefore sets a list of codes
-on the project's calendar and reschedules; nothing here knows what a holiday
-is.
+The dialog chooses country codes and date rulings. What either means, and
+every piece of arithmetic that follows, belongs to gantt_app.workdaycalendar -
+see the note on WorkingCalendar about why there is one calendar rather than
+one per source of non-working day. Applying sets codes and overrides on the
+project's calendar and reschedules; nothing here knows what a holiday is, or
+that an override outranks one.
+
+Both tabs are applied together, by Apply, and neither touches the project
+before then. Recalculating an override the moment it was added - and leaving
+the countries to wait for Apply - would make one Cancel button mean two
+different things, and the one it did not undo would be the one nobody expected.
 
 The `holidays` package that resolves the codes is an optional dependency, like
 openpyxl for the spreadsheets. Without it the dialog still opens and still
 saves the selection - so a plan carrying one is not silently emptied - but it
 says on the face of it that the choice will not take effect until the package
-is installed.
+is installed. The overrides tab is unaffected: a date named by hand needs
+nothing installed to be honoured.
 """
 
 import tkinter as tk
-from typing import Callable, List, Optional, Sequence
+from datetime import date, datetime
+from typing import Callable, Dict, List, Optional, Sequence
 
 import customtkinter as ctk
 
 from gantt_app.views.buttonstyle import secondary_button
+from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.workdaycalendar import (
-    EU_COUNTRIES, holidays_available, split_country, subdivisions,
-    supported_countries,
+    DateOverride, EU_COUNTRIES, holidays_available, split_country,
+    subdivisions, supported_countries,
 )
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
 
 
-class HolidayDialog(ctk.CTkToplevel):
+class CalendarSettingsDialog(ctk.CTkToplevel):
     """
-    The country picker.
+    The country picker and the manual date overrides, under two tabs.
 
     PARAMETERS:
     -----------
@@ -64,18 +82,43 @@ class HolidayDialog(ctk.CTkToplevel):
     on_apply : Callable[[List[str]], None]
         Called with the chosen codes when Apply is pressed. Not called at all
         when the dialog is cancelled.
+    overrides : Sequence[DateOverride]
+        The date rulings currently in force, which open listed. The dialog
+        edits a copy of these, so a cancelled dialog leaves them alone.
+    on_apply_overrides : Optional[Callable[[List[DateOverride]], None]]
+        Called with the full list of rulings when Apply is pressed, after the
+        countries. The full list rather than the changes, because a deletion
+        here has to become a deletion there - see Project.set_date_overrides.
+        Omitted by a caller that only wants the countries.
 
     DEVELOPMENT NOTES:
     ------------------
-    Laid out in three bands - a header, the scrolling list, the buttons - with
-    the list the only one that grows. Packing the buttons before the list is
-    what keeps them on screen when the window is made short: pack gives space
-    to what it placed first, so a list packed first squeezes the buttons off
-    the bottom edge and the dialog cannot be applied at all.
+    Laid out in three bands - a header, the tabs, the buttons - with the tabs
+    the only one that grows. Packing the buttons before the tabs is what keeps
+    them on screen when the window is made short: pack gives space to what it
+    placed first, so a list packed first squeezes the buttons off the bottom
+    edge and the dialog cannot be applied at all. The same holds inside each
+    tab, where the scrolling part is packed last for the same reason.
     """
 
-    GEOMETRY = "520x620"
-    MINSIZE = (420, 360)
+    GEOMETRY = "620x660"
+    MINSIZE = (520, 420)
+
+    #: What the two tabs are called. Named here because both the builders and
+    #: the tests reach for them, and a tab looked up by a mistyped string
+    #: fails as a KeyError deep inside customtkinter.
+    TAB_HOLIDAYS = "National Holidays"
+    TAB_OVERRIDES = "Manual Overrides"
+
+    #: The two things an override can say, as the type selector spells them.
+    WORKING_LABEL = "Working Day"
+    NON_WORKING_LABEL = "Non-Working Day"
+
+    #: Green for a day worked, red for one not, in (light, dark) pairs as
+    #: customtkinter takes them - a single value is legible in one appearance
+    #: mode and not the other.
+    WORKING_COLOR = ('#15803d', '#4ade80')
+    NON_WORKING_COLOR = ('#b91c1c', '#f87171')
 
     #: Two columns of countries, so the list does not need a longer scroll
     #: than it has to.
@@ -90,13 +133,24 @@ class HolidayDialog(ctk.CTkToplevel):
     REGION_SEARCH_MINIMUM = 2
 
     def __init__(self, master, selected: Sequence[str],
-                 on_apply: Callable[[List[str]], None]):
+                 on_apply: Callable[[List[str]], None],
+                 overrides: Sequence[DateOverride] = (),
+                 on_apply_overrides: Optional[
+                     Callable[[List[DateOverride]], None]] = None):
         super().__init__(master)
 
         self.on_apply = on_apply
+        self.on_apply_overrides = on_apply_overrides
         self.checkboxes = {}
 
-        self.title("Public Holiday Calendar")
+        #: The rulings as the dialog currently has them, keyed by date. A
+        #: working copy: the project keeps its own until Apply, so Cancel
+        #: needs to do nothing more than close.
+        self.overrides: Dict[date, DateOverride] = {
+            override.override_date: override for override in (overrides or ())
+        }
+
+        self.title("Calendar Settings")
         self.geometry(self.GEOMETRY)
         self.minsize(*self.MINSIZE)
         self.transient(master)
@@ -106,19 +160,35 @@ class HolidayDialog(ctk.CTkToplevel):
 
         chosen = {str(code).strip().upper() for code in selected}
 
-        self._build_header()
+        # Buttons first, then the tabs they must not be pushed off the bottom
+        # by; see the note on the class.
         self._build_buttons()
+        self._build_tabs()
+
+        self._build_header()
         self._build_countries(chosen)
         self._update_count()
 
+        self._build_overrides_tab()
+        self._refresh_override_list()
+
         self.center_window()
+
+    def _build_tabs(self):
+        """The two tabs, and the frames the rest of the dialog builds into."""
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 0))
+
+        self.tab_holidays = self.tabview.add(self.TAB_HOLIDAYS)
+        self.tab_overrides = self.tabview.add(self.TAB_OVERRIDES)
+        self.tabview.set(self.TAB_HOLIDAYS)
 
     # ---- the parts of the dialog ---------------------------------------
 
     def _build_header(self):
         """The title line, the batch buttons, and what the rule is."""
-        header = ctk.CTkFrame(self, fg_color='transparent')
-        header.pack(fill=tk.X, padx=15, pady=(15, 0))
+        header = ctk.CTkFrame(self.tab_holidays, fg_color='transparent')
+        header.pack(fill=tk.X, padx=5, pady=(5, 0))
 
         ctk.CTkLabel(header, text="Observe public holidays in:",
                      font=ctk.CTkFont(size=14, weight="bold")
@@ -135,27 +205,28 @@ class HolidayDialog(ctk.CTkToplevel):
 
         self.search_var = ctk.StringVar()
         self.search_var.trace_add('write', self._apply_filter)
-        search = ctk.CTkEntry(self, textvariable=self.search_var,
+        search = ctk.CTkEntry(self.tab_holidays, textvariable=self.search_var,
                               placeholder_text="Search by country or code...")
-        search.pack(fill=tk.X, padx=15, pady=(10, 0))
+        search.pack(fill=tk.X, padx=5, pady=(10, 0))
 
         self.summary_label = ctk.CTkLabel(
-            self, anchor=tk.W, justify=tk.LEFT, text="",
+            self.tab_holidays, anchor=tk.W, justify=tk.LEFT, text="",
             text_color="#6b7280",
         )
-        self.summary_label.pack(fill=tk.X, padx=15, pady=(6, 0))
+        self.summary_label.pack(fill=tk.X, padx=5, pady=(6, 0))
 
         if not holidays_available():
             # Said plainly and up front. Ticking a page of boxes and finding
             # out afterwards that nothing moved is the worst version of this.
             ctk.CTkLabel(
-                self, anchor=tk.W, justify=tk.LEFT, wraplength=380,
+                self.tab_holidays, anchor=tk.W, justify=tk.LEFT,
+                wraplength=440,
                 text=("The 'holidays' package is not installed, so these "
                       "dates cannot be worked out. Your selection is saved "
                       "with the project and takes effect once you run: "
                       "pip install holidays"),
                 text_color="#b45309",
-            ).pack(fill=tk.X, padx=15, pady=(6, 0))
+            ).pack(fill=tk.X, padx=5, pady=(6, 0))
 
     def _build_countries(self, chosen):
         """
@@ -169,8 +240,8 @@ class HolidayDialog(ctk.CTkToplevel):
         every tick the user had made outside the current search - so
         searching for one country would silently clear the rest.
         """
-        self.scroller = ctk.CTkScrollableFrame(self)
-        self.scroller.pack(fill=tk.BOTH, expand=True, padx=15, pady=(6, 10))
+        self.scroller = ctk.CTkScrollableFrame(self.tab_holidays)
+        self.scroller.pack(fill=tk.BOTH, expand=True, padx=5, pady=(6, 5))
 
         for column in range(self.COLUMNS):
             self.scroller.grid_columnconfigure(column, weight=1, uniform='cty')
@@ -328,6 +399,225 @@ class HolidayDialog(ctk.CTkToplevel):
             else:
                 box.grid_remove()
 
+    # ---- the overrides tab ---------------------------------------------
+
+    def _build_overrides_tab(self):
+        """
+        The form for adding a ruling, and the list of the ones in force.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The form is gridded rather than packed: three labelled controls that
+        have to line up down the left edge, which is the one thing grid does
+        and pack does not.
+        """
+        form = ctk.CTkFrame(self.tab_overrides, fg_color='transparent')
+        form.pack(fill=tk.X, padx=5, pady=(5, 0))
+        form.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(form, text="Override a single date:",
+                     font=ctk.CTkFont(size=14, weight="bold")
+                     ).grid(row=0, column=0, columnspan=3, sticky=tk.W,
+                            pady=(0, 8))
+
+        ctk.CTkLabel(form, text="Date:", anchor=tk.W).grid(
+            row=1, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        self.override_date_entry = DateEntry(form, date=datetime.now())
+        self.override_date_entry.grid(row=1, column=1, sticky=tk.EW, pady=4)
+
+        self.override_type_var = ctk.StringVar(value=self.WORKING_LABEL)
+        self.override_type_menu = ctk.CTkOptionMenu(
+            form, width=150, variable=self.override_type_var,
+            values=[self.WORKING_LABEL, self.NON_WORKING_LABEL],
+        )
+        self.override_type_menu.grid(row=1, column=2, sticky=tk.W, padx=(8, 0),
+                                     pady=4)
+
+        ctk.CTkLabel(form, text="Reason:", anchor=tk.W).grid(
+            row=2, column=0, sticky=tk.W, padx=(0, 8), pady=4)
+        self.override_reason_entry = ctk.CTkEntry(
+            form, placeholder_text="e.g. Saturday make-up day (optional)")
+        self.override_reason_entry.grid(row=2, column=1, sticky=tk.EW, pady=4)
+
+        ctk.CTkButton(form, text="Add Override", width=150,
+                      command=self.add_override).grid(
+            row=2, column=2, sticky=tk.W, padx=(8, 0), pady=4)
+
+        # Enter in either box adds the override, so the form can be filled in
+        # and committed without the mouse ever coming back.
+        self.override_date_entry.entry.bind(
+            '<Return>', lambda _event: self.add_override())
+        self.override_reason_entry.bind(
+            '<Return>', lambda _event: self.add_override())
+
+        self.override_error_label = ctk.CTkLabel(
+            self.tab_overrides, anchor=tk.W, justify=tk.LEFT, text="",
+            wraplength=520, text_color="#b45309",
+        )
+        self.override_error_label.pack(fill=tk.X, padx=5, pady=(4, 0))
+
+        ctk.CTkLabel(self.tab_overrides, text="Active date overrides:",
+                     anchor=tk.W, font=ctk.CTkFont(size=12, weight="bold")
+                     ).pack(fill=tk.X, padx=5, pady=(10, 2))
+
+        self._build_override_headings()
+
+        self.override_list = ctk.CTkScrollableFrame(self.tab_overrides)
+        self.override_list.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
+
+    def _build_override_headings(self):
+        """
+        The column titles, outside the scrolling area so they stay put.
+
+        Inside it they would scroll away with the first few rows, which is
+        exactly when a reader needs to be told which column is which.
+        """
+        headings = ctk.CTkFrame(self.tab_overrides, fg_color='transparent')
+        headings.pack(fill=tk.X, padx=5)
+
+        for text, width, expand in (("Date", 100, False),
+                                    ("Type", 120, False),
+                                    ("Reason", 0, True),
+                                    ("", 40, False)):
+            label = ctk.CTkLabel(headings, text=text, anchor=tk.W,
+                                 text_color="#6b7280",
+                                 font=ctk.CTkFont(size=11, weight="bold"))
+            if expand:
+                label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+            else:
+                label.configure(width=width)
+                label.pack(side=tk.LEFT, padx=6)
+
+    def _refresh_override_list(self):
+        """
+        Draw the rulings currently held, in date order.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The rows are torn down and rebuilt rather than updated in place. There
+        are rarely more than a couple of dozen of them and they are only
+        redrawn when one is added or removed, so the simple version costs
+        nothing and cannot leave a stale row behind - which the update-in-place
+        version did, on the last row of the list, every time one was deleted.
+        """
+        for widget in self.override_list.winfo_children():
+            widget.destroy()
+
+        #: The delete buttons, by the date each removes. Kept so a test can
+        #: press one without hunting through the widget tree.
+        self.override_rows: Dict[date, ctk.CTkFrame] = {}
+
+        if not self.overrides:
+            ctk.CTkLabel(
+                self.override_list, anchor=tk.W, justify=tk.LEFT,
+                wraplength=500, text_color="#6b7280",
+                text=("No overrides. Weekends and the public holidays chosen "
+                      "on the other tab apply as they stand."),
+            ).pack(fill=tk.X, padx=6, pady=8)
+            return
+
+        for day in sorted(self.overrides):
+            self._build_override_row(self.overrides[day])
+
+    def _build_override_row(self, override: DateOverride):
+        """One ruling: its date, what it says, why, and a way to drop it."""
+        row = ctk.CTkFrame(self.override_list)
+        row.pack(fill=tk.X, pady=2, padx=2)
+        self.override_rows[override.override_date] = row
+
+        ctk.CTkLabel(row, text=override.override_date.isoformat(), width=100,
+                     anchor=tk.W, font=ctk.CTkFont(size=12, weight="bold")
+                     ).pack(side=tk.LEFT, padx=6, pady=4)
+
+        worked = override.is_working_day
+        ctk.CTkLabel(row, width=120, anchor=tk.W,
+                     text=(self.WORKING_LABEL if worked
+                           else self.NON_WORKING_LABEL),
+                     text_color=(self.WORKING_COLOR if worked
+                                 else self.NON_WORKING_COLOR),
+                     font=ctk.CTkFont(size=12, weight="bold")
+                     ).pack(side=tk.LEFT, padx=6, pady=4)
+
+        delete = ctk.CTkButton(
+            row, text="\U0001F5D1", width=36, height=26,
+            command=lambda day=override.override_date: self.remove_override(day),
+        )
+        delete.pack(side=tk.RIGHT, padx=6, pady=4)
+
+        # Packed after the button so the reason yields the space rather than
+        # pushing the delete button off the right edge on a long note.
+        ctk.CTkLabel(row, text=override.reason, anchor=tk.W,
+                     text_color="#6b7280"
+                     ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6,
+                            pady=4)
+
+    # ---- what the overrides tab does -----------------------------------
+
+    def add_override(self):
+        """
+        Take the form's ruling into the list.
+
+        RETURNS:
+        --------
+        bool
+            True when one was added. False when the date could not be read,
+            which is said above the list rather than in a second window - a
+            message box over a modal dialog is a stack of two things to
+            dismiss for a typo.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A date already ruled on is replaced, matching the calendar, which can
+        only hold one ruling per date. Re-adding a date to change its type or
+        its reason is the obvious way to try to edit one, and it works.
+        """
+        chosen = self.override_date_entry.get_date()
+        if chosen is None:
+            self.override_error_label.configure(
+                text=("Enter a date as YYYY-MM-DD, or pick one from the "
+                      "calendar button."))
+            return False
+
+        day = chosen.date()
+        worked = self.override_type_var.get() == self.WORKING_LABEL
+        replaced = day in self.overrides
+
+        self.overrides[day] = DateOverride(
+            override_date=day, is_working_day=worked,
+            reason=self.override_reason_entry.get().strip(),
+        )
+
+        self.override_error_label.configure(
+            text=(f"{day.isoformat()} was already overridden; it now reads "
+                  f"as the new one." if replaced else ""))
+        self.override_reason_entry.delete(0, tk.END)
+        self._refresh_override_list()
+
+        logger.info("Override: %s is %s", day,
+                    "a working day" if worked else "not a working day")
+        return True
+
+    def remove_override(self, day: date) -> bool:
+        """
+        Drop one ruling, putting the date back under the ordinary rules.
+
+        RETURNS:
+        --------
+        bool
+            True when there was one to drop.
+        """
+        if self.overrides.pop(day, None) is None:
+            return False
+
+        self.override_error_label.configure(text="")
+        self._refresh_override_list()
+        logger.info("Override on %s removed", day)
+        return True
+
+    def override_selection(self) -> List[DateOverride]:
+        """Every ruling the dialog holds, in date order."""
+        return [self.overrides[day] for day in sorted(self.overrides)]
+
     def _build_buttons(self):
         """Apply and Cancel, along the bottom."""
         footer = ctk.CTkFrame(self, fg_color='transparent')
@@ -410,33 +700,71 @@ class HolidayDialog(ctk.CTkToplevel):
         self.summary_label.configure(text=text)
 
     def apply(self):
-        """Hand the selection back and close."""
+        """
+        Hand both tabs' choices back and close.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The countries go first and the overrides second, and both go through
+        even when only one of them changed. Each is applied by rebuilding the
+        project's calendar from the other's current state - see
+        Project.set_date_overrides - so applying them in either order lands in
+        the same place; doing both unconditionally just saves the dialog from
+        having to work out which of them the user touched.
+        """
         chosen = self.selection()
-        logger.info("Observing public holidays for %s",
-                    ', '.join(chosen) if chosen else 'no countries')
+        overrides = self.override_selection()
+
+        logger.info("Observing public holidays for %s, with %d date "
+                    "override(s)",
+                    ', '.join(chosen) if chosen else 'no countries',
+                    len(overrides))
+
         self.destroy()
+
         if self.on_apply:
             self.on_apply(chosen)
+        if self.on_apply_overrides:
+            self.on_apply_overrides(overrides)
 
     def cancel(self):
-        """Close without changing anything."""
+        """
+        Close without changing anything.
+
+        Nothing here has touched the project, on either tab, so closing is the
+        whole of it - see the note on the module about why both tabs wait.
+        """
         self.destroy()
+
+
+#: What this dialog was before it grew a second tab. Kept because the country
+#: picker is what most callers still mean by it, and renaming a class is not a
+#: reason to break an import.
+HolidayDialog = CalendarSettingsDialog
 
 
 def choose_holidays(master, selected: Sequence[str],
-                    on_apply: Callable[[List[str]], None]
-                    ) -> Optional[HolidayDialog]:
+                    on_apply: Callable[[List[str]], None],
+                    overrides: Sequence[DateOverride] = (),
+                    on_apply_overrides: Optional[
+                        Callable[[List[DateOverride]], None]] = None
+                    ) -> Optional[CalendarSettingsDialog]:
     """
-    Open the country picker.
+    Open the calendar settings.
+
+    PARAMETERS:
+    -----------
+    See CalendarSettingsDialog, whose arguments these are.
 
     RETURNS:
     --------
-    Optional[HolidayDialog]
+    Optional[CalendarSettingsDialog]
         The dialog, or None when it could not be built. A dialog that fails to
         open should not take the menu that opened it down with it.
     """
     try:
-        return HolidayDialog(master, selected, on_apply)
+        return CalendarSettingsDialog(master, selected, on_apply,
+                                      overrides, on_apply_overrides)
     except Exception:
-        logger.exception("Could not open the holiday dialog")
+        logger.exception("Could not open the calendar settings dialog")
         return None

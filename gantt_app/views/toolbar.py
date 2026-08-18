@@ -930,7 +930,7 @@ class Toolbar(ctk.CTkFrame):
                     # Renaming the project is not a create action, so it sits
                     # beside Create rather than inside it
                     {"text": "Project Title...", "command": self.edit_project_info},
-                    {"text": "Public Holidays...", "command": self.edit_holidays},
+                    {"text": "Calendar Settings...", "command": self.edit_holidays},
                     {"text": "Critical Path...", "command": self.show_critical_path},
                 ],
             },
@@ -1243,21 +1243,26 @@ class Toolbar(ctk.CTkFrame):
     
     def edit_holidays(self):
         """
-        Choose whose public holidays the plan observes.
+        Choose which days the plan works: the countries, and dates by hand.
 
         DEVELOPMENT NOTES:
         ------------------
-        The dialog hands back country codes and nothing else; what they mean
-        is the calendar's - see gantt_app.workdaycalendar. Setting them on the
-        project's calendar is enough to change every date in the plan, because
-        every date in the plan is worked out through it.
+        The dialog hands back country codes and date rulings and nothing else;
+        what either means is the calendar's - see gantt_app.workdaycalendar.
+        Setting them on the project's calendar is enough to change every date
+        in the plan, because every date in the plan is worked out through it.
 
-        Applied through Project.set_holiday_countries rather than by writing to
-        the calendar directly, so every task keeps the work it holds and its
-        finish moves instead - see that method. The chart is redrawn afterwards
-        through on_project_changed.
+        Applied through Project.set_holiday_countries and
+        Project.set_date_overrides rather than by writing to the calendar
+        directly, so every task keeps the work it holds and its finish moves
+        instead - see those methods. The chart is redrawn afterwards through
+        on_project_changed, once, however many of the two actually changed.
         """
         from gantt_app.views.holidaydialog import choose_holidays
+
+        #: Whether either half moved, so the chart is redrawn once rather than
+        #: twice - the two callbacks fire back to back on the same Apply.
+        changed = []
 
         def apply(codes):
             """Observe the chosen countries, and settle the plan on them."""
@@ -1268,11 +1273,26 @@ class Toolbar(ctk.CTkFrame):
             logger.info("Project %r now observes holidays for %s",
                         self.project.name,
                         ', '.join(sorted(codes)) if codes else 'no countries')
+            changed.append(True)
+
+        def apply_overrides(overrides):
+            """Take the hand-made rulings, and settle the plan on them."""
+            current = self.project.calendar.sorted_overrides()
+            if list(overrides) == current:
+                if changed and self.on_project_changed:
+                    self.on_project_changed()
+                return
+
+            self.project.set_date_overrides(overrides)
+            logger.info("Project %r now carries %d manual date override(s)",
+                        self.project.name, len(overrides))
             if self.on_project_changed:
                 self.on_project_changed()
 
         choose_holidays(self.master,
-                        sorted(self.project.calendar.countries), apply)
+                        sorted(self.project.calendar.countries), apply,
+                        self.project.calendar.sorted_overrides(),
+                        apply_overrides)
 
     def show_critical_path(self):
         """

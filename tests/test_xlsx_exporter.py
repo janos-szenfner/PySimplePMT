@@ -25,7 +25,7 @@ Nothing here needs a display.
 import os
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.xlsx_exporter import (
@@ -383,6 +383,80 @@ class TestHolidaysReachTheFormulas(ExporterTestCase):
                    if sheet.cell(row=r, column=3).value == "Procurement demand")
         self.assertEqual(sheet[f"I{row}"].value,
                          f"=WORKDAY(H{row},G{row}-1,Holidays!$A:$A)")
+
+    def test_a_manual_shutdown_reaches_the_holiday_sheet(self):
+        """
+        An override is the only thing on the calendar, and still counts.
+
+        The guard used to ask only about countries and listed holidays, so a
+        plan whose non-working days were all typed in by hand exported with no
+        holiday sheet at all - and recalculated in Excel straight through the
+        shutdown.
+        """
+        from gantt_app.workdaycalendar import DateOverride
+
+        project = self.build_project()
+        shutdown = project.start_date.date() + timedelta(days=1)
+        while shutdown.weekday() >= 5:
+            shutdown += timedelta(days=1)
+        project.set_date_overrides([
+            DateOverride(shutdown, False, "Company shutdown")])
+
+        _sheet, workbook = self.export(project)
+
+        self.assertIn("Holidays", workbook.sheetnames)
+        listed = [cell[0].value for cell in workbook["Holidays"].iter_rows()]
+        listed = [value.date() if hasattr(value, 'date') else value
+                  for value in listed]
+        self.assertIn(shutdown, listed)
+
+    def test_a_task_over_a_worked_saturday_is_written_as_a_date(self):
+        """
+        WORKDAY always skips Saturday, and no holiday list can tell it not to.
+
+        A task ending on a Saturday the plan works therefore cannot be
+        expressed as a formula at all: =WORKDAY(start,1) would open in Excel
+        showing the Monday. The finish is written as the date instead, so the
+        sheet says what the plan says and only loses the recalculation.
+        """
+        from gantt_app.workdaycalendar import DateOverride
+
+        project = Project(name="Make-up")
+        project.add_task(Task(id="T1", name="Over the Saturday",
+                              start_date=datetime(2026, 9, 11),
+                              end_date=datetime(2026, 9, 14)))
+        project.reschedule()
+        project.set_date_overrides([
+            DateOverride(date(2026, 9, 12), True, "Make-up day")])
+
+        sheet, _workbook = self.export(project)
+        task = project.get_task_by_id("T1")
+
+        self.assertEqual(task.end_date.date(), date(2026, 9, 12))
+        self.assertEqual(sheet["I6"].value, task.end_date)
+
+    def test_a_shutdown_still_recalculates_through_the_holiday_sheet(self):
+        """
+        The other direction is expressible, so the formula is kept.
+
+        A day taken off by hand is just another date on the holiday sheet as
+        far as WORKDAY is concerned, so the sheet stays live.
+        """
+        from gantt_app.workdaycalendar import DateOverride
+
+        project = Project(name="Shutdown")
+        project.add_task(Task(id="T1", name="Over the shutdown",
+                              start_date=datetime(2026, 9, 14),
+                              end_date=datetime(2026, 9, 16)))
+        project.reschedule()
+        project.set_date_overrides([
+            DateOverride(date(2026, 9, 15), False, "Company shutdown")])
+
+        sheet, workbook = self.export(project)
+
+        self.assertIn("Holidays", workbook.sheetnames)
+        self.assertEqual(sheet["I6"].value,
+                         "=WORKDAY(H6,G6-1,Holidays!$A:$A)")
 
 
 @unittest.skipUnless(OPENPYXL_AVAILABLE, "openpyxl is not installed")

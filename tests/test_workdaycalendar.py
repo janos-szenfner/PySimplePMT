@@ -20,8 +20,8 @@ from unittest import mock
 
 from gantt_app.models import Project, Task
 from gantt_app.workdaycalendar import (
-    CalendarTask, EU_COUNTRIES, WorkingCalendar, country_holidays,
-    default_calendar, holidays_available,
+    CalendarTask, DateOverride, EU_COUNTRIES, WorkingCalendar,
+    country_holidays, default_calendar, holidays_available,
 )
 
 HAVE_HOLIDAYS = holidays_available()
@@ -701,6 +701,264 @@ class TestWithoutTheHolidaysPackage(unittest.TestCase):
 
         self.assertEqual(WorkingCalendar.from_dict(calendar.to_dict()).countries,
                          {"HU", "DE"})
+
+
+class TestManualDateOverrides(unittest.TestCase):
+    """
+    The rulings that beat every other rule.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The whole point of an override is that it wins, so most of what is worth
+    pinning down here is which of two disagreeing rules the calendar picks -
+    not that the override is stored, which is a dict.
+    """
+
+    def setUp(self):
+        """The standard week, with nothing overridden yet."""
+        self.calendar = WorkingCalendar()
+
+    def test_a_saturday_can_be_made_a_working_day(self):
+        """The make-up day: the case the feature exists for."""
+        saturday = date(2026, 9, 12)
+        self.assertFalse(self.calendar.is_working_day(saturday))
+
+        self.calendar.add_override(saturday, True, "Make-up day")
+
+        self.assertTrue(self.calendar.is_working_day(saturday))
+
+    def test_a_weekday_can_be_made_a_non_working_day(self):
+        """The shutdown: a Tuesday nobody is in."""
+        tuesday = date(2026, 9, 15)
+        self.assertTrue(self.calendar.is_working_day(tuesday))
+
+        self.calendar.add_override(tuesday, False, "Team building")
+
+        self.assertFalse(self.calendar.is_working_day(tuesday))
+
+    def test_an_override_beats_a_listed_holiday(self):
+        """
+        A date named as worked is worked, holiday or not.
+
+        Someone typing a date into the overrides list can see it is a holiday.
+        Letting the holiday win would make the entry impossible to act on.
+        """
+        boxing_day = date(2026, 12, 28)   # a Monday, listed off
+        calendar = WorkingCalendar(holidays={boxing_day})
+        self.assertFalse(calendar.is_working_day(boxing_day))
+
+        calendar.add_override(boxing_day, True, "Working through")
+
+        self.assertTrue(calendar.is_working_day(boxing_day))
+
+    def test_an_override_beats_a_recurring_holiday(self):
+        """The same, for the ones listed once and applied every year."""
+        calendar = WorkingCalendar(recurring_holidays={(8, 20)})
+        national_day = date(2026, 8, 20)   # a Thursday
+        self.assertFalse(calendar.is_working_day(national_day))
+
+        calendar.add_override(national_day, True)
+
+        self.assertTrue(calendar.is_working_day(national_day))
+
+    @unittest.skipUnless(HAVE_HOLIDAYS, "needs the holidays package")
+    def test_an_override_beats_a_country_holiday(self):
+        """And the ones a country's calendar works out for itself."""
+        calendar = WorkingCalendar(countries=["HU"])
+        national_day = date(2026, 8, 20)   # Hungary's, a Thursday
+        self.assertFalse(calendar.is_working_day(national_day))
+
+        calendar.add_override(national_day, True, "Skeleton crew")
+
+        self.assertTrue(calendar.is_working_day(national_day))
+
+    def test_one_date_holds_one_ruling(self):
+        """Overriding a date twice replaces it rather than stacking."""
+        saturday = date(2026, 9, 12)
+        self.calendar.add_override(saturday, True, "Make-up day")
+        self.calendar.add_override(saturday, False, "Cancelled again")
+
+        self.assertEqual(len(self.calendar.overrides), 1)
+        self.assertFalse(self.calendar.is_working_day(saturday))
+
+    def test_a_datetime_is_overridden_by_its_date(self):
+        """The models hold datetimes; a ruling names a day, not a moment."""
+        self.calendar.add_override(datetime(2026, 9, 12, 9, 30), True)
+
+        self.assertTrue(self.calendar.is_working_day(
+            datetime(2026, 9, 12, 17, 0)))
+        self.assertEqual(list(self.calendar.overrides), [date(2026, 9, 12)])
+
+    def test_removing_a_ruling_restores_the_ordinary_rules(self):
+        """A deleted override leaves no trace on the date it covered."""
+        saturday = date(2026, 9, 12)
+        self.calendar.add_override(saturday, True)
+
+        self.assertTrue(self.calendar.remove_override(saturday))
+
+        self.assertFalse(self.calendar.is_working_day(saturday))
+        self.assertFalse(self.calendar.remove_override(saturday))
+
+    def test_the_reason_is_carried_but_takes_no_part(self):
+        """It is for the reader, not the arithmetic."""
+        saturday = date(2026, 9, 12)
+        self.calendar.add_override(saturday, True, "Saturday make-up day")
+
+        self.assertEqual(self.calendar.override_for(saturday).reason,
+                         "Saturday make-up day")
+        self.assertIsNone(self.calendar.override_for(date(2026, 9, 19)))
+
+    def test_a_non_working_ruling_survives_a_broken_week(self):
+        """
+        An empty week is treated as working every day, but not over a ruling.
+
+        The fallback exists so a corrupt calendar cannot hang a redraw. A date
+        the user named as not worked is not part of that breakage.
+        """
+        calendar = WorkingCalendar(non_working_days=range(7))
+        shutdown = date(2026, 9, 15)
+        calendar.add_override(shutdown, False, "Shutdown")
+
+        self.assertFalse(calendar.is_working_day(shutdown))
+        self.assertTrue(calendar.is_working_day(date(2026, 9, 16)))
+
+
+class TestOverridesMoveTheSchedule(unittest.TestCase):
+    """What a ruling does to the dates, which is the point of having one."""
+
+    def test_a_worked_saturday_pulls_a_finish_in(self):
+        """Two days from a Friday end on the Saturday, not the Monday."""
+        calendar = WorkingCalendar()
+        friday, saturday = date(2026, 9, 11), date(2026, 9, 12)
+
+        self.assertEqual(calendar.add_working_days(friday, 2), date(2026, 9, 14))
+
+        calendar.add_override(saturday, True, "Make-up day")
+
+        self.assertEqual(calendar.add_working_days(friday, 2), saturday)
+
+    def test_a_shutdown_pushes_a_finish_out(self):
+        """The work does not go away; the finish moves."""
+        calendar = WorkingCalendar()
+        monday = date(2026, 9, 14)
+
+        self.assertEqual(calendar.add_working_days(monday, 3), date(2026, 9, 16))
+
+        calendar.add_override(date(2026, 9, 15), False, "Team building")
+
+        self.assertEqual(calendar.add_working_days(monday, 3), date(2026, 9, 17))
+
+    def test_a_task_may_start_on_an_overridden_saturday(self):
+        """A start pushed off the weekend has nowhere to be pushed to."""
+        calendar = WorkingCalendar()
+        saturday = date(2026, 9, 12)
+        calendar.add_override(saturday, True, "Make-up day")
+
+        self.assertEqual(calendar.get_next_working_day(saturday), saturday)
+
+    def test_a_span_counts_an_overridden_saturday_as_work(self):
+        """Measured back the same way it was laid out."""
+        calendar = WorkingCalendar()
+        calendar.add_override(date(2026, 9, 12), True)
+
+        self.assertEqual(
+            calendar.working_days_between(date(2026, 9, 11), date(2026, 9, 14)),
+            3)
+
+    def test_the_project_keeps_the_work_and_moves_the_finish(self):
+        """
+        End to end: a shutdown pushes a task out without shortening it.
+
+        The reason set_date_overrides goes through apply_calendar. Ten days of
+        work is still ten days of work after a day in the middle is taken off.
+        """
+        project = Project(name="Shutdown")
+        project.add_task(Task(id="A", name="A",
+                              start_date=datetime(2026, 9, 7),
+                              end_date=datetime(2026, 9, 18)))
+        project.reschedule()
+        task = project.get_task_by_id("A")
+        self.assertEqual(project.working_duration(task), 10)
+
+        project.set_date_overrides([
+            DateOverride(date(2026, 9, 15), False, "Team building"),
+        ])
+
+        self.assertEqual(project.working_duration(task), 10)
+        self.assertEqual(task.end_date.date(), date(2026, 9, 21))
+
+    def test_setting_overrides_leaves_the_countries_alone(self):
+        """The two halves of the dialog do not overwrite each other."""
+        project = Project(name="Both")
+        project.set_holiday_countries(["HU"])
+
+        project.set_date_overrides([DateOverride(date(2026, 9, 12), True)])
+
+        self.assertEqual(project.calendar.countries, {"HU"})
+        self.assertTrue(project.calendar.is_working_day(date(2026, 9, 12)))
+
+    def test_setting_countries_leaves_the_overrides_alone(self):
+        """And the same the other way round."""
+        project = Project(name="Both")
+        project.set_date_overrides([DateOverride(date(2026, 9, 12), True)])
+
+        project.set_holiday_countries(["HU"])
+
+        self.assertTrue(project.calendar.is_working_day(date(2026, 9, 12)))
+        self.assertEqual(len(project.calendar.overrides), 1)
+
+
+class TestOverrideStorage(unittest.TestCase):
+    """A ruling has to survive being saved and reopened."""
+
+    def test_a_ruling_round_trips(self):
+        """Date, type and reason all come back."""
+        calendar = WorkingCalendar()
+        calendar.add_override(date(2026, 9, 12), True, "Make-up day")
+        calendar.add_override(date(2026, 9, 15), False, "Team building")
+
+        reopened = WorkingCalendar.from_dict(calendar.to_dict())
+
+        self.assertEqual(reopened, calendar)
+        self.assertTrue(reopened.is_working_day(date(2026, 9, 12)))
+        self.assertFalse(reopened.is_working_day(date(2026, 9, 15)))
+        self.assertEqual(reopened.override_for(date(2026, 9, 12)).reason,
+                         "Make-up day")
+
+    def test_rulings_are_saved_in_date_order(self):
+        """A stable order, so a file does not churn between saves."""
+        calendar = WorkingCalendar()
+        for day in (date(2026, 9, 15), date(2026, 1, 3), date(2026, 12, 25)):
+            calendar.add_override(day, True)
+
+        saved = [entry['date'] for entry in calendar.to_dict()['overrides']]
+
+        self.assertEqual(saved, ['2026-01-03', '2026-09-15', '2026-12-25'])
+
+    def test_a_calendar_saved_before_overrides_still_opens(self):
+        """An older project file has no overrides block at all."""
+        calendar = WorkingCalendar.from_dict({'countries': ['HU']})
+
+        self.assertEqual(calendar.overrides, {})
+
+    def test_one_damaged_ruling_does_not_cost_the_rest(self):
+        """A bad row is dropped with a line in the log, not raised."""
+        calendar = WorkingCalendar.from_dict({'overrides': [
+            {'date': 'the twelfth'},
+            'not a dictionary at all',
+            {'date': '2026-09-12', 'is_working_day': True, 'reason': 'kept'},
+        ]})
+
+        self.assertEqual([o.override_date for o in calendar.sorted_overrides()],
+                         [date(2026, 9, 12)])
+
+    def test_calendars_differing_only_in_a_ruling_are_not_equal(self):
+        """Or applying one would look like a no-op and never redraw."""
+        plain = WorkingCalendar()
+        overridden = WorkingCalendar()
+        overridden.add_override(date(2026, 9, 12), True)
+
+        self.assertNotEqual(plain, overridden)
 
 
 if __name__ == '__main__':

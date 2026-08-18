@@ -30,6 +30,13 @@ The rules, in full:
 
   1. A calendar names which weekdays are non-working (Saturday and Sunday by
      default) and which individual dates are holidays.
+  1a. A date the user has overridden by hand beats both. An override says
+     "this specific date is worked" or "this specific date is not", and it is
+     the first thing consulted - a Saturday named as a make-up day is worked,
+     and a working Tuesday named as a shutdown is not. Nothing else in the
+     calendar can overturn it, which is the point of it: the reason a plan
+     needs an override at all is that the general rules got this one date
+     wrong.
   2. A task's duration is its working effort. Its finish is found by walking
      the calendar day by day from its start and spending one day of duration
      only on a working day.
@@ -390,6 +397,74 @@ def as_date(value: DateLike) -> date:
     return value.date() if isinstance(value, datetime) else value
 
 
+@dataclass(frozen=True)
+class DateOverride:
+    """
+    One date the user has ruled on by hand, and why.
+
+    ATTRIBUTES:
+    -----------
+    override_date : date
+        The single date this rules on. One date, not a range: a shutdown week
+        is five of these, which keeps the rule for any given day answerable by
+        a dictionary lookup rather than a scan.
+    is_working_day : bool
+        True to work a day the calendar would otherwise have taken off - a
+        Saturday make-up day - and False to take a day off that the calendar
+        would otherwise have worked.
+    reason : str
+        Why, in the user's words. Carried for the person reading the list back
+        in six months, and shown in the overrides table; it takes no part in
+        the arithmetic.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Frozen, because these are kept in a dict keyed by their own date. A
+    mutable override whose date was reassigned would sit under the wrong key
+    and answer for a day it no longer names; changing one means replacing it,
+    which is what add_override does.
+    """
+
+    override_date: date
+    is_working_day: bool
+    reason: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the override to a JSON-safe dictionary."""
+        return {
+            'date': self.override_date.isoformat(),
+            'is_working_day': bool(self.is_working_day),
+            'reason': self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Optional['DateOverride']:
+        """
+        Rebuild one override from a saved dictionary.
+
+        RETURNS:
+        --------
+        Optional[DateOverride]
+            None when the entry cannot be read, so one damaged row is dropped
+            with a line in the log rather than costing the reader the rest of
+            the list - and, through it, the project file.
+        """
+        if not isinstance(data, dict):
+            logger.warning("Ignoring unreadable date override %r", data)
+            return None
+        try:
+            day = date.fromisoformat(str(data.get('date'))[:10])
+        except (TypeError, ValueError):
+            logger.warning("Ignoring date override with an unreadable date %r",
+                           data.get('date'))
+            return None
+        return cls(
+            override_date=day,
+            is_working_day=bool(data.get('is_working_day', True)),
+            reason=str(data.get('reason') or ''),
+        )
+
+
 class WorkingCalendar:
     """
     Which days a project works, and the arithmetic that follows from it.
@@ -413,6 +488,11 @@ class WorkingCalendar:
         a time through the `holidays` package - see country_holidays - which
         is what gets Easter Monday and the rest of the movable feasts right
         without any of them being listed.
+    overrides : Dict[date, DateOverride]
+        Dates the user has ruled on by hand, keyed by the date each names.
+        These beat everything else here - see is_working_day - which is what
+        makes a Saturday make-up day worked and a company shutdown on a
+        Wednesday not.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -429,13 +509,21 @@ class WorkingCalendar:
     which kind of calendar it had, and the arithmetic would exist twice. A
     calendar answers is_working_day; where the answer came from is its own
     business.
+
+    The four general sources disagree with each other only by accident; an
+    override disagrees on purpose, so it is consulted first and nothing gets
+    to argue with it. The order is: an override, then a public holiday in an
+    observed country, then a listed or recurring holiday, then the weekend.
+    A date named as worked is worked even where it is Christmas Day - the
+    person who typed it in could see that, and meant it anyway.
     """
 
     def __init__(self,
                  non_working_days: Optional[Iterable[int]] = None,
                  holidays: Optional[Iterable[DateLike]] = None,
                  recurring_holidays: Optional[Iterable[Tuple[int, int]]] = None,
-                 countries: Optional[Iterable[str]] = None):
+                 countries: Optional[Iterable[str]] = None,
+                 overrides: Optional[Iterable['DateOverride']] = None):
         self.non_working_days: Set[int] = (
             set(non_working_days) if non_working_days is not None
             else set(DEFAULT_NON_WORKING_DAYS)
@@ -448,6 +536,14 @@ class WorkingCalendar:
             str(code).strip().upper() for code in (countries or ())
             if str(code).strip()
         }
+        #: Manual rulings, by the date each names. A dict rather than a list
+        #: because is_working_day asks "is this date overridden" for every day
+        #: of every task on every redraw, and because a date can only be ruled
+        #: on one way - a second ruling for a date replaces the first rather
+        #: than leaving the calendar to choose between them.
+        self.overrides: Dict[date, DateOverride] = {}
+        for override in (overrides or ()):
+            self.overrides[as_date(override.override_date)] = override
         #: Whether the "no weekday is worked" warning has already been given.
         #: It is answered on every date the calendar is asked about, and a
         #: single redraw asks about thousands.
@@ -501,6 +597,72 @@ class WorkingCalendar:
             self._country_cache[year] = country_holidays(self.countries, year)
         return self._country_cache[year]
 
+    # ---- manual overrides ----------------------------------------------
+
+    def add_override(self, override_date: DateLike, is_working_day: bool,
+                     reason: str = "") -> 'DateOverride':
+        """
+        Rule on one date by hand, overturning every other rule for it.
+
+        PARAMETERS:
+        -----------
+        override_date : DateLike
+            The date being ruled on. Any time of day is discarded; an override
+            names a day, not a moment.
+        is_working_day : bool
+            True to work a day the calendar would otherwise take off, False to
+            take off a day it would otherwise work.
+        reason : str
+            Why, for the person reading the list back later.
+
+        RETURNS:
+        --------
+        DateOverride
+            The stored ruling. A date already overridden is replaced rather
+            than duplicated - see the note on the attribute.
+        """
+        day = as_date(override_date)
+        override = DateOverride(override_date=day,
+                                is_working_day=bool(is_working_day),
+                                reason=str(reason or ''))
+        self.overrides[day] = override
+        return override
+
+    def remove_override(self, override_date: DateLike) -> bool:
+        """
+        Drop the ruling for one date, restoring the ordinary rules for it.
+
+        RETURNS:
+        --------
+        bool
+            True when there was one to drop, so a caller can tell a removal
+            from a no-op without looking first.
+        """
+        return self.overrides.pop(as_date(override_date), None) is not None
+
+    def override_for(self, check_date: DateLike) -> Optional['DateOverride']:
+        """
+        The ruling covering a date, or None when it is not overridden.
+
+        What the overrides table and the chart's tooltip read to say *why* a
+        given day is drawn the way it is - is_working_day answers only whether.
+        """
+        return self.overrides.get(as_date(check_date))
+
+    def clear_overrides(self) -> None:
+        """Drop every manual ruling."""
+        self.overrides.clear()
+
+    def sorted_overrides(self):
+        """
+        Every ruling in date order.
+
+        The order the overrides table lists them in, and the order they are
+        saved in - a stable one, so a file does not churn between saves that
+        changed nothing.
+        """
+        return [self.overrides[day] for day in sorted(self.overrides)]
+
     # ---- what the calendar is ------------------------------------------
 
     @property
@@ -515,10 +677,23 @@ class WorkingCalendar:
         RETURNS:
         --------
         bool
-            False for a non-working weekday, a listed holiday, a recurring
-            holiday, or a public holiday in any country the calendar observes;
-            True otherwise.
+            Whatever a manual override for the date says, if there is one.
+            Otherwise False for a non-working weekday, a listed holiday, a
+            recurring holiday, or a public holiday in any country the calendar
+            observes; True otherwise.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The override is read before anything else, including the empty-week
+        guard below. A calendar that works no weekday is a broken calendar and
+        is treated as working every day rather than hanging every loop here -
+        but a date the user has explicitly named as not worked is not part of
+        that breakage, and honouring it costs nothing.
         """
+        override = self.overrides.get(as_date(check_date))
+        if override is not None:
+            return override.is_working_day
+
         if not self.works_any_weekday:
             # See the note on the class: an empty week is no calendar at all
             if not self._empty_week_reported:
@@ -698,6 +873,10 @@ class WorkingCalendar:
         The countries are saved, not the dates they resolve to. A plan reopened
         in a later year needs that year's holidays, and a list of dates worked
         out today would run out; the codes go on answering for any year.
+
+        The overrides are saved as the dates they are, which is the opposite
+        and right for the same reason: an override is a statement about one
+        particular day, and there is no rule behind it to re-resolve.
         """
         return {
             'non_working_days': sorted(self.non_working_days),
@@ -706,6 +885,8 @@ class WorkingCalendar:
                 [month, day] for month, day in self.recurring_holidays
             ),
             'countries': sorted(self.countries),
+            'overrides': [override.to_dict()
+                          for override in self.sorted_overrides()],
         }
 
     @classmethod
@@ -751,8 +932,15 @@ class WorkingCalendar:
             if code:
                 countries.append(code)
 
+        overrides = []
+        for entry in data.get('overrides') or ():
+            override = DateOverride.from_dict(entry)
+            if override is not None:
+                overrides.append(override)
+
         return cls(non_working_days=non_working, holidays=holidays,
-                   recurring_holidays=recurring, countries=countries)
+                   recurring_holidays=recurring, countries=countries,
+                   overrides=overrides)
 
     def __eq__(self, other: object) -> bool:
         """Two calendars are the same when they name the same days."""
@@ -761,13 +949,15 @@ class WorkingCalendar:
         return (self.non_working_days == other.non_working_days
                 and self.holidays == other.holidays
                 and self.recurring_holidays == other.recurring_holidays
-                and self.countries == other.countries)
+                and self.countries == other.countries
+                and self.overrides == other.overrides)
 
     def __repr__(self) -> str:
         return (f"WorkingCalendar(non_working_days={sorted(self.non_working_days)}, "
                 f"holidays={len(self.holidays)}, "
                 f"recurring_holidays={len(self.recurring_holidays)}, "
-                f"countries={sorted(self.countries)})")
+                f"countries={sorted(self.countries)}, "
+                f"overrides={len(self.overrides)})")
 
 
 #: The calendar used when nothing else has been said: Monday to Friday, no

@@ -55,6 +55,9 @@ except ImportError:
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.log import get_logger
+from gantt_app.workdaycalendar import (
+    DEFAULT_NON_WORKING_DAYS, WorkingCalendar,
+)
 
 logger = get_logger(__name__)
 
@@ -337,8 +340,53 @@ def _workday(expression: str, days: str, holidays: bool) -> str:
     return f"WORKDAY({expression},{days})"
 
 
+def _excel_calendar(holiday_dates: List[date]) -> WorkingCalendar:
+    """
+    The calendar Excel will actually use, which is not always the plan's.
+
+    RETURNS:
+    --------
+    WorkingCalendar
+        Saturday and Sunday off, plus the dates written to the holiday sheet.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    WORKDAY's week is fixed: it skips Saturday and Sunday and takes a list of
+    extra dates to skip, and there is nothing else it can be told. So a
+    project working an unusual week, or - the case this was written for -
+    carrying a manual override that puts a Saturday to work, is scheduled by
+    this application onto dates no WORKDAY formula can reproduce.
+
+    Building that restricted calendar explicitly is what lets the writers
+    below tell the difference. Comparing against the project's own calendar
+    would compare the plan with itself and agree every time, which is how a
+    worked Saturday came to be written as a live formula that recalculated,
+    in Excel, onto a Monday.
+    """
+    return WorkingCalendar(non_working_days=DEFAULT_NON_WORKING_DAYS,
+                           holidays=set(holiday_dates))
+
+
+def _end_formula_agrees(task: Task, project: Project,
+                        excel: WorkingCalendar) -> bool:
+    """
+    Whether WORKDAY over the start and duration lands on the task's finish.
+
+    False for a task whose span covers a day the two calendars disagree
+    about - a Saturday the plan works and WORKDAY will not - in which case
+    the finish is written as a date rather than a formula that would open
+    showing a different one.
+    """
+    if task.start_date is None or task.end_date is None:
+        return False
+
+    duration = max(project.working_duration(task), 1)
+    return (excel.add_working_days(task.start_date.date(), duration)
+            == task.end_date.date())
+
+
 def _start_formula(task: Task, project: Project, rows: Dict[str, int],
-                   holidays: bool) -> Optional[str]:
+                   holidays: bool, excel: WorkingCalendar) -> Optional[str]:
     """
     The Start cell's formula, or None to write the date itself.
 
@@ -357,11 +405,12 @@ def _start_formula(task: Task, project: Project, rows: Dict[str, int],
     dates this application never scheduled, and the reader has no way to tell
     which of the two is the plan.
 
-    So the arithmetic is done here first, with the project's own calendar -
-    which is what WORKDAY implements for a Monday-to-Friday week - and the
-    formula is written only where the two agree.
+    So the arithmetic is done here first, with the calendar WORKDAY actually
+    implements - see _excel_calendar, which is not the project's own once a
+    manual override puts a weekend day to work - and the formula is written
+    only where the two agree.
     """
-    calendar = project.calendar
+    calendar = excel
     followed = _followed_rows(task, rows)
 
     if not followed:
@@ -404,10 +453,21 @@ def _project_holidays(project: Project) -> List[date]:
         Sorted holidays inside the plan's span, for the sheet WORKDAY is
         pointed at. Empty when the calendar declares none, in which case no
         holiday sheet is written and the formulas skip weekends only.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A manual override that takes a working day off is a holiday as far as
+    WORKDAY is concerned, and is picked up by the walk below like any other.
+    One that puts a *weekend* day to work is not expressible here at all -
+    WORKDAY always skips Saturday and Sunday, and no holiday list can tell it
+    otherwise. That case needs nothing doing about it: _start_formula checks
+    every formula against the date this application actually scheduled and
+    writes the literal date wherever the two disagree, so the sheet stays
+    truthful and only loses the live recalculation on those rows.
     """
     calendar = project.calendar
     if not (calendar.holidays or calendar.recurring_holidays
-            or calendar.countries):
+            or calendar.countries or calendar.overrides):
         return []
 
     if project.start_date is None or project.end_date is None:
@@ -485,7 +545,8 @@ def _write_header(sheet, weeks: int) -> None:
 def _write_task_row(sheet, row: int, task: Task, project: Project,
                     number: int, numbers: Dict[str, int],
                     rows: Dict[str, int], phase_fill: Optional[str],
-                    weeks: int, holidays: bool) -> None:
+                    weeks: int, holidays: bool,
+                    excel: WorkingCalendar) -> None:
     """One piece of work, across the fields and the timeline."""
     border = _thin_border()
     body = Font(name=FONT_NAME, size=10)
@@ -533,7 +594,7 @@ def _write_task_row(sheet, row: int, task: Task, project: Project,
     duration.border = border
 
     start = sheet.cell(row=row, column=8)
-    formula = _start_formula(task, project, rows, holidays)
+    formula = _start_formula(task, project, rows, holidays, excel)
     start.value = formula if formula else task.start_date
     start.font = body
     start.alignment = centred
@@ -544,10 +605,12 @@ def _write_task_row(sheet, row: int, task: Task, project: Project,
     if task.effective_milestone:
         # No length, so it ends the day it starts
         end.value = f"=${COL_START}{row}"
-    elif formula:
+    elif formula and _end_formula_agrees(task, project, excel):
         end.value = "=" + _workday(f"{COL_START}{row}", f"{COL_DURATION}{row}-1",
                                    holidays)
     else:
+        # Either the start is a date already, or WORKDAY would walk this
+        # task's span onto a different finish - see _end_formula_agrees.
         end.value = task.end_date or task.start_date
     end.font = body
     end.alignment = centred
@@ -660,6 +723,7 @@ def _create_tasks_workbook(project: Project):
     tasks = _plan_rows(project)
     weeks = _timeline_weeks(project)
     holidays = _project_holidays(project)
+    excel = _excel_calendar(holidays)
 
     _write_title(sheet, project)
     _write_header(sheet, weeks)
@@ -679,7 +743,8 @@ def _create_tasks_workbook(project: Project):
                                                % len(PHASE_FILLS)]
         _write_task_row(sheet, rows[task.id], task, project,
                         numbers[task.id], numbers, rows,
-                        phase_colours.get(phase), weeks, bool(holidays))
+                        phase_colours.get(phase), weeks, bool(holidays),
+                        excel)
 
     for letter, width in COLUMN_WIDTHS.items():
         sheet.column_dimensions[letter].width = width

@@ -2253,6 +2253,41 @@ class Project:
             holidays=self.calendar.holidays,
             recurring_holidays=self.calendar.recurring_holidays,
             countries=codes,
+            overrides=self.calendar.sorted_overrides(),
+        )
+        return self.apply_calendar(calendar)
+
+    def set_date_overrides(self, overrides) -> bool:
+        """
+        Replace the hand-made rulings on individual dates.
+
+        PARAMETERS:
+        -----------
+        overrides : Iterable[DateOverride]
+            The complete list of rulings from now on - not additions to what
+            is already there. The overrides tab hands back everything it is
+            showing, so a deletion in it has to remove the ruling here, which
+            a merge would not do.
+
+        RETURNS:
+        --------
+        bool
+            True when the plan moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A sibling of set_holiday_countries, and applied the same way and for
+        the same reason: through apply_calendar, so a task keeps the work it
+        holds and its finish moves. Naming a Saturday as worked should pull
+        the finishes of the tasks crossing it *in* by a day, not quietly hand
+        every one of them an extra day of effort.
+        """
+        calendar = WorkingCalendar(
+            non_working_days=self.calendar.non_working_days,
+            holidays=self.calendar.holidays,
+            recurring_holidays=self.calendar.recurring_holidays,
+            countries=self.calendar.countries,
+            overrides=overrides,
         )
         return self.apply_calendar(calendar)
 

@@ -32,7 +32,8 @@ This is a complete implementation of a project management tool with:
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
-- **Public Holidays**: Actions → Public Holidays... picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Manual Date Overrides**: Actions → Calendar Settings... → Manual Overrides rules on one named date at a time, and **outranks everything else** — a Saturday named as a make-up day is worked, and an ordinary Tuesday named as a company shutdown is not, whatever the weekend and holiday rules say. Each carries an optional reason, and deleting one puts the date back under the ordinary rules. Saved with the project
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
@@ -47,7 +48,7 @@ This is a complete implementation of a project management tool with:
 gantt_app/
 ├── __init__.py
 ├── models.py              # Task and Project data models
-├── workdaycalendar.py     # Working days, weekends and holidays
+├── workdaycalendar.py     # Working days, weekends, holidays, overrides
 ├── main.py                # Main application entry point
 ├── run.py                 # Entry point script
 │
@@ -63,7 +64,7 @@ gantt_app/
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
-│   ├── holidaydialog.py   # Picks whose public holidays the plan observes
+│   ├── holidaydialog.py   # Public holidays, and dates overridden by hand
 │   ├── criticalpath.py    # The critical path analysis, task by task
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
@@ -141,6 +142,11 @@ A duration is stated in the first and drawn in the second. The rules:
    the public holidays of any countries the project observes (see below). It
    belongs to the project and is saved with it, so a plan imported from a
    GanttProject file keeps the holidays that file declared.
+1a. **A manual override beats all of it.** A date the user has ruled on by
+   hand is worked, or not worked, exactly as they said - see below. It is the
+   first thing the calendar consults and nothing else can overturn it, because
+   the reason a plan needs an override at all is that the general rules got
+   that one date wrong.
 2. **A finish is walked, not added.** Starting at the start date, the calendar
    is stepped through a day at a time and one day of duration is spent only on
    a working day.
@@ -165,9 +171,10 @@ dates whichever way it arrived.
 
 #### Public holidays across the EU (`views/holidaydialog.py`)
 
-**Actions → EU Holidays...** opens a picker listing the 27 member states, with
-All and Clear buttons for the whole list. The selection is saved with the
-project.
+**Actions → Calendar Settings... → National Holidays** opens a picker listing
+every country the `holidays` package knows, with an EU button for the 27
+member states and All and Clear buttons for the whole list. The selection is
+saved with the project.
 
 The rule is the **union**: a date that is a public holiday in *any* selected
 country is a non-working day for the plan. That is what a project worked in
@@ -209,6 +216,49 @@ Without it the picker still opens and still saves the selection - so a plan
 carrying one is not silently emptied - but it says on the face of it that the
 choice takes effect once the package is installed, and the plan is scheduled on
 weekends alone until then.
+
+#### Manual date overrides (`views/holidaydialog.py`)
+
+No country list can say that this particular Saturday is being worked to make
+a deadline, or that the office is shut the week of the 20th. Those are
+decisions about one named date rather than rules, and the only place they can
+come from is the person running the plan.
+
+**Actions → Calendar Settings... → Manual Overrides** is where they say so. An
+override is a date, a type - Working Day or Non-Working Day - and an optional
+reason for whoever reads the list back in six months. The table lists them in
+date order with a delete button on each; deleting one puts the date back under
+the ordinary rules.
+
+The priority is strict, and overrides are at the top of it:
+
+| Priority | Rule | Beats |
+| --- | --- | --- |
+| **1 (highest)** | Manual override | Everything below |
+| 2 | Public holidays of the observed countries and regions | Weekends |
+| 3 | Listed and recurring holidays | Weekends |
+| 4 (lowest) | Non-working weekdays (Saturday and Sunday) | — |
+
+So a date named as a working day *is* a working day even if it is a Saturday
+and Christmas Day at once. That is deliberate: someone typing that date into
+the list could see what it was, and meant it anyway. The reverse holds too - an
+ordinary Tuesday named as non-working is not worked.
+
+A date can only be ruled on one way, so adding an override for a date that
+already has one replaces it. That is also how one gets edited.
+
+Applying goes through `Project.set_date_overrides()`, the sibling of
+`set_holiday_countries()` and applied the same way: every task's working
+duration is read under the *old* calendar and its dates rebuilt under the new
+one. Naming a Saturday as worked therefore pulls the finishes of the tasks
+crossing it **in** by a day rather than handing each an extra day of effort,
+and a shutdown pushes them **out** rather than quietly eating the work planned
+for it. Deleting the override moves the plan back; it is not on the undo stack.
+
+Both tabs are applied together by Apply, and neither touches the project before
+then - so Cancel means the same thing on both. The overrides tab needs no
+optional dependency: a date named by hand is honoured whether or not `holidays`
+is installed.
 
 ### Completion
 
@@ -331,7 +381,7 @@ on any desktop does:
 - **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (Mermaid, HTML, SVG,
   PNG, PDF, XLSX)
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
-  Project Title, Public Holidays, and Critical Path
+  Project Title, Calendar Settings, and Critical Path
 - **Edit**: Undo, Redo, Cut, Copy, Paste
 - **View**: Toggle Theme, Settings
 - **Log**: Opens the application log window, at the end of the row
@@ -495,15 +545,22 @@ chain behind it. The timeline bars are formulas over Start and End, so they
 follow. Changing the one start-date cell moves the whole plan.
 
 **A formula is only written where it reproduces the date this application
-already worked out.** The arithmetic is done first, with the project's own
-calendar, and where a WORKDAY chain could not say what the plan says - a task
-with no predecessor, or one held by a Start-Start or Finish-Finish link, or
-one with a lag - the real date is written instead. A sheet that is live but
-wrong would be worse than one that is merely static.
+already worked out.** The arithmetic is done first, against the calendar
+WORKDAY actually implements rather than the project's own, and where a WORKDAY
+chain could not say what the plan says - a task with no predecessor, or one
+held by a Start-Start or Finish-Finish link, or one with a lag - the real date
+is written instead. A sheet that is live but wrong would be worse than one
+that is merely static.
 
 Where the project observes public holidays, they are written to a hidden
 `Holidays` sheet and the formulas become `WORKDAY(…, Holidays!$A:$A)`, so
-Excel recalculates onto the same dates this application schedules.
+Excel recalculates onto the same dates this application schedules. A **manual
+override that takes a day off** is just another date on that sheet and stays
+live. One that puts a **weekend day to work** cannot be expressed at all -
+WORKDAY's week is fixed at Monday to Friday and no holiday list can widen it -
+so any task whose span reaches such a day has its finish written as a date.
+The sheet keeps saying what the plan says; those rows simply stop
+recalculating.
 
 Rows are the **leaves** of the plan: the work. A Phase or a Deliverable
 brackets other rows rather than being work of its own, so it appears as the
@@ -608,7 +665,7 @@ pip install -r requirements.txt
 `openpyxl` is required for Excel XLSX import and export. Without it the app
 still runs, but the Import XLSX and Export XLSX actions report an error.
 
-`holidays` supplies the public holidays behind Actions → EU Holidays.... Without
+`holidays` supplies the public holidays behind Actions → Calendar Settings.... Without
 it the app still runs and the picker still saves a selection, but no holiday is
 applied and plans are scheduled on weekends alone.
 
@@ -1145,7 +1202,7 @@ Unit tests cover:
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it
-- ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, and the EU public holidays including the movable Easter feasts
+- ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, the EU public holidays including the movable Easter feasts, and the manual date overrides that outrank all of them
 - ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
 - ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries and a thousand regions, when regions appear, the batch buttons, what Apply hands back and what Cancel does not
 - ✅ **Desktop Integration**: That the packaged icon is named what the desktop entry asks for, at every size the theme wants, and that the window class matches what the entry declares
