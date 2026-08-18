@@ -25,6 +25,7 @@ from typing import Optional, Callable
 
 import customtkinter as ctk
 
+from gantt_app.calendarregistry import describe_week
 from gantt_app.models import Task, Project, TASK_TYPES, CONTAINER_TYPES
 from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
@@ -443,6 +444,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_duration(frame)
         self._build_milestone(frame)
         self._build_scheduling_options(frame)
+        self._build_working_calendar(frame)
         self._build_earliest_begin(frame)
 
         # Separator between Scheduling and Progress
@@ -659,16 +661,114 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     )
     DEFAULT_SCHEDULING_MODE = "End date is calculated"
 
+    def _build_working_calendar(self, frame):
+        """
+        The calendar this task follows, which may not be the plan's.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The menu holds readable names; the ids are kept beside it in
+        _calendar_ids, because two calendars may be called the same thing
+        while their ids cannot be - see CalendarRegistry.make_id - and a
+        lookup by label would pick whichever was added first.
+
+        Nothing is built when the plan has no named calendars. A dropdown
+        whose only entry is "Project Default" is a control that cannot be
+        used, and it would sit in the middle of the scheduling group of every
+        form in a plan that never opened the calendar registry.
+        """
+        options = self.project.calendars.options()
+        if len(options) <= 1:
+            self.calendar_var = None
+            return
+
+        #: Label to calendar id, for reading the menu back.
+        self._calendar_ids = {}
+        labels = []
+        for calendar_id, name in options:
+            calendar = self.project.calendars.resolve(calendar_id,
+                                                      self.project.calendar)
+            label = f"{name} ({describe_week(calendar)})"
+            self._calendar_ids[label] = calendar_id
+            labels.append(label)
+
+        current = self.template.calendar_id
+        active = labels[0]
+        for label, calendar_id in self._calendar_ids.items():
+            if calendar_id == current and calendar_id is not None:
+                active = label
+                break
+
+        self.calendar_var = ctk.StringVar(value=active)
+        self.calendar_menu = ctk.CTkOptionMenu(frame, variable=self.calendar_var,
+                                               values=labels)
+        self._field(frame, "Working calendar:", self.calendar_menu)
+
+        # The dates follow the moment the calendar changes, without waiting
+        # for Save: picking a weekend-only calendar for a task starting on a
+        # Thursday should show it moving to the Saturday there and then.
+        self.calendar_var.trace_add("write", self._on_calendar_changed)
+
+    def _on_calendar_changed(self, *_args):
+        """
+        Move the task onto the new calendar, and show where it lands.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The start is rolled forward first, then the rest is recalculated from
+        it. Recalculating alone would have left the start box on the Thursday
+        a weekend-only task can never begin on: add_working_days rolls the
+        start forward internally to reach the right finish, so the end date
+        was correct while the start beside it was not, and the form disagreed
+        with the plan it was about to write.
+
+        Not done in the mode where the start is the calculated box - there it
+        is derived from the finish, and writing to it here would be overwritten
+        a line later anyway.
+        """
+        if self._recalculating:
+            return
+        if getattr(self, 'start_date_entry', None) is None:
+            return                      # the form is still being built
+
+        mode = getattr(self, 'scheduling_options_var', None)
+        if mode is not None and mode.get() != "Start date is calculated":
+            start = self._read_date(self.start_date_entry)
+            if start is not None:
+                moved = self.working_calendar.get_next_working_day(start)
+                if moved != start:
+                    self._recalculating = True
+                    try:
+                        self._write_date(self.start_date_entry, moved)
+                    finally:
+                        self._recalculating = False
+
+        self._recalculate_schedule()
+
+    def chosen_calendar_id(self) -> Optional[str]:
+        """
+        The calendar id the form is set to, or None for the plan's own.
+
+        None as well when the plan has no named calendars, so a caller can
+        write it onto a task without asking whether the control was built.
+        """
+        variable = getattr(self, 'calendar_var', None)
+        if variable is None:
+            return None
+        return self._calendar_ids.get(variable.get())
+
     @property
     def working_calendar(self):
         """
         The calendar the form's date arithmetic goes through.
 
-        The project's own, so a plan imported from a file that declared its
-        holidays gets them here too, and the dates the form writes are the
-        dates the scheduler would have worked out for itself.
+        The one the task follows: the plan's own unless the working-calendar
+        menu names another, so the dates the form writes are the dates the
+        scheduler would have worked out for itself. A plan imported from a
+        file that declared its holidays gets them here too.
         """
-        return self.project.calendar
+        return self.project.calendars.resolve(self.chosen_calendar_id(),
+                                              self.project.calendar)
 
     def _recalculate_schedule(self, *_args):
         """

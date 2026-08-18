@@ -60,9 +60,12 @@ import customtkinter as ctk
 from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible
+from gantt_app.calendarregistry import (
+    CalendarRegistry, NamedCalendar, describe_week,
+)
 from gantt_app.workdaycalendar import (
-    DEFAULT_NON_WORKING_DAYS, DateOverride, EU_COUNTRIES, holidays_available,
-    split_country, subdivisions, supported_countries,
+    DEFAULT_NON_WORKING_DAYS, DateOverride, EU_COUNTRIES, WorkingCalendar,
+    holidays_available, split_country, subdivisions, supported_countries,
 )
 from gantt_app.utils.log import get_logger
 
@@ -150,14 +153,45 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
                  non_working_days: Optional[Iterable[int]] = None,
                  on_apply_working_week: Optional[
                      Callable[[Set[int]], None]] = None,
-                 on_applied: Optional[Callable[[], None]] = None):
+                 on_applied: Optional[Callable[[], None]] = None,
+                 registry: Optional[CalendarRegistry] = None,
+                 on_apply_calendars: Optional[
+                     Callable[[List[NamedCalendar]], None]] = None):
         super().__init__(master)
 
         self.on_apply = on_apply
         self.on_apply_overrides = on_apply_overrides
         self.on_apply_working_week = on_apply_working_week
         self.on_applied = on_applied
+        self.on_apply_calendars = on_apply_calendars
         self.checkboxes = {}
+
+        #: The named calendars, edited as copies. The dialog never writes to
+        #: the project's own objects, so Cancel needs to do nothing but close
+        #: - the same reason the overrides are copied below.
+        self.registry = CalendarRegistry(
+            NamedCalendar(id=named.id, name=named.name,
+                          calendar=WorkingCalendar.from_dict(
+                              named.calendar.to_dict()))
+            for named in (registry or ())
+        )
+
+        #: Which calendar the three tabs are currently showing. None is the
+        #: project's own, which is what the dialog opens on and what it shows
+        #: when a plan holds no named calendars at all.
+        self.current_calendar_id: Optional[str] = None
+
+        #: The project's own calendar, as an editable copy. Assembled from
+        #: the three pieces the caller passes rather than taken whole,
+        #: because those three are what the callbacks hand back and what the
+        #: dialog has always been given.
+        self._default_working = WorkingCalendar(
+            non_working_days=(DEFAULT_NON_WORKING_DAYS
+                              if non_working_days is None
+                              else {int(day) for day in non_working_days}),
+            countries=[str(code).strip().upper() for code in selected],
+            overrides=list(overrides or ()),
+        )
 
         #: The rulings as the dialog currently has them, keyed by date. A
         #: working copy: the project keeps its own until Apply, so Cancel
@@ -183,6 +217,7 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         # Buttons first, then the tabs they must not be pushed off the bottom
         # by; see the note on the class.
         self._build_buttons()
+        self._build_calendar_selector()
         self._build_tabs()
 
         self._build_header()
@@ -749,6 +784,136 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         self.week_summary_label.configure(text=text, text_color="#6b7280")
 
+    # ---- choosing which calendar the tabs edit --------------------------
+
+    def _build_calendar_selector(self):
+        """
+        The row that says which calendar the three tabs are showing.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Not built at all when the plan holds no named calendars: a selector
+        whose only entry is the project's own is a control that cannot be
+        used, and it would put a row of chrome above every tab for the plans
+        - most of them - that never name a second calendar.
+
+        The menu holds labels and the ids are kept beside it, because two
+        calendars may be called the same thing while their ids cannot be.
+        """
+        if not self.registry:
+            self.calendar_selector = None
+            return
+
+        row = ctk.CTkFrame(self, fg_color='transparent')
+        row.pack(fill=tk.X, padx=15, pady=(15, 0))
+
+        ctk.CTkLabel(row, text="Editing:",
+                     font=ctk.CTkFont(size=12, weight="bold")
+                     ).pack(side=tk.LEFT, padx=(0, 8))
+
+        #: Label to calendar id, for reading the menu back.
+        self._selector_ids: Dict[str, Optional[str]] = {}
+        labels = []
+        for calendar_id, name in self.registry.options():
+            label = name if calendar_id is None else f"{name}"
+            self._selector_ids[label] = calendar_id
+            labels.append(label)
+
+        self.selector_var = ctk.StringVar(value=labels[0])
+        self.calendar_selector = ctk.CTkOptionMenu(
+            row, variable=self.selector_var, values=labels, width=220,
+            command=self._on_calendar_selected)
+        self.calendar_selector.pack(side=tk.LEFT)
+
+        self.selector_note = ctk.CTkLabel(row, text="", anchor=tk.W,
+                                          text_color="#6b7280")
+        self.selector_note.pack(side=tk.LEFT, padx=10)
+
+    def _on_calendar_selected(self, label: str):
+        """
+        Swap the tabs over to another calendar, keeping what was typed.
+
+        The tabs are the same widgets throughout; only what they show changes.
+        Whatever the reader had set on the calendar they are leaving is
+        captured first, so switching away and back does not lose it - the
+        alternative, applying on every switch, would make Cancel meaningless.
+        """
+        self._capture_current_calendar()
+        self.current_calendar_id = self._selector_ids.get(label)
+        self._load_current_calendar()
+
+    def _working_calendar(self, calendar_id: Optional[str]) -> WorkingCalendar:
+        """The editable calendar behind an id; the project's own for None."""
+        if calendar_id is None:
+            return self._default_working
+        named = self.registry.get(calendar_id)
+        return named.calendar if named is not None else self._default_working
+
+    def _capture_current_calendar(self):
+        """Write what the three tabs show onto the calendar they show it for."""
+        calendar = self._working_calendar(self.current_calendar_id)
+        calendar.set_countries(self.selection())
+        calendar.overrides = {
+            override.override_date: override
+            for override in self.override_selection()
+        }
+        calendar.non_working_days = self.working_week_selection()
+
+    def _load_current_calendar(self):
+        """Point the three tabs at the calendar now selected."""
+        calendar = self._working_calendar(self.current_calendar_id)
+
+        # The countries, including any region whose boxes have not been built
+        chosen = set(calendar.countries)
+        for country in self._countries_with_regions(chosen):
+            self._build_regions(country, chosen)
+        for code, variable in self.checkboxes.items():
+            variable.set(code in chosen)
+        self._apply_filter()
+
+        self.overrides = dict(calendar.overrides)
+        self._refresh_override_list()
+
+        for index, variable in self.weekday_boxes.items():
+            variable.set(index not in calendar.non_working_days)
+        self._update_week_summary()
+
+        if getattr(self, 'selector_note', None) is not None:
+            self.selector_note.configure(text=describe_week(calendar))
+
+    def _first_empty_calendar(self):
+        """
+        The first calendar left with no working day, or None when all are fine.
+
+        RETURNS:
+        --------
+        Optional[str]
+            A calendar id, or None for the project's own - which is why the
+            caller has to check against a sentinel rather than for None; see
+            _show_calendar, which takes the same value back.
+        """
+        candidates = [(None, self._default_working)]
+        candidates += [(named.id, named.calendar) for named in self.registry]
+
+        for calendar_id, calendar in candidates:
+            if not set(range(7)) - calendar.non_working_days:
+                return (calendar_id, )
+        return None
+
+    def _show_calendar(self, found):
+        """Bring a calendar and its week tab forward, for a refusal."""
+        calendar_id = found[0]
+        if calendar_id != self.current_calendar_id:
+            self.current_calendar_id = calendar_id
+            self._load_current_calendar()
+            if getattr(self, 'selector_var', None) is not None:
+                for label, identifier in self._selector_ids.items():
+                    if identifier == calendar_id:
+                        self.selector_var.set(label)
+                        break
+        self.tabview.set(self.TAB_WEEK)
+        self._update_week_summary()
+
     def _build_buttons(self):
         """Apply and Cancel, along the bottom."""
         footer = ctk.CTkFrame(self, fg_color='transparent')
@@ -865,8 +1030,22 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
             logger.info("Refused a working week with no working day in it")
             return False
 
-        chosen = self.selection()
-        overrides = self.override_selection()
+        # What the tabs currently show belongs to the calendar they show it
+        # for, and has to be written back before any of them is read.
+        self._capture_current_calendar()
+
+        # Every *other* calendar is checked too. Only the one on screen can
+        # have just been emptied, but one emptied earlier and switched away
+        # from would otherwise be applied unnoticed.
+        empty = self._first_empty_calendar()
+        if empty is not None:
+            self._show_calendar(empty)
+            logger.info("Refused a working week with no working day in it")
+            return False
+
+        chosen = sorted(self._default_working.countries)
+        overrides = self._default_working.sorted_overrides()
+        week = set(self._default_working.non_working_days)
 
         logger.info("Observing public holidays for %s, with %d date "
                     "override(s), on a %d-day week",
@@ -881,6 +1060,8 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
             self.on_apply(chosen)
         if self.on_apply_overrides:
             self.on_apply_overrides(overrides)
+        if self.on_apply_calendars:
+            self.on_apply_calendars(list(self.registry))
         if self.on_applied:
             self.on_applied()
         return True
@@ -909,7 +1090,10 @@ def choose_holidays(master, selected: Sequence[str],
                     non_working_days: Optional[Iterable[int]] = None,
                     on_apply_working_week: Optional[
                         Callable[[Set[int]], None]] = None,
-                    on_applied: Optional[Callable[[], None]] = None
+                    on_applied: Optional[Callable[[], None]] = None,
+                    registry: Optional[CalendarRegistry] = None,
+                    on_apply_calendars: Optional[
+                        Callable[[List[NamedCalendar]], None]] = None
                     ) -> Optional[CalendarSettingsDialog]:
     """
     Open the calendar settings.
@@ -928,7 +1112,7 @@ def choose_holidays(master, selected: Sequence[str],
         return CalendarSettingsDialog(master, selected, on_apply,
                                       overrides, on_apply_overrides,
                                       non_working_days, on_apply_working_week,
-                                      on_applied)
+                                      on_applied, registry, on_apply_calendars)
     except Exception:
         logger.exception("Could not open the calendar settings dialog")
         return None

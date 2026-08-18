@@ -33,6 +33,7 @@ This is a complete implementation of a project management tool with:
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Per-Task Calendars**: a task may follow a calendar of its own instead of the plan's — a weekend-only shift for a migration that can only touch production on a Saturday, a 24/7 run for an unattended load test. Set from the task editor's **Working calendar** dropdown, which re-dates the task as soon as it is picked. Three presets come with every plan; a task that names none follows the project's calendar exactly as before
 - **Working Week**: Actions → Calendar Settings... → Working Week sets which weekdays are worked at all — a six-day week, a four-day week, or the standard Monday to Friday. Durations are held and finishes move, so putting Saturday to work pulls finishes in rather than lengthening tasks. A week with no working day in it is refused
 - **Manual Date Overrides**: Actions → Calendar Settings... → Manual Overrides rules on one named date at a time, and **outranks everything else** — a Saturday named as a make-up day is worked, and an ordinary Tuesday named as a company shutdown is not, whatever the weekend and holiday rules say. Each carries an optional reason, and deleting one puts the date back under the ordinary rules. Saved with the project
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
@@ -50,6 +51,7 @@ gantt_app/
 ├── __init__.py
 ├── models.py              # Task and Project data models
 ├── workdaycalendar.py     # Working days, weekends, holidays, overrides
+├── calendarregistry.py    # Named calendars, and which one a task follows
 ├── main.py                # Main application entry point
 ├── run.py                 # Entry point script
 │
@@ -170,6 +172,70 @@ Everything that turns a duration into dates goes through it - the task form's
 three scheduling modes, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
+
+#### Per-task calendars (`calendarregistry.py`)
+
+A plan does not always run on one week. A migration that can only touch
+production at the weekend, a load test that runs unattended around the clock,
+and the ordinary Monday-to-Friday work around them are three different answers
+to "is this day worked" inside one project.
+
+So a calendar can be **named**, and a task can follow it instead of the plan's.
+`calendarregistry.py` holds the naming — a `CalendarRegistry` of
+`NamedCalendar`s, each an id, a readable name, and an ordinary
+`WorkingCalendar`. There is deliberately no second calendar class: everything
+a named calendar can express — the week, listed and recurring holidays,
+observed countries, manual date overrides and the priority between them — it
+expresses through the same `WorkingCalendar` the project has always used, so
+the day-by-day arithmetic exists once.
+
+The resolution rule is one line, and `Project.calendar_for(task)` is what every
+piece of scheduling asks:
+
+> a task whose `calendar_id` names a registered calendar follows it;
+> every other task follows the project's own.
+
+That covers all three cases that matter — the task naming nothing, the task
+written before the registry existed, and the task naming a calendar that has
+since been **deleted**. The last one falls back rather than raising: a calendar
+can be removed while tasks still point at it, and a plan that will not open —
+or a task with no calendar at all, which would hang the day-by-day walks — is a
+far worse answer than a task quietly back on the standard week.
+
+Three presets come with every plan, so nobody has to build a weekend calendar
+from scratch to find out what the feature does:
+
+| Calendar | Week | A 3-day task starting Thu 10 Sep 2026 |
+| --- | --- | --- |
+| Project Default | Mon–Fri | Thu 10 → Mon 14 |
+| Weekend-Only Shift | Sat–Sun | **Sat 12** → Sat 19 |
+| 24/7 Continuous Run | every day | Thu 10 → Sat 12 |
+
+The weekend row starts on the Saturday, not the Thursday it was given: a task
+cannot begin on a day nobody works, and that rule is now read on the task's own
+calendar rather than the plan's.
+
+**In the task editor**, a *Working calendar* dropdown lists the plan's default
+and every named calendar, each with its week beside it. Picking one re-dates
+the task immediately — the start is rolled onto a day that calendar actually
+works and the finish recalculated — rather than waiting for Save, so the form
+never shows a Thursday start for a task that will begin on the Saturday. The
+dropdown is not built at all when a plan holds no named calendars, since a
+control whose only entry is "Project Default" cannot be used.
+
+**In Calendar Settings**, an *Editing:* selector at the top switches all three
+tabs between the project's calendar and each named one, so a weekend calendar
+gets the same working week, public holidays and manual overrides as the plan's.
+Everything is edited on copies and applied together, so Cancel still means
+Cancel.
+
+Editing a named calendar goes through `Project.set_calendars()`, which applies
+it the same way the other three do — durations are read under the old calendar
+and dates rebuilt under the new one — so widening a weekend calendar to include
+Friday pulls its tasks' finishes **in** rather than handing each of them
+another day of effort. Tasks on other calendars are not touched, and changing
+the *plan's* week no longer drags a task that follows its own calendar back
+onto it.
 
 #### The working week (`views/holidaydialog.py`)
 
@@ -1262,7 +1328,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1233 tests, all passing.
+1266 tests, all passing.
 
 ## Known Limitations
 
@@ -1301,6 +1367,7 @@ Done:
 - [x] Full critical path analysis - both passes, so every zero-float task
 - [x] Manual date overrides, outranking holidays and weekends alike
 - [x] Editing the weekend rule from the application
+- [x] Per-task calendars, so one strand of work can follow a different week
 
 Still to do:
 
@@ -1312,11 +1379,10 @@ Still to do:
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
-- [ ] Per-task calendars, so one strand of work can follow a different week
 - [ ] Resource levelling off the back of the float analysis
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.34.0
+**Version**: 1.35.0
 **Last Updated**: 2026-08-18

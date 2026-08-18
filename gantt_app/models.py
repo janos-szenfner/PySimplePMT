@@ -18,6 +18,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
+from gantt_app.calendarregistry import CalendarRegistry, default_registry
 from gantt_app.workdaycalendar import WorkingCalendar, default_calendar
 
 
@@ -418,6 +419,7 @@ class Task:
         scheduling_options: Scheduling mode for the task
         details: Additional notes/details about the task
         is_milestone: Legacy flag, now determined by task_type='Milestone'
+        calendar_id: Named calendar this task follows, or None for the plan's own
     
     DEVELOPMENT NOTES:
     ------------------
@@ -445,6 +447,11 @@ class Task:
     scheduling_options: str = "End date is calculated"
     details: str = ""
     is_milestone: bool = False
+    #: Which named calendar this task follows, or None to follow the plan's
+    #: own - see gantt_app.calendarregistry. An id naming a calendar that has
+    #: since been deleted falls back to the plan's own too, so removing a
+    #: calendar never leaves a task without one.
+    calendar_id: Optional[str] = None
     
     def __post_init__(self):
         """
@@ -922,7 +929,8 @@ class Task:
             'show_in_timeline': self.show_in_timeline,
             'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
             'scheduling_options': self.scheduling_options,
-            'details': self.details
+            'details': self.details,
+            'calendar_id': self.calendar_id
         }
     
     @classmethod
@@ -996,7 +1004,8 @@ class Task:
             show_in_timeline=data.get('show_in_timeline', True),
             earliest_begin=earliest_begin,
             scheduling_options=scheduling_options,
-            details=data.get('details', '')
+            details=data.get('details', ''),
+            calendar_id=data.get('calendar_id') or None
         )
 
 
@@ -1011,19 +1020,45 @@ class Project:
         start_date: Project start date
         end_date: Project end date
         calendar: Which days the project works; see enforce_working_calendar
+        calendars: Named calendars a task may follow instead; see calendar_for
 
     DEVELOPMENT NOTES:
     ------------------
-    The calendar belongs to the project rather than to each task: which days
-    are worked is a property of the plan, and a plan whose tasks each held
-    their own idea of the week could not be scheduled at all. Everything that
-    turns a duration into dates goes through it - see gantt_app.workdaycalendar.
+    The calendar on the plan is the default, and most tasks follow it: which
+    days are worked is usually a property of the plan rather than of each
+    piece of work in it. But not always - a migration that can only touch
+    production at the weekend is scheduled wrong by any week the rest of the
+    plan keeps - so a task may name one of the calendars in `calendars`
+    instead, and calendar_for is what every piece of scheduling asks. A task
+    that names nothing, or names a calendar that has been deleted, follows the
+    plan's own; see gantt_app.calendarregistry.
     """
     name: str
     tasks: List[Task] = field(default_factory=list)
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     calendar: WorkingCalendar = field(default_factory=WorkingCalendar)
+    calendars: CalendarRegistry = field(default_factory=default_registry)
+
+    def calendar_for(self, task: Task) -> WorkingCalendar:
+        """
+        The calendar one task is scheduled against.
+
+        RETURNS:
+        --------
+        WorkingCalendar
+            The named calendar the task follows, or the plan's own when it
+            names none - or names one that no longer exists.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every piece of scheduling that touches a single task goes through
+        here rather than reading `self.calendar`, which is what makes a
+        per-task calendar work at all. The plan-wide numbers - the span the
+        chart draws, where the project starts - stay on `self.calendar`,
+        because they are not about any one task.
+        """
+        return self.calendars.resolve(task.calendar_id, self.calendar)
 
     def __post_init__(self):
         """Update project dates based on tasks if not set."""
@@ -1771,7 +1806,8 @@ class Project:
             'tasks': [task.to_dict() for task in self.tasks],
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
-            'calendar': self.calendar.to_dict()
+            'calendar': self.calendar.to_dict(),
+            'calendars': self.calendars.to_dict()
         }
 
     @classmethod
@@ -1801,7 +1837,14 @@ class Project:
             start_date=start_date,
             end_date=end_date,
             tasks=[],  # Start with empty tasks to avoid __post_init__ updating dates prematurely
-            calendar=WorkingCalendar.from_dict(data.get('calendar'))
+            calendar=WorkingCalendar.from_dict(data.get('calendar')),
+            # A file written before calendars could be named has no key at
+            # all, and gets the presets - every task in it names none, so
+            # nothing about how it schedules changes. A file whose key is
+            # present but empty had its calendars deleted on purpose, and
+            # keeps them deleted.
+            calendars=(CalendarRegistry.from_dict(data['calendars'])
+                       if 'calendars' in data else default_registry())
         )
         
         # Add tasks manually
@@ -1880,7 +1923,12 @@ class Project:
             else:                                   # SF
                 required = predecessor_start
 
-            required = self._shift_working_days(required, dependency.lag)
+            # The lag is walked on the calendar of the task being placed.
+            # "Wait two working days after this finishes" is a wait the
+            # successor sits out, so it is the successor's week that says how
+            # long two working days is.
+            required = self._shift_working_days(required, dependency.lag,
+                                                self.calendar_for(task))
 
             if dependency.constrains_finish:
                 target = hard_ends if dependency.hardness == 'Hard' else floor_ends
@@ -1894,7 +1942,9 @@ class Project:
                                        task.end_date or task.start_date)
         return start, end
 
-    def _shift_working_days(self, moment: datetime, days: int) -> datetime:
+    def _shift_working_days(self, moment: datetime, days: int,
+                            calendar: Optional[WorkingCalendar] = None
+                            ) -> datetime:
         """
         Move a date by a number of working days.
 
@@ -1904,6 +1954,10 @@ class Project:
             The date a link requires before its lag is applied.
         days : int
             Working days of lag; negative is lead time.
+        calendar : Optional[WorkingCalendar]
+            The calendar to count them on. The plan's own when not given -
+            a caller with a task in hand passes that task's, since a lag is
+            counted in the working days of whoever is waiting.
 
         RETURNS:
         --------
@@ -1923,9 +1977,10 @@ class Project:
         """
         if not days:
             return moment
+        calendar = calendar or self.calendar
         if days > 0:
-            return self.calendar.add_working_days(moment, days + 1)
-        return self.calendar.subtract_working_days(moment, -days + 1)
+            return calendar.add_working_days(moment, days + 1)
+        return calendar.subtract_working_days(moment, -days + 1)
 
     @staticmethod
     def _resolve_constraint(hard_dates: List[datetime],
@@ -1969,14 +2024,14 @@ class Project:
         is being edited. A task constrained only by its finish is turned back
         into a start by holding its duration.
         """
+        calendar = self.calendar_for(task)
         start, end = self.constrained_dates(task)
         if start is not None:
-            return self.calendar.get_next_working_day(start)
+            return calendar.get_next_working_day(start)
         if end is None:
             return None
 
-        return self.calendar.subtract_working_days(end,
-                                                   self.working_duration(task))
+        return calendar.subtract_working_days(end, self.working_duration(task))
 
     def working_duration(self, task: Task) -> int:
         """
@@ -2004,8 +2059,8 @@ class Project:
             return max(int(task.duration), 1)
         if task.end_date is None:
             return 1
-        return max(self.calendar.working_days_between(task.start_date,
-                                                      task.end_date), 1)
+        return max(self.calendar_for(task).working_days_between(
+            task.start_date, task.end_date), 1)
 
     def apply_dependency_constraints(self, task: Task,
                                      preserve_duration: bool = True,
@@ -2083,9 +2138,11 @@ class Project:
                       and not task.is_milestone
                       and required_end >= required_start)
 
+        calendar = self.calendar_for(task)
+
         if holds_span:
-            new_start = self.calendar.get_next_working_day(required_start)
-            new_end = self.calendar.get_next_working_day(required_end)
+            new_start = calendar.get_next_working_day(required_start)
+            new_end = calendar.get_next_working_day(required_end)
             if new_end < new_start:
                 # Both landed in the same weekend
                 new_end = new_start
@@ -2099,17 +2156,16 @@ class Project:
                     "links require it to start; keeping its length",
                     task.name, required_end.date(), required_start.date()
                 )
-            new_start = self.calendar.get_next_working_day(required_start)
+            new_start = calendar.get_next_working_day(required_start)
             if preserve_duration and task.end_date is not None:
-                new_end = self.calendar.add_working_days(new_start, duration)
+                new_end = calendar.add_working_days(new_start, duration)
         elif required_end is not None:
             # Forward, not back, for a finish landing on a weekend. A link
             # says a task may not finish before a date, so pulling it back to
             # the Friday would break the link it is being moved to satisfy.
-            new_end = self.calendar.get_next_working_day(required_end)
+            new_end = calendar.get_next_working_day(required_end)
             if preserve_duration:
-                new_start = self.calendar.subtract_working_days(new_end,
-                                                                duration)
+                new_start = calendar.subtract_working_days(new_end, duration)
 
         if task.is_milestone:
             new_end = None
@@ -2128,7 +2184,7 @@ class Project:
         # that was not there.
         if holds_span and task.duration is not None:
             task.duration = max(
-                self.calendar.working_days_between(new_start, new_end), 1)
+                calendar.working_days_between(new_start, new_end), 1)
 
         self._update_dates()
         return True
@@ -2170,14 +2226,20 @@ class Project:
 
         return changed
 
-    def apply_calendar(self, calendar: WorkingCalendar) -> bool:
+    def apply_calendar(self, calendar: WorkingCalendar,
+                       calendars: Optional[CalendarRegistry] = None) -> bool:
         """
         Change which days the project works, holding what every task contains.
 
         PARAMETERS:
         -----------
         calendar : WorkingCalendar
-            The calendar to schedule on from now on.
+            The calendar to schedule on from now on - the plan's own, which
+            every task follows unless it names another.
+        calendars : Optional[CalendarRegistry]
+            The named calendars to go with it. Left alone when not given, so
+            a caller changing only the plan's week does not have to hand the
+            registry back to keep it.
 
         RETURNS:
         --------
@@ -2207,18 +2269,25 @@ class Project:
                      for task in self.tasks}
 
         self.calendar = calendar
+        if calendars is not None:
+            self.calendars = calendars
         moved = False
 
         for task in self.tasks:
             if task.is_container:
                 continue
 
-            new_start = calendar.get_next_working_day(task.start_date)
+            # The task's own calendar, not the one just passed in: a task
+            # following a named calendar is not rebuilt on the plan's week
+            # just because the plan's week changed.
+            task_calendar = self.calendar_for(task)
+
+            new_start = task_calendar.get_next_working_day(task.start_date)
             if task.effective_milestone or task.end_date is None:
                 new_end = None
             else:
-                new_end = calendar.add_working_days(new_start,
-                                                    durations[task.id])
+                new_end = task_calendar.add_working_days(new_start,
+                                                         durations[task.id])
 
             if new_start == task.start_date and new_end == task.end_date:
                 continue
@@ -2256,6 +2325,38 @@ class Project:
             overrides=self.calendar.sorted_overrides(),
         )
         return self.apply_calendar(calendar)
+
+    def set_calendars(self, calendars) -> bool:
+        """
+        Replace the named calendars a task may follow.
+
+        PARAMETERS:
+        -----------
+        calendars : Iterable[NamedCalendar] or CalendarRegistry
+            The complete set from now on, not additions to it. The settings
+            dialog hands back everything it holds, so a calendar deleted
+            there has to disappear here, which a merge would not do.
+
+        RETURNS:
+        --------
+        bool
+            True when the plan moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Applied through apply_calendar, like the plan's own calendar and for
+        the same reason: a task following a calendar whose week has just
+        changed keeps the work it holds and has its finish moved. Editing a
+        weekend calendar to add Friday should pull its tasks in, not quietly
+        give each of them another day of effort.
+
+        A task naming a calendar that is not in the new set is not touched.
+        It falls back to the plan's own through calendar_for, which is what
+        makes deleting a calendar safe without walking the whole plan.
+        """
+        registry = (calendars if isinstance(calendars, CalendarRegistry)
+                    else CalendarRegistry(calendars))
+        return self.apply_calendar(self.calendar, registry)
 
     def set_working_week(self, non_working_days) -> bool:
         """
@@ -2395,7 +2496,8 @@ class Project:
                              task.name, task.earliest_begin.date())
                 wanted = task.earliest_begin
 
-            new_start = self.calendar.get_next_working_day(wanted)
+            calendar = self.calendar_for(task)
+            new_start = calendar.get_next_working_day(wanted)
 
             if task.effective_milestone:
                 new_end = None
@@ -2405,7 +2507,7 @@ class Project:
                 new_end = None
             else:
                 duration = self.working_duration(task)
-                new_end = self.calendar.add_working_days(new_start, duration)
+                new_end = calendar.add_working_days(new_start, duration)
 
             if new_start == task.start_date and new_end == task.end_date:
                 continue
@@ -2691,7 +2793,16 @@ class Project:
         origin = min(task.start_date for task in tasks)
 
         def offset(moment: datetime) -> int:
-            """Working days from the plan's first day to a date."""
+            """
+            Working days from the plan's first day to a date.
+
+            Measured on the plan's own calendar even where a task follows
+            another. This is the axis every task's float is compared on, and
+            a task measured against its own week would sit at a different
+            number for the same day - so slack between two tasks on different
+            calendars would come out as whatever the difference between their
+            weeks happened to be.
+            """
             return max(self.calendar.working_days_between(origin, moment) - 1, 0)
 
         def length(task: Task) -> int:

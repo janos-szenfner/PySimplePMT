@@ -1296,8 +1296,18 @@ class Toolbar(ctk.CTkFrame):
                         self.project.name, len(overrides))
             changed.append(True)
 
+        def apply_calendars(calendars):
+            """Take the edited named calendars, and settle the plan on them."""
+            if list(calendars) == list(self.project.calendars):
+                return
+
+            self.project.set_calendars(calendars)
+            logger.info("Project %r now holds %d named calendar(s)",
+                        self.project.name, len(calendars))
+            changed.append(True)
+
         def applied():
-            """Redraw once, if any of the three actually moved the plan."""
+            """Redraw once, if any of the tabs actually moved the plan."""
             if changed and self.on_project_changed:
                 self.on_project_changed()
 
@@ -1306,7 +1316,8 @@ class Toolbar(ctk.CTkFrame):
                         self.project.calendar.sorted_overrides(),
                         apply_overrides,
                         self.project.calendar.non_working_days,
-                        apply_working_week, applied)
+                        apply_working_week, applied,
+                        self.project.calendars, apply_calendars)
 
     def show_critical_path(self):
         """

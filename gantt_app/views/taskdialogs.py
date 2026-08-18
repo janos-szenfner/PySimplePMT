@@ -146,6 +146,7 @@ class EditTaskDialog(TaskFormDialog):
             self.task.show_in_timeline = self.show_in_timeline_var.get()
             self.task.earliest_begin = earliest_begin
             self.task.scheduling_options = self.scheduling_options_var.get()
+            self.task.calendar_id = self.chosen_calendar_id()
             self.task.details = details
             self.task.color = self.color_entry.get()
             if self._dependency_editor is not None:
@@ -171,6 +172,7 @@ class EditTaskDialog(TaskFormDialog):
                     show_in_timeline=new_task.show_in_timeline,
                     earliest_begin=new_task.earliest_begin,
                     scheduling_options=new_task.scheduling_options,
+                    calendar_id=new_task.calendar_id,
                     details=new_task.details,
                 ):
                     if self.on_save:
@@ -386,6 +388,7 @@ class CreateTaskDialog(TaskFormDialog):
                 show_in_timeline=self.show_in_timeline_var.get(),
                 earliest_begin=earliest_begin,
                 scheduling_options=self.scheduling_options_var.get(),
+                calendar_id=self.chosen_calendar_id(),
                 details=details,
             )
             task.__post_init__()
