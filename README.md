@@ -20,7 +20,7 @@ This is a complete implementation of a project management tool with:
 - **JSON Storage**: Save and load projects in JSON format
 - **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
-- **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
+- **File Export**: Export the plan to a three page PDF — work item list beside the chart, the chart alone, then the list as a full table — to PNG, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
 - **Work Item Hierarchy**: Phase > Deliverable > Task > Subtask, with milestones at any level. Indenting and outdenting keep a task's type wherever the new parent can hold it, so a Task moved under a Deliverable stays a Task
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
@@ -98,6 +98,7 @@ gantt_app/
 │   ├── chart_figure.py     # Shared Plotly figure builder
 │   ├── image_export.py     # PNG, PDF, SVG and HTML export
 │   ├── chart_render.py     # Browser-free static chart drawing
+│   ├── page_render.py      # The pages of the PDF: work item list and chart
 │   └── xlsx_exporter.py    # Excel XLSX export as a live plan sheet
 │
 └── assets/                # Bundled into the packaged build when it holds anything
@@ -397,6 +398,36 @@ preserved in the project's own JSON format.
 `MermaidExporter` in `mermaid_importer.py` is a backwards-compatible wrapper
 that delegates here, so the two cannot drift apart.
 
+### PDF Export (`utils/page_render.py`)
+
+Three pages, each answering a different question:
+
+| Page | Holds |
+| --- | --- |
+| 1 | The work item list **beside** the chart — the plan as the application shows it |
+| 2 | The chart alone, across the width of the page |
+| 3 | The work item list as a full table, every column, no chart |
+
+A PDF of the chart on its own was half a plan: the bars say *when* work happens
+and nothing else — not what a row is called past the few characters that fit
+beside it, not how long it is, not what it waits for.
+
+On page 1 the chart is given the table's row height and heading height, so row
+one of the list sits level with bar one. That is the same `RowPlan` the
+on-screen view uses to keep its two panes in step.
+
+**The page is a real page.** A PDF page is pixels plus a number saying how many
+of them go in an inch, and the old export saved a 2800-pixel image at 150 dpi —
+a page eighteen inches wide that every printer then shrank by an amount of its
+own choosing. Pages are now A4 landscape (`PAGE_INCHES`) drawn at
+`PAGE_DPI = 200`, so A4 comes out A4. 200 rather than 150 because at 150 the
+table is legible on screen and ragged on paper, which is where a plan of this
+kind ends up.
+
+Table columns are keyed rather than positional, so page 1 asking for five of
+the eight gets the right values in them — paired by position it put Type under
+Start and Duration under End, every cell filled and every one of them wrong.
+
 ### Chart Export (`utils/image_export.py`, `utils/chart_render.py`)
 - **PNG**: Configurable DPI, 300 by default
 - **PDF**: Drawn at 150 dpi; export to SVG where scalable output is wanted
@@ -430,7 +461,7 @@ the right:
 | Pred. | Predecessor row numbers - `4`, `4SS`, `4FS+2` |
 | Duration (wd) | Working days, editable (shaded, blue text) |
 | Start / End | `WORKDAY` formulas over the duration |
-| Status | Not started / Ongoing / Done, from progress |
+| Status | `Not started`, `Ongoing - 30%`, or `Done` |
 | … | One column per week, drawing the bar |
 
 **The sheet is live.** Duration is a number the reader can change; Start and
@@ -1096,7 +1127,8 @@ Unit tests cover:
 - ✅ **Desktop Integration**: That the packaged icon is named what the desktop entry asks for, at every size the theme wants, and that the window class matches what the entry declares
 - ✅ **Dialog Chrome**: That every toolbar icon reaches a handler, that a secondary button is visible and tells itself apart from the primary one, that a popup opened over a modal dialog takes the input grab and hands it back, and that opening a submenu does not dismiss the menu it belongs to
 - ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
-- ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, and that a formula is never written where it would disagree with the plan
+- ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, that a formula is never written where it would disagree with the plan, and that an ongoing task carries its percentage
+- ✅ **PDF Pages**: That there are three, that they are all one physical size, what the work item table holds, and that the written page is the size it claims to be
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
 
 The GAN fixtures deliberately mirror the format GanttProject actually writes.
@@ -1159,5 +1191,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.30.3
+**Version**: 1.31.0
 **Last Updated**: 2026-08-18

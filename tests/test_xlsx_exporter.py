@@ -326,12 +326,32 @@ class TestMilestonesAndStatus(ExporterTestCase):
         self.assertEqual(sheet[f"I{row}"].value, f"=$H{row}")
 
     def test_progress_becomes_a_status_word(self):
-        """A percentage means nothing on a printed plan."""
+        """
+        With the percentage on the one state where it says something.
+
+        Every task between the first day and the last is "Ongoing", and which
+        of them is nearly done is the question a reader of a status column is
+        actually asking. Not started and Done carry no number because theirs
+        is implied.
+        """
         self.assertEqual(self.column(self.row_of("Business case"), 'J'),
-                         "Ongoing")
+                         "Ongoing - 50%")
         self.assertEqual(self.column(self.row_of("Procurement demand"), 'J'),
                          "Not started")
         self.assertEqual(self.column(self.row_of("URS"), 'J'), "Done")
+
+    def test_the_status_colour_follows_the_state_not_the_number(self):
+        """
+        Or a fill would be needed per percentage.
+
+        The three states are what the colours mean; the number rides along
+        in the text.
+        """
+        from gantt_app.utils.xlsx_exporter import STATUS_FILLS, STATUS_ONGOING
+
+        cell = self.sheet[f"J{self.row_of('Business case')}"]
+
+        self.assertEqual(cell.fill.fgColor.rgb, STATUS_FILLS[STATUS_ONGOING])
 
 
 class TestHolidaysReachTheFormulas(ExporterTestCase):

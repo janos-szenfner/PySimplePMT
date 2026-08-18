@@ -223,12 +223,45 @@ def _deliverable_of(project: Project, task: Task) -> str:
 
 
 def _status_of(task: Task) -> str:
-    """The Status wording for a task's progress."""
+    """
+    Which of the three states a task is in, for its colour.
+
+    The word alone, without the percentage - the fill is keyed by it, and a
+    key that changed with every task's progress would need a colour per
+    percentage.
+    """
     if task.progress >= 100:
         return STATUS_DONE
     if task.progress > 0:
         return STATUS_ONGOING
     return STATUS_NOT_STARTED
+
+
+def _status_text(task: Task) -> str:
+    """
+    What the Status cell says.
+
+    RETURNS:
+    --------
+    str
+        "Ongoing - 30%" for work that has started and is not finished, and
+        the bare word for the other two.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A plan that says only "Ongoing" says the least useful thing it could:
+    every task between the first day and the last is ongoing, and which of
+    them is nearly done is the question a reader of a status column is
+    actually asking. Not started and Done carry no percentage because theirs
+    is implied - nought and a hundred - and printing it would be noise.
+
+    The importer reads the number back out; see XLSXImporter's
+    _progress_from_row.
+    """
+    status = _status_of(task)
+    if status == STATUS_ONGOING:
+        return f"{status} - {int(task.progress)}%"
+    return status
 
 
 def _predecessor_text(task: Task, numbers: Dict[str, int]) -> str:
@@ -521,10 +554,9 @@ def _write_task_row(sheet, row: int, task: Task, project: Project,
     end.border = border
     end.number_format = DATE_FORMAT
 
-    status_text = _status_of(task)
-    status = sheet.cell(row=row, column=10, value=status_text)
+    status = sheet.cell(row=row, column=10, value=_status_text(task))
     status.font = Font(name=FONT_NAME, size=10, color=EDITABLE_TEXT)
-    status.fill = PatternFill('solid', fgColor=STATUS_FILLS[status_text])
+    status.fill = PatternFill('solid', fgColor=STATUS_FILLS[_status_of(task)])
     status.alignment = Alignment(vertical='center')
     status.border = border
 

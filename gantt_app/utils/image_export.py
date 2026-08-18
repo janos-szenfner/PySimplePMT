@@ -7,7 +7,8 @@ Nothing here reaches the network or shells out to another program. The
 application must work from exactly what it ships with, so every format is
 produced by code and libraries already inside the bundle:
 
-  * PNG and PDF - drawn by chart_render.py with Pillow
+  * PNG       - drawn by chart_render.py with Pillow
+  * PDF       - a three page document, laid out by page_render.py
   * SVG         - written as text by chart_render.py, no dependency at all
   * HTML        - Plotly's own writer, with plotly.js inlined
 
@@ -98,7 +99,20 @@ def export_gantt_to_pdf(project: Project, filepath: str,
                         width: int = 1400, height: Optional[int] = None,
                         settings: Optional[Dict[str, Any]] = None) -> bool:
     """
-    Export a project's Gantt chart to a PDF file.
+    Export a project to a three page PDF document.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The plan to print.
+    filepath : str
+        Destination path. Parent directories are created.
+    width, height : int, Optional[int]
+        Accepted for call compatibility. The pages are a fixed physical size
+        - see page_render.PAGE_INCHES - because a printed document is, and
+        the width of a window has nothing to say about it.
+    settings : Optional[Dict[str, Any]]
+        Appearance overrides passed through to the chart.
 
     RETURNS:
     --------
@@ -107,15 +121,35 @@ def export_gantt_to_pdf(project: Project, filepath: str,
 
     DEVELOPMENT NOTES:
     ------------------
-    Pillow writes the PDF, embedding the rendered page at 150 dpi. A true
-    vector PDF would mean another rendering library; the SVG export already
-    covers the case where scalable output matters.
+    Three pages, each answering a different question - the list beside the
+    chart, the chart alone, and the list as a full table; see page_render.
+    A PDF of the chart on its own was half a plan: the bars say when work
+    happens and nothing else, so printed and handed round it was a picture
+    rather than a document.
+
+    The resolution matters as much as the drawing. A PDF page is pixels plus
+    a number saying how many of them go in an inch, and this used to save a
+    2800 pixel image at 150 - a page eighteen inches wide that every printer
+    then shrank by an amount of its own choosing. The pages are now drawn at
+    exactly the size they are declared to be, so A4 comes out A4.
+
+    Pillow writes it. A true vector PDF would mean another rendering library;
+    the SVG export already covers the case where scalable output matters.
     """
     try:
+        from gantt_app.utils.page_render import PAGE_DPI, render_pages
+
         path = _prepare(filepath)
-        image = render_image(project, settings=settings, width=width, scale=2.0)
-        image.save(path, 'PDF', resolution=150.0)
-        logger.info("Exported PDF to %s", path)
+        pages = render_pages(project, settings=settings)
+        if not pages:
+            logger.error("Nothing to export: no pages were drawn")
+            return False
+
+        first, rest = pages[0], pages[1:]
+        first.save(path, 'PDF', save_all=True, append_images=rest,
+                   resolution=float(PAGE_DPI))
+        logger.info("Exported a %d page PDF to %s at %d dpi",
+                    len(pages), path, PAGE_DPI)
         return True
     except Exception:
         logger.exception("Error exporting the chart to PDF")

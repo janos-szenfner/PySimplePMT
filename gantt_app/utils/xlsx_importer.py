@@ -217,12 +217,27 @@ class XLSXImporter:
             'yes', 'y', 'true', 't', 'x', '1', 'igen', 'milestone'
         }
 
+    #: A percentage written into a status cell - "Ongoing - 30%", "50 %",
+    #: "In progress (75%)". The number is what the reader meant; the wording
+    #: around it only says which of the three states it is in.
+    STATUS_PERCENTAGE = re.compile(r'(\d{1,3}(?:[.,]\d+)?)\s*%')
+
     def _progress_from_row(self, values: Dict[str, Any]) -> int:
         """
         Derive a 0-100 progress figure from a Progress and/or Status column.
 
-        An explicit Progress column wins; a Status column is mapped through
-        STATUS_PROGRESS. Fractions between 0 and 1 are read as percentages.
+        An explicit Progress column wins. Failing that, a percentage written
+        into the Status cell is read out of it, and failing that the wording
+        is mapped through STATUS_PROGRESS. Fractions between 0 and 1 are read
+        as percentages.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The percentage is looked for before the wording because it is more
+        specific: "Ongoing" alone can only be guessed at, and STATUS_PROGRESS
+        guesses halfway. "Ongoing - 30%" says thirty, and taking fifty from
+        the first word would throw away the number sitting next to it - which
+        is what this application's own export writes there.
         """
         raw = values.get('progress')
         number = self._parse_number(raw)
@@ -233,9 +248,24 @@ class XLSXImporter:
 
         status = values.get('status')
         if status is not None:
+            found = self.STATUS_PERCENTAGE.search(str(status))
+            if found:
+                try:
+                    percentage = float(found.group(1).replace(',', '.'))
+                except ValueError:
+                    percentage = None
+                if percentage is not None:
+                    return max(0, min(100, int(round(percentage))))
+
             key = self._normalise_header(status)
             if key in self.STATUS_PROGRESS:
                 return self.STATUS_PROGRESS[key]
+
+            # "Ongoing - 30%" with the number unreadable, or any wording that
+            # merely starts with one we know: the state is still worth having
+            for known, progress in self.STATUS_PROGRESS.items():
+                if key.startswith(known):
+                    return progress
 
         return 0
 

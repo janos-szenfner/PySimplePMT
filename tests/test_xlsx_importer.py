@@ -559,6 +559,45 @@ class TestXLSXValueParsing(unittest.TestCase):
         self.assertEqual(self.importer._progress_from_row({'progress': 0.5}), 50)
         self.assertEqual(self.importer._progress_from_row({'progress': 150}), 100)
 
+    def test_a_percentage_in_the_status_is_read_out_of_it(self):
+        """
+        "Ongoing - 30%" means thirty, not the halfway the word alone means.
+
+        This application's own export writes that, so taking fifty from the
+        first word would throw away the number sitting next to it and lose
+        the progress on every round trip.
+        """
+        for status, expected in (('Ongoing - 30%', 30),
+                                 ('In progress (75%)', 75),
+                                 ('50 %', 50),
+                                 ('Ongoing - 0%', 0),
+                                 ('Ongoing - 100%', 100)):
+            with self.subTest(status=status):
+                self.assertEqual(
+                    self.importer._progress_from_row({'status': status}),
+                    expected
+                )
+
+    def test_the_wording_still_answers_without_a_percentage(self):
+        """A hand-written plan says "Ongoing" and means roughly halfway."""
+        self.assertEqual(
+            self.importer._progress_from_row({'status': 'Ongoing'}), 50)
+        self.assertEqual(
+            self.importer._progress_from_row({'status': 'Done'}), 100)
+
+    def test_an_unreadable_percentage_falls_back_to_the_wording(self):
+        """The state is still worth having when the number is not."""
+        self.assertEqual(
+            self.importer._progress_from_row({'status': 'Ongoing - x%'}), 50)
+
+    def test_a_progress_column_still_wins(self):
+        """It is the more explicit of the two."""
+        self.assertEqual(
+            self.importer._progress_from_row(
+                {'progress': 10, 'status': 'Ongoing - 90%'}),
+            10
+        )
+
     def test_progress_defaults_to_zero(self):
         """An unrecognised status leaves progress at zero."""
         self.assertEqual(self.importer._progress_from_row({'status': 'Whatever'}), 0)
