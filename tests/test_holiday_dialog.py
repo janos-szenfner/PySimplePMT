@@ -1,5 +1,5 @@
 """
-Tests for the EU holiday country picker.
+Tests for the holiday country picker.
 
 WHY THIS MODULE EXISTS:
 ======================
@@ -20,7 +20,7 @@ import unittest
 from datetime import datetime
 
 from gantt_app.models import Project, Task
-from gantt_app.workdaycalendar import EU_COUNTRIES
+from gantt_app.workdaycalendar import EU_COUNTRIES, supported_countries
 
 
 def _display_available() -> bool:
@@ -64,22 +64,108 @@ class HolidayDialogTestCase(unittest.TestCase):
 
     def dialog(self, selected=()):
         """The picker, opened on a given selection."""
-        from gantt_app.views.holidaydialog import EUHolidayDialog
+        from gantt_app.views.holidaydialog import HolidayDialog
 
-        window = EUHolidayDialog(self.root, selected, self.applied.append)
+        window = HolidayDialog(self.root, selected, self.applied.append)
         window.update_idletasks()
         return window
+
+
+class TestSearchingTheList(HolidayDialogTestCase):
+    """
+    Finding one country among a couple of hundred.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The boxes are built once and hidden as the search narrows, rather than
+    rebuilt: rebuilding would throw away the variables and with them every
+    tick made outside the current search.
+    """
+
+    def shown(self, window):
+        """The codes currently laid out in the list."""
+        return [code for code, _name, box in window.rows
+                if box.winfo_manager()]
+
+    def test_a_search_narrows_the_list(self):
+        """By name."""
+        window = self.dialog()
+
+        window.search_var.set("hungar")
+        window.update_idletasks()
+
+        self.assertEqual(self.shown(window), ["HU"])
+
+    def test_a_search_matches_the_code_too(self):
+        """A reader who knows the code should not have to guess the spelling."""
+        window = self.dialog()
+
+        window.search_var.set("hu")
+        window.update_idletasks()
+
+        self.assertIn("HU", self.shown(window))
+
+    def test_clearing_the_search_brings_them_all_back(self):
+        """Nothing is lost by having searched."""
+        window = self.dialog()
+        window.search_var.set("hungary")
+        window.update_idletasks()
+
+        window.search_var.set("")
+        window.update_idletasks()
+
+        self.assertEqual(len(self.shown(window)), len(window.checkboxes))
+
+    def test_a_search_keeps_ticks_made_outside_it(self):
+        """
+        The selection is not the visible list.
+
+        Rebuilding the boxes on each keystroke would have quietly cleared
+        every country the search was not showing.
+        """
+        window = self.dialog(['US'])
+
+        window.search_var.set("hungary")
+        window.update_idletasks()
+        window.checkboxes['HU'].set(True)
+        window.search_var.set("")
+        window.update_idletasks()
+
+        self.assertEqual(set(window.selection()), {"US", "HU"})
+
+    def test_a_search_matching_nothing_shows_nothing(self):
+        """And says so in the count rather than looking broken."""
+        window = self.dialog()
+
+        window.search_var.set("zzzzz")
+        window.update_idletasks()
+
+        self.assertEqual(self.shown(window), [])
+        self.assertIn("Showing 0", window.summary_label.cget('text'))
 
 
 class TestWhatTheDialogOffers(HolidayDialogTestCase):
     """The list of countries itself."""
 
-    def test_every_member_state_is_listed(self):
-        """All 27, and nothing else."""
+    def test_every_supported_country_is_listed(self):
+        """
+        Not just the EU: any country the holidays package knows.
+
+        A plan is not always worked inside the union, and the calendar took
+        any ISO code from the day it was written - it was only the picker
+        that stopped at 27.
+        """
         window = self.dialog()
 
-        self.assertEqual(set(window.checkboxes), set(EU_COUNTRIES))
-        self.assertEqual(len(window.checkboxes), 27)
+        self.assertEqual(set(window.checkboxes), set(supported_countries()))
+        self.assertGreaterEqual(len(window.checkboxes), 27)
+
+    def test_the_member_states_are_still_among_them(self):
+        """Widening the list did not lose the one it started as."""
+        window = self.dialog()
+
+        for code in EU_COUNTRIES:
+            self.assertIn(code, window.checkboxes)
 
     def test_the_current_selection_opens_ticked(self):
         """The dialog opens on what the project already observes."""
@@ -104,13 +190,37 @@ class TestWhatTheDialogOffers(HolidayDialogTestCase):
 class TestTheBatchButtons(HolidayDialogTestCase):
     """Select All and Clear All."""
 
-    def test_all_ticks_everything(self):
-        """One press instead of 27."""
+    def test_all_ticks_everything_on_show(self):
+        """One press instead of a page of them."""
         window = self.dialog()
 
         window.select_all()
 
-        self.assertEqual(len(window.selection()), 27)
+        self.assertEqual(len(window.selection()), len(window.checkboxes))
+
+    def test_all_respects_the_search(self):
+        """
+        Against a search, All means the countries the search found.
+
+        With a couple of hundred on offer, All against the whole list is a
+        press nobody means; against a search for one country it is exactly
+        what they mean.
+        """
+        window = self.dialog()
+        window.search_var.set("hungary")
+        window.update_idletasks()
+
+        window.select_all()
+
+        self.assertEqual(window.selection(), ["HU"])
+
+    def test_eu_ticks_the_member_states_and_nothing_else(self):
+        """The list this dialog used to be, kept as one press."""
+        window = self.dialog(['US', 'JP'])
+
+        window.select_eu()
+
+        self.assertEqual(set(window.selection()), set(EU_COUNTRIES))
 
     def test_clear_unticks_everything(self):
         """Back to weekends alone."""
@@ -124,14 +234,14 @@ class TestTheBatchButtons(HolidayDialogTestCase):
         """
         The line under the header explains the union rule.
 
-        A dialog listing 27 countries has to say what ticking several of them
-        means, or the reader is left to guess between "any of these" and "all
-        of these".
+        A dialog listing hundreds of countries has to say what ticking
+        several of them means, or the reader is left to guess between "any of
+        these" and "all of these".
         """
         window = self.dialog()
         self.assertIn("weekends only", window.summary_label.cget('text'))
 
-        window.select_all()
+        window.select_eu()
 
         self.assertIn("27", window.summary_label.cget('text'))
         self.assertIn("any of them", window.summary_label.cget('text'))

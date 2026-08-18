@@ -97,10 +97,11 @@ class TestMenuContents(unittest.TestCase):
         items = find(self.tree, 'Actions')['items']
 
         self.assertEqual(labels(items),
-                         ['Create', 'Project Title...', 'EU Holidays...'])
+                         ['Create', 'Project Title...',
+                          'Public Holidays...', 'Critical Path...'])
         self.assertIn('submenu', items[0])
 
-    def test_eu_holidays_sits_directly_under_actions(self):
+    def test_public_holidays_sits_directly_under_actions(self):
         """
         Choosing whose holidays the plan observes is not a create action.
 
@@ -108,7 +109,7 @@ class TestMenuContents(unittest.TestCase):
         project rather than adding a row to it.
         """
         items = find(self.tree, 'Actions')['items']
-        entry = next(i for i in items if i['text'] == 'EU Holidays...')
+        entry = next(i for i in items if i['text'] == 'Public Holidays...')
 
         self.assertNotIn('submenu', entry)
         self.assertTrue(callable(entry['command']))

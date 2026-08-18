@@ -56,6 +56,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, Optional, Set, Tuple, Union
 import importlib.util
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,72 @@ EU_COUNTRIES: Dict[str, str] = {
     "PL": "Poland", "PT": "Portugal", "RO": "Romania", "SK": "Slovakia",
     "SI": "Slovenia", "ES": "Spain", "SE": "Sweden",
 }
+
+#: Every country the holidays package knows, worked out once. None until it
+#: has been asked for; see supported_countries.
+_country_names: Optional[Dict[str, str]] = None
+
+#: Splits a CamelCase class name into words, leaving an acronym intact:
+#: "UnitedStates" becomes "United States" and "HolidaysUK" keeps its UK.
+_CAMEL_BOUNDARY = re.compile(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])')
+
+
+def supported_countries() -> Dict[str, str]:
+    """
+    Every country whose public holidays can be observed, code to name.
+
+    RETURNS:
+    --------
+    Dict[str, str]
+        ISO 3166-1 alpha-2 codes mapped to a readable name, sorted by name.
+        The 27 EU member states alone when the `holidays` package is missing,
+        so the picker still has something to show and a selection made before
+        it was uninstalled still reads back.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Read from the package's own registry rather than kept as a table here.
+    There are around 250 of them, they change as the package adds support,
+    and a copy would be wrong the first time one was added - which is the
+    whole reason the dates are not kept here either.
+
+    The registry gives a class name rather than a country name, so the
+    CamelCase is split back into words. It is not a substitute for a proper
+    ISO name table, but "Bosnia And Herzegovina" is recognisable and needs no
+    second dependency to produce.
+
+    Worked out once: the registry is stable for the life of the process, and
+    the picker asks for it every time it opens.
+    """
+    global _country_names
+
+    if _country_names is not None:
+        return _country_names
+
+    try:
+        from holidays.registry import COUNTRIES
+    except ImportError:
+        logger.debug("The holidays package is absent; offering the EU only")
+        _country_names = dict(EU_COUNTRIES)
+        return _country_names
+
+    found = {}
+    for entry in COUNTRIES.values():
+        try:
+            class_name, code = entry[0], entry[1]
+        except (IndexError, TypeError):
+            continue
+        found[str(code)] = _CAMEL_BOUNDARY.sub(' ', str(class_name))
+
+    # The EU names are spelt here deliberately - "Czechia" reads better than
+    # whatever the class happens to be called - so they win where they differ
+    found.update(EU_COUNTRIES)
+
+    _country_names = dict(sorted(found.items(), key=lambda item: item[1]))
+    logger.debug("Holiday calendars available for %d countries",
+                 len(_country_names))
+    return _country_names
+
 
 #: Whether the missing-package warning has already been given. Resolving a
 #: year of holidays is attempted on every redraw of a plan whose calendar

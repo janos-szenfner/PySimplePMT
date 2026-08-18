@@ -3,16 +3,21 @@ Choosing whose public holidays the plan observes.
 
 WHY THIS MODULE EXISTS:
 ======================
-A project scheduled across the EU is not scheduled against one calendar. A
-task worked in Hungary and Germany at once cannot run on either country's
-national day, and which days those are is not something anybody should be
+A project scheduled across several countries is not scheduled against one
+calendar. A task worked in Hungary and Germany at once cannot run on either
+country's national day, and which days those are is not something anybody should be
 typing into a holiday list by hand - about half of them move with Easter.
 
 This is the dialog for picking the countries. The rule it applies is the
 union: a date that is a public holiday in *any* selected country is a
-non-working day for the whole plan. That is the conservative reading and the
-one a plan spanning several countries needs - work does not happen on a day
-half the team is off.
+non-working day for the whole plan.
+
+That is the conservative reading and the one a plan spanning several countries
+needs - work does not happen on a day half the team is off.
+
+Every country the `holidays` package knows is offered - around 250 of them -
+with a search box to find one, and the 27 EU member states behind a single
+button for the case this was first written for.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -36,15 +41,17 @@ from typing import Callable, List, Optional, Sequence
 import customtkinter as ctk
 
 from gantt_app.views.modal import grab_when_visible
-from gantt_app.workdaycalendar import EU_COUNTRIES, holidays_available
+from gantt_app.workdaycalendar import (
+    EU_COUNTRIES, holidays_available, supported_countries,
+)
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
 
 
-class EUHolidayDialog(ctk.CTkToplevel):
+class HolidayDialog(ctk.CTkToplevel):
     """
-    The EU country picker.
+    The country picker.
 
     PARAMETERS:
     -----------
@@ -65,10 +72,11 @@ class EUHolidayDialog(ctk.CTkToplevel):
     the bottom edge and the dialog cannot be applied at all.
     """
 
-    GEOMETRY = "420x560"
-    MINSIZE = (360, 320)
+    GEOMETRY = "520x620"
+    MINSIZE = (420, 360)
 
-    #: Two columns of countries, so 27 of them do not need a long scroll.
+    #: Two columns of countries, so the list does not need a longer scroll
+    #: than it has to.
     COLUMNS = 2
 
     def __init__(self, master, selected: Sequence[str],
@@ -78,7 +86,7 @@ class EUHolidayDialog(ctk.CTkToplevel):
         self.on_apply = on_apply
         self.checkboxes = {}
 
-        self.title("EU Holiday Calendar Selection")
+        self.title("Public Holiday Calendar")
         self.geometry(self.GEOMETRY)
         self.minsize(*self.MINSIZE)
         self.transient(master)
@@ -102,16 +110,24 @@ class EUHolidayDialog(ctk.CTkToplevel):
         header = ctk.CTkFrame(self, fg_color='transparent')
         header.pack(fill=tk.X, padx=15, pady=(15, 0))
 
-        ctk.CTkLabel(header, text="Select EU countries:",
+        ctk.CTkLabel(header, text="Observe public holidays in:",
                      font=ctk.CTkFont(size=14, weight="bold")
                      ).pack(side=tk.LEFT)
 
         batch = ctk.CTkFrame(header, fg_color='transparent')
         batch.pack(side=tk.RIGHT)
-        ctk.CTkButton(batch, text="All", width=52, height=24,
+        ctk.CTkButton(batch, text="EU", width=44, height=24,
+                      command=self.select_eu).pack(side=tk.LEFT, padx=2)
+        ctk.CTkButton(batch, text="All", width=44, height=24,
                       command=self.select_all).pack(side=tk.LEFT, padx=2)
         ctk.CTkButton(batch, text="Clear", width=52, height=24,
                       command=self.clear_all).pack(side=tk.LEFT, padx=2)
+
+        self.search_var = ctk.StringVar()
+        self.search_var.trace_add('write', self._apply_filter)
+        search = ctk.CTkEntry(self, textvariable=self.search_var,
+                              placeholder_text="Search by country or code...")
+        search.pack(fill=tk.X, padx=15, pady=(10, 0))
 
         self.summary_label = ctk.CTkLabel(
             self, anchor=tk.W, justify=tk.LEFT, text="",
@@ -120,8 +136,8 @@ class EUHolidayDialog(ctk.CTkToplevel):
         self.summary_label.pack(fill=tk.X, padx=15, pady=(6, 0))
 
         if not holidays_available():
-            # Said plainly and up front. Ticking 27 boxes and finding out
-            # afterwards that nothing moved is the worst version of this.
+            # Said plainly and up front. Ticking a page of boxes and finding
+            # out afterwards that nothing moved is the worst version of this.
             ctk.CTkLabel(
                 self, anchor=tk.W, justify=tk.LEFT, wraplength=380,
                 text=("The 'holidays' package is not installed, so these "
@@ -132,22 +148,64 @@ class EUHolidayDialog(ctk.CTkToplevel):
             ).pack(fill=tk.X, padx=15, pady=(6, 0))
 
     def _build_countries(self, chosen):
-        """A tick box per member state, in two columns."""
+        """
+        A tick box per country, in two columns.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every box is built once and then shown or hidden as the search
+        narrows the list, rather than the list being rebuilt on each
+        keystroke. Rebuilding would throw away the variables, and with them
+        every tick the user had made outside the current search - so
+        searching for one country would silently clear the rest.
+        """
         self.scroller = ctk.CTkScrollableFrame(self)
-        self.scroller.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        self.scroller.pack(fill=tk.BOTH, expand=True, padx=15, pady=(6, 10))
 
         for column in range(self.COLUMNS):
             self.scroller.grid_columnconfigure(column, weight=1, uniform='cty')
 
-        for index, (code, name) in enumerate(sorted(EU_COUNTRIES.items(),
-                                                    key=lambda item: item[1])):
+        #: Every box, in display order, so filtering can re-grid them
+        self.rows = []
+
+        for code, name in supported_countries().items():
             variable = ctk.BooleanVar(value=code in chosen)
             variable.trace_add('write', lambda *_args: self._update_count())
             box = ctk.CTkCheckBox(self.scroller, text=f"{name} ({code})",
                                   variable=variable)
-            box.grid(row=index // self.COLUMNS, column=index % self.COLUMNS,
-                     sticky=tk.W, padx=6, pady=5)
             self.checkboxes[code] = variable
+            self.rows.append((code, name.lower(), box))
+
+        self._apply_filter()
+
+    def _apply_filter(self, *_args):
+        """
+        Show the countries matching the search, and lay them out again.
+
+        Matched on the name and on the code, so both "germany" and "de"
+        find Germany - a reader who knows the code should not have to
+        remember how the country is spelt here.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        needle = self.search_var.get().strip().lower()
+
+        shown = 0
+        for code, name, box in self.rows:
+            if not needle or needle in name or needle in code.lower():
+                box.grid(row=shown // self.COLUMNS,
+                         column=shown % self.COLUMNS,
+                         sticky=tk.W, padx=6, pady=4)
+                shown += 1
+            else:
+                box.grid_remove()
+
+        self.shown_count = shown
+        self._update_count()
 
     def _build_buttons(self):
         """Apply and Cancel, along the bottom."""
@@ -178,13 +236,33 @@ class EUHolidayDialog(ctk.CTkToplevel):
         return sorted(code for code, variable in self.checkboxes.items()
                       if variable.get())
 
+    def select_eu(self):
+        """
+        Tick the 27 EU member states, and nothing else.
+
+        The list this dialog used to be, kept as one press because a plan
+        worked across the union is the case it was written for.
+        """
+        for code, variable in self.checkboxes.items():
+            variable.set(code in EU_COUNTRIES)
+
     def select_all(self):
-        """Tick every member state."""
-        for variable in self.checkboxes.values():
-            variable.set(True)
+        """
+        Tick everything the search is showing.
+
+        The search rather than the whole list: with a couple of hundred
+        countries on offer, "All" against an unfiltered list is a press
+        nobody means, and against a search for "united" it is exactly what
+        they mean.
+        """
+        shown = {code for code, _name, box in self.rows
+                 if box.winfo_manager()}
+        for code, variable in self.checkboxes.items():
+            if code in shown:
+                variable.set(True)
 
     def clear_all(self):
-        """Untick every member state, leaving weekends alone."""
+        """Untick every country, wherever it is in the list."""
         for variable in self.checkboxes.values():
             variable.set(False)
 
@@ -197,12 +275,18 @@ class EUHolidayDialog(ctk.CTkToplevel):
             return
 
         chosen = self.selection()
+        available = len(self.checkboxes)
+        shown = getattr(self, 'shown_count', available)
+
         if not chosen:
             text = ("No countries selected: weekends only, and no public "
                     "holidays.")
         else:
             text = (f"{len(chosen)} selected. A date that is a holiday in any "
                     f"of them is a non-working day.")
+
+        if shown < available:
+            text += f"  Showing {shown} of {available}."
         self.summary_label.configure(text=text)
 
     def apply(self):
@@ -219,20 +303,20 @@ class EUHolidayDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-def choose_eu_holidays(master, selected: Sequence[str],
-                       on_apply: Callable[[List[str]], None]
-                       ) -> Optional[EUHolidayDialog]:
+def choose_holidays(master, selected: Sequence[str],
+                    on_apply: Callable[[List[str]], None]
+                    ) -> Optional[HolidayDialog]:
     """
     Open the country picker.
 
     RETURNS:
     --------
-    Optional[EUHolidayDialog]
+    Optional[HolidayDialog]
         The dialog, or None when it could not be built. A dialog that fails to
         open should not take the menu that opened it down with it.
     """
     try:
-        return EUHolidayDialog(master, selected, on_apply)
+        return HolidayDialog(master, selected, on_apply)
     except Exception:
-        logger.exception("Could not open the EU holiday dialog")
+        logger.exception("Could not open the holiday dialog")
         return None

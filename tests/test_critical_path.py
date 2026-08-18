@@ -1,0 +1,471 @@
+"""
+Tests for the critical path analysis.
+
+WHY THIS MODULE EXISTS:
+======================
+The old implementation returned one chain: the longest run of dependent tasks
+ending at whatever finished last. That is *a* critical path rather than *the*
+critical path, and a plan whose risk sits in two parallel strands had half of
+it hidden - the chart coloured one and left the other looking like ordinary
+work with room to spare.
+
+Criticality is defined as zero total float, and that needs both passes of the
+critical path method. What is pinned down here is the arithmetic: that the
+float is right, that every zero-float task is found rather than one chain
+through them, and that the link types are honoured on the way back.
+
+DEVELOPMENT NOTES:
+------------------
+Everything is counted in working days, so the fixtures run Monday to Friday
+and the expected numbers are working days rather than calendar ones. Nothing
+here needs a display.
+"""
+
+import unittest
+from datetime import datetime
+
+from gantt_app.models import Project, Task
+
+
+class CriticalPathTestCase(unittest.TestCase):
+    """Helpers for building a small network and reading it back."""
+
+    def plan(self, rows):
+        """
+        A project from (id, start, end, [(predecessor, type, lag)]) rows.
+
+        Dates are (year, month, day) tuples; an end of None is a milestone.
+        """
+        project = Project(name="Analysis")
+        for task_id, start, end, links in rows:
+            task = Task(
+                id=task_id, name=task_id,
+                start_date=datetime(*start),
+                end_date=datetime(*end) if end else None,
+                is_milestone=end is None,
+            )
+            for predecessor, dep_type, lag in links:
+                task.add_dependency(predecessor, dep_type, 'Hard', lag)
+            project.add_task(task)
+        return project
+
+    def floats(self, project):
+        """Total float per task ID."""
+        return {task_id: found.total_float
+                for task_id, found in project.schedule_analysis().items()}
+
+    def critical(self, project):
+        """The IDs the analysis calls critical, sorted."""
+        return sorted(t.id for t in project.get_critical_path())
+
+
+class TestFloatAndCriticality(CriticalPathTestCase):
+    """The numbers the two passes produce."""
+
+    def setUp(self):
+        """
+        Two strands between a start and a finish, one of them slack.
+
+        A: 5 days, then B (10 days) and C (2 days) in parallel, then D.
+        B drives the finish; C has eight days of air behind it.
+        """
+        self.project = self.plan([
+            ("A", (2026, 1, 5), (2026, 1, 9), []),
+            ("B", (2026, 1, 12), (2026, 1, 23), [("A", 'FS', 0)]),
+            ("C", (2026, 1, 12), (2026, 1, 13), [("A", 'FS', 0)]),
+            ("D", (2026, 1, 26), (2026, 1, 30), [("B", 'FS', 0),
+                                                 ("C", 'FS', 0)]),
+        ])
+        self.project.reschedule()
+
+    def test_the_driving_chain_has_no_float(self):
+        """A, B and D cannot slip by a day."""
+        floats = self.floats(self.project)
+
+        self.assertEqual(floats["A"], 0)
+        self.assertEqual(floats["B"], 0)
+        self.assertEqual(floats["D"], 0)
+
+    def test_the_slack_strand_has_its_slack_measured(self):
+        """
+        C runs two days inside a ten day window, so it has eight.
+
+        Working days: the weekend inside the window is not slack anybody can
+        spend, and counting it would overstate the number by four.
+        """
+        self.assertEqual(self.floats(self.project)["C"], 8)
+
+    def test_the_critical_path_is_every_zero_float_task(self):
+        """Not one chain through them."""
+        self.assertEqual(self.critical(self.project), ["A", "B", "D"])
+
+    def test_late_dates_are_the_early_ones_where_there_is_no_float(self):
+        """A critical task has nowhere to be but where it is."""
+        analysis = self.project.schedule_analysis()
+
+        for task_id in ("A", "B", "D"):
+            with self.subTest(task=task_id):
+                found = analysis[task_id]
+                self.assertEqual(found.late_start, found.early_start)
+                self.assertEqual(found.late_finish, found.early_finish)
+
+    def test_a_slack_task_may_finish_later_than_it_does(self):
+        """Its latest finish is where the work behind it needs it."""
+        found = self.project.schedule_analysis()["C"]
+
+        self.assertEqual(found.late_finish, found.early_finish + 8)
+
+
+class TestTwoStrandsBothCritical(CriticalPathTestCase):
+    """
+    The case a single chain could not express.
+
+    Two strands of equal length between the same two tasks are both critical:
+    either one slipping moves the finish. The old implementation walked back
+    through one predecessor and reported that strand alone.
+    """
+
+    def test_both_equal_strands_are_critical(self):
+        """Neither has any float, so both are on the path."""
+        project = self.plan([
+            ("start", (2026, 1, 5), (2026, 1, 9), []),
+            ("left", (2026, 1, 12), (2026, 1, 23), [("start", 'FS', 0)]),
+            ("right", (2026, 1, 12), (2026, 1, 23), [("start", 'FS', 0)]),
+            ("end", (2026, 1, 26), (2026, 1, 30), [("left", 'FS', 0),
+                                                   ("right", 'FS', 0)]),
+        ])
+        project.reschedule()
+
+        self.assertEqual(self.critical(project),
+                         ["end", "left", "right", "start"])
+
+
+class TestTheLinkTypesOnTheWayBack(CriticalPathTestCase):
+    """What a predecessor has to clear depends on which end the link holds."""
+
+    def test_a_start_start_link_lets_the_predecessor_run_on(self):
+        """
+        Only the start has to clear, so the first task may still be running
+        when the second begins.
+
+        Its latest finish falls after the second task's earliest start, which
+        is the whole difference between this link and a Finish-Start one -
+        and getting it wrong would report float that cannot be taken, or deny
+        float that can.
+        """
+        project = self.plan([
+            ("first", (2026, 1, 5), (2026, 1, 9), []),
+            ("second", (2026, 1, 5), (2026, 1, 16), [("first", 'SS', 0)]),
+        ])
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+
+        self.assertGreaterEqual(analysis["first"].late_finish,
+                                analysis["second"].early_start)
+
+    def test_a_finish_start_link_does_not(self):
+        """The same pair, under the link that says finish first."""
+        project = self.plan([
+            ("first", (2026, 1, 5), (2026, 1, 9), []),
+            ("second", (2026, 1, 12), (2026, 1, 23), [("first", 'FS', 0)]),
+        ])
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+
+        self.assertLess(analysis["first"].late_finish,
+                        analysis["second"].early_start)
+
+    def test_a_finish_finish_link_ties_the_two_finishes(self):
+        """
+        The predecessor may run right up to the successor's finish.
+
+        A short task tied Finish-Finish to a long one has all the room the
+        difference between them gives it.
+        """
+        project = self.plan([
+            ("short", (2026, 1, 5), (2026, 1, 6), []),
+            ("long", (2026, 1, 5), (2026, 1, 16), [("short", 'FF', 0)]),
+        ])
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+
+        self.assertEqual(analysis["short"].late_finish,
+                         analysis["long"].late_finish)
+        self.assertGreater(analysis["short"].total_float, 0)
+
+    def test_a_lag_is_slack_the_predecessor_does_not_get(self):
+        """
+        The wait is part of the plan, not float.
+
+        A three day lag between two tasks does not mean the first has three
+        days to spare: the wait still has to happen after it.
+        """
+        project = self.plan([
+            ("first", (2026, 1, 5), (2026, 1, 9), []),
+            ("second", (2026, 1, 15), (2026, 1, 21), [("first", 'FS', 3)]),
+        ])
+        project.reschedule()
+
+        self.assertEqual(self.floats(project)["first"], 0)
+
+
+class TestWhatIsLeftOut(CriticalPathTestCase):
+    """Not everything in a plan is work."""
+
+    def test_a_summary_is_not_analysed(self):
+        """
+        It brackets its children rather than being work of its own.
+
+        Left in, a group bar spanning a fortnight would outrank the work
+        inside it and come out critical on its own account.
+        """
+        project = Project(name="Nested")
+        project.add_task(Task(id="P", name="Phase", task_type="Phase",
+                              start_date=datetime(2026, 1, 5),
+                              end_date=datetime(2026, 1, 9)))
+        project.add_task(Task(id="T", name="Work", task_type="Subtask",
+                              parent_task_id="P",
+                              start_date=datetime(2026, 1, 5),
+                              end_date=datetime(2026, 1, 9)))
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+
+        self.assertNotIn("P", analysis)
+        self.assertIn("T", analysis)
+
+    def test_a_milestone_takes_no_time_and_can_still_be_critical(self):
+        """It marks a moment, and the moment can be the one that matters."""
+        project = self.plan([
+            ("work", (2026, 1, 5), (2026, 1, 9), []),
+            ("gate", (2026, 1, 12), None, [("work", 'FS', 0)]),
+        ])
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+        self.assertEqual(analysis["gate"].early_start,
+                         analysis["gate"].early_finish)
+        self.assertIn("gate", self.critical(project))
+
+    def test_an_empty_plan_analyses_to_nothing(self):
+        """And says so rather than raising."""
+        self.assertEqual(Project(name="Empty").schedule_analysis(), {})
+        self.assertEqual(Project(name="Empty").get_critical_path(), [])
+
+
+class TestItDoesNotHang(CriticalPathTestCase):
+    """A plan can contain links that do not resolve."""
+
+    def test_a_dependency_cycle_returns_rather_than_looping(self):
+        """
+        The backward pass walks successors, which a cycle never exhausts.
+
+        An edge it cannot measure contributes nothing rather than the whole
+        analysis failing on a plan that has one - and it is logged, so the
+        cycle is not silently treated as a schedule.
+        """
+        project = self.plan([
+            ("X", (2026, 1, 5), (2026, 1, 9), [("Y", 'FS', 0)]),
+            ("Y", (2026, 1, 12), (2026, 1, 16), [("X", 'FS', 0)]),
+        ])
+
+        analysis = project.schedule_analysis()
+
+        self.assertEqual(set(analysis), {"X", "Y"})
+
+    def test_a_link_to_a_task_that_is_gone_is_ignored(self):
+        """A file can name a predecessor that is not in the plan."""
+        project = self.plan([
+            ("only", (2026, 1, 5), (2026, 1, 9), [("missing", 'FS', 0)]),
+        ])
+
+        self.assertEqual(set(project.schedule_analysis()), {"only"})
+
+
+class TestTheReportedNumbers(CriticalPathTestCase):
+    """The shape of what comes back."""
+
+    def test_every_task_gets_a_full_set(self):
+        """Early, late, float and the verdict, for each."""
+        project = self.plan([
+            ("A", (2026, 1, 5), (2026, 1, 9), []),
+            ("B", (2026, 1, 12), (2026, 1, 16), [("A", 'FS', 0)]),
+        ])
+        project.reschedule()
+
+        for task_id, found in project.schedule_analysis().items():
+            with self.subTest(task=task_id):
+                self.assertEqual(found.task_id, task_id)
+                self.assertEqual(found.early_finish - found.early_start,
+                                 found.late_finish - found.late_start)
+                self.assertEqual(found.total_float,
+                                 found.late_finish - found.early_finish)
+                self.assertIs(found.is_critical, found.total_float <= 0)
+
+    def test_the_first_task_starts_at_offset_zero(self):
+        """Offsets are working days from the plan's first day."""
+        project = self.plan([
+            ("A", (2026, 1, 5), (2026, 1, 9), []),
+            ("B", (2026, 1, 12), (2026, 1, 16), [("A", 'FS', 0)]),
+        ])
+        project.reschedule()
+
+        analysis = project.schedule_analysis()
+        self.assertEqual(analysis["A"].early_start, 0)
+        # Five working days of A, so B starts on the sixth
+        self.assertEqual(analysis["B"].early_start, 5)
+
+
+def _display_available() -> bool:
+    """Whether a usable Tk display is present."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+    except Exception:
+        return False
+    root.destroy()
+    return True
+
+
+HAVE_DISPLAY = _display_available()
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheWindowItOpens(CriticalPathTestCase):
+    """
+    What the reader is shown.
+
+    A colour on the chart says which tasks are critical and nothing else.
+    The question a plan raises is the next one - how much slack has
+    everything else got - and one day of float is the thing worth knowing
+    about before it is spent.
+    """
+
+    def setUp(self):
+        """A root window and the two-strand plan."""
+        import customtkinter as ctk
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.project = self.plan([
+            ("A", (2026, 1, 5), (2026, 1, 9), []),
+            ("B", (2026, 1, 12), (2026, 1, 23), [("A", 'FS', 0)]),
+            ("C", (2026, 1, 12), (2026, 1, 13), [("A", 'FS', 0)]),
+            ("D", (2026, 1, 26), (2026, 1, 30), [("B", 'FS', 0),
+                                                 ("C", 'FS', 0)]),
+        ])
+        self.project.reschedule()
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def window(self):
+        """The analysis window over the fixture."""
+        from gantt_app.views.criticalpath import CriticalPathWindow
+
+        found = CriticalPathWindow(self.root, self.project)
+        found.update_idletasks()
+        return found
+
+    def rows(self, window):
+        """Each row as a dict of column to value."""
+        keys = [key for key, *_rest in window.COLUMNS]
+        return {
+            iid: dict(zip(keys, window.tree.item(iid, 'values')))
+            for iid in window.tree.get_children()
+        }
+
+    def test_every_task_that_holds_work_gets_a_row(self):
+        """Summaries are left out; everything else is listed."""
+        self.assertEqual(set(self.rows(self.window())), {"A", "B", "C", "D"})
+
+    def test_the_float_is_shown_per_task(self):
+        """Which is the number a colour on the chart cannot give."""
+        rows = self.rows(self.window())
+
+        self.assertEqual(rows["C"]['float'], '8')
+        self.assertEqual(rows["B"]['float'], '0')
+
+    def test_the_critical_rows_are_marked_and_shaded(self):
+        """Both in the column and in the row's colour."""
+        window = self.window()
+        rows = self.rows(window)
+
+        self.assertEqual(rows["B"]['critical'], 'Yes')
+        self.assertEqual(rows["C"]['critical'], '')
+        self.assertIn('critical', window.tree.item("B", 'tags'))
+
+    def test_the_latest_dates_are_dates(self):
+        """
+        The analysis counts in working days; the reader wants a calendar.
+
+        "Day 14 of the plan" is honest and useless.
+        """
+        rows = self.rows(self.window())
+
+        self.assertEqual(rows["C"]['late_finish'], '2026-01-23')
+
+    def test_the_summary_counts_the_critical_tasks(self):
+        """The headline above the table."""
+        text = self.window().summary_label.cget('text')
+
+        self.assertIn("3 of 4 tasks are critical", text)
+
+    def test_it_opens_on_an_empty_plan(self):
+        """A report with nothing to report says so rather than raising."""
+        from gantt_app.views.criticalpath import CriticalPathWindow
+
+        window = CriticalPathWindow(self.root, Project(name="Empty"))
+        window.update_idletasks()
+
+        self.assertEqual(window.tree.get_children(), ())
+        self.assertIn("no work", window.summary_label.cget('text'))
+
+
+class TestTheToolbarOffersIt(unittest.TestCase):
+    """Where the analysis is reached from."""
+
+    def test_the_icon_sits_between_milestone_and_cut(self):
+        """
+        With a divider on each side.
+
+        It neither creates anything nor moves anything about, so it belongs
+        to neither of the groups it sits between.
+        """
+        from gantt_app.views.toolbar import IconToolbar
+
+        row = [name for name, _tip, _action in IconToolbar.ICON_ACTIONS]
+        index = row.index('critical_path')
+
+        self.assertEqual(row[index - 1], IconToolbar.SEPARATOR)
+        self.assertEqual(row[index + 1], IconToolbar.SEPARATOR)
+        self.assertEqual(row[index - 2], 'milestone')
+        self.assertEqual(row[index + 2], 'cut')
+
+    def test_the_icon_has_a_drawing_and_a_handler(self):
+        """An icon with neither is a blank button that does nothing."""
+        from gantt_app.resources.icons import ICON_STROKES, ICON_EMOJIS
+        from gantt_app.views.toolbar import Toolbar
+
+        self.assertIn('critical_path', ICON_STROKES)
+        self.assertIn('critical_path', ICON_EMOJIS)
+        self.assertTrue(callable(getattr(Toolbar, 'show_critical_path', None)))
+
+    def test_it_is_on_the_actions_menu_too(self):
+        """Reachable without knowing which icon it is."""
+        from tests.test_toolbar_menus import menu_tree, find, labels
+
+        items = find(menu_tree(), 'Actions')['items']
+
+        self.assertIn('Critical Path...', labels(items))
+
+
+if __name__ == '__main__':
+    unittest.main()

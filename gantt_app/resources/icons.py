@@ -35,6 +35,7 @@ ICON_EMOJIS: Dict[str, str] = {
     'milestone': '\U0001f3f7',      # Milestone flag
     'phase': '\U0001f4d1',          # Bookmark
     'deliverable': '\U0001f4e6',    # Package
+    'critical_path': '\U000026a0',  # Warning sign: the chain that cannot slip
     'cut': '\U00002702',           # Scissors
     'copy': '\U0001f4cb',          # Clipboard
     'paste': '\U0001f4cc',         # Clipboard with paste
@@ -58,6 +59,7 @@ SVG_PATHS: Dict[str, str] = {
     'milestone': "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
     'phase': "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
     'deliverable': "M21 8V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-1M12 12l2 2 4-4",
+    'critical_path': "M3 6h7M3 12h11M3 18h6M14 6l4 3-4 3",
     'cut': "M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 12l3 3 3-3",
     'copy': "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 2v6",
     'paste': "M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z",
@@ -79,6 +81,7 @@ ALWAYS_ACTIVE: List[str] = ['open']
 ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'new_project', 'save', 'edit',
     'task', 'subtask', 'milestone', 'phase', 'deliverable',
+    'critical_path',
     'cut', 'copy', 'paste', 'delete',
     'undo', 'redo'
 ]
@@ -226,6 +229,16 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('shape', [(0.10, 0.26), (0.90, 0.26), (0.90, 0.88), (0.10, 0.88)]),
         ('line', [(0.10, 0.44), (0.90, 0.44)]),
         ('line', [(0.30, 0.64), (0.44, 0.78), (0.72, 0.54)]),
+    ],
+    # The critical path: three bars of a chart, the longest of them carrying
+    # the chain forward. Drawn as the plan it measures rather than as a
+    # warning triangle, which would say "something is wrong" instead of
+    # "here is what cannot slip".
+    'critical_path': [
+        ('line', [(0.10, 0.20), (0.44, 0.20)]),
+        ('line', [(0.10, 0.50), (0.64, 0.50)]),
+        ('line', [(0.10, 0.80), (0.38, 0.80)]),
+        ('line', [(0.66, 0.32), (0.88, 0.50), (0.66, 0.68)]),
     ],
     'cut': [
         ('line', [(0.24, 0.14), (0.72, 0.72)]),

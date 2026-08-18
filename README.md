@@ -32,7 +32,8 @@ This is a complete implementation of a project management tool with:
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
-- **EU Public Holidays**: Actions → EU Holidays... picks any of the 27 member states, and a date that is a public holiday in *any* of them becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Public Holidays**: Actions → Public Holidays... picks any of the ~250 countries the `holidays` package knows, with a search box and the 27 EU member states behind one button. A date that is a public holiday in *any* selected country becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Ctrl/Cmd+C, X and V. Copying a phase copies the phase row, not the work underneath it; cut rows are greyed until they are pasted, and what arrives lands beside the row you pasted from and is left selected. Paste is offered only where the item belongs - a phase does not go inside a task. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
@@ -63,6 +64,7 @@ gantt_app/
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── holidaydialog.py   # Picks whose public holidays the plan observes
+│   ├── criticalpath.py    # The critical path analysis, task by task
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── log_window.py      # Application log viewer
@@ -312,7 +314,7 @@ on any desktop does:
 - **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (Mermaid, HTML, SVG,
   PNG, PDF, XLSX)
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
-  Project Title, and EU Holidays
+  Project Title, Public Holidays, and Critical Path
 - **Edit**: Undo, Redo, Cut, Copy, Paste
 - **View**: Toggle Theme, Settings
 - **Log**: Opens the application log window, at the end of the row
@@ -938,18 +940,40 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 - Graceful degradation when libraries not available
 - Clear error messages for users
 
-### 4. Critical Path Calculation
-- Longest chain of dependent tasks, ending at the task that finishes last
-- Measured by **accumulated working duration**, not by comparing calendar
-  dates: plans scheduled in working days leave weekend and holiday gaps between
-  a task and its successor, and a date-based comparison reads those gaps as
-  slack, which drops most of the chain
-- Summary tasks are excluded from the chain, but a dependency **on** a summary
-  task resolves to the work inside it, so grouping does not sever the network
-- Ties on the finish date are broken by chain length, so the path always
-  reaches the project's real finish
-- Cycle-safe and iterative, so deep chains cannot exhaust recursion
-- Visual highlighting in Gantt chart
+### 4. Critical Path Analysis
+
+`Project.schedule_analysis()` runs **both passes of the critical path method**
+and returns a `TaskFloat` per task: early start and finish, late start and
+finish, total float, and whether it is critical.
+
+- **Forward pass**: where each task is, *as scheduled*, rather than recomputed
+  from the network. A task deliberately held back — by an earliest begin date,
+  or simply placed later — is measured where it actually is. Recomputing would
+  answer a different question ("how early could everything be") and would call
+  a task critical that has a fortnight of air in front of it
+- **Backward pass**: the latest each task could finish without moving the
+  project's finish. The **link types are honoured**: a Finish-Start successor
+  needs its predecessor finished, while a Start-Start one only needs it
+  started, and the two allow very different amounts of float
+- **Total float** is the gap between the two, and a task with none of it is
+  critical. That finds **every** such task rather than one chain through them —
+  two parallel strands can both drive the finish, and highlighting only one of
+  them hid half the risk. This is what `get_critical_path()` now returns
+- Counted in **working days**, the only unit float means anything in: the
+  weekend between two tasks is not slack anybody can spend
+- Negative float is reported rather than clamped. It means the links require a
+  finish the plan cannot reach, which is worth seeing
+- Summary tasks are left out — they bracket work rather than being it — but a
+  dependency **on** a summary resolves to the work inside it, so grouping does
+  not sever the network
+- Cycle-safe and iterative: an edge that cannot be measured contributes
+  nothing and is logged, rather than the analysis failing on a plan that has
+  one
+- Shown two ways: the critical tasks are highlighted in the Gantt chart, and
+  **Actions → Critical Path...** (or the toolbar icon between Milestone and
+  Cut) opens the full table with each task's float. A colour says *which*
+  tasks are critical; only the table says how close the rest are to becoming
+  so, and one day of float is the thing worth knowing about before it is spent
 
 ### 5. Color Management
 - A colour per work item type, so the five levels are told apart before
@@ -1011,7 +1035,7 @@ is available and CI runs them under xvfb.
 ### Test Coverage
 
 Unit tests cover:
-- ✅ **Models**: Task and Project classes, serialization, critical path calculation
+- ✅ **Models**: Task and Project classes, serialization, the schedule
 - ✅ **File I/O**: JSON save/load, datetime handling, error cases
 - ✅ **GAN Import**: Real GanttProject 3.x fixtures - working-day calendar, nested sub-tasks, successor-to-predecessor edge reversal, milestones, colors, namespaced files
 - ✅ **Mermaid Import/Export**: Inclusive working-day durations, dependency chains, section grouping, frontmatter, round-trip
@@ -1029,7 +1053,8 @@ Unit tests cover:
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it
 - ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, and the EU public holidays including the movable Easter feasts
 - ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
-- ✅ **EU Holiday Dialog**: What it offers, the batch buttons, what Apply hands back and what Cancel does not
+- ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries, the batch buttons, what Apply hands back and what Cancel does not
+- ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
 - ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, and that a formula is never written where it would disagree with the plan
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
 
@@ -1045,7 +1070,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 2. **Public holidays**: Need the optional `holidays` package. Without it the picker still saves a selection and says so, but plans are scheduled on weekends alone
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
-4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
+4. **Public holidays are national**: regional and state holidays that the `holidays` package exposes as subdivisions are not offered; a country is observed as a whole
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
 7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
@@ -1072,6 +1097,8 @@ Done:
 - [x] Chart rows aligned to the task list
 - [x] Phases drawn as a pointed bar rather than a bracket
 - [x] An application icon of its own, on the window and in the package
+- [x] Public holidays for any country, not just the EU
+- [x] Full critical path analysis - both passes, so every zero-float task
 
 Still to do:
 
@@ -1084,11 +1111,11 @@ Still to do:
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
 - [ ] Editing the weekend rule from the application
-- [ ] Countries outside the EU in the holiday picker
-- [ ] Full critical path analysis (a backward pass, so every zero-float task)
+- [ ] Regional and state holidays, not only national ones
+- [ ] Resource levelling off the back of the float analysis
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.28.0
+**Version**: 1.29.0
 **Last Updated**: 2026-08-18

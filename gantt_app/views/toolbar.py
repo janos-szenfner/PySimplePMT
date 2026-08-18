@@ -914,7 +914,8 @@ class Toolbar(ctk.CTkFrame):
                     # Renaming the project is not a create action, so it sits
                     # beside Create rather than inside it
                     {"text": "Project Title...", "command": self.edit_project_info},
-                    {"text": "EU Holidays...", "command": self.edit_eu_holidays},
+                    {"text": "Public Holidays...", "command": self.edit_holidays},
+                    {"text": "Critical Path...", "command": self.show_critical_path},
                 ],
             },
             {
@@ -1224,7 +1225,7 @@ class Toolbar(ctk.CTkFrame):
                 if self.on_project_changed:
                     self.on_project_changed()
     
-    def edit_eu_holidays(self):
+    def edit_holidays(self):
         """
         Choose whose public holidays the plan observes.
 
@@ -1240,7 +1241,7 @@ class Toolbar(ctk.CTkFrame):
         finish moves instead - see that method. The chart is redrawn afterwards
         through on_project_changed.
         """
-        from gantt_app.views.holidaydialog import choose_eu_holidays
+        from gantt_app.views.holidaydialog import choose_holidays
 
         def apply(codes):
             """Observe the chosen countries, and settle the plan on them."""
@@ -1254,8 +1255,27 @@ class Toolbar(ctk.CTkFrame):
             if self.on_project_changed:
                 self.on_project_changed()
 
-        choose_eu_holidays(self.master,
-                           sorted(self.project.calendar.countries), apply)
+        choose_holidays(self.master,
+                        sorted(self.project.calendar.countries), apply)
+
+    def show_critical_path(self):
+        """
+        Open the critical path analysis.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The plan is settled first. The analysis measures float against the
+        dates as scheduled, so reporting on a plan with an unapplied link in
+        it would give float that disappears the moment anything else touches
+        the project - and the reader would have no way of telling which
+        numbers were which.
+        """
+        from gantt_app.views.criticalpath import show_critical_path
+
+        if self.project.reschedule() and self.on_project_changed:
+            self.on_project_changed()
+
+        show_critical_path(self.master, self.project)
 
     def save_project(self):
         """Save the current project to a JSON file."""
@@ -1843,6 +1863,10 @@ class IconToolbar(ctk.CTkFrame):
         ('task', 'Create Task', 'add_task'),
         ('subtask', 'Create Subtask', 'add_subtask'),
         ('milestone', 'Create Milestone', 'add_milestone'),
+        (SEPARATOR, '', ''),
+        # Set apart on both sides: it neither creates anything nor moves
+        # anything about, so it belongs to neither group it sits between
+        ('critical_path', 'Critical Path Analysis', 'show_critical_path'),
         (SEPARATOR, '', ''),
         ('cut', 'Cut', 'cut_tasks'),
         ('copy', 'Copy', 'copy_tasks'),

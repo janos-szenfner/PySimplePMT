@@ -159,7 +159,9 @@ class TestIconToolbarCreation(unittest.TestCase):
         toolbar = IconToolbar(self.root, self.project)
 
         self.assertNotIn(toolbar.SEPARATOR, toolbar.icon_buttons)
-        self.assertEqual(len(toolbar.separators), 2)
+        # Three: after the file actions, and one on each side of the
+        # critical path analysis, which belongs to neither group beside it
+        self.assertEqual(len(toolbar.separators), 3)
         self.toolbar = toolbar
 
     def test_the_dividers_fall_between_the_groups(self):
@@ -381,6 +383,7 @@ class TestIconToolbarActions(unittest.TestCase):
             'edit_project_info',
             'add_phase', 'add_deliverable', 'add_task', 'add_subtask',
             'add_milestone',
+            'show_critical_path',
             'cut_tasks', 'copy_tasks', 'paste_tasks', 'delete_selected',
             'undo', 'redo',
         ])

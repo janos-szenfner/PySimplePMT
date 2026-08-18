@@ -355,6 +355,46 @@ class DependencyList(list):
         super().remove(value)
 
 
+@dataclass(frozen=True)
+class TaskFloat:
+    """
+    What the critical path method says about one task.
+
+    ATTRIBUTES:
+    -----------
+    task_id : str
+        The task this describes.
+    early_start, early_finish : int
+        Where the task is, as working days from the plan's first day.
+    late_start, late_finish : int
+        The latest it could be without the project finishing later.
+    total_float : int
+        Working days of slack: how long it could slip before it starts
+        pushing the finish out. Zero means it cannot slip at all.
+    is_critical : bool
+        Whether it has no float, and so sits on the critical path.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Working days rather than dates, and offsets rather than calendar days,
+    because that is the only unit in which float means anything: a weekend
+    between two tasks is not slack anybody can spend.
+
+    Float can come out negative where links contradict each other - a task
+    required to finish before something it also has to follow - and that is
+    reported rather than clamped. A negative float is a plan that cannot be
+    delivered as drawn, which is worth seeing.
+    """
+
+    task_id: str
+    early_start: int
+    early_finish: int
+    late_start: int
+    late_finish: int
+    total_float: int
+    is_critical: bool
+
+
 @dataclass
 class Task:
     """
@@ -2419,166 +2459,259 @@ class Project:
         """
         return {task.parent_task_id for task in self.tasks if task.parent_task_id}
 
-    def get_critical_path(self) -> List[Task]:
+    def schedule_analysis(self) -> Dict[str, 'TaskFloat']:
         """
-        Calculate the critical path through the project network.
+        Early and late dates, float, and criticality for every task.
 
         RETURNS:
         --------
-        List[Task]
-            The longest chain of dependent tasks ending at the task that
-            finishes last, ordered from the start of the project to its end.
-            Empty for a project with no tasks.
+        Dict[str, TaskFloat]
+            One entry per task that holds work, keyed by task ID. Summary
+            tasks are left out: they envelope their children rather than
+            being work, so a group bar would otherwise outrank the work
+            inside it and come out critical on its own account.
 
         DEVELOPMENT NOTES:
         ------------------
-        The chain is measured by accumulated duration rather than by comparing
-        calendar dates. Plans that are scheduled in working days leave weekend
-        and holiday gaps between a task and its successor, and a date-based
-        comparison reads those gaps as slack, which would drop most of the
-        chain. Accumulated duration is unaffected by them.
+        The critical path method, both passes:
 
-        Summary tasks are excluded: they merely envelope their sub-tasks, so
-        leaving them in would let a group bar outrank the actual work it
-        contains and surface as the critical path itself.
+          * **Forward** - the earliest each task can finish. Taken from the
+            plan as scheduled rather than recomputed from the network, so a
+            task deliberately held back by an earliest begin date, or simply
+            placed later, is measured where it actually is. Recomputing would
+            answer a different question - how early *could* everything be -
+            and would call a task critical that has a fortnight of air in
+            front of it.
+          * **Backward** - the latest each task could finish without moving
+            the project's finish. Every task with no successor may run to the
+            end of the plan; every other one must clear the way for what
+            follows it.
 
-        The endpoint is the task that finishes last, with the longer chain
-        winning any tie. An earlier implementation picked whichever tied task
-        happened to come first in iteration order, which could end the path
-        one task short of the project's real finish.
+        Total float is the gap between the two, in working days, and a task
+        with none of it is critical: it cannot slip by a day without the
+        whole plan finishing later. That is the definition, and it finds
+        *every* such task rather than one chain through them - two parallel
+        strands of work can both be critical, and a plan that only ever
+        highlighted one of them was hiding half the risk.
+
+        Everything is counted in working days offset from the plan's start,
+        not in calendar days. A chain that happens to straddle more weekends
+        would otherwise outrank one holding more actual work, and the gaps
+        the weekends leave would read as float that nobody can use.
+
+        The link types are honoured on the way back. What a predecessor has
+        to clear depends on which end the link holds: a Finish-Start
+        successor needs it finished, while a Start-Start one only needs it
+        started, so the two allow very different amounts of float.
         """
-        if not self.tasks:
-            return []
-
         summary_ids = self.get_summary_task_ids()
-        candidates = [t for t in self.tasks if t.id not in summary_ids]
-        if not candidates:
-            return []
+        tasks = [t for t in self.tasks if t.id not in summary_ids]
+        if not tasks:
+            return {}
 
-        by_id = {task.id: task for task in candidates}
+        by_id = {task.id: task for task in tasks}
+        origin = min(task.start_date for task in tasks)
 
-        children: Dict[Optional[str], List[Task]] = {}
-        for task in self.tasks:
-            children.setdefault(task.parent_task_id, []).append(task)
+        def offset(moment: datetime) -> int:
+            """Working days from the plan's first day to a date."""
+            return max(self.calendar.working_days_between(origin, moment) - 1, 0)
 
-        def duration(task: Task) -> int:
-            """
-            Working length of a task; milestones take no time.
+        def length(task: Task) -> int:
+            """Working days a task occupies; a milestone occupies none."""
+            return 0 if task.effective_milestone else self.working_duration(task)
 
-            Working days rather than calendar days, which is what makes the
-            weekend gaps this docstring talks about drop out. Measured in
-            calendar days, a chain that happens to straddle more weekends
-            outranked a chain holding more actual work.
-            """
-            if task.is_milestone or task.end_date is None:
-                return 0
-            return self.calendar.working_days_between(task.start_date,
-                                                      task.end_date)
+        # ---- forward: where each task is, as scheduled ------------------
+        early_start = {t.id: offset(t.start_date) for t in tasks}
+        early_finish = {
+            t.id: early_start[t.id] + max(length(t) - 1, 0) for t in tasks
+        }
 
-        resolved_deps: Dict[str, List[Task]] = {}
+        finish = max(early_finish.values())
 
-        def resolve_dependency(dep_id: str) -> List[Task]:
-            """
-            Expand one dependency into the real tasks it stands for.
+        # ---- the network, both ways ------------------------------------
+        successors: Dict[str, List[Dependency]] = {t.id: [] for t in tasks}
+        for task in tasks:
+            for dependency in task.dependencies:
+                for resolved in self._resolve_to_work(dependency.task_id,
+                                                      by_id, summary_ids):
+                    successors[resolved].append(
+                        Dependency(task_id=task.id,
+                                   dep_type=dependency.dep_type,
+                                   hardness=dependency.hardness,
+                                   lag=dependency.lag)
+                    )
 
-            DEVELOPMENT NOTES:
-            ------------------
-            Depending on a summary task means depending on the work inside it,
-            so a summary reference resolves to its non-summary descendants.
-            GanttProject files rely on this heavily - several tasks there
-            depend on a parent task - and dropping those edges would cut the
-            chain in half.
-            """
-            if dep_id in resolved_deps:
-                return resolved_deps[dep_id]
+        # ---- backward: how late each could be without moving the end ----
+        #
+        # Walked in reverse topological order so a task is answered only once
+        # everything that follows it has been. A cycle in the links would
+        # never settle, so the pass is capped and what is left keeps the
+        # finish date it started with - wrong, but finite and visible.
+        late_finish: Dict[str, int] = {}
 
-            resolved_deps[dep_id] = []  # guards against a cycle re-entering
+        def latest_finish(task_id: str) -> int:
+            """The latest finish that still clears everything downstream."""
+            limit = finish
+            for link in successors[task_id]:
+                other = by_id.get(link.task_id)
+                if other is None:
+                    continue
+                if other.id not in late_finish:
+                    # Reached before its own successors were settled, which
+                    # only happens inside a dependency cycle - the order the
+                    # backward pass walks is otherwise exactly the order that
+                    # prevents it. The edge contributes nothing rather than
+                    # the whole analysis failing on a plan that has one.
+                    logger.warning(
+                        "Link from %r to %r could not be measured; the plan "
+                        "probably contains a dependency cycle",
+                        by_id[task_id].name, other.name
+                    )
+                    continue
+                other_late_start = (late_finish[other.id]
+                                    - max(length(other) - 1, 0))
+                if link.dep_type == 'FS':
+                    allowed = other_late_start - 1 - link.lag
+                elif link.dep_type == 'SS':
+                    # Only the start has to clear, so this may run on past it
+                    allowed = (other_late_start - link.lag
+                               + max(length(by_id[task_id]) - 1, 0))
+                elif link.dep_type == 'FF':
+                    allowed = late_finish[other.id] - link.lag
+                else:                                   # SF
+                    allowed = (late_finish[other.id] - link.lag
+                               + max(length(by_id[task_id]) - 1, 0))
+                limit = min(limit, allowed)
+            return limit
 
-            if dep_id in by_id:
-                found = [by_id[dep_id]]
-            else:
-                found = []
-                stack = [dep_id]
-                seen = set()
-                while stack:
-                    current_id = stack.pop()
-                    if current_id in seen:
-                        continue
-                    seen.add(current_id)
-                    for child in children.get(current_id, []):
-                        if child.id in by_id:
-                            found.append(child)
-                        else:
-                            stack.append(child.id)
+        for task in self._reverse_schedule_order(tasks, successors):
+            late_finish[task.id] = latest_finish(task.id)
 
-            resolved_deps[dep_id] = found
-            return found
+        for task in tasks:
+            late_finish.setdefault(task.id, finish)
 
-        def predecessors(task: Task) -> List[Task]:
-            """The tasks that must finish before this one can start."""
-            result = []
-            seen = {task.id}
-            for dep_id in task.dependency_ids:
-                for dep in resolve_dependency(dep_id):
-                    if dep.id not in seen:
-                        seen.add(dep.id)
-                        result.append(dep)
-            return result
+        analysis: Dict[str, TaskFloat] = {}
+        for task in tasks:
+            span = max(length(task) - 1, 0)
+            late = late_finish[task.id]
+            total_float = late - early_finish[task.id]
+            analysis[task.id] = TaskFloat(
+                task_id=task.id,
+                early_start=early_start[task.id],
+                early_finish=early_finish[task.id],
+                late_start=late - span,
+                late_finish=late,
+                total_float=total_float,
+                is_critical=total_float <= 0,
+            )
 
-        # Longest chain of accumulated duration ending at each task. Computed
-        # with an explicit stack so deep chains cannot exhaust recursion, and
-        # guarded so a dependency cycle cannot loop forever.
-        chain_length: Dict[str, int] = {}
+        return analysis
+
+    def _resolve_to_work(self, task_id: str, by_id: Dict[str, Task],
+                         summary_ids: Set[str]) -> List[str]:
+        """
+        The tasks that hold the work a dependency refers to.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Depending on a summary means depending on the work inside it, so a
+        summary reference resolves to its non-summary descendants. Imported
+        GanttProject files rely on this heavily - several tasks there depend
+        on a parent - and dropping those edges would cut the network in half.
+        """
+        if task_id in by_id:
+            return [task_id]
+
+        children = self._children_by_parent()
+        found: List[str] = []
+        stack = [task_id]
+        seen: Set[str] = set()
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for child in children.get(current, []):
+                if child.id in by_id:
+                    found.append(child.id)
+                else:
+                    stack.append(child.id)
+        return found
+
+    @staticmethod
+    def _reverse_schedule_order(tasks: List[Task],
+                                successors: Dict[str, List['Dependency']]
+                                ) -> List[Task]:
+        """
+        Tasks ordered so everything that follows one comes before it.
+
+        The order the backward pass needs: a task's latest finish depends on
+        its successors', so those have to be settled first. A depth-first
+        walk with an explicit stack, guarded so a cycle in the links stops
+        rather than looping.
+        """
+        by_id = {task.id: task for task in tasks}
+        ordered: List[Task] = []
+        placed: Set[str] = set()
         in_progress: Set[str] = set()
 
-        for root in candidates:
-            if root.id in chain_length:
+        for root in tasks:
+            if root.id in placed:
                 continue
             stack = [(root, False)]
             while stack:
                 task, expanded = stack.pop()
                 if expanded:
                     in_progress.discard(task.id)
-                    best = 0
-                    for dep in predecessors(task):
-                        best = max(best, chain_length.get(dep.id, 0))
-                    chain_length[task.id] = best + duration(task)
+                    if task.id not in placed:
+                        placed.add(task.id)
+                        ordered.append(task)
                     continue
-                if task.id in chain_length or task.id in in_progress:
+                if task.id in placed or task.id in in_progress:
                     continue
                 in_progress.add(task.id)
                 stack.append((task, True))
-                for dep in predecessors(task):
-                    if dep.id not in chain_length and dep.id not in in_progress:
-                        stack.append((dep, False))
+                for link in successors.get(task.id, []):
+                    following = by_id.get(link.task_id)
+                    if (following is not None
+                            and following.id not in placed
+                            and following.id not in in_progress):
+                        stack.append((following, False))
 
-        def finish_date(task: Task) -> datetime:
-            """The date a task finishes, falling back to its start."""
-            return task.end_date or task.start_date
+        return ordered
 
-        # The project ends with the last task to finish; prefer the longer
-        # chain when several finish on the same date
-        end_task = max(
-            candidates,
-            key=lambda t: (finish_date(t), chain_length.get(t.id, 0))
-        )
+    def get_critical_path(self) -> List[Task]:
+        """
+        Every task that cannot slip without moving the project's finish.
 
-        # Walk back through the predecessor that contributes the longest chain
-        critical_path: List[Task] = []
-        current: Optional[Task] = end_task
-        visited: Set[str] = set()
+        RETURNS:
+        --------
+        List[Task]
+            The tasks with no float, in the order the plan holds them. Empty
+            for a project with no tasks.
 
-        while current is not None and current.id not in visited:
-            visited.add(current.id)
-            critical_path.append(current)
+        DEVELOPMENT NOTES:
+        ------------------
+        This used to return a single chain: the longest run of dependent
+        tasks ending at whatever finished last. That is one critical path
+        rather than the critical path, and a plan whose risk sits in two
+        parallel strands had half of it hidden - the chart coloured one
+        strand and left the other looking like ordinary work with room to
+        spare, which it did not have.
 
-            deps = predecessors(current)
-            if not deps:
-                break
+        Criticality is now what it is defined as: zero total float, from the
+        forward and backward passes in schedule_analysis. Two strands that
+        both drive the finish both come out critical, and a chain with a day
+        of slack in it correctly comes out with none of its tasks on the
+        path.
 
-            current = max(
-                deps,
-                key=lambda t: (chain_length.get(t.id, 0), finish_date(t))
-            )
+        Returned in plan order rather than chain order. There is no longer
+        one chain to order by, and the plan's own order is what the task list
+        and the chart draw.
+        """
+        analysis = self.schedule_analysis()
+        if not analysis:
+            return []
 
-        return critical_path[::-1]  # Reverse to get start to end order
+        return [task for task in self.tasks
+                if task.id in analysis and analysis[task.id].is_critical]
