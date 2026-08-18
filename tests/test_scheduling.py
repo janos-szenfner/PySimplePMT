@@ -215,21 +215,43 @@ class TestLagAndLead(DependencyTestCase):
     """Lag delays the successor; a negative lag lets it overlap."""
 
     def test_lag_delays_the_successor(self):
-        """A positive lag pushes the start out."""
+        """
+        A positive lag pushes the start out, by working days.
+
+        The link places the successor on Tuesday the 6th and three working
+        days of lag is the Friday. Counted in calendar days it was the Friday
+        too - but a lag of one or two landed on the weekend and was pushed
+        back to the Monday the link gave it anyway, so waiting a day or two
+        was no wait at all.
+        """
         self.link('FS', lag=3)
 
         self.assertEqual(self.second.start_date, datetime(2026, 1, 9))
+
+    def test_a_short_lag_is_not_swallowed_by_a_weekend(self):
+        """One working day of lag delays the successor by one working day."""
+        self.link('FS', lag=1)
+        self.assertEqual(self.second.start_date, datetime(2026, 1, 7))
+
+        self.link('FS', lag=2)
+        self.assertEqual(self.second.start_date, datetime(2026, 1, 8))
 
     def test_lead_pulls_the_successor_in(self):
         """
         A negative lag is lead time, compressing the schedule.
 
-        Two days of lead off the 6th reaches Sunday the 4th, so the successor
-        starts on the Monday. Lead cannot buy back a weekend nobody works.
+        Counted in working days, like every other length in the application.
+        The link would place the successor on Tuesday the 6th; two working
+        days of lead off that is the Friday before, the weekend not being
+        days anybody could have brought the work forward into.
+
+        Counted in calendar days - which is what this did - two days of lead
+        reached Sunday the 4th and was pushed back to the Monday, so a lead of
+        two bought one day and a lead of one bought nothing at all.
         """
         self.link('FS', lag=-2)
 
-        self.assertEqual(self.second.start_date, datetime(2026, 1, 5))
+        self.assertEqual(self.second.start_date, datetime(2026, 1, 2))
 
     def test_lag_applies_to_a_finish_link(self):
         """FF with lag finishes that many days after the predecessor."""
@@ -293,6 +315,142 @@ class TestHardness(DependencyTestCase):
         self.link('FS', hardness='Rubber')
 
         self.assertEqual(self.second.start_date, datetime(2026, 1, 6))
+
+
+class TestALengthWrittenOntoATask(DependencyTestCase):
+    """
+    The stored duration field, and what is allowed to disagree with it.
+
+    WHY THESE EXIST:
+    ================
+    A task can carry an explicit duration as well as two dates, and the task
+    form writes one on every save. Two things went wrong with that. A span
+    stated by a pair of links changed the dates without changing the number,
+    so the next pass over the working calendar rebuilt the finish from the
+    stale number and undid the span - and the two rules then took turns until
+    the reschedule loop gave up and reported a cycle that was not there. And a
+    Phase or a Deliverable, which holds no work of its own, reported the
+    number rather than the children it spans.
+    """
+
+    def test_a_span_updates_the_stored_length(self):
+        """The number follows the dates the links produced."""
+        self.second.start_date = datetime(2026, 1, 12)
+        self.second.end_date = datetime(2026, 1, 16)
+        span = Task(id="D", name="Spanner",
+                    start_date=datetime(2026, 1, 1),
+                    end_date=datetime(2026, 1, 5), duration=3)
+        self.project.add_task(span)
+
+        span.add_dependency("A", 'SS', 'Hard')
+        self.project.apply_dependency_constraints(span)
+        span.add_dependency("B", 'FF', 'Hard')
+        self.project.apply_dependency_constraints(span)
+
+        self.assertEqual(span.duration,
+                         self.project.calendar.working_days_between(
+                             span.start_date, span.end_date))
+
+    def test_a_span_survives_the_working_calendar_pass(self):
+        """
+        And the plan settles rather than reporting a cycle.
+
+        The stale number rebuilt the finish on every pass, so the two rules
+        alternated until the iteration cap.
+        """
+        self.second.start_date = datetime(2026, 1, 12)
+        self.second.end_date = datetime(2026, 1, 16)
+        span = Task(id="D", name="Spanner",
+                    start_date=datetime(2026, 1, 1),
+                    end_date=datetime(2026, 1, 5), duration=3)
+        self.project.add_task(span)
+        span.add_dependency("A", 'SS', 'Hard')
+        self.project.apply_dependency_constraints(span)
+        span.add_dependency("B", 'FF', 'Hard')
+        self.project.apply_dependency_constraints(span)
+
+        self.project.reschedule()
+
+        self.assertEqual(span.end_date, self.second.end_date)
+        self.assertFalse(self.project.reschedule(), "the plan did not settle")
+
+    def test_a_container_ignores_a_length_written_onto_it(self):
+        """
+        A Phase spans its children whatever number is stored on it.
+
+        The form derives a duration from the two dates even where its own
+        rules have greyed the box out, so a container edited once was frozen
+        at whatever its children happened to span that day.
+        """
+        project = Project(name="Container")
+        project.add_task(Task(id="P", name="Phase", task_type="Phase",
+                              start_date=datetime(2026, 1, 5),
+                              end_date=datetime(2026, 1, 9)))
+        project.add_task(Task(id="T", name="Work", task_type="Subtask",
+                              parent_task_id="P",
+                              start_date=datetime(2026, 1, 5),
+                              end_date=datetime(2026, 1, 30)))
+        project.reschedule()
+
+        phase = project.get_task_by_id("P")
+        phase.duration = 5                      # stale, from an older save
+
+        self.assertEqual(phase.duration_days, 0)
+        self.assertEqual(project.working_duration(phase), 20)
+
+
+class TestEarliestBegin(DependencyTestCase):
+    """
+    A date the work cannot begin before.
+
+    WHY THESE EXIST:
+    ================
+    The form has offered an earliest begin date, and the file has saved it,
+    since before there was a scheduler to read it. Nothing did: a date typed
+    there changed nothing at all.
+    """
+
+    def test_it_pushes_a_task_forward(self):
+        """A task cannot begin before the date it is given."""
+        self.second.earliest_begin = datetime(2026, 3, 2)
+
+        self.project.reschedule()
+
+        self.assertEqual(self.second.start_date, datetime(2026, 3, 2))
+
+    def test_it_lands_on_a_working_day(self):
+        """A Sunday floor means the Monday, like every other date."""
+        self.second.earliest_begin = datetime(2026, 3, 1)   # a Sunday
+
+        self.project.reschedule()
+
+        self.assertEqual(self.second.start_date, datetime(2026, 3, 2))
+
+    def test_it_is_a_floor_not_a_pin(self):
+        """A task already starting later is left where it is."""
+        self.second.start_date = datetime(2026, 6, 1)
+        self.second.end_date = datetime(2026, 6, 5)
+        self.second.earliest_begin = datetime(2026, 3, 2)
+
+        self.project.reschedule()
+
+        self.assertEqual(self.second.start_date, datetime(2026, 6, 1))
+
+    def test_the_task_keeps_its_length(self):
+        """Being held back moves a task; it does not shorten it."""
+        original = self.project.working_duration(self.second)
+        self.second.earliest_begin = datetime(2026, 3, 2)
+
+        self.project.reschedule()
+
+        self.assertEqual(self.project.working_duration(self.second), original)
+
+    def test_a_plan_with_one_still_settles(self):
+        """The floor only ever moves a task later, so the pass converges."""
+        self.second.earliest_begin = datetime(2026, 3, 2)
+        self.project.reschedule()
+
+        self.assertFalse(self.project.reschedule())
 
 
 class TestMilestonePredecessor(DependencyTestCase):

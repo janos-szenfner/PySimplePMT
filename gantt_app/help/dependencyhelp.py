@@ -107,10 +107,16 @@ HELP_SECTIONS = (
     (
         "Lag and lead",
         [
-            "Lag is a wait built into the link, in days. A Finish - Start "
-            "link with a lag of 3 means the successor starts three days "
-            "after the predecessor finishes rather than the next day - "
-            "curing time, a delivery, an approval that takes a week.",
+            "Lag is a wait built into the link, in working days. A Finish - "
+            "Start link with a lag of 3 means the successor starts three "
+            "working days after the predecessor finishes rather than the "
+            "next one - curing time, a delivery, an approval that takes a "
+            "week.",
+
+            "Working days, so a wait means what it says wherever it falls. "
+            "Counted in calendar days a lag of one or two over a weekend "
+            "bought nothing: the date landed on the Saturday or the Sunday, "
+            "and the task was pushed to the Monday it would have had anyway.",
 
             "A negative lag is lead time. It lets the successor begin before "
             "the predecessor is done, so the two overlap by that much. Lead "
@@ -137,6 +143,10 @@ HELP_SECTIONS = (
             "earlier than the link allows, but it may sit later - which is "
             "what you want when a gap in the plan is deliberate rather than "
             "an accident.",
+
+            "A task with both kinds of link has to satisfy both. A hard link "
+            "pins the date, but not to somewhere a rubber link on another "
+            "predecessor forbids: the later of the two applies.",
         ],
     ),
     (

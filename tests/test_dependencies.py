@@ -194,10 +194,41 @@ class TestDependencyScheduling(unittest.TestCase):
 
         self.assertEqual(self.second.start_date, datetime(2024, 1, 8))
 
-    def test_a_hard_link_wins_over_a_rubber_one(self):
-        """Hard links fix the date regardless of any rubber floor."""
+    def test_a_hard_link_still_respects_a_later_rubber_floor(self):
+        """
+        Both links are constraints, so the date has to satisfy both.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This used to assert the opposite - that a hard link fixed the date
+        whatever a rubber one said - and the floor was dropped outright
+        wherever a hard link existed. That contradicts what the application
+        tells the user a rubber link is: "the successor cannot fall earlier
+        than the link allows" (see help/dependencyhelp.py). A task pinned to
+        the 1st of January by one link and floored at the 6th of February by
+        another was placed on the 1st, quietly breaking the floor.
+
+        Hardness decides whether the task's *own* date can stand, not whether
+        the other link counts. So the later of the two applies.
+        """
         third = Task.create_task("Third", datetime(2024, 2, 1),
                                  datetime(2024, 2, 5),
+                                 task_id=self.project.next_task_id())
+        self.project.add_task(third)
+
+        self.second.dependencies = []
+        self.second.add_dependency(self.first.id, 'SS', 'Hard')
+        self.second.add_dependency(third.id, 'FS', 'Rubber')
+        self.project.apply_dependency_constraints(self.second)
+
+        # Third finishes on Monday 5 February; the floor is the next working
+        # day, and the hard pin on the 1st of January cannot undercut it
+        self.assertEqual(self.second.start_date, datetime(2024, 2, 6))
+
+    def test_a_hard_link_wins_where_it_is_the_later_of_the_two(self):
+        """A rubber floor earlier than the pin changes nothing."""
+        third = Task.create_task("Third", datetime(2023, 12, 1),
+                                 datetime(2023, 12, 5),
                                  task_id=self.project.next_task_id())
         self.project.add_task(third)
 

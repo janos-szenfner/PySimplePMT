@@ -758,10 +758,15 @@ class Task:
         start date on a weekend is what puts a task there, and
         Project.enforce_working_calendar moves it off.
         """
-        if self.duration is not None:
-            return self.duration
+        # The type is answered before the stored number. A Phase or a
+        # Deliverable holds no work of its own whatever is written on it, and
+        # the task form writes a duration onto everything it saves - so a
+        # container edited once carried a number that stopped following its
+        # children and then disagreed with its own two dates.
         if self.effective_milestone or self.is_container:
             return 0
+        if self.duration is not None:
+            return self.duration
         if self.end_date is None:
             return None
         worked = self.working_calendar.working_days_between(self.start_date,
@@ -1671,7 +1676,7 @@ class Project:
             else:                                   # SF
                 required = predecessor_start
 
-            required += timedelta(days=dependency.lag)
+            required = self._shift_working_days(required, dependency.lag)
 
             if dependency.constrains_finish:
                 target = hard_ends if dependency.hardness == 'Hard' else floor_ends
@@ -1685,6 +1690,39 @@ class Project:
                                        task.end_date or task.start_date)
         return start, end
 
+    def _shift_working_days(self, moment: datetime, days: int) -> datetime:
+        """
+        Move a date by a number of working days.
+
+        PARAMETERS:
+        -----------
+        moment : datetime
+            The date a link requires before its lag is applied.
+        days : int
+            Working days of lag; negative is lead time.
+
+        RETURNS:
+        --------
+        datetime
+            The date that many working days away.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Working days, because every other length in the application is. Added
+        as calendar days, a lag of one or two over a weekend did nothing at
+        all: the date landed on the Saturday or Sunday and was pushed back to
+        the Monday it would have had with no lag, so "wait two days after this
+        finishes" was a wait of nought.
+
+        The calendar's arithmetic is inclusive - a span of one day ends where
+        it starts - so shifting by n days asks it for n + 1.
+        """
+        if not days:
+            return moment
+        if days > 0:
+            return self.calendar.add_working_days(moment, days + 1)
+        return self.calendar.subtract_working_days(moment, -days + 1)
+
     @staticmethod
     def _resolve_constraint(hard_dates: List[datetime],
                             floor_dates: List[datetime],
@@ -1697,9 +1735,19 @@ class Project:
         A hard link pins the date outright, so the latest of them wins. A
         rubber link is only a floor, so the task keeps its own date when that
         is already late enough.
+
+        A floor still applies when a hard link is present. It used to be
+        dropped: a task pinned by a hard link to one predecessor and floored
+        by a rubber link to another was placed on the hard date even when that
+        fell before the rubber predecessor had finished - so the rubber link
+        the user had set was quietly broken. Both are constraints, and the
+        date that satisfies both is the later of the two.
         """
         if hard_dates:
-            return max(hard_dates)
+            pinned = max(hard_dates)
+            if floor_dates:
+                return max(pinned, max(floor_dates))
+            return pinned
         if floor_dates:
             floor = max(floor_dates)
             if current is None or current < floor:
@@ -1746,7 +1794,9 @@ class Project:
         """
         if task.is_milestone:
             return 0
-        if task.duration is not None:
+        # A container spans its children, so its dates are the answer and a
+        # number stored on it is not - see Task.duration_days
+        if task.duration is not None and not task.is_container:
             return max(int(task.duration), 1)
         if task.end_date is None:
             return 1
@@ -1865,6 +1915,17 @@ class Project:
 
         task.start_date = new_start
         task.end_date = new_end
+
+        # A span redefines how much the task holds, so a duration written onto
+        # it has to follow. Left alone, the stored number and the two dates
+        # disagreed, and the next pass over the working calendar rebuilt the
+        # finish from the stale number and undid the span - the two rules then
+        # took turns until the reschedule loop gave up and reported a cycle
+        # that was not there.
+        if holds_span and task.duration is not None:
+            task.duration = max(
+                self.calendar.working_days_between(new_start, new_end), 1)
+
         self._update_dates()
         return True
 
@@ -2002,7 +2063,7 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        Two rules, from gantt_app.workdaycalendar:
+        Three rules. Two come from gantt_app.workdaycalendar:
 
           * A task cannot start on a non-working day, so a start landing on a
             Saturday is pushed to the Monday.
@@ -2010,6 +2071,11 @@ class Project:
             over the calendar. A task crossing a weekend therefore ends
             further out without holding any more work, and one that had been
             given a finish on a Sunday ends on the Friday instead.
+
+        The third is the task's own earliest begin date, which is a floor on
+        when the work can start. The form has offered it, and the file has
+        saved it, since before there was a scheduler to read it - so a date
+        typed there did nothing at all.
 
         The duration is read before either date moves and written back after,
         which is what makes this leave the effort alone: the task ends up
@@ -2030,7 +2096,16 @@ class Project:
             if task.is_container:
                 continue
 
-            new_start = self.calendar.get_next_working_day(task.start_date)
+            wanted = task.start_date
+            if task.earliest_begin is not None and wanted < task.earliest_begin:
+                # A date the user has said the work cannot begin before -
+                # material not delivered, a gate not passed. It is a floor,
+                # so it only ever pushes a task later.
+                logger.debug("%r cannot begin before %s; moving it there",
+                             task.name, task.earliest_begin.date())
+                wanted = task.earliest_begin
+
+            new_start = self.calendar.get_next_working_day(wanted)
 
             if task.effective_milestone:
                 new_end = None

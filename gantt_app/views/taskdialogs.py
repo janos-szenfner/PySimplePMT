@@ -134,7 +134,13 @@ class EditTaskDialog(TaskFormDialog):
             self.task.end_date = end
             self.task.is_milestone = is_milestone
             self.task.progress = progress
-            self.task.duration = duration
+            # A Phase or a Deliverable takes its length from the work inside
+            # it, so nothing is written here for one. The form derives the
+            # number from the two dates even where its own rules have greyed
+            # the box out, and storing that froze a container at whatever its
+            # children happened to span on the day it was last edited.
+            if not self.task.is_container:
+                self.task.duration = duration
             self.task.priority = self.priority_var.get()
             self.task.shape = self.shape_var.get()
             self.task.show_in_timeline = self.show_in_timeline_var.get()
