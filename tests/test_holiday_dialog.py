@@ -58,6 +58,8 @@ class HolidayDialogTestCase(unittest.TestCase):
 
         self.applied = []
         self.applied_overrides = []
+        self.applied_weeks = []
+        self.finished = []
 
     def tearDown(self):
         """Tear the root window down."""
@@ -66,13 +68,15 @@ class HolidayDialogTestCase(unittest.TestCase):
         except Exception:
             pass
 
-    def dialog(self, selected=(), overrides=()):
-        """The dialog, opened on a given selection and set of rulings."""
+    def dialog(self, selected=(), overrides=(), non_working_days=None):
+        """The dialog, opened on a given selection, rulings and week."""
         from gantt_app.views.holidaydialog import CalendarSettingsDialog
 
         window = CalendarSettingsDialog(
             self.root, selected, self.applied.append,
-            overrides, self.applied_overrides.append)
+            overrides, self.applied_overrides.append,
+            non_working_days, self.applied_weeks.append,
+            lambda: self.finished.append(True))
         window.update_idletasks()
         return window
 
@@ -672,6 +676,176 @@ class TestTheProjectFollowsAnOverride(HolidayDialogTestCase):
         task = project.get_task_by_id("A")
         self.assertEqual(task.end_date.date(), date(2026, 9, 12))
         self.assertEqual(project.working_duration(task), 2)
+
+
+class TestTheWorkingWeekTab(HolidayDialogTestCase):
+    """Which weekdays are worked, which used to need a file import."""
+
+    def test_the_boxes_show_the_days_that_are_worked(self):
+        """
+        Ticked means worked, which is the opposite of what is stored.
+
+        Asking somebody to tick the days they are *off* is the double
+        negative that gets set backwards once and disbelieved forever.
+        """
+        window = self.dialog()
+
+        worked = [index for index, _name in window.WEEKDAYS
+                  if window.weekday_boxes[index].get()]
+
+        self.assertEqual(worked, [0, 1, 2, 3, 4])
+
+    def test_it_opens_on_the_plan_s_own_week(self):
+        """A plan already on a six-day week shows one."""
+        window = self.dialog(non_working_days={6})
+
+        self.assertTrue(window.weekday_boxes[5].get())
+        self.assertFalse(window.weekday_boxes[6].get())
+
+    def test_the_selection_is_handed_back_as_non_working_days(self):
+        """Inverted on the way out, once, here."""
+        window = self.dialog()
+        window.weekday_boxes[5].set(True)
+
+        window.apply()
+
+        self.assertEqual(self.applied_weeks, [{6}])
+
+    def test_the_standard_week_button_restores_monday_to_friday(self):
+        """However far the boxes had been moved."""
+        window = self.dialog(non_working_days={0, 1, 6})
+
+        window.select_standard_week()
+
+        self.assertEqual(window.working_week_selection(), {5, 6})
+
+    def test_the_summary_names_the_standard_week(self):
+        """The commonest case is worth saying in words, not five names."""
+        window = self.dialog()
+
+        self.assertIn("Monday to Friday",
+                      window.week_summary_label.cget('text'))
+
+    def test_the_summary_counts_an_unusual_week(self):
+        """And spells the days out where there is no name for it."""
+        window = self.dialog()
+        window.weekday_boxes[5].set(True)
+
+        text = window.week_summary_label.cget('text')
+
+        self.assertIn("6 days worked", text)
+        self.assertIn("Saturday", text)
+
+
+class TestAnEmptyWeekIsRefused(HolidayDialogTestCase):
+    """
+    The one thing the dialog will not apply.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    WorkingCalendar tolerates a week with no working day - it treats every
+    day as worked, so a corrupt file cannot hang the day-by-day walks. That
+    is damage limitation for bad data. Applying it to a deliberate choice
+    would answer "no days" with seven of them, and say so only in the log.
+    """
+
+    def test_apply_refuses_and_keeps_the_window_open(self):
+        """Closing on a refusal would look like it had been accepted."""
+        window = self.dialog()
+        for index in range(7):
+            window.weekday_boxes[index].set(False)
+
+        self.assertFalse(window.apply())
+
+        self.assertTrue(window.winfo_exists())
+
+    def test_nothing_at_all_is_applied(self):
+        """Not the week, and not the other two tabs either."""
+        window = self.dialog()
+        window.checkboxes['HU'].set(True)
+        for index in range(7):
+            window.weekday_boxes[index].set(False)
+
+        window.apply()
+
+        self.assertEqual(self.applied, [])
+        self.assertEqual(self.applied_overrides, [])
+        self.assertEqual(self.applied_weeks, [])
+        self.assertEqual(self.finished, [])
+
+    def test_the_week_tab_is_brought_forward(self):
+        """The refusal has to be visible beside the boxes that caused it."""
+        window = self.dialog()
+        window.tabview.set(window.TAB_HOLIDAYS)
+        for index in range(7):
+            window.weekday_boxes[index].set(False)
+
+        window.apply()
+
+        self.assertEqual(window.tabview.get(), window.TAB_WEEK)
+
+    def test_the_summary_says_why_as_the_last_box_is_unticked(self):
+        """Said as it happens, not held back until Apply."""
+        window = self.dialog()
+        for index in range(7):
+            window.weekday_boxes[index].set(False)
+
+        self.assertIn("At least one",
+                      window.week_summary_label.cget('text'))
+
+    def test_it_applies_once_a_day_is_put_back(self):
+        """The refusal is recoverable without reopening the dialog."""
+        window = self.dialog()
+        for index in range(7):
+            window.weekday_boxes[index].set(False)
+        window.apply()
+
+        window.select_standard_week()
+
+        self.assertTrue(window.apply())
+        self.assertEqual(self.applied_weeks, [{5, 6}])
+
+
+class TestEverythingIsAppliedTogether(HolidayDialogTestCase):
+    """Three tabs, one Apply, one redraw."""
+
+    def test_all_three_reach_the_caller(self):
+        """From the one press."""
+        window = self.dialog()
+        window.checkboxes['HU'].set(True)
+        window.weekday_boxes[5].set(True)
+        self.fill_override(window, '2026-09-20', window.NON_WORKING_LABEL)
+        window.add_override()
+
+        window.apply()
+
+        self.assertEqual(self.applied, [['HU']])
+        self.assertEqual(self.applied_weeks, [{6}])
+        self.assertEqual(len(self.applied_overrides[0]), 1)
+
+    def test_the_finish_hook_fires_once_after_them(self):
+        """
+        Which is where a caller redraws.
+
+        Redrawing inside each callback would draw the chart three times on
+        one press, twice of them against a half-applied calendar.
+        """
+        window = self.dialog()
+        window.checkboxes['HU'].set(True)
+
+        window.apply()
+
+        self.assertEqual(self.finished, [True])
+
+    def test_cancel_fires_nothing(self):
+        """Including the finish hook."""
+        window = self.dialog()
+        window.weekday_boxes[5].set(True)
+
+        window.cancel()
+
+        self.assertEqual(self.applied_weeks, [])
+        self.assertEqual(self.finished, [])
 
 
 if __name__ == '__main__':

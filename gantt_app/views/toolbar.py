@@ -1252,17 +1252,28 @@ class Toolbar(ctk.CTkFrame):
         Setting them on the project's calendar is enough to change every date
         in the plan, because every date in the plan is worked out through it.
 
-        Applied through Project.set_holiday_countries and
-        Project.set_date_overrides rather than by writing to the calendar
-        directly, so every task keeps the work it holds and its finish moves
-        instead - see those methods. The chart is redrawn afterwards through
-        on_project_changed, once, however many of the two actually changed.
+        Applied through Project.set_working_week, set_holiday_countries and
+        set_date_overrides rather than by writing to the calendar directly, so
+        every task keeps the work it holds and its finish moves instead - see
+        those methods. The chart is redrawn afterwards through
+        on_project_changed, once, however many of the three actually changed.
         """
         from gantt_app.views.holidaydialog import choose_holidays
 
-        #: Whether either half moved, so the chart is redrawn once rather than
-        #: twice - the two callbacks fire back to back on the same Apply.
+        #: Whether any tab moved the plan, so the chart is redrawn once
+        #: rather than three times - the callbacks fire back to back on the
+        #: same Apply, and the dialog calls `applied` after the last of them.
         changed = []
+
+        def apply_working_week(week):
+            """Change which weekdays are worked at all."""
+            if week == self.project.calendar.non_working_days:
+                return
+
+            if self.project.set_working_week(week):
+                logger.info("Project %r now works a %d-day week",
+                            self.project.name, 7 - len(week))
+                changed.append(True)
 
         def apply(codes):
             """Observe the chosen countries, and settle the plan on them."""
@@ -1277,22 +1288,25 @@ class Toolbar(ctk.CTkFrame):
 
         def apply_overrides(overrides):
             """Take the hand-made rulings, and settle the plan on them."""
-            current = self.project.calendar.sorted_overrides()
-            if list(overrides) == current:
-                if changed and self.on_project_changed:
-                    self.on_project_changed()
+            if list(overrides) == self.project.calendar.sorted_overrides():
                 return
 
             self.project.set_date_overrides(overrides)
             logger.info("Project %r now carries %d manual date override(s)",
                         self.project.name, len(overrides))
-            if self.on_project_changed:
+            changed.append(True)
+
+        def applied():
+            """Redraw once, if any of the three actually moved the plan."""
+            if changed and self.on_project_changed:
                 self.on_project_changed()
 
         choose_holidays(self.master,
                         sorted(self.project.calendar.countries), apply,
                         self.project.calendar.sorted_overrides(),
-                        apply_overrides)
+                        apply_overrides,
+                        self.project.calendar.non_working_days,
+                        apply_working_week, applied)
 
     def show_critical_path(self):
         """

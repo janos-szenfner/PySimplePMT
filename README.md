@@ -33,6 +33,7 @@ This is a complete implementation of a project management tool with:
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Working Week**: Actions → Calendar Settings... → Working Week sets which weekdays are worked at all — a six-day week, a four-day week, or the standard Monday to Friday. Durations are held and finishes move, so putting Saturday to work pulls finishes in rather than lengthening tasks. A week with no working day in it is refused
 - **Manual Date Overrides**: Actions → Calendar Settings... → Manual Overrides rules on one named date at a time, and **outranks everything else** — a Saturday named as a make-up day is worked, and an ordinary Tuesday named as a company shutdown is not, whatever the weekend and holiday rules say. Each carries an optional reason, and deleting one puts the date back under the ordinary rules. Saved with the project
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
@@ -64,7 +65,7 @@ gantt_app/
 │   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
-│   ├── holidaydialog.py   # Public holidays, and dates overridden by hand
+│   ├── holidaydialog.py   # Working week, public holidays, date overrides
 │   ├── criticalpath.py    # The critical path analysis, task by task
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
@@ -137,11 +138,12 @@ schedule wrong over a weekend:
 
 A duration is stated in the first and drawn in the second. The rules:
 
-1. **The calendar** names the non-working weekdays - Saturday and Sunday by
-   default - plus any holidays: fixed dates, dates recurring every year, and
-   the public holidays of any countries the project observes (see below). It
-   belongs to the project and is saved with it, so a plan imported from a
-   GanttProject file keeps the holidays that file declared.
+1. **The calendar** names the non-working weekdays - Saturday and Sunday
+   unless the plan says otherwise (see below) - plus any holidays: fixed
+   dates, dates recurring every year, and the public holidays of any countries
+   the project observes. It belongs to the project and is saved with it, so a
+   plan imported from a GanttProject file keeps the week and the holidays that
+   file declared.
 1a. **A manual override beats all of it.** A date the user has ruled on by
    hand is worked, or not worked, exactly as they said - see below. It is the
    first thing the calendar consults and nothing else can overturn it, because
@@ -168,6 +170,49 @@ Everything that turns a duration into dates goes through it - the task form's
 three scheduling modes, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
+
+#### The working week (`views/holidaydialog.py`)
+
+**Actions → Calendar Settings... → Working Week** sets which weekdays are
+worked at all. It is the base rule everything else is read on top of: the
+public holidays and the manual overrides both assume a week to subtract from.
+
+The boxes are ticked for the days that **are** worked, and the inversion to
+the `non_working_days` the calendar stores happens in one place on the way
+out. Asking somebody to tick the days they are off is the double negative that
+gets set backwards once and then disbelieved forever.
+
+Applying goes through `Project.set_working_week()`, the third sibling of
+`set_holiday_countries()` and `set_date_overrides()` and applied the same way -
+by `apply_calendar()`, which reads every task's working duration under the old
+week and rebuilds its dates under the new one. So putting Saturday to work
+pulls finishes **in** rather than lengthening tasks:
+
+| | Start | Finish | Effort |
+| --- | --- | --- | --- |
+| Five-day week | Fri 11 Sep | Wed 16 Sep | 4 days |
+| Six-day week (Sat worked) | Fri 11 Sep | Tue 15 Sep | 4 days |
+| Four-day week (Fri off) | **Mon 14 Sep** | Thu 17 Sep | 4 days |
+
+The effort is the same on every row; only the dates move. The third row moves
+its *start* as well, because a task cannot begin on a day nobody works - rule
+4 above - so taking Friday off pushes it to the Monday.
+
+Assigning the calendar directly and rescheduling would not do this.
+`enforce_working_calendar()` re-derives a task's duration from its dates every
+time it runs, so the same change made that way silently grows the task to five
+days of effort instead of moving its finish. That is the whole reason
+`apply_calendar()` exists.
+
+**A week with no working day in it is refused**, in the dialog, before
+anything is applied and before the window closes - and the tab is brought
+forward so the refusal sits beside the boxes that caused it.
+`WorkingCalendar` would accept such a week: it treats one as working *every*
+day, which stops a corrupted file from hanging the day-by-day walks looking
+for a working day that does not exist. But that is damage limitation for bad
+data, and applying it to a deliberate choice would answer "no days" with seven
+of them and say so only in the log. `set_working_week()` refuses it too, so
+the guarantee does not depend on the dialog being the only caller.
 
 #### Public holidays across the EU (`views/holidaydialog.py`)
 
@@ -1217,7 +1262,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1212 tests, all passing.
+1233 tests, all passing.
 
 ## Known Limitations
 
@@ -1228,8 +1273,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
 7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
-8. **The weekend rule is not editable in the app**: what is missing here is only the control, not the capability. `WorkingCalendar.non_working_days` holds weekday indices - Saturday and Sunday by default - and any set of them is honoured by every piece of scheduling and saved with the project, so a plan on a six-day week finishes a Friday-to-Saturday task on the Saturday and still does after being reopened. But nothing in the UI writes that field. The two ways to get a different week today are to import a GanttProject file whose `<calendars>` block declares one, or to edit the project JSON by hand. Manual Overrides can name individual Saturdays as worked, which covers the occasional make-up day, but it is a list of dates rather than a standing rule - a genuine six-day week would need one entry per Saturday for as long as the plan runs
-9. **XLSX Export of a worked weekend**: an override that puts a Saturday or Sunday to work cannot be written as a live formula - Excel's `WORKDAY` has a fixed Monday-to-Friday week - so tasks reaching such a day get their finish written as a date and stop recalculating. An override that takes a day *off* stays live
+8. **XLSX Export of a worked weekend**: a Saturday or Sunday that is worked - whether by an override or by the working week itself - cannot be written as a live formula, since Excel's `WORKDAY` has a fixed Monday-to-Friday week. Tasks reaching such a day get their finish written as a date and stop recalculating; the sheet still says what the plan says. A day taken *off* stays live, because that is just another date on the holiday sheet
 
 ## Future Enhancements
 
@@ -1256,6 +1300,7 @@ Done:
 - [x] Regional and state holidays, not only national ones
 - [x] Full critical path analysis - both passes, so every zero-float task
 - [x] Manual date overrides, outranking holidays and weekends alike
+- [x] Editing the weekend rule from the application
 
 Still to do:
 
@@ -1267,12 +1312,11 @@ Still to do:
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
-- [ ] Editing the weekend rule from the application - a working-week control in Calendar Settings, applied through `Project.apply_calendar()` like the countries and the overrides are, so durations are held and finishes move. A week with no working day in it has to be refused at the point of entry rather than left to the calendar's fallback, which quietly works every day instead
 - [ ] Per-task calendars, so one strand of work can follow a different week
 - [ ] Resource levelling off the back of the float analysis
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.33.0
+**Version**: 1.34.0
 **Last Updated**: 2026-08-18

@@ -2257,6 +2257,57 @@ class Project:
         )
         return self.apply_calendar(calendar)
 
+    def set_working_week(self, non_working_days) -> bool:
+        """
+        Change which weekdays the project works at all.
+
+        PARAMETERS:
+        -----------
+        non_working_days : Iterable[int]
+            Weekday indices never worked, as date.weekday() numbers them -
+            Monday 0 through Sunday 6. The standard {5, 6} is Saturday and
+            Sunday off; {6} alone is a six-day week.
+
+        RETURNS:
+        --------
+        bool
+            True when the plan moved. False when the week was refused, which
+            leaves the calendar exactly as it was.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A week with no working day in it is refused here rather than stored.
+        WorkingCalendar tolerates one - it treats such a calendar as working
+        every day, so a corrupted file cannot hang the day-by-day walks
+        looking for a working day that does not exist - but that is damage
+        limitation for bad data, not an answer to somebody asking for it. A
+        plan told to work no days would come back scheduling seven of them,
+        which is the opposite of what was asked and says so only in the log.
+
+        Otherwise a sibling of set_holiday_countries and set_date_overrides,
+        applied the same way and for the same reason: through apply_calendar,
+        so every task keeps the work it holds and its finish moves. Putting
+        Saturday to work should pull the finishes of the tasks crossing it in
+        rather than quietly handing each of them another day of effort.
+        """
+        week = {int(day) for day in non_working_days}
+
+        if not set(range(7)) - week:
+            logger.warning(
+                "Refusing a working week with no working day in it; the "
+                "calendar is unchanged"
+            )
+            return False
+
+        calendar = WorkingCalendar(
+            non_working_days=week,
+            holidays=self.calendar.holidays,
+            recurring_holidays=self.calendar.recurring_holidays,
+            countries=self.calendar.countries,
+            overrides=self.calendar.sorted_overrides(),
+        )
+        return self.apply_calendar(calendar)
+
     def set_date_overrides(self, overrides) -> bool:
         """
         Replace the hand-made rulings on individual dates.

@@ -53,7 +53,7 @@ nothing installed to be honoured.
 
 import tkinter as tk
 from datetime import date, datetime
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
 
 import customtkinter as ctk
 
@@ -61,8 +61,8 @@ from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.workdaycalendar import (
-    DateOverride, EU_COUNTRIES, holidays_available, split_country,
-    subdivisions, supported_countries,
+    DEFAULT_NON_WORKING_DAYS, DateOverride, EU_COUNTRIES, holidays_available,
+    split_country, subdivisions, supported_countries,
 )
 from gantt_app.utils.log import get_logger
 
@@ -104,11 +104,12 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
     GEOMETRY = "620x660"
     MINSIZE = (520, 420)
 
-    #: What the two tabs are called. Named here because both the builders and
+    #: What the tabs are called. Named here because both the builders and
     #: the tests reach for them, and a tab looked up by a mistyped string
     #: fails as a KeyError deep inside customtkinter.
     TAB_HOLIDAYS = "National Holidays"
     TAB_OVERRIDES = "Manual Overrides"
+    TAB_WEEK = "Working Week"
 
     #: The two things an override can say, as the type selector spells them.
     WORKING_LABEL = "Working Day"
@@ -124,6 +125,15 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
     #: than it has to.
     COLUMNS = 2
 
+    #: The weekdays, in the order a week is read and by the index
+    #: date.weekday() gives each. Monday first, which is what the calendar
+    #: counts from - a list starting on Sunday would put the two out of step
+    #: everywhere the index is used.
+    WEEKDAYS = (
+        (0, "Monday"), (1, "Tuesday"), (2, "Wednesday"), (3, "Thursday"),
+        (4, "Friday"), (5, "Saturday"), (6, "Sunday"),
+    )
+
     #: How much has to be typed before the search reaches the regions.
     #:
     #: A single letter matches most of the thousand of them, and building
@@ -136,11 +146,17 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
                  on_apply: Callable[[List[str]], None],
                  overrides: Sequence[DateOverride] = (),
                  on_apply_overrides: Optional[
-                     Callable[[List[DateOverride]], None]] = None):
+                     Callable[[List[DateOverride]], None]] = None,
+                 non_working_days: Optional[Iterable[int]] = None,
+                 on_apply_working_week: Optional[
+                     Callable[[Set[int]], None]] = None,
+                 on_applied: Optional[Callable[[], None]] = None):
         super().__init__(master)
 
         self.on_apply = on_apply
         self.on_apply_overrides = on_apply_overrides
+        self.on_apply_working_week = on_apply_working_week
+        self.on_applied = on_applied
         self.checkboxes = {}
 
         #: The rulings as the dialog currently has them, keyed by date. A
@@ -149,6 +165,10 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         self.overrides: Dict[date, DateOverride] = {
             override.override_date: override for override in (overrides or ())
         }
+
+        #: The week the dialog opens on, as non-working weekday indices.
+        week = (set(DEFAULT_NON_WORKING_DAYS) if non_working_days is None
+                else {int(day) for day in non_working_days})
 
         self.title("Calendar Settings")
         self.geometry(self.GEOMETRY)
@@ -172,6 +192,9 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         self._build_overrides_tab()
         self._refresh_override_list()
 
+        self._build_working_week_tab(week)
+        self._update_week_summary()
+
         self.center_window()
 
     def _build_tabs(self):
@@ -181,6 +204,12 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         self.tab_holidays = self.tabview.add(self.TAB_HOLIDAYS)
         self.tab_overrides = self.tabview.add(self.TAB_OVERRIDES)
+        self.tab_week = self.tabview.add(self.TAB_WEEK)
+
+        # Opened on the countries, not on the week. The week is set once for
+        # a plan and then left alone, while the other two are what the dialog
+        # is reopened for; a rarely-touched tab in front of them would be a
+        # click on every visit.
         self.tabview.set(self.TAB_HOLIDAYS)
 
     # ---- the parts of the dialog ---------------------------------------
@@ -618,6 +647,108 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
         """Every ruling the dialog holds, in date order."""
         return [self.overrides[day] for day in sorted(self.overrides)]
 
+    # ---- the working week tab -------------------------------------------
+
+    def _build_working_week_tab(self, week: Set[int]):
+        """
+        A tick box per weekday, ticked for the days that are worked.
+
+        PARAMETERS:
+        -----------
+        week : Set[int]
+            The weekday indices *not* worked, which open unticked.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The boxes read as "worked", the calendar stores "not worked", and the
+        inversion happens here rather than anywhere else. Asking somebody to
+        tick the days they are off is the kind of double negative that gets
+        set backwards once and then disbelieved forever.
+        """
+        ctk.CTkLabel(self.tab_week, text="Days of the week that are worked:",
+                     anchor=tk.W, font=ctk.CTkFont(size=14, weight="bold")
+                     ).pack(fill=tk.X, padx=5, pady=(5, 2))
+
+        ctk.CTkLabel(
+            self.tab_week, anchor=tk.W, justify=tk.LEFT, wraplength=520,
+            text_color="#6b7280",
+            text=("The base rule the whole plan is scheduled on. Public "
+                  "holidays and manual overrides are read on top of it."),
+        ).pack(fill=tk.X, padx=5, pady=(0, 8))
+
+        boxes = ctk.CTkFrame(self.tab_week, fg_color='transparent')
+        boxes.pack(fill=tk.X, padx=5)
+
+        #: One tick box per weekday, by index. True means the day is worked,
+        #: which is the opposite of what the calendar stores.
+        self.weekday_boxes: Dict[int, ctk.BooleanVar] = {}
+        for index, name in self.WEEKDAYS:
+            variable = ctk.BooleanVar(value=index not in week)
+            variable.trace_add('write',
+                               lambda *_args: self._update_week_summary())
+            self.weekday_boxes[index] = variable
+            ctk.CTkCheckBox(boxes, text=name, variable=variable).pack(
+                anchor=tk.W, padx=6, pady=3)
+
+        batch = ctk.CTkFrame(self.tab_week, fg_color='transparent')
+        batch.pack(fill=tk.X, padx=5, pady=(10, 0))
+        secondary_button(batch, "Standard week (Mon-Fri)",
+                         self.select_standard_week, width=200).pack(side=tk.LEFT)
+
+        self.week_summary_label = ctk.CTkLabel(
+            self.tab_week, anchor=tk.W, justify=tk.LEFT, wraplength=520,
+            text="", text_color="#6b7280",
+        )
+        self.week_summary_label.pack(fill=tk.X, padx=5, pady=(10, 0))
+
+    def select_standard_week(self):
+        """Put the week back to Monday-to-Friday."""
+        for index, variable in self.weekday_boxes.items():
+            variable.set(index not in DEFAULT_NON_WORKING_DAYS)
+
+    def working_week_selection(self) -> Set[int]:
+        """
+        The weekday indices that are *not* worked, as the calendar wants them.
+
+        The inverse of what the boxes show; see _build_working_week_tab.
+        """
+        return {index for index, variable in self.weekday_boxes.items()
+                if not variable.get()}
+
+    def _update_week_summary(self):
+        """
+        Say what the current ticks amount to, and when they amount to nothing.
+
+        The empty week is called out as it happens rather than only on Apply,
+        so the last box untick explains itself where the eye already is.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        worked = sorted(index for index, variable in self.weekday_boxes.items()
+                        if variable.get())
+
+        if not worked:
+            self.week_summary_label.configure(
+                text=("No days are worked. At least one has to be, or there "
+                      "is no calendar to schedule against."),
+                text_color="#b45309")
+            return
+
+        names = dict(self.WEEKDAYS)
+        if worked == [0, 1, 2, 3, 4]:
+            text = "The standard week: Monday to Friday."
+        elif len(worked) == 7:
+            text = "Every day is worked; nothing is ever skipped."
+        else:
+            text = (f"{len(worked)} days worked: "
+                    f"{', '.join(names[index] for index in worked)}.")
+
+        self.week_summary_label.configure(text=text, text_color="#6b7280")
+
     def _build_buttons(self):
         """Apply and Cancel, along the bottom."""
         footer = ctk.CTkFrame(self, fg_color='transparent')
@@ -701,31 +832,58 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
     def apply(self):
         """
-        Hand both tabs' choices back and close.
+        Hand every tab's choices back and close.
+
+        RETURNS:
+        --------
+        bool
+            False when the dialog refused to apply and stayed open; True
+            otherwise. Only the empty week refuses - see below.
 
         DEVELOPMENT NOTES:
         ------------------
-        The countries go first and the overrides second, and both go through
-        even when only one of them changed. Each is applied by rebuilding the
-        project's calendar from the other's current state - see
-        Project.set_date_overrides - so applying them in either order lands in
-        the same place; doing both unconditionally just saves the dialog from
-        having to work out which of them the user touched.
+        The week goes first, then the countries, then the overrides, and all
+        three go through even when only one of them changed. Each is applied
+        by rebuilding the project's calendar from the others' current state -
+        see Project.set_date_overrides - so the order does not matter to where
+        they land; doing all three unconditionally just saves the dialog from
+        having to work out which the user touched. on_applied is called once
+        at the end, which is where a caller redraws.
+
+        A week with no day worked is refused here, before anything is applied
+        and before the window closes. The calendar would take it - it treats
+        such a week as working every day, so a corrupt file cannot hang the
+        scheduler - but that fallback is for bad data, and applying it to a
+        deliberate choice would answer "no days" with seven of them and say so
+        only in the log. The tab is brought forward so the refusal is visible
+        next to the boxes that caused it.
         """
+        week = self.working_week_selection()
+        if not set(range(7)) - week:
+            self.tabview.set(self.TAB_WEEK)
+            self._update_week_summary()
+            logger.info("Refused a working week with no working day in it")
+            return False
+
         chosen = self.selection()
         overrides = self.override_selection()
 
         logger.info("Observing public holidays for %s, with %d date "
-                    "override(s)",
+                    "override(s), on a %d-day week",
                     ', '.join(chosen) if chosen else 'no countries',
-                    len(overrides))
+                    len(overrides), 7 - len(week))
 
         self.destroy()
 
+        if self.on_apply_working_week:
+            self.on_apply_working_week(week)
         if self.on_apply:
             self.on_apply(chosen)
         if self.on_apply_overrides:
             self.on_apply_overrides(overrides)
+        if self.on_applied:
+            self.on_applied()
+        return True
 
     def cancel(self):
         """
@@ -747,7 +905,11 @@ def choose_holidays(master, selected: Sequence[str],
                     on_apply: Callable[[List[str]], None],
                     overrides: Sequence[DateOverride] = (),
                     on_apply_overrides: Optional[
-                        Callable[[List[DateOverride]], None]] = None
+                        Callable[[List[DateOverride]], None]] = None,
+                    non_working_days: Optional[Iterable[int]] = None,
+                    on_apply_working_week: Optional[
+                        Callable[[Set[int]], None]] = None,
+                    on_applied: Optional[Callable[[], None]] = None
                     ) -> Optional[CalendarSettingsDialog]:
     """
     Open the calendar settings.
@@ -764,7 +926,9 @@ def choose_holidays(master, selected: Sequence[str],
     """
     try:
         return CalendarSettingsDialog(master, selected, on_apply,
-                                      overrides, on_apply_overrides)
+                                      overrides, on_apply_overrides,
+                                      non_working_days, on_apply_working_week,
+                                      on_applied)
     except Exception:
         logger.exception("Could not open the calendar settings dialog")
         return None

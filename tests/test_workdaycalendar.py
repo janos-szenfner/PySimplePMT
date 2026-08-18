@@ -961,5 +961,98 @@ class TestOverrideStorage(unittest.TestCase):
         self.assertNotEqual(plain, overridden)
 
 
+class TestSettingTheWorkingWeek(unittest.TestCase):
+    """Changing which weekdays are worked at all."""
+
+    def build(self):
+        """A four-day task running Friday to the following Wednesday."""
+        project = Project(name="Week")
+        project.add_task(Task(id="A", name="A",
+                              start_date=datetime(2026, 9, 11),
+                              end_date=datetime(2026, 9, 16)))
+        project.reschedule()
+        return project, project.get_task_by_id("A")
+
+    def test_a_six_day_week_pulls_a_finish_in(self):
+        """
+        The work does not grow; the finish moves.
+
+        Four days of work from a Friday reach the Wednesday on a five-day
+        week. Once Saturday is worked the same four days reach the Tuesday.
+        """
+        project, task = self.build()
+        self.assertEqual(project.working_duration(task), 4)
+        self.assertEqual(task.end_date.date(), date(2026, 9, 16))
+
+        self.assertTrue(project.set_working_week({6}))
+
+        self.assertEqual(project.working_duration(task), 4)
+        self.assertEqual(task.end_date.date(), date(2026, 9, 15))
+
+    def test_a_four_day_week_pushes_a_finish_out(self):
+        """And the other direction."""
+        project, task = self.build()
+
+        project.set_working_week({4, 5, 6})
+
+        self.assertEqual(project.working_duration(task), 4)
+        self.assertEqual(task.end_date.date(), date(2026, 9, 17))
+
+    def test_the_new_week_is_what_the_calendar_answers(self):
+        """A Saturday put to work is a working day."""
+        project, _task = self.build()
+
+        project.set_working_week({6})
+
+        self.assertTrue(project.calendar.is_working_day(date(2026, 9, 12)))
+        self.assertFalse(project.calendar.is_working_day(date(2026, 9, 13)))
+
+    def test_a_week_with_no_working_day_is_refused(self):
+        """
+        The calendar would take it, and answer with seven working days.
+
+        That fallback keeps a corrupt file from hanging the scheduler; it is
+        not an answer to somebody asking for it, so the ask is refused and the
+        calendar left alone.
+        """
+        project, _task = self.build()
+
+        self.assertFalse(project.set_working_week(range(7)))
+
+        self.assertEqual(project.calendar.non_working_days, {5, 6})
+
+    def test_setting_the_week_leaves_the_countries_and_rulings_alone(self):
+        """The three tabs do not overwrite each other."""
+        project, _task = self.build()
+        project.set_holiday_countries(["HU"])
+        project.set_date_overrides([DateOverride(date(2026, 9, 13), True)])
+
+        project.set_working_week({6})
+
+        self.assertEqual(project.calendar.countries, {"HU"})
+        self.assertEqual(len(project.calendar.overrides), 1)
+        self.assertEqual(project.calendar.non_working_days, {6})
+
+    def test_an_override_still_outranks_the_new_week(self):
+        """A day named as not worked stays not worked, whatever the week."""
+        project, _task = self.build()
+        project.set_date_overrides([
+            DateOverride(date(2026, 9, 12), False, "Not this one")])
+
+        project.set_working_week({6})
+
+        self.assertFalse(project.calendar.is_working_day(date(2026, 9, 12)))
+
+    def test_the_week_survives_being_saved_and_reopened(self):
+        """A plan on a six-day week is still on one when it comes back."""
+        project, _task = self.build()
+        project.set_working_week({6})
+
+        reopened = Project.from_dict(project.to_dict())
+
+        self.assertEqual(reopened.calendar.non_working_days, {6})
+        self.assertTrue(reopened.calendar.is_working_day(date(2026, 9, 12)))
+
+
 if __name__ == '__main__':
     unittest.main()
