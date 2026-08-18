@@ -83,8 +83,8 @@ class TestSearchingTheList(HolidayDialogTestCase):
     """
 
     def shown(self, window):
-        """The codes currently laid out in the list."""
-        return [code for code, _name, box in window.rows
+        """The codes currently laid out in the list, regions included."""
+        return [code for code, _haystack, box, _indent in window._all_rows()
                 if box.winfo_manager()]
 
     def test_a_search_narrows_the_list(self):
@@ -114,7 +114,8 @@ class TestSearchingTheList(HolidayDialogTestCase):
         window.search_var.set("")
         window.update_idletasks()
 
-        self.assertEqual(len(self.shown(window)), len(window.checkboxes))
+        countries = [code for code in self.shown(window) if '-' not in code]
+        self.assertEqual(len(countries), len(supported_countries()))
 
     def test_a_search_keeps_ticks_made_outside_it(self):
         """
@@ -142,6 +143,87 @@ class TestSearchingTheList(HolidayDialogTestCase):
 
         self.assertEqual(self.shown(window), [])
         self.assertIn("Showing 0", window.summary_label.cget('text'))
+
+
+class TestRegionsAndStates(HolidayDialogTestCase):
+    """
+    Holidays below the national level.
+
+    WHY THESE EXIST:
+    ================
+    Bavaria keeps three public holidays the rest of Germany works through, so
+    a plan scheduled against Germany as a whole quietly puts work on days half
+    the team is off - which is the entire reason this application observes
+    holidays at all.
+
+    There are around a thousand regions across the seventy countries that
+    have them, so they are not all on show: a thousand check boxes is a
+    dialog that takes seconds to open. They appear when they are searched for
+    and when they are already selected.
+    """
+
+    def shown(self, window):
+        """The codes currently laid out, regions included."""
+        return [code for code, _haystack, box, _indent in window._all_rows()
+                if box.winfo_manager()]
+
+    def test_regions_are_not_on_show_by_default(self):
+        """The list opens as a list of countries."""
+        window = self.dialog()
+
+        self.assertEqual([c for c in self.shown(window) if '-' in c], [])
+
+    def test_searching_a_country_brings_out_its_regions(self):
+        """Which is what makes them findable without a page of expanders."""
+        window = self.dialog()
+
+        window.search_var.set("germany")
+        window.update_idletasks()
+
+        shown = self.shown(window)
+        self.assertIn("DE", shown)
+        self.assertIn("DE-BY", shown)
+
+    def test_a_region_can_be_found_by_its_own_name(self):
+        """Someone who wants Bavaria should be able to type Bavaria."""
+        window = self.dialog()
+
+        window.search_var.set("bayern")
+        window.update_idletasks()
+
+        self.assertEqual(self.shown(window), ["DE-BY"])
+
+    def test_a_selected_region_is_shown_without_searching(self):
+        """
+        A selection is never hidden from the person who made it.
+
+        A plan observing Bavaria that opened on an unticked Germany would
+        look as though the setting had been lost.
+        """
+        window = self.dialog(['DE-BY'])
+
+        self.assertIn("DE-BY", self.shown(window))
+        self.assertEqual(window.selection(), ["DE-BY"])
+
+    def test_a_region_survives_being_applied(self):
+        """It reaches the project in the form the calendar reads."""
+        window = self.dialog()
+        window.search_var.set("bayern")
+        window.update_idletasks()
+        window.checkboxes["DE-BY"].set(True)
+
+        window.apply()
+
+        self.assertEqual(self.applied, [["DE-BY"]])
+
+    def test_the_eu_button_selects_countries_not_regions(self):
+        """The union is 27 national calendars."""
+        window = self.dialog(['DE-BY'])
+
+        window.select_eu()
+
+        self.assertNotIn("DE-BY", window.selection())
+        self.assertIn("DE", window.selection())
 
 
 class TestWhatTheDialogOffers(HolidayDialogTestCase):

@@ -75,9 +75,22 @@ class GanttApp(ctk.CTk):
     Manages the project, task list, Gantt chart, and toolbar components.
     """
     
+    #: The X11 window class the desktop matches this application by.
+    #:
+    #: It has to be the StartupWMClass in packaging/pysimplepmt.desktop, and
+    #: Tk capitalises what it is given - so the desktop entry names the
+    #: capitalised form. Without it the class is Tk, which is what every
+    #: other Tk application on the machine is called: the desktop cannot tell
+    #: which .desktop file the window belongs to, so it shows a generic icon
+    #: in the dock and the switcher however good the one in the menu is.
+    WM_CLASS_NAME = 'pysimplepmt'
+
     def __init__(self):
-        super().__init__()
-        
+        # className is what Tk builds WM_CLASS from, and it can only be given
+        # at construction - there is no way to set it on a window that already
+        # exists. CustomTkinter forwards it to Tk untouched.
+        super().__init__(className=self.WM_CLASS_NAME)
+
         # Configure main window
         self.title("Gantt Project Manager")
         self.geometry("1400x900")

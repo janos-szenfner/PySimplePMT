@@ -54,6 +54,7 @@ below comes from the standard library directly.
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, Optional, Set, Tuple, Union
+import importlib
 import importlib.util
 import logging
 import re
@@ -155,6 +156,115 @@ def supported_countries() -> Dict[str, str]:
     return _country_names
 
 
+#: Subdivisions per country, worked out on demand and kept. Building one
+#: country's list means importing its module, which is not free across 250 of
+#: them - and most callers ask about a handful.
+_subdivision_names: Dict[str, Dict[str, str]] = {}
+
+#: How a subdivision is written in a saved calendar and in the picker:
+#: the country, this, then the subdivision - "DE-BY" for Bavaria. It is the
+#: ISO 3166-2 form, and it keeps a selection a plain list of strings, so a
+#: calendar saved before subdivisions existed still reads back.
+SUBDIVISION_SEPARATOR = '-'
+
+
+def split_country(entry: str) -> Tuple[str, Optional[str]]:
+    """
+    Separate a selection entry into its country and its subdivision.
+
+    PARAMETERS:
+    -----------
+    entry : str
+        Either a country code - "DE" - or a country and a subdivision -
+        "DE-BY".
+
+    RETURNS:
+    --------
+    Tuple[str, Optional[str]]
+        The country code, and the subdivision or None for the country as a
+        whole.
+    """
+    country, separator, subdivision = str(entry).strip().upper().partition(
+        SUBDIVISION_SEPARATOR
+    )
+    return country, (subdivision or None) if separator else None
+
+
+def subdivisions(country: str) -> Dict[str, str]:
+    """
+    The regions of a country that keep holidays of their own.
+
+    PARAMETERS:
+    -----------
+    country : str
+        An ISO 3166-1 alpha-2 country code.
+
+    RETURNS:
+    --------
+    Dict[str, str]
+        Subdivision code to name, sorted by name. Empty for a country whose
+        holidays are all national, and for every country when the `holidays`
+        package is missing.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Roughly seventy of the countries have these, and they matter: Bavaria
+    keeps three public holidays the rest of Germany works through, so a plan
+    scheduled against Germany as a whole quietly puts work on days half the
+    team is off - which is the entire reason this application observes
+    holidays at all.
+
+    The package holds the names as an alias table pointing the other way,
+    name to code, so it is inverted here. A subdivision with no name in the
+    table keeps its code, which is still better than dropping it.
+    """
+    country = str(country).strip().upper()
+    if country in _subdivision_names:
+        return _subdivision_names[country]
+
+    try:
+        import holidays as holidays_package
+    except ImportError:
+        _subdivision_names[country] = {}
+        return {}
+
+    try:
+        codes = holidays_package.list_supported_countries().get(country) or []
+    except Exception:
+        logger.exception("Could not list the subdivisions of %r", country)
+        codes = []
+
+    names = {code: code for code in codes}
+    try:
+        registry = holidays_package.registry.COUNTRIES
+        entry = next((value for value in registry.values()
+                      if len(value) > 1 and value[1] == country), None)
+        if entry is not None:
+            module = importlib.import_module(
+                f"holidays.countries.{_module_for(registry, country)}"
+            )
+            found = getattr(getattr(module, entry[0]),
+                            'subdivisions_aliases', {}) or {}
+            for name, code in found.items():
+                if code in names:
+                    names[code] = str(name)
+    except Exception:
+        logger.debug("No subdivision names for %r; using the codes", country)
+
+    _subdivision_names[country] = dict(
+        sorted(names.items(), key=lambda item: item[1])
+    )
+    return _subdivision_names[country]
+
+
+def _module_for(registry, country: str) -> str:
+    """The holidays submodule holding a country, by its code."""
+    for key, value in registry.items():
+        if len(value) > 1 and value[1] == country:
+            return key
+    return country.lower()
+
+
 #: Whether the missing-package warning has already been given. Resolving a
 #: year of holidays is attempted on every redraw of a plan whose calendar
 #: names a country, and a log line per attempt would bury everything else.
@@ -234,13 +344,33 @@ def country_holidays(codes: Iterable[str], year: int) -> Set[date]:
         return set()
 
     merged: Set[date] = set()
-    for code in codes:
+    for entry in codes:
+        country, subdivision = split_country(entry)
         try:
-            found = holidays_package.country_holidays(code, years=year)
-        except (NotImplementedError, KeyError, AttributeError):
-            logger.warning("No holiday calendar for country %r; ignoring it",
-                           code)
-            continue
+            found = holidays_package.country_holidays(
+                country, subdiv=subdivision, years=year
+            )
+        except (NotImplementedError, KeyError, AttributeError, ValueError):
+            if subdivision is not None:
+                # A region the package does not know, or no longer knows.
+                # Falling back to the country keeps the national holidays
+                # rather than losing the entry altogether, which would be a
+                # plan quietly scheduled through them.
+                logger.warning(
+                    "No holiday calendar for %r; observing %r as a whole",
+                    entry, country
+                )
+                try:
+                    found = holidays_package.country_holidays(country,
+                                                              years=year)
+                except Exception:
+                    logger.warning("No holiday calendar for country %r either;"
+                                   " ignoring it", country)
+                    continue
+            else:
+                logger.warning("No holiday calendar for country %r; ignoring "
+                               "it", country)
+                continue
         merged.update(found.keys())
 
     return merged
@@ -276,11 +406,13 @@ class WorkingCalendar:
         holidays a plan spanning several years would otherwise have to list
         once per year.
     countries : Set[str]
-        ISO country codes whose public holidays are not worked. The union
-        applies: a date that is a holiday in any of them is a holiday here.
-        Resolved a year at a time through the `holidays` package - see
-        country_holidays - which is what gets Easter Monday and the rest of
-        the movable feasts right without any of them being listed.
+        What is observed, as ISO codes: a country - "DE" - or a country and
+        one of its regions - "DE-BY" for Bavaria, which keeps three public
+        holidays the rest of Germany works through. The union applies: a date
+        that is a holiday in any of them is a holiday here. Resolved a year at
+        a time through the `holidays` package - see country_holidays - which
+        is what gets Easter Monday and the rest of the movable feasts right
+        without any of them being listed.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -332,7 +464,8 @@ class WorkingCalendar:
         PARAMETERS:
         -----------
         codes : Iterable[str]
-            ISO 3166-1 alpha-2 country codes. An empty list observes none.
+            ISO codes: a country - "DE" - or a country and one of its regions
+            - "DE-BY". An empty list observes none.
         """
         self.countries = {
             str(code).strip().upper() for code in codes if str(code).strip()

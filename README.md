@@ -32,7 +32,7 @@ This is a complete implementation of a project management tool with:
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
-- **Public Holidays**: Actions → Public Holidays... picks any of the ~250 countries the `holidays` package knows, with a search box and the 27 EU member states behind one button. A date that is a public holiday in *any* selected country becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Public Holidays**: Actions → Public Holidays... picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
@@ -179,6 +179,21 @@ substitutions several member states make when a holiday falls on a weekend all
 come out right without anything being listed by hand. What is stored is the
 country codes, not the dates: a plan reopened in a later year needs that year's
 holidays, and a list worked out today would run out.
+
+A selection entry is a country — `DE` — or a country and one of its regions —
+`DE-BY` for Bavaria, which keeps three public holidays the rest of Germany
+works through. That is the ISO 3166-2 form, so a selection stays a plain list
+of strings and a calendar saved before regions existed reads back unchanged. A
+region the package no longer knows falls back to its country's national
+holidays rather than being dropped, since losing the entry would schedule work
+straight through them.
+
+The picker lists countries; a region appears when it is searched for or when it
+is already selected. The names of all ~1,200 regions are indexed when the
+dialog opens (a thirtieth of a second), but their check boxes are built a
+country at a time — a thousand of them takes half a second, which is a stutter
+on every keystroke. Searching for a region needs two characters for the same
+reason.
 
 Applying a selection goes through `Project.set_holiday_countries()`, which reads
 every task's working duration under the *old* calendar and rebuilds its dates
@@ -1053,7 +1068,8 @@ Unit tests cover:
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it
 - ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, and the EU public holidays including the movable Easter feasts
 - ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
-- ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries, the batch buttons, what Apply hands back and what Cancel does not
+- ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries and a thousand regions, when regions appear, the batch buttons, what Apply hands back and what Cancel does not
+- ✅ **Desktop Integration**: That the packaged icon is named what the desktop entry asks for, at every size the theme wants, and that the window class matches what the entry declares
 - ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
 - ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, and that a formula is never written where it would disagree with the plan
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
@@ -1070,7 +1086,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 2. **Public holidays**: Need the optional `holidays` package. Without it the picker still saves a selection and says so, but plans are scheduled on weekends alone
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
-4. **Public holidays are national**: regional and state holidays that the `holidays` package exposes as subdivisions are not offered; a country is observed as a whole
+4. **Subdivision names come from the `holidays` package**, so a region it has no name for is listed by its code
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
 7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
@@ -1098,6 +1114,7 @@ Done:
 - [x] Phases drawn as a pointed bar rather than a bracket
 - [x] An application icon of its own, on the window and in the package
 - [x] Public holidays for any country, not just the EU
+- [x] Regional and state holidays, not only national ones
 - [x] Full critical path analysis - both passes, so every zero-float task
 
 Still to do:
@@ -1111,11 +1128,11 @@ Still to do:
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
 - [ ] Editing the weekend rule from the application
-- [ ] Regional and state holidays, not only national ones
+- [ ] Per-task calendars, so one strand of work can follow a different week
 - [ ] Resource levelling off the back of the float analysis
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.29.0
+**Version**: 1.30.0
 **Last Updated**: 2026-08-18

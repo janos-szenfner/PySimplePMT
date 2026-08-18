@@ -42,7 +42,8 @@ import customtkinter as ctk
 
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.workdaycalendar import (
-    EU_COUNTRIES, holidays_available, supported_countries,
+    EU_COUNTRIES, holidays_available, split_country, subdivisions,
+    supported_countries,
 )
 from gantt_app.utils.log import get_logger
 
@@ -78,6 +79,14 @@ class HolidayDialog(ctk.CTkToplevel):
     #: Two columns of countries, so the list does not need a longer scroll
     #: than it has to.
     COLUMNS = 2
+
+    #: How much has to be typed before the search reaches the regions.
+    #:
+    #: A single letter matches most of the thousand of them, and building
+    #: that many check boxes takes half a second - a stutter on the first
+    #: keystroke of every search. Two letters is not a restriction anybody
+    #: notices and cuts the worst case to a handful.
+    REGION_SEARCH_MINIMUM = 2
 
     def __init__(self, master, selected: Sequence[str],
                  on_apply: Callable[[List[str]], None]):
@@ -165,18 +174,92 @@ class HolidayDialog(ctk.CTkToplevel):
         for column in range(self.COLUMNS):
             self.scroller.grid_columnconfigure(column, weight=1, uniform='cty')
 
-        #: Every box, in display order, so filtering can re-grid them
+        #: Every country, in display order, so filtering can re-grid them
         self.rows = []
 
         for code, name in supported_countries().items():
-            variable = ctk.BooleanVar(value=code in chosen)
-            variable.trace_add('write', lambda *_args: self._update_count())
-            box = ctk.CTkCheckBox(self.scroller, text=f"{name} ({code})",
-                                  variable=variable)
-            self.checkboxes[code] = variable
-            self.rows.append((code, name.lower(), box))
+            self.rows.append(self._row(code, f"{name} ({code})",
+                                       f"{name} {code}".lower(), chosen))
+
+        # The regions, which only appear when they are searched for or
+        # already selected; see _apply_filter.
+        #
+        # Their *names* are indexed up front - a thousand of them takes a
+        # thirtieth of a second - so the search can find one without its
+        # country being on screen. Their *boxes* are built a country at a
+        # time, because a thousand check boxes is a dialog that takes
+        # seconds to open.
+        self.region_rows = {}
+        self.region_index = self._index_regions()
+        for code in self._countries_with_regions(chosen):
+            self._build_regions(code, chosen)
 
         self._apply_filter()
+
+    def _index_regions(self):
+        """
+        Every region's searchable text, without building anything.
+
+        RETURNS:
+        --------
+        Dict[str, str]
+            Country code to the text of all its regions, lower case. Enough
+            to answer "does this search touch this country's regions", which
+            is what decides whether its boxes are worth building.
+        """
+        index = {}
+        for country, name in supported_countries().items():
+            regions = subdivisions(country)
+            if not regions:
+                continue
+            index[country] = ' '.join(
+                f"{name} {region} {code} {country}-{code}"
+                for code, region in regions.items()
+            ).lower()
+        return index
+
+    def _row(self, code, label, haystack, chosen, indent=0):
+        """One tick box, and the strings the search matches it on."""
+        variable = ctk.BooleanVar(value=code in chosen)
+        variable.trace_add('write', lambda *_args: self._update_count())
+        box = ctk.CTkCheckBox(self.scroller, text=label, variable=variable)
+        self.checkboxes[code] = variable
+        return (code, haystack, box, indent)
+
+    def _countries_with_regions(self, chosen):
+        """
+        Which countries' regions are worth building up front.
+
+        Everything already selected, so a plan that observes Bavaria opens
+        showing Bavaria rather than an unticked Germany. The rest are built
+        when the search first asks for them.
+        """
+        return sorted({split_country(entry)[0] for entry in chosen})
+
+    def _build_regions(self, country, chosen=()):
+        """
+        The regions of one country, built once and kept.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Lazy, because there are around a thousand of these across the seventy
+        countries that have them, and a thousand check boxes is a dialog that
+        takes seconds to open. Only the countries a reader actually looks at
+        are built.
+        """
+        if country in self.region_rows:
+            return self.region_rows[country]
+
+        names = supported_countries()
+        rows = []
+        for code, name in subdivisions(country).items():
+            entry = f"{country}-{code}"
+            label = f"    {name} ({entry})"
+            haystack = f"{names.get(country, '')} {name} {entry}".lower()
+            rows.append(self._row(entry, label, haystack, chosen, indent=1))
+
+        self.region_rows[country] = rows
+        return rows
 
     def _apply_filter(self, *_args):
         """
@@ -194,18 +277,55 @@ class HolidayDialog(ctk.CTkToplevel):
 
         needle = self.search_var.get().strip().lower()
 
+        # A search reaches the regions as well, which is what makes them
+        # findable without a page of expanders: typing a country's name
+        # brings its regions out under it, and typing a region's name finds
+        # it on its own. The boxes for a country are built the first time a
+        # search asks for them and kept from then on.
+        if len(needle) >= self.REGION_SEARCH_MINIMUM:
+            for country, haystack in self.region_index.items():
+                if country in self.region_rows:
+                    continue
+                if needle in haystack:
+                    self._build_regions(country)
+
         shown = 0
-        for code, name, box in self.rows:
-            if not needle or needle in name or needle in code.lower():
-                box.grid(row=shown // self.COLUMNS,
-                         column=shown % self.COLUMNS,
-                         sticky=tk.W, padx=6, pady=4)
-                shown += 1
-            else:
-                box.grid_remove()
+        for code, haystack, box, indent in self._visible_rows(needle):
+            box.grid(row=shown // self.COLUMNS, column=shown % self.COLUMNS,
+                     sticky=tk.W, padx=6 + indent * 18, pady=4)
+            shown += 1
 
         self.shown_count = shown
         self._update_count()
+
+    def _all_rows(self):
+        """Every row built so far, countries and regions together."""
+        for row in self.rows:
+            yield row
+            for region in self.region_rows.get(row[0], ()):
+                yield region
+
+    def _visible_rows(self, needle):
+        """
+        The rows the current search should show, in order.
+
+        A region shows when the search matches it, when it matches its
+        country - so the country's regions come out beneath it - or when it
+        is already ticked, so a selection is never hidden from the person who
+        made it.
+        """
+        for row in self._all_rows():
+            code, haystack, box, _indent = row
+            matched = not needle or needle in haystack
+            is_region = split_country(code)[1] is not None
+
+            if is_region and not needle and not self.checkboxes[code].get():
+                box.grid_remove()
+                continue
+            if matched or (is_region and self.checkboxes[code].get()):
+                yield row
+            else:
+                box.grid_remove()
 
     def _build_buttons(self):
         """Apply and Cancel, along the bottom."""
@@ -255,7 +375,7 @@ class HolidayDialog(ctk.CTkToplevel):
         nobody means, and against a search for "united" it is exactly what
         they mean.
         """
-        shown = {code for code, _name, box in self.rows
+        shown = {code for code, _haystack, box, _indent in self._all_rows()
                  if box.winfo_manager()}
         for code, variable in self.checkboxes.items():
             if code in shown:

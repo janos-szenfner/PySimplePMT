@@ -101,6 +101,7 @@ install -d "${STAGE_DIR}/usr/share/applications"
 for ICON_SIZE in ${ICON_SIZES}; do
     install -d "${STAGE_DIR}/usr/share/icons/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps"
 done
+install -d "${STAGE_DIR}/usr/share/pixmaps"
 install -d "${STAGE_DIR}/usr/share/doc/${PACKAGE_NAME}"
 
 cp -a "${BUNDLE_DIR}/." "${STAGE_DIR}/opt/${PACKAGE_NAME}/"
@@ -126,6 +127,41 @@ for ICON_SIZE in ${ICON_SIZES}; do
         "${STAGE_DIR}/usr/share/icons/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps/${PACKAGE_NAME}.png" \
         "${ICON_SIZE}"
 done
+
+# The legacy location, which menu implementations that predate the icon theme
+# spec still look in and some still prefer. One file, and it costs 14 KB.
+python3 packaging/make_icon.py \
+    "${STAGE_DIR}/usr/share/pixmaps/${PACKAGE_NAME}.png" 48
+
+# An icon nobody can see is the failure this guards against: the desktop
+# entry names an icon by a bare name, so a file in the wrong place, under the
+# wrong name, or simply absent shows as a generic cog and nothing says why.
+echo "==> Checking the icons are where the desktop entry will look"
+for ICON_SIZE in ${ICON_SIZES}; do
+    ICON_FILE="${STAGE_DIR}/usr/share/icons/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps/${PACKAGE_NAME}.png"
+    if [[ ! -s "${ICON_FILE}" ]]; then
+        echo "ERROR: ${ICON_FILE} was not written" >&2
+        exit 1
+    fi
+done
+test -s "${STAGE_DIR}/usr/share/pixmaps/${PACKAGE_NAME}.png"
+
+# The Icon= key must be the bare name the theme is keyed by, not a path
+ICON_KEY="$(sed -n 's/^Icon=//p' "${STAGE_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop")"
+if [[ "${ICON_KEY}" != "${PACKAGE_NAME}" ]]; then
+    echo "ERROR: the desktop entry asks for icon '${ICON_KEY}', which is not "\
+         "what is installed (${PACKAGE_NAME}.png)" >&2
+    exit 1
+fi
+
+# And the entry itself has to be valid, or the desktop may ignore it outright
+if command -v desktop-file-validate >/dev/null 2>&1; then
+    desktop-file-validate \
+        "${STAGE_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop"
+    echo "    desktop entry validates"
+else
+    echo "    desktop-file-validate not available; skipping that check"
+fi
 
 # ---------------------------------------------------------------------------
 # Documentation and copyright
@@ -168,7 +204,8 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: ${MAINTAINER}
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libc6, libx11-6, libxext6, libxrender1, libfontconfig1, libfreetype6
+Depends: libc6, libx11-6, libxext6, libxrender1, libfontconfig1, libfreetype6,
+ hicolor-icon-theme
 Recommends: xdg-utils, fonts-dejavu-core, zenity
 Description: Gantt chart project management tool
  PySimplePMT is a desktop project management application with Gantt chart

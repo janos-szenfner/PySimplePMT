@@ -11,4 +11,4 @@ Categories=Office;ProjectManagement;
 Keywords=gantt;project;planning;schedule;roadmap;
 MimeType=application/json;text/x-mermaid;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;
 StartupNotify=true
-StartupWMClass=pysimplepmt
+StartupWMClass=Pysimplepmt
