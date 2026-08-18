@@ -89,8 +89,13 @@ bundle('tkinterweb_tkhtml')
 
 # Every country calendar is its own module, imported by name at runtime, so
 # nothing static references them and PyInstaller would bundle none of them.
-# Optional: without it the EU holiday calendar degrades to weekends alone.
-bundle('holidays', optional=True)
+#
+# Required, not optional. It is in requirements.txt and CI installs that
+# before building, so a build without it is a broken environment rather than
+# a deliberate slimmer package - and skipping it silently shipped an
+# application whose holiday picker saved selections that could never take
+# effect. Failing the build says so while somebody can still fix it.
+bundle('holidays')
 
 hiddenimports += [
     'plotly.graph_objects',

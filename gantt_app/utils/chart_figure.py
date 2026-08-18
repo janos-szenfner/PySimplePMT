@@ -75,14 +75,41 @@ def _merged_settings(settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return merged
 
 
+#: Days of empty calendar drawn before the first bar.
+#:
+#: One, and deliberately not more. A chart is read left to right and the eye
+#: starts where the bars start, so empty calendar in front of the plan is
+#: empty space exactly where the reader is looking. This used to be a week -
+#: the same padding as the trailing side - and the chart opened on a quarter
+#: of its width showing nothing at all. One day keeps the first bar off the
+#: axis line, which is all the leading side is for.
+LEAD_DAYS = 1
+
+#: The least empty calendar drawn after the last bar.
+#:
+#: Wider than the leading side because every bar is labelled to its right,
+#: and the last bar's label has nowhere to go without it.
+MIN_TRAIL_DAYS = 4
+
+#: How much of the plan's own span to add on the trailing side, as a divisor.
+#:
+#: Proportional because the labels are a fixed number of *pixels* wide while
+#: a day gets narrower the longer the plan is - so a year-long plan needs
+#: more days of trailing calendar to hold the same label than a fortnight
+#: does, not fewer.
+TRAIL_FRACTION = 6
+
+
 def calculate_date_range(tasks: List[Task]) -> Tuple[datetime, datetime]:
     """
-    Get the padded date range covering every task.
+    The date range the chart is drawn across.
 
     RETURNS:
     --------
     Tuple[datetime, datetime]
-        Earliest and latest dates, padded so bars do not touch the edges.
+        The first and last dates to draw, with a day of lead-in before the
+        plan and room after it for the last bar's label. Asymmetric on
+        purpose; see LEAD_DAYS.
     """
     if not tasks:
         now = datetime.now()
@@ -94,8 +121,10 @@ def calculate_date_range(tasks: List[Task]) -> Tuple[datetime, datetime]:
     min_date = min(dates)
     max_date = max(dates)
 
-    padding = max(7, (max_date - min_date).days // 10)
-    return min_date - timedelta(days=padding), max_date + timedelta(days=padding)
+    span = (max_date - min_date).days
+    trail = max(MIN_TRAIL_DAYS, span // TRAIL_FRACTION)
+    return (min_date - timedelta(days=LEAD_DAYS),
+            max_date + timedelta(days=trail))
 
 
 def _elapsed_days(task: Task) -> int:

@@ -139,7 +139,7 @@ class TestMenuContents(unittest.TestCase):
         """View no longer offers Project Info."""
         view = labels(find(self.tree, 'View')['items'])
 
-        self.assertEqual(view, ['System UI mode', 'Settings...'])
+        self.assertEqual(view, ['System UI mode', 'Settings...', 'Help'])
         self.assertNotIn('Project Info', view)
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):

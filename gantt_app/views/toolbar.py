@@ -969,6 +969,7 @@ class Toolbar(ctk.CTkFrame):
                          "command": self.use_dark_theme},
                     ]},
                     {"text": "Settings...", "command": self.open_gantt_chart_settings},
+                    {"text": "Help", "command": self.show_help},
                 ],
             },
         ]
@@ -1813,6 +1814,18 @@ class Toolbar(ctk.CTkFrame):
         """View > System UI mode > Always Night."""
         self._set_theme_mode(theme.MODE_DARK)
 
+    def show_help(self):
+        """
+        Open the user guide, the same window the ? on the icon bar opens.
+
+        One window, kept as one instance, so reaching it from the menu while
+        it is already open raises the copy that is there rather than stacking
+        a second one - see ReferenceWindow.show.
+        """
+        from gantt_app.help.userguide import show_user_guide
+
+        show_user_guide(self.winfo_toplevel())
+
     def toggle_theme(self):
         """
         Flip between day and night, taking manual control.
@@ -2007,6 +2020,38 @@ class IconToolbar(ctk.CTkFrame):
 
         self._create_separator()
         self._create_theme_control()
+        self._create_help_button()
+
+    def _create_help_button(self):
+        """
+        The ? that opens the full guide.
+
+        Built here rather than listed in ICON_ACTIONS because it needs no
+        project and no handler connected from Toolbar - it opens a window
+        that reads nothing. Everything in ICON_ACTIONS is greyed out with no
+        plan open, and help that is unavailable until you have a project is
+        help withheld from exactly the person who needs it.
+        """
+        self.help_button = ctk.CTkButton(
+            self, text="" , width=self.BUTTON_SIZE, height=self.BUTTON_SIZE,
+            fg_color="transparent", hover_color=WIN_MENU_HOVER,
+            text_color=WIN_MENU_TEXT, corner_radius=4,
+            command=self.show_help,
+        )
+        image = self._icon_image('help')
+        if image is not None:
+            self.help_button.configure(image=image)
+            self.help_button.icon_image = image
+        else:
+            self.help_button.configure(text="?")
+        self.help_button.tooltip = "Help"
+        self.help_button.pack(side="left", padx=2, pady=2)
+
+    def show_help(self):
+        """Open the user guide, or raise the copy already open."""
+        from gantt_app.help.userguide import show_user_guide
+
+        show_user_guide(self.winfo_toplevel())
 
     # ---- the day / night control ----------------------------------------
 

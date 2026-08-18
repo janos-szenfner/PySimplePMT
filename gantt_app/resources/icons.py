@@ -48,6 +48,7 @@ ICON_EMOJIS: Dict[str, str] = {
     'undo': '\U0001f519',          # Counterclockwise arrows
     'redo': '\U0001f51a',          # Clockwise arrows
     'info': '\U00002139',          # Information
+    'help': '\U00002753',          # Question mark: the user guide
     'sun': '\U00002600',           # Day: the light appearance
     'moon': '\U0001f319',          # Night: the dark appearance
 }
@@ -269,6 +270,15 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('line', [(0.40, 0.14), (0.60, 0.14)]),
         ('line', [(0.44, 0.44), (0.44, 0.74)]),
         ('line', [(0.56, 0.44), (0.56, 0.74)]),
+    ],
+    # Help: a question mark. Drawn as a hook, a stem and a dot rather than
+    # set as the character '?', so it keeps the weight of the rest of the row
+    # and does not depend on which font Tk picks for a button.
+    'help': [
+        ('line', [(0.30, 0.34), (0.33, 0.23), (0.42, 0.16), (0.55, 0.15),
+                  (0.66, 0.21), (0.71, 0.32), (0.68, 0.43), (0.58, 0.50),
+                  (0.50, 0.57), (0.50, 0.66)]),
+        ('disc', [(0.43, 0.76), (0.57, 0.90)]),
     ],
     # Day: a disc with eight rays. Drawn rather than set as an emoji so it
     # matches the weight of every other icon on the bar, and so it renders

@@ -13,7 +13,7 @@ This is a complete implementation of a project management tool with:
 
 ## Features
 
-- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it
+- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label, rather than a week of empty calendar at each end
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Milestone Support**: Special single-date markers with diamond icons
@@ -28,11 +28,11 @@ This is a complete implementation of a project management tool with:
 - **Critical Path**: Automatic calculation and visualization of the critical path
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in **working** days and Hard/Rubber link hardness. A start link and a finish link on the same task state a span - Start-Start onto the first task and Finish-Finish onto the last makes a row cover the stretch between them, and its duration follows from the two dates rather than being carried over. A hard link pins a date but still has to clear any rubber floor set by another link
 - **Earliest Begin Date**: a floor on when a task's work can start, applied alongside the links and the working calendar
-- **Built-in Help**: A Help button on the task editor and on the Dependency tab opens a full reference - the fields of the form in one, link types, lead/lag and hardness in the other
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Built-in Help**: the **?** on the icon bar and **View → Help** open one searchable guide covering every field, the scheduling rules, the task types and hierarchy, the calendars, dependencies, float, and the import/export formats. The search box matches any text or number, highlights every hit, counts them, and walks them with Enter / Shift+Enter. Two shorter references stay where they were needed — a Help button on the task editor and on the Dependency tab, each explaining the form in front of you
 - **Day / Night Theme**: follows the desktop by default and keeps following it — the window switches when the OS does. The toolbar's ☀ **Day** / 🌙 **Night** button flips it by hand and detaches from the OS; **Sync with system** appears beside it only while that override is in force. Also under View → System UI mode. The choice is remembered between runs
 - **Per-Task Calendars**: a task may follow a calendar of its own instead of the plan's — a weekend-only shift for a migration that can only touch production on a Saturday, a 24/7 run for an unattended load test. Set from the task editor's **Working calendar** dropdown, which re-dates the task as soon as it is picked. Three presets come with every plan; a task that names none follows the project's calendar exactly as before
 - **Working Week**: Actions → Calendar Settings... → Working Week sets which weekdays are worked at all — a six-day week, a four-day week, or the standard Monday to Friday. Durations are held and finishes move, so putting Saturday to work pulls finishes in rather than lengthening tasks. A week with no working day in it is refused
@@ -82,7 +82,8 @@ gantt_app/
 │   ├── __init__.py
 │   ├── reference.py       # The window both Help buttons open
 │   ├── editorhelp.py      # Task editor reference behind its Help button
-│   └── dependencyhelp.py  # Dependency reference behind the Help button
+│   ├── dependencyhelp.py  # Dependency reference behind the Help button
+│   └── userguide.py       # The full guide behind ? and View → Help
 │
 ├── priority.py            # The priority levels a work item can carry
 │
@@ -174,6 +175,38 @@ Everything that turns a duration into dates goes through it - the task form's
 three scheduling modes, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
+
+#### The user guide (`help/userguide.py`)
+
+**?** on the icon bar and **View → Help** open the same window — one
+instance, so pressing either while it is up raises the copy that is there
+rather than stacking a second.
+
+It is the long-form documentation: what the four levels mean and how work
+moves between them, every field of the task editor, the three scheduling
+modes, working days against calendar days, all four calendar rules and the
+priority between them, per-task calendars, the link types with lag and
+hardness, float and the critical path, progress roll-up, every import and
+export format, and a section on why a task moved when you did not move it.
+
+**The search box** across the top matches any text or number, taken
+literally and without regard to case — so `24/7`, `100%` and `2026` find
+themselves rather than being read as patterns. Every hit is highlighted where
+it sits, the current one more strongly, with a `3 of 12` count beside the
+box; Enter walks forward, Shift+Enter back, Escape clears. Hits are
+highlighted **in place** rather than the guide being filtered down to
+matching sections: a reference is read for its context, and the paragraph a
+number sits in is usually the answer.
+
+The window is `ReferenceWindow` with a search bar, the same base the two
+short references use — the search is opt-in per subclass, since a screen or
+two is faster read than searched.
+
+**Every date in the worked examples is real.** They were produced by the
+scheduler rather than typed from memory, and a test re-derives each one,
+because a guide that disagrees with the application is worse than no guide:
+the reader believes it, and the disagreement is found later by somebody who
+has already acted on it.
 
 #### Light and dark (`theme.py`)
 
@@ -1412,12 +1445,12 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1333 tests, all passing.
+1364 tests, all passing.
 
 ## Known Limitations
 
 1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
-2. **Public holidays**: Need the optional `holidays` package. Without it the picker still saves a selection and says so, but plans are scheduled on weekends alone
+2. **Public holidays from source**: the `holidays` package is in `requirements.txt` and is bundled into every packaged build, so a released build always has it. Only a source checkout installed without its requirements lacks it — and there the picker still saves a selection and says on its face that the choice takes effect once the package is installed, rather than silently dropping it
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
 4. **Subdivision names come from the `holidays` package**, so a region it has no name for is listed by its code
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
@@ -1468,5 +1501,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.37.0
+**Version**: 1.38.0
 **Last Updated**: 2026-08-18
