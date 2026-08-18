@@ -35,6 +35,11 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 # The spec runs with the project root as the working directory
 PROJECT_ROOT = Path(SPECPATH).parent
 
+# Read from the package rather than passed in, so the bundle cannot claim a
+# version the application does not report.
+sys.path.insert(0, str(PROJECT_ROOT))
+from gantt_app import __version__ as APP_VERSION  # noqa: E402
+
 datas = []
 binaries = []
 hiddenimports = []
@@ -162,3 +167,51 @@ coll = COLLECT(
     upx_exclude=[],
     name='pysimplepmt',
 )
+
+# ---------------------------------------------------------------------------
+# macOS application bundle
+# ---------------------------------------------------------------------------
+#
+# The one-directory build above is what the .deb installs. macOS wants the
+# same tree inside a .app, which is the only shape the Finder will launch, the
+# Dock will name, and a .dmg can hold.
+#
+# Built only on macOS: BUNDLE is a no-op elsewhere, and asking for it on Linux
+# produces a directory nothing can use.
+#
+# The icon is drawn by packaging/make_icns.py before the build runs, from the
+# same drawing the window uses - see gantt_app/resources/appicon.py. Its
+# absence is not fatal: an iconless bundle still launches, and failing the
+# build over a picture would be worse than shipping the generic one.
+if sys.platform == 'darwin':
+    icon_file = PROJECT_ROOT / 'build' / 'pysimplepmt.icns'
+
+    app = BUNDLE(
+        coll,
+        name='PySimplePMT.app',
+        icon=str(icon_file) if icon_file.exists() else None,
+        bundle_identifier='com.szenfner.pysimplepmt',
+        version=APP_VERSION,
+        info_plist={
+            'CFBundleName': 'PySimplePMT',
+            'CFBundleDisplayName': 'PySimplePMT',
+            'CFBundleShortVersionString': APP_VERSION,
+            'CFBundleVersion': APP_VERSION,
+            # Without this the window is drawn at half resolution and every
+            # label on a Retina display comes out blurred
+            'NSHighResolutionCapable': True,
+            # The application has no service to run in the background
+            'LSBackgroundOnly': False,
+            'LSMinimumSystemVersion': '11.0',
+            'NSHumanReadableCopyright':
+                'Copyright (c) Janos Szenfner. MIT licence.',
+            'CFBundleDocumentTypes': [
+                {
+                    'CFBundleTypeName': 'PySimplePMT project',
+                    'CFBundleTypeRole': 'Editor',
+                    'LSItemContentTypes': ['public.json'],
+                    'CFBundleTypeExtensions': ['json'],
+                },
+            ],
+        },
+    )

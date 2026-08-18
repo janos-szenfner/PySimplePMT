@@ -100,9 +100,12 @@ gantt_app/
 └── assets/                # Bundled into the packaged build when it holds anything
 ```
 
-Alongside it, `packaging/` holds the `.deb` build: `build_deb.sh`, the desktop
-entry, the PyInstaller spec, and `make_icon.py`, which writes the icon above
-out at each size the desktop asks for.
+Alongside it, `packaging/` holds the builds for both platforms:
+`build_deb.sh` and the desktop entry for Linux; `build_dmg.sh`,
+`make_icns.py` and `README-macOS.md` for macOS; the PyInstaller spec, which
+produces the one-directory bundle both wrap and the `.app` on macOS; and
+`make_icon.py`, which writes the icon above out at each size the Linux
+desktop asks for.
 
 ## Implemented Features
 
@@ -547,18 +550,50 @@ pip install tasklib  # Pure Python MPP reader
 
 ## Usage
 
+### Packages
+
+Each release on the [Releases page](../../releases) carries:
+
+| Platform | Files |
+| --- | --- |
+| **macOS** | `.dmg`, and the `.app` bundle zipped. **Apple Silicon / arm64 only — not Intel** |
+| **Linux** | `.deb` for Ubuntu and Debian, amd64 |
+
+Both are **self-contained**: the Python interpreter, the Tcl/Tk runtime and
+every third-party library are bundled, so no Python installation and no pip
+packages are required, and nothing is downloaded at runtime. `SHA256SUMS`
+covers every file, and the exact library set is recorded in
+`dependency-manifest.txt` and `dependency-manifest-macos.txt`.
+
+### Installing on macOS
+
+Mount the `.dmg`, drag **PySimplePMT** onto **Applications**, and then — for
+the **first launch only** — **right-click** it in Applications and choose
+**Open**, then **Open** again in the dialog.
+
+The build is **unsigned**: it carries no Apple Developer certificate, because
+that is a paid annual subscription and this is a free project. Double-clicking
+an unsigned app the first time gets a refusal with no way past it; right-click
+→ Open is the way past. Every launch after that is an ordinary double-click.
+
+[packaging/README-macOS.md](packaging/README-macOS.md) has the full
+instructions, including the different route macOS Sequoia (15) takes, and
+travels inside the DMG so it is there when it is needed.
+
+Apple Silicon only. PyInstaller bundles the interpreter and the libraries of
+the machine that built it, and the release is built on an arm64 runner; on an
+Intel Mac, run from source instead.
+
 ### Installing on Ubuntu / Debian
 
 Download the `.deb` from the [Releases page](../../releases) and install it:
 
 ```bash
-sudo apt install ./pysimplepmt_1.0.0_amd64.deb
+sudo apt install ./pysimplepmt_1.28.0_amd64.deb
 ```
 
-The package is **self-contained**: the Python interpreter, the Tcl/Tk runtime
-and every third-party library are bundled, so no Python installation and no
-pip packages are required. See [packaging/README.md](packaging/README.md) for
-what it does still rely on and how it is built.
+See [packaging/README.md](packaging/README.md) for what the package still
+relies on and how it is built.
 
 ### Running the Application
 ```bash
@@ -1055,5 +1090,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.27.0
+**Version**: 1.28.0
 **Last Updated**: 2026-08-18

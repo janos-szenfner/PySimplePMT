@@ -29,6 +29,7 @@ REQUIRED_PACKAGES = [
 #: Packages that improve the app but whose absence is handled gracefully.
 OPTIONAL_PACKAGES = [
     ('tasklib', 'MS Project import'),
+    ('holidays', 'EU public holidays'),
 ]
 
 

@@ -108,64 +108,252 @@ jobs:
           test -x /opt/pysimplepmt/pysimplepmt
           find /opt/pysimplepmt -maxdepth 2 -name 'libpython*' -o -maxdepth 2 -name 'python3*' | head
 
-      - name: Generate checksums
-        run: |
-          cd dist
-          sha256sum *.deb > SHA256SUMS
-          cat SHA256SUMS
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pysimplepmt-${{ steps.version.outputs.version }}-deb
           path: |
             dist/*.deb
-            dist/SHA256SUMS
             dependency-manifest.txt
           retention-days: 30
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  build-macos:
+    name: Build macOS .app and .dmg
+    # Apple Silicon. PyInstaller bundles the interpreter and the libraries of
+    # the machine it runs on, so the runner's architecture *is* the build's -
+    # macos-14 and later are arm64, and an Intel build would need an Intel
+    # runner rather than a flag.
+    runs-on: macos-14
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Record the resolved dependency set
+        run: |
+          pip freeze > dependency-manifest-macos.txt
+          echo "Bundled dependencies:"
+          cat dependency-manifest-macos.txt
+
+      - name: Determine the version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Building version ${version} for $(uname -m)"
+
+      # The macOS runner has a window server, so the widget tests run without
+      # a virtual display.
+      - name: Run the test suite
+        run: python run_tests.py
+
+      - name: Build the .app and the .dmg
+        run: ./packaging/build_dmg.sh "${{ steps.version.outputs.version }}"
+
+      # A bundle that builds but will not start is worse than a failed build.
+      # --self-check imports every bundled dependency, which is what catches a
+      # library PyInstaller failed to collect; the GUI itself is not launched,
+      # since a windowed app on a headless runner has nothing to attach to.
+      - name: Smoke test the bundle
+        run: |
+          app="dist/PySimplePMT.app/Contents/MacOS/pysimplepmt"
+          "$app" --version
+          "$app" --self-check
+
+      - name: Verify the bundle is self-contained and correctly built
+        run: |
+          set -euo pipefail
+          app="dist/PySimplePMT.app"
+
+          echo "== Architecture =="
+          arch=$(lipo -archs "${app}/Contents/MacOS/pysimplepmt")
+          echo "  ${arch}"
+          if [ "${arch}" != "arm64" ]; then
+            echo "ERROR: expected an arm64 build, got ${arch}" >&2
+            exit 1
+          fi
+
+          echo "== Bundle metadata =="
+          plutil -p "${app}/Contents/Info.plist" \
+            | grep -E 'CFBundleIdentifier|CFBundleShortVersionString|CFBundleName|NSHighResolutionCapable'
+
+          # On macOS the interpreter is bundled as a framework rather than
+          # as a libpython dylib, which is what Linux gets
+          echo "== It carries its own interpreter =="
+          find "${app}/Contents" -maxdepth 3 -name 'Python*.framework' | head
+          if [ -z "$(find "${app}/Contents" -name 'Python*.framework' -print -quit)" ]; then
+            echo "ERROR: no bundled Python framework in the app" >&2
+            exit 1
+          fi
+
+          echo "== It carries its own icon =="
+          test -f "${app}/Contents/Resources/pysimplepmt.icns" \
+            || ls "${app}/Contents/Resources"/*.icns
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pysimplepmt-${{ steps.version.outputs.version }}-macos
+          path: |
+            dist/*.dmg
+            dist/*-app.zip
+            packaging/README-macOS.md
+            dependency-manifest-macos.txt
+          retention-days: 30
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  publish:
+    name: Publish the GitHub release
+    needs: [build-deb, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # Both platforms' artifacts are gathered here rather than each job
+      # publishing its own. A release that appears with only half its packages
+      # on it looks finished and is not, and two jobs racing to create the
+      # same release is how that happens.
+      - name: Download every build artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect the assets
+        id: assets
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find artifacts -type f \
+            \( -name '*.deb' -o -name '*.dmg' -o -name '*-app.zip' \
+               -o -name 'README-macOS.md' -o -name 'dependency-manifest*.txt' \) \
+            -exec cp {} release/ \;
+
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          echo "Assets to publish:"
+          ls -lh release/
+
+          # A release missing a package is the failure worth catching early,
+          # while the run can still be re-tried cheaply.
+          for required in '*.deb' '*.dmg'; do
+            if ! ls release/${required} >/dev/null 2>&1; then
+              echo "ERROR: no ${required} was built" >&2
+              exit 1
+            fi
+          done
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
 
       # Uploading assets to the releases API fails intermittently - a 39 MB
       # package went down with "other side closed" partway through, leaving
       # the tag pushed and no release at all. The gh CLI is preinstalled on
       # the runner, so the release is created and each asset uploaded with
       # explicit retries, then the result is verified.
-      - name: Publish the GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.assets.outputs.version }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+
+          deb_name=$(basename "$(ls release/*.deb)")
+          dmg_name=$(basename "$(ls release/*.dmg)")
 
           notes_file="$(mktemp)"
           cat > "$notes_file" <<'NOTES'
           ## PySimplePMT VERSION_PLACEHOLDER
 
-          ### Install on Ubuntu / Debian
+          ### Packages
+
+          * **macOS**: `.app` bundle (**Apple Silicon / arm64 only — not Intel**), DMG
+          * **Linux**: DEB
+
+          ### macOS installation notes
+
+          The macOS app is **unsigned** (no Apple Developer certificate).
+
+          **First launch:** right-click **PySimplePMT** in Applications →
+          **Open** → click **Open** in the security dialog. Every launch after
+          that is an ordinary double-click.
+
+          See `README-macOS.md` in the macOS artifact — it is also inside the
+          DMG — for the full instructions, including what to do on macOS
+          Sequoia (15), where the first attempt takes a different route.
+
+          ### Installation
+
+          Every file below carries the version without the leading `v`:
+          `DEB_NAME_PLACEHOLDER`, `DMG_NAME_PLACEHOLDER`.
+
+          **macOS**
+
+          * **DMG**: mount it, drag **PySimplePMT** to **Applications**, then
+            right-click → **Open**
+          * **.app zip**: unzip, move **PySimplePMT.app** to `/Applications`,
+            then right-click → **Open**
+
+          **Linux**
 
           ```bash
-          sudo apt install ./pysimplepmt_VERSION_PLACEHOLDER_amd64.deb
+          sudo dpkg -i pysimplepmt_*.deb
+          ```
+
+          Or, which resolves the base system libraries for you:
+
+          ```bash
+          sudo apt install ./DEB_NAME_PLACEHOLDER
           ```
 
           Then launch it from your applications menu, or run `pysimplepmt`.
 
           ### Self-contained
 
-          The package bundles the Python interpreter, the Tcl/Tk runtime and
+          Both packages bundle the Python interpreter, the Tcl/Tk runtime and
           every third-party library. **No Python installation and no pip
           packages are required**, and nothing is downloaded at runtime.
 
           The exact set of bundled libraries is recorded in
-          `dependency-manifest.txt`, and `SHA256SUMS` covers the package.
+          `dependency-manifest.txt` for Linux and
+          `dependency-manifest-macos.txt` for macOS. `SHA256SUMS` covers every
+          file attached here.
 
           ### Removal
 
-          ```bash
-          sudo apt remove pysimplepmt
-          ```
+          * **macOS**: drag **PySimplePMT** from Applications to the Bin
+          * **Linux**: `sudo apt remove pysimplepmt`
           NOTES
           sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" "$notes_file"
+          sed -i "s/DEB_NAME_PLACEHOLDER/${deb_name}/g" "$notes_file"
+          sed -i "s/DMG_NAME_PLACEHOLDER/${dmg_name}/g" "$notes_file"
 
           # Append GitHub's generated changelog. Asking gh for both
           # --notes-file and --generate-notes is rejected, so the notes are
@@ -229,7 +417,7 @@ jobs:
             return 1
           }
 
-          for asset in dist/*.deb dist/SHA256SUMS dependency-manifest.txt; do
+          for asset in release/*; do
             upload "$asset"
           done
 
@@ -245,10 +433,9 @@ jobs:
             --draft=false \
             "$prerelease_flag"
 
-      # A release missing its package is worse than a failed build, because
-      # it looks finished. Fail loudly if anything did not make it up.
+      # A release missing a package is worse than a failed build, because it
+      # looks finished. Fail loudly if anything did not make it up.
       - name: Verify the release assets
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -258,7 +445,9 @@ jobs:
           gh release view "$TAG" --json assets \
             --jq '.assets[] | "  \(.name)  \(.size) bytes"'
 
-          for required in ".deb" "SHA256SUMS" "dependency-manifest.txt"; do
+          for required in ".deb" ".dmg" "-app.zip" "README-macOS.md" \
+                          "SHA256SUMS" "dependency-manifest.txt" \
+                          "dependency-manifest-macos.txt"; do
             if ! gh release view "$TAG" --json assets --jq '.assets[].name' \
                  | grep -q -- "$required"; then
               echo "ERROR: ${required} is missing from the release" >&2

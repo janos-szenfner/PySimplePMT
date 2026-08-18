@@ -1,18 +1,25 @@
 # Packaging PySimplePMT
 
-Builds a self-contained Ubuntu/Debian package. The goal is that an end user
-installs one `.deb` and needs nothing else — no Python, no pip, no virtualenv.
+Builds self-contained packages for Ubuntu/Debian and macOS. The goal is that an
+end user installs one file and needs nothing else — no Python, no pip, no
+virtualenv.
 
 ## Contents
 
 | File | Purpose |
 |---|---|
-| `pysimplepmt.spec` | PyInstaller specification; bundles the interpreter, dependencies and Tcl/Tk |
+| `pysimplepmt.spec` | PyInstaller specification; bundles the interpreter, dependencies and Tcl/Tk, and wraps them in a `.app` on macOS |
 | `build_deb.sh` | Freezes the app and wraps the result in a `.deb` |
+| `build_dmg.sh` | Freezes the app and wraps the result in a `.app` and a `.dmg` |
 | `pysimplepmt.desktop` | Desktop entry so the app appears in the applications menu |
-| `make_icon.py` | Draws the application icon (kept as code, not a committed binary) |
+| `make_icon.py` | Writes the application icon out as PNGs, at each size the Linux desktop asks for |
+| `make_icns.py` | Writes the same icon out as a macOS `.icns` icon family |
+| `README-macOS.md` | Installation notes, copied into the DMG so they travel with it |
 
-## Building locally
+Both icon scripts draw from `gantt_app/resources/appicon.py`, which is part of
+the application, so the window and every package wear the same mark.
+
+## Building the .deb
 
 ```bash
 sudo apt-get install -y python3-tk fakeroot dpkg-dev
@@ -31,13 +38,53 @@ override it:
 `python3-tk` is required **on the build host** because PyInstaller bundles the
 Tcl/Tk runtime it finds there. It is not required on the target machine.
 
+## Building the .dmg
+
+Runs on macOS only — it needs `iconutil` and `hdiutil`, both of which ship
+with the system.
+
+```bash
+pip install -r requirements.txt -r requirements-build.txt
+./packaging/build_dmg.sh
+```
+
+This produces three things in `dist/`:
+
+- `PySimplePMT.app` — the bundle itself
+- `pysimplepmt-<version>-macos-<arch>.dmg` — the app, a shortcut to
+  `/Applications`, and `README-macOS.md`
+- `pysimplepmt-<version>-macos-<arch>-app.zip` — the bundle on its own, zipped
+  with `ditto` rather than `zip`, which is the only one of the two that keeps
+  the symlinks and the signature intact
+
+The script verifies its own output: it mounts the image and checks there is a
+runnable application inside it before it finishes.
+
+### It is not cross-compiled, and it is not signed
+
+PyInstaller bundles the interpreter and the libraries of the machine it runs
+on, so **the architecture of the result is the architecture of the builder**.
+The release workflow uses an Apple Silicon runner, so the published build is
+arm64 and will not run on an Intel Mac. The architecture goes in the filename
+rather than being assumed.
+
+The bundle is **unsigned** — signing and notarising need a paid Apple
+Developer certificate. It is ad-hoc signed and stripped of extended attributes
+so macOS reports it as *unidentified* rather than *damaged*: the first is a
+right-click away from opening, the second is a dead end. What the user has to
+do is in `README-macOS.md`.
+
 ## Installing and removing
 
 ```bash
-sudo apt install ./dist/pysimplepmt_1.0.0_amd64.deb
+# Linux
+sudo apt install ./dist/pysimplepmt_1.28.0_amd64.deb
 pysimplepmt
 sudo apt remove pysimplepmt
 ```
+
+On macOS, mount the DMG, drag the app to Applications, and right-click → Open
+the first time. Remove it by dragging it to the Bin.
 
 ## What is bundled, and what is not
 
