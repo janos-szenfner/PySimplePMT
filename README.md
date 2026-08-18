@@ -21,6 +21,7 @@ This is a complete implementation of a project management tool with:
 - **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export Gantt charts to PNG and PDF formats, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
+- **Work Item Hierarchy**: Phase > Deliverable > Task > Subtask, with milestones at any level. Indenting and outdenting keep a task's type wherever the new parent can hold it, so a Task moved under a Deliverable stays a Task
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Rows that line up**: the chart draws the rows the task list is showing, in its order and at its row height, so a bar sits on the line of the task it belongs to. Fold a branch away and its bars go with it; scroll the list and the chart follows
@@ -78,6 +79,7 @@ gantt_app/
 │
 ├── resources/
 │   ├── __init__.py
+│   ├── appicon.py          # The application icon, drawn rather than shipped
 │   └── icons.py            # The toolbar's icons
 │
 ├── utils/
@@ -93,16 +95,21 @@ gantt_app/
 │   ├── chart_figure.py     # Shared Plotly figure builder
 │   ├── image_export.py     # PNG, PDF, SVG and HTML export
 │   ├── chart_render.py     # Browser-free static chart drawing
-│   └── xlsx_exporter.py     # Excel XLSX export as a live plan sheet
+│   └── xlsx_exporter.py    # Excel XLSX export as a live plan sheet
 │
-└── assets/                # For icons, themes, etc.
+└── assets/                # Bundled into the packaged build when it holds anything
 ```
+
+Alongside it, `packaging/` holds the `.deb` build: `build_deb.sh`, the desktop
+entry, the PyInstaller spec, and `make_icon.py`, which writes the icon above
+out at each size the desktop asks for.
 
 ## Implemented Features
 
 ### Core Data Models (`models.py`)
 - **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, earliest_begin, scheduling_options, details
 - **Work Item Types**: `Phase`, `Deliverable`, `Task`, `Subtask`, `Milestone`. `Phase` and `Deliverable` are containers, taking their dates and progress from what is inside them; `Subtask` and `Milestone` hold nothing. The older hyphenated `Sub-Task` is rewritten to `Subtask` when a task is built, so plans saved by earlier versions load unchanged
+- **The Levels, and Moving Between Them**: the types describe a four-level plan, `Phase > Deliverable > Task > Subtask`, with a `Milestone` allowed at any level. `child_type_for()` decides what a task becomes when it is moved, and it keeps the task's own type wherever the new parent can hold it: a `Task` indented under a `Deliverable` **stays a `Task`**, and so keeps being able to hold sub-tasks of its own. Only a type the parent cannot hold is changed - a `Task` under another `Task` becomes a `Subtask`, a `Subtask` lifted into a `Phase` becomes a `Task` - and a `Milestone` stays a milestone wherever it lands. Creating a task under a parent settles it the same way, so indenting and creating agree
 - **Project Class**: name, tasks, start_date, end_date, calendar
 - **Methods**: add_task, remove_task, get_task_by_id, get_dependencies, get_dependents, move_task, move_task_before, next_task_id
 - **Completion Roll-Up**: `rolled_up_progress()` gives each level its own rule - see *Completion* below - and `roll_up_summaries()` applies it deepest-first, so ticking one sub-task reaches the phase above it in the same pass
@@ -201,7 +208,7 @@ cannot pull its parent outside it either.
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
 - **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Deliverable, Task, Subtask, Milestone), Edit and Delete, Copy, Cut and Paste, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
-- **Indent / Outdent**: Indent makes a task a sub-task of the row above it; outdent lifts it beside its parent, becoming a task again at the top level. A branch moves as a whole, and both are undoable
+- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. It keeps its own type wherever the new parent can hold it - a `Task` indented under a `Deliverable` stays a `Task` - and only takes a new one where the old is not a level that parent can hold; see *The Levels, and Moving Between Them* above. A branch moves as a whole, and both are undoable
 - **EditTaskDialog** (`views/taskdialogs.py`): The task form over an existing task. Buttons read Help and Delete (set apart), then Close, Save & Close, Save & New
 - **CreateTaskDialog** (`views/taskdialogs.py`): The same form over a new one, for any of the five work item types
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
@@ -472,6 +479,39 @@ Print the active path with `pysimplepmt --log-file`.
 - **Status Bar**: Shows current selection and project statistics
 - **Event Handling**: Task selection, editing, project changes
 - **Exit Handling**: Save confirmation on close
+- **Window Icon**: set from `resources/appicon.py` at startup and passed to every dialog the application opens
+
+### The Application Icon (`resources/appicon.py`)
+
+The icon is **drawn from code**, not stored as a file. That buys one property
+worth having: the window, the desktop entry and the packaged build all come
+from the same drawing, so they cannot drift apart, and there is no binary blob
+in version control that nobody can diff.
+
+What is in it:
+
+- **Python's own colours** - both published blues (`#306998`, `#4B8BBE`) and
+  both yellows (`#FFD43B`, `#FFE873`), meeting on the diagonal the language's
+  logo is built on.
+- **A Gantt chart** - three staggered bars, a Finish-Start link dropping from
+  the first to the second, and a milestone diamond closing the last. Four
+  marks, and the whole vocabulary of a project plan.
+- **SZJ**, the author's initials, set in the same rounded-bar language as the
+  chart so they read as part of it rather than as a caption underneath.
+
+Every stroke is geometry - no font is used. A font would make the icon depend
+on what happens to be installed, so the same script would produce a different
+image on every machine that built the package. It is drawn at four times the
+requested size and reduced with a high quality filter, which is what keeps the
+diagonals clean at the 32 pixels a title bar asks for.
+
+The artwork is original and the palette is the Python Software Foundation's
+published logo colours, so the icon carries the project's own MIT licence with
+no third-party asset in it.
+
+`packaging/make_icon.py` writes it out during the `.deb` build at every size
+the hicolor theme asks for - 16, 24, 32, 48, 64, 128 and 256 - so menus, docks
+and task switchers each get the size they want rather than scaling one down.
 
 ## Installation
 
@@ -941,7 +981,7 @@ Unit tests cover:
 - ✅ **GAN Import**: Real GanttProject 3.x fixtures - working-day calendar, nested sub-tasks, successor-to-predecessor edge reversal, milestones, colors, namespaced files
 - ✅ **Mermaid Import/Export**: Inclusive working-day durations, dependency chains, section grouping, frontmatter, round-trip
 - ✅ **XLSX Import**: Header detection, column aliases, Excel serial dates, working-day durations, phase grouping, dependency resolution, lossless export round-trip
-- ✅ **Task Hierarchy**: Three-level sub-task creation, parent candidate ordering, cycle safety
+- ✅ **Task Hierarchy**: Sub-task creation, parent candidate ordering, cycle safety, and the type a task takes when it is indented or outdented between levels
 - ✅ **Logging**: Buffer capacity and filtering, file output, failure paths, importer errors reaching the log
 - ✅ **Gantt Export**: PNG and PDF rendering
 - ✅ **Undo/Redo**: Command stack behaviour
@@ -952,70 +992,68 @@ Unit tests cover:
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it
+- ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, and the EU public holidays including the movable Easter feasts
+- ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
+- ✅ **EU Holiday Dialog**: What it offers, the batch buttons, what Apply hands back and what Cancel does not
+- ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, and that a formula is never written where it would disagree with the plan
+- ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
 
 The GAN fixtures deliberately mirror the format GanttProject actually writes.
 An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-862 tests, all passing.
+1062 tests, all passing.
 
 ## Known Limitations
 
-2. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
+1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
+2. **Public holidays**: Need the optional `holidays` package. Without it the picker still saves a selection and says so, but plans are scheduled on weekends alone
 3. **Performance**: Large projects (>100 tasks) may impact chart rendering
 4. **Critical Path**: Returns the single longest chain rather than every zero-float task, so parallel critical activities are not all highlighted
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
+7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
+8. **The weekend rule is not editable in the app**: which weekdays are worked can be carried in from an imported file but not changed afterwards
 
 ## Future Enhancements
+
+Done:
 
 - [x] Drag-and-drop row reordering
 - [x] PDF/PNG export for Gantt charts
 - [x] XLSX import
+- [x] XLSX export as a live project-plan sheet
 - [x] Application log viewer
-- [ ] **Shared working-day calendar model** (see below)
-- [ ] GAN file export
+- [x] Shared working-day calendar model (`workdaycalendar.py`)
+- [x] EU public holidays, chosen per project
 - [x] Apply GAN dependency lag and SS/FF/SF dependency types
-- [ ] Resource management
+- [x] Earliest begin date honoured by the scheduler
 - [x] Timeline zoom/pan
-- [ ] Filtering and grouping
 - [x] Undo/Redo functionality
 - [x] Copy, Cut and Paste
 - [x] Work item hierarchy with completion roll-up
+- [x] Types preserved when indenting and outdenting between levels
 - [x] Chart rows aligned to the task list
+- [x] Phases drawn as a pointed bar rather than a bracket
+- [x] An application icon of its own, on the window and in the package
+
+Still to do:
+
+- [ ] GAN file export
+- [ ] Resource management
+- [ ] Filtering and grouping
 - [ ] Recursive copy of a whole branch
 - [ ] Undo for paste
+- [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
-
-### The working-day calendar, and what is left of it
-
-The shared calendar this section used to plan for now exists as
-`workdaycalendar.py` - see *The Working Day Calendar* above. A `WorkingCalendar`
-belongs to the `Project`, is saved alongside it, and is what every duration in
-the application is counted against, so a plan created in the editor is
-scheduled the same way one imported from GanttProject is. What that leaves:
-
-- **Editing the weekend rule from the application**: public holidays are
-  chosen through Actions → EU Holidays..., but which weekdays are worked can
-  only be carried in from an imported file, not changed afterwards. A plan
-  worked Sunday to Thursday is expressible in the model and not yet in the UI.
-- **Countries outside the EU**: the picker offers the 27 member states. The
-  calendar itself takes any ISO country code the `holidays` package knows, so
-  widening the list is a change to the dialog alone.
-- **Undo for a calendar change**: changing the selection back moves the plan
-  back, but it is not on the undo stack with the task edits.
-- **GAN export**: durations can now be reconstructed in working days, so the
-  export the importer has no counterpart for has what it needs.
-- **Full critical path analysis**: `get_critical_path()` measures accumulated
-  *working* days along the longest chain, which is what the weekend gaps
-  needed. A proper backward pass computing late start/finish - and so every
-  zero-float task rather than a single chain - is still to be written, but the
-  calendar it needs to measure float in is there now.
+- [ ] Editing the weekend rule from the application
+- [ ] Countries outside the EU in the holiday picker
+- [ ] Full critical path analysis (a backward pass, so every zero-float task)
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.26.0
-**Last Updated**: 2026-08-17
+**Version**: 1.27.0
+**Last Updated**: 2026-08-18

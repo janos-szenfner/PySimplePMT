@@ -24,7 +24,7 @@ import copy
 
 import customtkinter as ctk
 
-from gantt_app.models import Task, Project, TASK_TYPES
+from gantt_app.models import Task, Project, TASK_TYPES, child_type_for
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.taskform import TaskFormDialog
 from gantt_app.utils.log import get_logger
@@ -351,11 +351,15 @@ class CreateTaskDialog(TaskFormDialog):
 
             parent_task_id = self._resolve_parent_id()
             task_type = "Milestone" if is_milestone else self.task_type_var.get()
-            if parent_task_id and task_type in ("Task", "Subtask"):
-                # Work hung off a parent is a sub-task of it; a Phase or a
-                # Deliverable keeps the type it was asked for, since those
-                # bracket other work rather than being it
-                task_type = "Subtask"
+            if parent_task_id:
+                # The level the chosen parent can hold, which is the task's
+                # own type wherever the parent can hold it - a Task created
+                # under a Deliverable stays a Task. Creating and indenting
+                # settle this the same way; see models.child_type_for.
+                parent = self.project.get_task_by_id(parent_task_id)
+                stand_in = Task(id='__type__', name=task_type,
+                                start_date=start, task_type=task_type)
+                task_type = child_type_for(parent, stand_in)
 
             earliest_begin = None
             if self.earliest_begin_var.get():

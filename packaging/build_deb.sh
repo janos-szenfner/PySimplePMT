@@ -21,6 +21,11 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 PACKAGE_NAME="pysimplepmt"
+
+#: Icon sizes installed into the hicolor theme. Menus, docks, task switchers
+#: and the installer each ask for a different one, and a theme carrying only
+#: the largest leaves them scaling it down themselves.
+ICON_SIZES="16 24 32 48 64 128 256"
 MAINTAINER="${DEB_MAINTAINER:-Janos Szenfner <janos@szenfner.com>}"
 
 # ---------------------------------------------------------------------------
@@ -93,7 +98,9 @@ install -d "${STAGE_DIR}/DEBIAN"
 install -d "${STAGE_DIR}/opt/${PACKAGE_NAME}"
 install -d "${STAGE_DIR}/usr/bin"
 install -d "${STAGE_DIR}/usr/share/applications"
-install -d "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps"
+for ICON_SIZE in ${ICON_SIZES}; do
+    install -d "${STAGE_DIR}/usr/share/icons/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps"
+done
 install -d "${STAGE_DIR}/usr/share/doc/${PACKAGE_NAME}"
 
 cp -a "${BUNDLE_DIR}/." "${STAGE_DIR}/opt/${PACKAGE_NAME}/"
@@ -110,9 +117,15 @@ chmod 0755 "${STAGE_DIR}/usr/bin/${PACKAGE_NAME}"
 install -m 0644 packaging/${PACKAGE_NAME}.desktop \
     "${STAGE_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop"
 
-echo "==> Generating icon"
-python3 packaging/make_icon.py \
-    "${STAGE_DIR}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png" 256
+# The icon, at every size the desktop asks for. One 256 pixel file leaves the
+# menu and the task switcher scaling it down themselves, which they do badly;
+# the hicolor theme picks the nearest size when they are all present.
+echo "==> Generating icons"
+for ICON_SIZE in ${ICON_SIZES}; do
+    python3 packaging/make_icon.py \
+        "${STAGE_DIR}/usr/share/icons/hicolor/${ICON_SIZE}x${ICON_SIZE}/apps/${PACKAGE_NAME}.png" \
+        "${ICON_SIZE}"
+done
 
 # ---------------------------------------------------------------------------
 # Documentation and copyright

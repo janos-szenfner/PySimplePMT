@@ -82,6 +82,7 @@ class GanttApp(ctk.CTk):
         self.title("Gantt Project Manager")
         self.geometry("1400x900")
         self.minsize(1200, 800)
+        self._set_window_icon()
         
         # Set appearance
         set_appearance_from_system()
@@ -114,6 +115,34 @@ class GanttApp(ctk.CTk):
         # explanation anywhere. Route them into the log instead.
         self.report_callback_exception = self._on_callback_error
     
+    def _set_window_icon(self):
+        """
+        Give the window the application's own icon.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Drawn rather than loaded - see gantt_app.resources.appicon - so the
+        window, the desktop entry and the packaged build all wear the same
+        mark and there is no file to ship or to find at runtime.
+
+        The image is kept on the instance. A Tk image is only alive while
+        something references it from Python, and one dropped here left the
+        window wearing a blank square.
+
+        `default=True` passes it to every window the application opens, so
+        the dialogs get it too. Losing the icon is not worth losing the
+        application over, so a failure is logged and stepped over: some
+        window managers refuse iconphoto outright.
+        """
+        try:
+            from gantt_app.resources.appicon import icon_photo
+
+            self._icon = icon_photo(self, 64)
+            if self._icon is not None:
+                self.iconphoto(True, self._icon)
+        except Exception:
+            logger.exception("Could not set the window icon")
+
     def _create_sample_data(self):
         """Create sample tasks for demonstration."""
         today = datetime.now()

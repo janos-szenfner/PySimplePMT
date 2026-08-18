@@ -214,5 +214,116 @@ class TestTaskTypeCompatibility(unittest.TestCase):
         self.assertTrue(phase.is_container)
 
 
+class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
+    """
+    A task keeps its type wherever the new parent can hold it.
+
+    WHY THESE EXIST:
+    ================
+    Indenting made everything a Subtask whatever it was moved under, which
+    flattened the two middle levels the types exist to describe. A Task moved
+    under a Deliverable - the ordinary way a deliverable gets its work - came
+    out as a Subtask, and a Subtask cannot itself have children, so it lost
+    the level below it as well. A Deliverable moved under a Phase became a
+    Subtask too, so a plan could not be built up by indenting at all.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Each fixture states the hierarchy outright rather than building it by
+    indenting. Indenting moves a task under the sibling *above* it, so a
+    plan built that way puts tasks somewhere other than where the test means
+    to put them - which is how the first version of these passed while
+    exercising the wrong parent.
+    """
+
+    def plan(self, rows):
+        """A project from (id, type, parent) rows, in hierarchy order."""
+        from datetime import datetime
+        from gantt_app.models import Project, Task
+
+        project = Project(name="Levels")
+        for task_id, task_type, parent in rows:
+            project.add_task(Task(
+                id=task_id, name=task_id, task_type=task_type,
+                parent_task_id=parent, start_date=datetime(2026, 1, 5),
+                end_date=None if task_type == "Milestone" else datetime(2026, 1, 9),
+            ))
+        project.tasks = project._flatten(project._children_by_parent())
+        return project
+
+    def test_a_deliverable_under_a_phase_stays_a_deliverable(self):
+        """This is the level a phase is built out of."""
+        project = self.plan([("P", "Phase", None), ("D", "Deliverable", None)])
+
+        project.indent_task("D")
+
+        self.assertEqual(project.get_task_by_id("D").task_type, "Deliverable")
+        self.assertEqual(project.get_task_by_id("D").parent_task_id, "P")
+
+    def test_a_task_under_a_deliverable_stays_a_task(self):
+        """
+        And so keeps being able to hold sub-tasks.
+
+        A Subtask cannot have children - see Task.can_have_children - so
+        retyping it here took away the level below it as well.
+        """
+        project = self.plan([("D", "Deliverable", None), ("T", "Task", None)])
+
+        project.indent_task("T")
+
+        task = project.get_task_by_id("T")
+        self.assertEqual(task.task_type, "Task")
+        self.assertEqual(task.parent_task_id, "D")
+        self.assertTrue(task.can_have_children)
+
+    def test_a_task_under_a_task_becomes_a_subtask(self):
+        """That is the level below a task, and the one thing it can hold."""
+        project = self.plan([("D", "Deliverable", None), ("T1", "Task", "D"),
+                             ("T2", "Task", "D")])
+
+        project.indent_task("T2")
+
+        self.assertEqual(project.get_task_by_id("T2").task_type, "Subtask")
+        self.assertEqual(project.get_task_by_id("T2").parent_task_id, "T1")
+
+    def test_a_milestone_stays_a_milestone_wherever_it_lands(self):
+        """It marks a moment in whatever it is a moment in."""
+        project = self.plan([("T", "Task", None), ("M", "Milestone", None)])
+
+        project.indent_task("M")
+
+        milestone = project.get_task_by_id("M")
+        self.assertEqual(milestone.task_type, "Milestone")
+        self.assertTrue(milestone.is_milestone)
+
+    def test_a_subtask_lifted_into_a_phase_becomes_a_task(self):
+        """A phase holds no sub-tasks; the level below it is a task."""
+        project = self.plan([("P", "Phase", None), ("T", "Task", "P"),
+                             ("S", "Subtask", "T")])
+
+        project.outdent_task("S")
+
+        self.assertEqual(project.get_task_by_id("S").task_type, "Task")
+        self.assertEqual(project.get_task_by_id("S").parent_task_id, "P")
+
+    def test_a_deliverable_lifted_to_the_top_keeps_its_type(self):
+        """A plan can hold a deliverable at the top level."""
+        project = self.plan([("P", "Phase", None), ("D", "Deliverable", "P")])
+
+        project.outdent_task("D")
+
+        self.assertEqual(project.get_task_by_id("D").task_type, "Deliverable")
+        self.assertIsNone(project.get_task_by_id("D").parent_task_id)
+
+    def test_a_subtask_lifted_clear_of_everything_becomes_a_task(self):
+        """A plan holds no sub-tasks at the top level."""
+        project = self.plan([("T", "Task", None), ("S", "Subtask", "T")])
+
+        project.outdent_task("S")
+
+        self.assertEqual(project.get_task_by_id("S").task_type, "Task")
+        self.assertIsNone(project.get_task_by_id("S").parent_task_id)
+
+
 if __name__ == '__main__':
     unittest.main()

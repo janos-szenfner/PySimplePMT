@@ -71,6 +71,70 @@ PARENT_TYPES = ('Phase', 'Deliverable', 'Task')
 #: Types that cannot have children (leaf nodes)
 LEAF_TYPES = ('Subtask', 'Milestone')
 
+#: What a task is allowed to be, by the type of the parent it sits under.
+#:
+#: The types describe a four-level plan - Phase > Deliverable > Task >
+#: Subtask - with a Milestone allowed at any level, since a milestone marks a
+#: moment in whatever it is a moment in.
+ALLOWED_CHILD_TYPES = {
+    'Phase': ('Deliverable', 'Task', 'Milestone'),
+    'Deliverable': ('Task', 'Milestone'),
+    'Task': ('Subtask', 'Milestone'),
+}
+
+#: What a task becomes when its own type is not one the parent can hold.
+#:
+#: Always work rather than a container: something being moved under a Phase
+#: is being placed in a plan, not promoted into a bracket over other rows.
+DEFAULT_CHILD_TYPE = {
+    'Phase': 'Task',
+    'Deliverable': 'Task',
+    'Task': 'Subtask',
+}
+
+#: What a task is allowed to be at the top of the plan. A Subtask is not:
+#: it is the level below a Task, so lifted clear of one it becomes a Task.
+ROOT_TYPES = ('Phase', 'Deliverable', 'Task', 'Milestone')
+
+
+def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
+    """
+    The type a task takes when it is moved under a given parent.
+
+    PARAMETERS:
+    -----------
+    parent : Optional[Task]
+        What it is being moved under, or None for the top of the plan.
+    task : Task
+        The task being moved.
+
+    RETURNS:
+    --------
+    str
+        Its own type where the parent can hold it, and the level the parent
+        expects where it cannot.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Indenting used to make everything a Subtask whatever it was moved under.
+    That flattened the two middle levels the types exist to describe: a Task
+    moved under a Deliverable - the ordinary way a deliverable gets its work -
+    came out as a Subtask, and since a Subtask cannot itself have children it
+    could no longer hold the sub-tasks it was meant to. Moving a Deliverable
+    under a Phase turned it into a Subtask too, so a plan could not be built
+    by indenting at all.
+
+    The type is only changed where the parent could not otherwise hold it,
+    which is what keeps a Milestone a Milestone wherever it is dropped.
+    """
+    if parent is None:
+        return task.task_type if task.task_type in ROOT_TYPES else 'Task'
+
+    allowed = ALLOWED_CHILD_TYPES.get(parent.task_type, ('Subtask',))
+    if task.task_type in allowed:
+        return task.task_type
+    return DEFAULT_CHILD_TYPE.get(parent.task_type, 'Subtask')
+
 
 def rolled_up_progress(parent, children) -> int:
     """
@@ -1303,6 +1367,10 @@ class Project:
         see strip_ancestor_links. Indenting a task under its own predecessor
         is the ordinary way a phase gets built, so the link has to give way
         rather than the indent being refused.
+
+        The task keeps its own type wherever the new parent can hold it - see
+        child_type_for. A Task indented under a Deliverable stays a Task,
+        which is the level a deliverable's work belongs at.
         """
         new_parent = self.indent_target(task_id)
         if new_parent is None:
@@ -1310,7 +1378,7 @@ class Project:
 
         task = self.get_task_by_id(task_id)
         task.parent_task_id = new_parent.id
-        task.task_type = "Subtask"
+        task.task_type = child_type_for(new_parent, task)
 
         self.tasks = self._flatten(self._children_by_parent())
         self.strip_ancestor_links(task_id)
@@ -1327,9 +1395,11 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        A task lifted all the way out has no parent left, so it becomes a
-        task in its own right; one that is still nested stays a sub-task of
-        whatever it landed in.
+        A task lifted all the way out keeps its type where that is one a plan
+        can hold at the top - a Deliverable stays a Deliverable - and a
+        Subtask, being the level below a Task, becomes a Task. One that is
+        still nested takes the level whatever it landed in expects; see
+        child_type_for.
 
         It keeps its own sub-tasks. Its old parent may stop being a summary
         entirely, in which case that parent goes back to holding its own
@@ -1346,7 +1416,9 @@ class Project:
         parent = self.get_task_by_id(task.parent_task_id)
 
         task.parent_task_id = parent.parent_task_id
-        task.task_type = "Task" if task.parent_task_id is None else "Subtask"
+        grandparent = (self.get_task_by_id(task.parent_task_id)
+                       if task.parent_task_id else None)
+        task.task_type = child_type_for(grandparent, task)
 
         self.tasks = self._flatten(self._children_by_parent())
         return True
