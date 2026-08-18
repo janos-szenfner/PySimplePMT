@@ -1217,7 +1217,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1062 tests, all passing.
+1212 tests, all passing.
 
 ## Known Limitations
 
@@ -1228,7 +1228,8 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
 7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
-8. **The weekend rule is not editable in the app**: which weekdays are worked can be carried in from an imported file but not changed afterwards
+8. **The weekend rule is not editable in the app**: what is missing here is only the control, not the capability. `WorkingCalendar.non_working_days` holds weekday indices - Saturday and Sunday by default - and any set of them is honoured by every piece of scheduling and saved with the project, so a plan on a six-day week finishes a Friday-to-Saturday task on the Saturday and still does after being reopened. But nothing in the UI writes that field. The two ways to get a different week today are to import a GanttProject file whose `<calendars>` block declares one, or to edit the project JSON by hand. Manual Overrides can name individual Saturdays as worked, which covers the occasional make-up day, but it is a list of dates rather than a standing rule - a genuine six-day week would need one entry per Saturday for as long as the plan runs
+9. **XLSX Export of a worked weekend**: an override that puts a Saturday or Sunday to work cannot be written as a live formula - Excel's `WORKDAY` has a fixed Monday-to-Friday week - so tasks reaching such a day get their finish written as a date and stop recalculating. An override that takes a day *off* stays live
 
 ## Future Enhancements
 
@@ -1254,6 +1255,7 @@ Done:
 - [x] Public holidays for any country, not just the EU
 - [x] Regional and state holidays, not only national ones
 - [x] Full critical path analysis - both passes, so every zero-float task
+- [x] Manual date overrides, outranking holidays and weekends alike
 
 Still to do:
 
@@ -1265,12 +1267,12 @@ Still to do:
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Settings/preferences dialog
-- [ ] Editing the weekend rule from the application
+- [ ] Editing the weekend rule from the application - a working-week control in Calendar Settings, applied through `Project.apply_calendar()` like the countries and the overrides are, so durations are held and finishes move. A week with no working day in it has to be refused at the point of entry rather than left to the calendar's fallback, which quietly works every day instead
 - [ ] Per-task calendars, so one strand of work can follow a different week
 - [ ] Resource levelling off the back of the float analysis
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.32.0
+**Version**: 1.33.0
 **Last Updated**: 2026-08-18
