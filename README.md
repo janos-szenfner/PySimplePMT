@@ -13,7 +13,7 @@ This is a complete implementation of a project management tool with:
 
 ## Features
 
-- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label, rather than a week of empty calendar at each end. The date axis fits as many labels as the width allows, measured against the tick font, so a wider window or a deeper zoom shows more of the calendar rather than more blank space between the same few dates
+- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and today's column is tinted
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Milestone Support**: Special single-date markers with diamond icons
@@ -175,6 +175,35 @@ Everything that turns a duration into dates goes through it - the task form's
 three scheduling modes, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
+
+#### The date header (`utils/chart_render.py`)
+
+The dates are a **calendar strip** across the top rather than labels under
+the chart: a band naming the month, and beneath it a cell per day carrying
+just the day number.
+
+Moving the month and the year into the band is what buys the density. A full
+`2026-08-17` label needs about 82px, so a 1400px chart fits 13 of them; a day
+number needs about 22px, so the same chart fits **50** — near four times as
+many dates, which is what makes every day labellable at all.
+
+There is no weekday letter under the number. It would not have made the
+columns any narrower — `22` is wider than `W` — and without it the strip is a
+row shorter and draws half the text.
+
+**The axis stays linear in calendar days.** Dropping the non-working columns
+is what most calendar strips do and cannot be done here: a task may follow a
+calendar of its own, so one on the 24/7 preset genuinely works Saturdays and
+would have nowhere to be drawn, and the whole point of a manual override is
+to make one particular Saturday a working day. Non-working days are **shaded
+down the chart** instead, which says the same thing and costs a fill rather
+than a semantic argument. Which days those are comes from the *project's*
+calendar — it is the one frame every task is drawn against, and a strip
+honouring several would have to shade a column two ways at once.
+
+Three densities, chosen from the room available: a cell per day, a cell per
+week, or the month band alone. The band survives all three, since a bare
+`17` needs it to mean anything.
 
 #### The user guide (`help/userguide.py`)
 
@@ -1459,13 +1488,13 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1389 tests, all passing.
+1411 tests, all passing.
 
 ## Known Limitations
 
 1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 2. **Public holidays from source**: the `holidays` package is in `requirements.txt` and is bundled into every packaged build, so a released build always has it. Only a source checkout installed without its requirements lacks it — and there the picker still saves a selection and says on its face that the choice takes effect once the package is installed, rather than silently dropping it
-3. **Performance**: Large projects (>100 tasks) may impact chart rendering
+3. **Performance**: large plans are slow to draw. Measured on synthetic plans with hierarchy and dependencies: ~180ms at 100 tasks, ~575ms at 500, ~1.0s at 1000. Rendering dominates — text alone is about 59% of it — and past ~500 tasks the row heights are compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow. Redraws that change nothing (resize, zoom, theme) are much cheaper than the first: the critical-path analysis behind them is cached, which takes the layout stage from 155ms to 9ms at 1000 tasks
 4. **Subdivision names come from the `holidays` package**, so a region it has no name for is listed by its code
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
@@ -1515,5 +1544,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.39.1
+**Version**: 1.40.0
 **Last Updated**: 2026-08-18

@@ -59,6 +59,18 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     'milestone_color': '#e74c3c',
     'dependency_color': '#e74c3c',
     'critical_path_color': '#f39c12',
+    # The calendar strip across the top. Light values, like everything
+    # above: GanttChartView.screen_settings swaps them for the appearance
+    # in force, and the exporters keep these so a PNG or a PDF stays light.
+    'header_month_bg': '#f7f8f9',
+    'header_cell_bg': '#ffffff',
+    'header_rule': '#e3e6e8',
+    'header_week_rule': '#c8ccd0',
+    'header_month_text': '#5b6167',
+    'header_day_text': '#1a1a1a',
+    'header_non_working': '#f2f4f6',
+    'header_today_bg': '#dbeafe',
+    'header_today_text': '#1e40af',
 }
 
 #: Vertical pixels allowed per task row before the chart starts growing.

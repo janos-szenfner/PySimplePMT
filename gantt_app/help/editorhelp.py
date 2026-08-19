@@ -366,13 +366,21 @@ HELP_SECTIONS = (
     (
         "The timeline",
         [
-            "The chart's horizontal axis shows as many dates as the window "
-            "has room for, and the zoom controls below it move between the "
-            "detail of a fortnight and the shape of a year. Fit returns to "
-            "the whole plan.",
+            "The dates run across the top as a calendar strip: a band "
+            "naming the month, and under it a cell per day carrying its "
+            "number. Where a plan is too long for every day to have a cell "
+            "the strip falls back to one per week, and then to the month "
+            "band alone - the zoom controls below the chart move between "
+            "them, and Fit returns to the whole plan.",
 
-            "A vertical line marks today, which is what the shading on each "
-            "bar is read against.",
+            "Days nobody works are shaded down the whole chart, so a weekend "
+            "or a holiday can be seen behind the bars rather than counted "
+            "out. Which days those are comes from the project's own calendar "
+            "- a task following a calendar of its own is still drawn against "
+            "the same strip, because there is only one set of columns.",
+
+            "Today's column is tinted, which is what the shading on each bar "
+            "is read against.",
         ],
     ),
 )

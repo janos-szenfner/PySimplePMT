@@ -615,7 +615,16 @@ class GanttChart(ctk.CTkFrame):
 
         for key, palette in (('bg_color', theme.CHART_BG),
                              ('text_color', theme.CHART_TEXT),
-                             ('grid_color', theme.CHART_GRID)):
+                             ('grid_color', theme.CHART_GRID),
+                             ('header_month_bg', theme.HEADER_MONTH_BG),
+                             ('header_cell_bg', theme.HEADER_CELL_BG),
+                             ('header_rule', theme.HEADER_RULE),
+                             ('header_week_rule', theme.HEADER_WEEK_RULE),
+                             ('header_month_text', theme.HEADER_MONTH_TEXT),
+                             ('header_day_text', theme.HEADER_DAY_TEXT),
+                             ('header_non_working', theme.HEADER_NON_WORKING),
+                             ('header_today_bg', theme.HEADER_TODAY_BG),
+                             ('header_today_text', theme.HEADER_TODAY_TEXT)):
             # The light half is the default this application ships; anything
             # else in the box is the user's own and is left alone.
             if settings.get(key) == palette[0]:

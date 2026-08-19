@@ -157,6 +157,35 @@ CHART_BG: Tuple[str, str] = ('#ffffff', '#232529')
 CHART_TEXT: Tuple[str, str] = ('#000000', '#e8eaed')
 CHART_GRID: Tuple[str, str] = ('#ecf0f1', '#3a3d42')
 
+# ---- the date header -------------------------------------------------------
+#
+# The calendar strip across the top: a month band, and a cell per day under
+# it. Screen and export alike - unlike the three above, these are not
+# swapped for the appearance by screen_settings, because the header is drawn
+# from the same settings dict and the export keeps the light half anyway.
+
+#: The month band, and the day cells beneath it.
+HEADER_MONTH_BG: Tuple[str, str] = ('#f7f8f9', '#2b2d31')
+HEADER_CELL_BG: Tuple[str, str] = ('#ffffff', '#26282c')
+
+#: The hairlines: between one day cell and the next, and the heavier one at
+#: the start of a week, which is what gives the strip its rhythm now that
+#: the weekday letters are gone.
+HEADER_RULE: Tuple[str, str] = ('#e3e6e8', '#3a3d42')
+HEADER_WEEK_RULE: Tuple[str, str] = ('#c8ccd0', '#4a4d52')
+
+#: The month name, and the day numbers under it.
+HEADER_MONTH_TEXT: Tuple[str, str] = ('#5b6167', '#9aa3ad')
+HEADER_DAY_TEXT: Tuple[str, str] = ('#1a1a1a', '#e8eaed')
+
+#: A day nobody works, shaded down the whole chart. This is what carries
+#: "not a working day" now that there is no weekday letter to read it from.
+HEADER_NON_WORKING: Tuple[str, str] = ('#f2f4f6', '#1b1d21')
+
+#: Today: its cell in the strip, and the tint down the chart behind it.
+HEADER_TODAY_BG: Tuple[str, str] = ('#dbeafe', '#1e3a5f')
+HEADER_TODAY_TEXT: Tuple[str, str] = ('#1e40af', '#bfdbfe')
+
 #: What a toolbar icon is drawn in, as RGB rather than hex - Pillow draws
 #: the strokes and knows nothing about appearance modes, so each appearance
 #: gets its own drawing and CTkImage picks between them. Near-black on the

@@ -434,6 +434,9 @@ class TestThePaletteIsAlwaysAPair(unittest.TestCase):
         'GRID_ROW_BG', 'GRID_ROW_ALT', 'GRID_HEADING_BG', 'GRID_TEXT',
         'GRID_LINE', 'GRID_SELECT_BG', 'GRID_CUT_TEXT', 'GRID_CRITICAL_BG',
         'GRID_TIGHT_BG', 'CHART_BG', 'CHART_TEXT', 'CHART_GRID',
+        'HEADER_MONTH_BG', 'HEADER_CELL_BG', 'HEADER_RULE',
+        'HEADER_WEEK_RULE', 'HEADER_MONTH_TEXT', 'HEADER_DAY_TEXT',
+        'HEADER_NON_WORKING', 'HEADER_TODAY_BG', 'HEADER_TODAY_TEXT',
     )
 
     def test_the_list_covers_every_pair_in_the_module(self):
@@ -518,6 +521,10 @@ class TestTheDarkPaletteIsReadable(unittest.TestCase):
         ('GRID_TEXT', 'GRID_CRITICAL_BG', 4.5),
         ('GRID_TEXT', 'GRID_TIGHT_BG', 4.5),
         ('CHART_TEXT', 'CHART_BG', 4.5),
+        ('HEADER_DAY_TEXT', 'HEADER_CELL_BG', 4.5),
+        ('HEADER_DAY_TEXT', 'HEADER_NON_WORKING', 4.5),
+        ('HEADER_MONTH_TEXT', 'HEADER_MONTH_BG', 4.5),
+        ('HEADER_TODAY_TEXT', 'HEADER_TODAY_BG', 4.5),
         ('FIELD_TEXT', 'FIELD_BG', 4.5),
         ('FIELD_TEXT', 'DROPDOWN_BG', 4.5),
         ('MUTED_TEXT', 'DROPDOWN_BG', 4.5),

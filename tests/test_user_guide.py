@@ -702,5 +702,162 @@ class TestHelpOpensOverAModalDialog(unittest.TestCase):
                             cls.__name__)
 
 
+class TestTheCalendarStrip(unittest.TestCase):
+    """
+    The date header: a month band, and a cell per day beneath it.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The axis stays linear in calendar days. Dropping the non-working columns
+    is what most calendar strips do and cannot be done here: a task may
+    follow a calendar of its own, so a 24/7 task genuinely works Saturdays
+    and would have nowhere to be drawn, and the whole point of a manual
+    override is to make one particular Saturday a working day.
+    """
+
+    def plan(self, days=24, start=datetime(2026, 8, 18)):
+        """A project spanning a given number of days."""
+        project = Project(name="Strip")
+        project.add_task(Task(id="a", name="A", start_date=start,
+                              end_date=start + timedelta(days=days)))
+        project.reschedule()
+        return project
+
+    def layout(self, project=None, width=1400):
+        """The chart layout at a given width."""
+        from gantt_app.utils.chart_render import layout_chart
+        return layout_chart(project or self.plan(), width=width)
+
+    def test_a_month_of_plan_gets_a_cell_for_every_day(self):
+        """Which is the whole look: 1, 2, 3, 4 rather than one date a week."""
+        layout = self.layout()
+
+        self.assertEqual(layout.header_mode, 'day')
+        self.assertGreater(len(layout.day_cells), 20)
+
+    def test_the_cells_carry_the_day_number_alone(self):
+        """
+        The month and the year are in the band above.
+
+        That is what lets a cell be about 22px wide where a full date needed
+        82, and it is where the extra density comes from.
+        """
+        layout = self.layout()
+
+        for _x0, _x1, label, *_rest in layout.day_cells:
+            self.assertTrue(label.isdigit(), label)
+            self.assertLessEqual(int(label), 31)
+
+    def test_the_band_names_every_month_the_plan_touches(self):
+        """Or a bare 17 has nothing to say which 17 it is."""
+        layout = self.layout()
+
+        names = [label for _x0, _x1, label in layout.month_bands]
+
+        self.assertEqual(names, ['AUGUST 2026', 'SEPTEMBER 2026'])
+
+    def test_the_cells_run_edge_to_edge_without_gaps(self):
+        """A strip with holes in it reads as a broken grid."""
+        layout = self.layout()
+
+        for (_a0, a1, *_x), (b0, _b1, *_y) in zip(layout.day_cells,
+                                                  layout.day_cells[1:]):
+            self.assertAlmostEqual(a1, b0, places=3)
+
+    def test_non_working_days_are_marked(self):
+        """Shading is what carries "not worked" now the letters are gone."""
+        layout = self.layout()
+
+        working = [c[4] for c in layout.day_cells]
+
+        self.assertIn(True, working)
+        self.assertIn(False, working)
+
+    def test_a_weekend_is_still_given_a_column(self):
+        """
+        The axis stays linear; see the note on the class.
+
+        A task on a 24/7 calendar works Saturdays, and an override exists to
+        make one particular Saturday worked - both need somewhere to draw.
+        """
+        layout = self.layout()
+
+        non_working = [c for c in layout.day_cells if not c[4]]
+
+        self.assertTrue(non_working)
+        for x0, x1, *_rest in non_working:
+            self.assertGreater(x1, x0)
+
+    def test_today_is_picked_out(self):
+        """The reference highlights it, and nothing used to."""
+        today = datetime.now()
+        project = self.plan(days=10, start=today - timedelta(days=3))
+
+        layout = self.layout(project)
+
+        self.assertEqual(sum(1 for c in layout.day_cells if c[3]), 1)
+
+    def test_a_plan_outside_today_marks_nothing(self):
+        """The tint is a fact about the plan, not decoration."""
+        layout = self.layout(self.plan(start=datetime(2031, 1, 6)))
+
+        self.assertEqual([c for c in layout.day_cells if c[3]], [])
+
+    def test_week_starts_are_flagged(self):
+        """They carry the heavier rule that gives the strip its rhythm."""
+        layout = self.layout()
+
+        starts = [c for c in layout.day_cells if c[5]]
+
+        self.assertTrue(starts)
+        self.assertEqual(len(starts), len(layout.date_ticks))
+
+    def test_a_long_plan_falls_back_to_weeks_then_months(self):
+        """A day cell that cannot be read is worse than none."""
+        from gantt_app.utils.chart_render import layout_chart
+
+        weeks = layout_chart(self.plan(days=120), width=1400)
+        months = layout_chart(self.plan(days=1200), width=900)
+
+        self.assertEqual(weeks.header_mode, 'week')
+        self.assertEqual(months.header_mode, 'month')
+        self.assertEqual(months.day_cells, [])
+
+    def test_the_month_band_survives_every_mode(self):
+        """It is what says where in the calendar the chart is."""
+        from gantt_app.utils.chart_render import layout_chart
+
+        for days, width in ((24, 1400), (120, 1400), (1200, 900)):
+            layout = layout_chart(self.plan(days=days), width=width)
+            self.assertTrue(layout.month_bands, f"{days}d at {width}px")
+
+    def test_both_renderers_draw_it(self):
+        """The PIL image and the SVG share the layout, not the drawing."""
+        from gantt_app.utils.chart_render import render_image, render_svg
+
+        project = self.plan()
+
+        svg = render_svg(project, width=1200)
+        image = render_image(project, width=1200, scale=1)
+
+        self.assertIn('AUGUST 2026', svg)
+        self.assertIsNotNone(image)
+
+    def test_the_header_colours_come_from_the_settings(self):
+        """
+        So the export keeps the light ones however dark the window is.
+
+        screen_settings swaps them for the appearance; the exporters go
+        through current_settings and do not.
+        """
+        from gantt_app.utils.chart_figure import DEFAULT_SETTINGS
+        from gantt_app import theme
+
+        for key in DEFAULT_SETTINGS:
+            if key.startswith('header_'):
+                self.assertEqual(DEFAULT_SETTINGS[key],
+                                 getattr(theme, key.upper())[0], key)
+
+
 if __name__ == '__main__':
     unittest.main()

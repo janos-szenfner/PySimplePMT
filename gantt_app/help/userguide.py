@@ -411,6 +411,12 @@ GUIDE_SECTIONS = (
             "The chart opens framed on the plan: one day of calendar before "
             "the first bar and enough after the last for its label. Use Fit "
             "to return to that framing after zooming.",
+
+            "The dates run across the top as a calendar strip - a month "
+            "band, and a cell per day beneath it carrying the day number. "
+            "Too long a plan for that and it falls back to one cell per "
+            "week, then to the month band alone. Days nobody works are "
+            "shaded down the chart and today's column is tinted.",
         ],
     ),
     (

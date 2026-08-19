@@ -50,8 +50,21 @@ MIN_ROW_HEIGHT = 8
 BAR_HEIGHT = 20
 MARGIN_LEFT = 220
 MARGIN_RIGHT = 60
-MARGIN_TOP = 70
-MARGIN_BOTTOM = 70
+#: Room above the first row, for the title and the calendar strip.
+#:
+#: The strip is two tiers - a month band and a row of day cells - and it
+#: sits at the top now rather than under the chart, where a reader had to
+#: look away from the bars to read a date. gantt_chart floors its
+#: row alignment at this, so the panes go slightly out of line rather than
+#: drawing bars over the dates; see GanttChart._first_row_offset.
+MARGIN_TOP = 104
+
+#: Room below the last row. Small now: the dates used to live down here.
+MARGIN_BOTTOM = 30
+
+#: The two tiers of the strip, in pixels, measured up from the plot top.
+HEADER_MONTH_HEIGHT = 24
+HEADER_CELL_HEIGHT = 28
 MIN_WIDTH = 900
 MILESTONE_RADIUS = 9
 
@@ -121,6 +134,23 @@ class ChartLayout:
     dependencies: List[Tuple[float, float, float, float]] = field(default_factory=list)
     row_labels: List[Tuple[float, str]] = field(default_factory=list)
     date_ticks: List[Tuple[float, str]] = field(default_factory=list)
+    #: The month band across the top: (x0, x1, "DECEMBER 2020").
+    month_bands: List[Tuple[float, float, str]] = field(default_factory=list)
+    #: The cells under it: (x0, x1, label, is_today, is_working, starts_week).
+    #:
+    #: One per day where the days are wide enough to label, one per week
+    #: below that, and none at all when even a week is too narrow - see
+    #: _header_mode. The label is the day of the month; the month and the
+    #: year are in the band above, which is what lets a cell be 22px wide
+    #: rather than the 82px a full date needed.
+    day_cells: List[Tuple[float, float, str, bool, bool, bool]] = field(
+        default_factory=list)
+    #: Which of the three the header is in: 'day', 'week' or 'month'.
+    header_mode: str = 'month'
+    #: The left and right edges of the plotting area, which the header's
+    #: closing rules run between.
+    plot_left: float = 0.0
+    plot_right: float = 0.0
     title: str = ""
     empty_message: Optional[str] = None
 
@@ -215,6 +245,51 @@ def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
 #: the gap, and it is what stops "2026-08-17" and "2026-08-19" reading as one
 #: long number.
 TICK_LABEL_GAP_PX = 28
+
+
+#: What one day cell needs, in pixels: the widest day number plus padding.
+#:
+#: A cell is delimited by rules on either side, so it needs padding rather
+#: than the wide gap free-floating text needs to read as separate. That is
+#: why a day cell fits in about 22px where "2026-08-17" needed 82 - the
+#: month and the year moved up into the band.
+HEADER_CELL_PAD_PX = 10
+
+#: Below this, a week cell is not worth labelling either and the strip drops
+#: to the month band alone.
+MIN_WEEK_CELL_PX = 26
+
+
+def _day_cell_px(font_size: int) -> float:
+    """How much room one day cell needs, at a given font size."""
+    font = _font(max(6, int(font_size) - 2))
+    try:
+        width = font.getbbox('22')[2]
+    except AttributeError:                  # very old Pillow
+        width = font.getsize('22')[0]
+    return width + HEADER_CELL_PAD_PX
+
+
+def _header_mode(days: int, plot_span: float, font_size: int) -> str:
+    """
+    Which of the three headers the available room allows.
+
+    RETURNS:
+    --------
+    str
+        'day' when every day can carry its own number, 'week' when only a
+        week can, and 'month' when neither will fit and the band is left to
+        say where in the calendar the chart is.
+    """
+    if days <= 0 or plot_span <= 0:
+        return 'month'
+
+    per_day = plot_span / days
+    if per_day >= _day_cell_px(font_size):
+        return 'day'
+    if per_day * 7 >= MIN_WEEK_CELL_PX:
+        return 'week'
+    return 'month'
 
 
 def _tick_label_px(font_size: int) -> float:
@@ -503,18 +578,183 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                 x_for(task.start_date), y_for(positions[task.id])
             ))
 
-    step = _tick_step(total_days, plot_span, resolved.get('font_size', 12))
-    tick = min_date
-    while tick <= max_date:
-        layout.date_ticks.append((x_for(tick), tick.strftime('%Y-%m-%d')))
-        tick += timedelta(days=step)
+    layout.plot_left = plot_left
+    layout.plot_right = plot_right
+    _build_date_header(layout, project, min_date, max_date, x_for,
+                       total_days, plot_span)
 
     return layout
+
+
+def _build_date_header(layout: 'ChartLayout', project: Project,
+                       min_date: datetime, max_date: datetime,
+                       x_for, total_days: int, plot_span: float) -> None:
+    """
+    Build the calendar strip across the top: a month band and day cells.
+
+    PARAMETERS:
+    -----------
+    x_for : callable
+        Maps a date to its x position, from layout_chart.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The axis stays linear in calendar days - every day gets the same width,
+    worked or not. Dropping the non-working columns would be denser and is
+    what most calendar strips do, but it cannot be done here: a task may
+    follow a calendar of its own, so a 24/7 task genuinely works Saturdays
+    and would have nowhere to be drawn, and the whole point of a manual
+    override is to make one particular Saturday a working day. Non-working
+    days are shaded instead, which says the same thing and costs a fill
+    rather than a semantic argument.
+
+    Which days are shaded comes from the *project's* calendar, for the same
+    reason the float axis does: it is the one frame every task is drawn
+    against, and a strip that tried to honour several would have to shade a
+    column two ways at once.
+    """
+    font_size = layout.settings.get('font_size', 12)
+    layout.header_mode = _header_mode(total_days, plot_span, font_size)
+
+    calendar = project.calendar
+    today = datetime.now().date()
+    day = datetime(min_date.year, min_date.month, min_date.day)
+    last = max_date
+
+    # ---- the month band -------------------------------------------------
+    band_start, band_key = day, (day.year, day.month)
+    walk = day
+    while walk <= last:
+        key = (walk.year, walk.month)
+        if key != band_key:
+            layout.month_bands.append(
+                (x_for(band_start), x_for(walk),
+                 band_start.strftime('%B %Y').upper()))
+            band_start, band_key = walk, key
+        walk += timedelta(days=1)
+    layout.month_bands.append(
+        (x_for(band_start), x_for(walk), band_start.strftime('%B %Y').upper()))
+
+    # ---- the cells under it ---------------------------------------------
+    if layout.header_mode == 'month':
+        # Nothing fits; the band alone says where in the calendar this is,
+        # and the gridlines fall back to the stepped dates.
+        step = _tick_step(total_days, plot_span, font_size)
+        tick = min_date
+        while tick <= max_date:
+            layout.date_ticks.append((x_for(tick), tick.strftime('%Y-%m-%d')))
+            tick += timedelta(days=step)
+        return
+
+    span = 1 if layout.header_mode == 'day' else 7
+    walk = day
+    if span == 7:
+        # Weeks are read from Monday, so the first cell starts on one
+        walk -= timedelta(days=walk.weekday())
+
+    while walk <= last:
+        finish = walk + timedelta(days=span)
+        starts_week = walk.weekday() == 0
+        layout.day_cells.append((
+            x_for(walk), x_for(finish), str(walk.day),
+            walk.date() == today,
+            calendar.is_working_day(walk),
+            starts_week,
+        ))
+        # A rule down the chart at the start of each week, which is what
+        # gives the strip its rhythm now that the weekday letters are gone
+        if starts_week:
+            layout.date_ticks.append((x_for(walk), walk.strftime('%Y-%m-%d')))
+        walk = finish
 
 
 # ---------------------------------------------------------------------------
 # SVG emitter
 # ---------------------------------------------------------------------------
+
+def _svg_date_header(layout: 'ChartLayout', s: Dict[str, Any],
+                     font_size: int) -> List[str]:
+    """
+    The calendar strip and its day shading, as SVG elements.
+
+    The same drawing as _draw_date_header does with Pillow. Two emitters
+    rather than one because the two output formats share the *layout* - the
+    bands and cells worked out in _build_date_header - and nothing else;
+    that is the same split every other part of this chart already uses.
+    """
+    plot_top = MARGIN_TOP - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
+    band_bottom = plot_top + HEADER_MONTH_HEIGHT
+    cell_bottom = band_bottom + HEADER_CELL_HEIGHT
+    chart_bottom = layout.height - MARGIN_BOTTOM
+    parts: List[str] = []
+
+    for x0, x1, _label, is_today, is_working, _week in layout.day_cells:
+        if is_today:
+            colour = s['header_today_bg']
+        elif not is_working:
+            colour = s['header_non_working']
+        else:
+            continue
+        parts.append(
+            f'<rect x="{x0:.1f}" y="{cell_bottom}" width="{x1 - x0:.1f}" '
+            f'height="{chart_bottom - cell_bottom}" fill="{colour}"/>')
+
+    for x, _label in layout.date_ticks:
+        parts.append(
+            f'<line x1="{x:.1f}" y1="{cell_bottom}" x2="{x:.1f}" '
+            f'y2="{chart_bottom}" stroke="{s["grid_color"]}" '
+            f'stroke-width="1"/>')
+
+    for x0, x1, label in layout.month_bands:
+        parts.append(
+            f'<rect x="{x0:.1f}" y="{plot_top}" width="{x1 - x0:.1f}" '
+            f'height="{HEADER_MONTH_HEIGHT}" fill="{s["header_month_bg"]}"/>')
+        parts.append(
+            f'<line x1="{x0:.1f}" y1="{plot_top}" x2="{x0:.1f}" '
+            f'y2="{band_bottom}" stroke="{s["header_week_rule"]}" '
+            f'stroke-width="1"/>')
+        parts.append(
+            f'<text x="{(x0 + x1) / 2:.1f}" '
+            f'y="{(plot_top + band_bottom) / 2:.1f}" text-anchor="middle" '
+            f'dominant-baseline="central" font-family="sans-serif" '
+            f'font-size="{font_size - 2}" fill="{s["header_month_text"]}"'
+            f'>{escape(label)}</text>')
+
+    for x0, x1, label, is_today, is_working, starts_week in layout.day_cells:
+        if is_today:
+            fill, ink = s['header_today_bg'], s['header_today_text']
+        elif not is_working:
+            fill, ink = s['header_non_working'], s['header_day_text']
+        else:
+            fill, ink = s['header_cell_bg'], s['header_day_text']
+        parts.append(
+            f'<rect x="{x0:.1f}" y="{band_bottom}" width="{x1 - x0:.1f}" '
+            f'height="{HEADER_CELL_HEIGHT}" fill="{fill}"/>')
+        parts.append(
+            f'<line x1="{x0:.1f}" y1="{band_bottom}" x2="{x0:.1f}" '
+            f'y2="{cell_bottom}" '
+            f'stroke="{s["header_week_rule"] if starts_week else s["header_rule"]}" '
+            f'stroke-width="1"/>')
+        parts.append(
+            f'<text x="{(x0 + x1) / 2:.1f}" '
+            f'y="{(band_bottom + cell_bottom) / 2:.1f}" text-anchor="middle" '
+            f'dominant-baseline="central" font-family="sans-serif" '
+            f'font-size="{font_size - 2}" fill="{ink}">{escape(label)}</text>')
+
+    if layout.day_cells:
+        parts.append(
+            f'<line x1="{layout.plot_right:.1f}" y1="{plot_top}" '
+            f'x2="{layout.plot_right:.1f}" y2="{cell_bottom}" '
+            f'stroke="{s["header_week_rule"]}" stroke-width="1"/>')
+
+    for y in (plot_top, band_bottom, cell_bottom):
+        parts.append(
+            f'<line x1="{layout.plot_left:.1f}" y1="{y}" '
+            f'x2="{layout.plot_right:.1f}" y2="{y}" '
+            f'stroke="{s["header_week_rule"]}" stroke-width="1"/>')
+
+    return parts
+
 
 def render_svg(project: Project, settings: Optional[Dict[str, Any]] = None,
                width: int = 1400) -> str:
@@ -548,19 +788,7 @@ def render_svg(project: Project, settings: Optional[Dict[str, Any]] = None,
         )
         return '\n'.join(parts)
 
-    for x, label in layout.date_ticks:
-        parts.append(
-            f'<line x1="{x:.1f}" y1="{MARGIN_TOP - 10}" x2="{x:.1f}" '
-            f'y2="{layout.height - MARGIN_BOTTOM}" stroke="{s["grid_color"]}" '
-            f'stroke-width="1"/>'
-        )
-        parts.append(
-            f'<text x="{x:.1f}" y="{layout.height - MARGIN_BOTTOM + 20}" '
-            f'text-anchor="middle" font-family="sans-serif" '
-            f'font-size="{font_size - 2}" fill="{s["text_color"]}" '
-            f'transform="rotate(-35 {x:.1f} {layout.height - MARGIN_BOTTOM + 20})"'
-            f'>{escape(label)}</text>'
-        )
+    parts.extend(_svg_date_header(layout, s, font_size))
 
     for y, label in layout.row_labels:
         parts.append(
@@ -742,6 +970,88 @@ def _safe_scale(layout: 'ChartLayout', scale: float) -> float:
     return reduced
 
 
+def _draw_date_header(draw, layout: 'ChartLayout', s: Dict[str, Any],
+                      sx, scale: float, font) -> None:
+    """
+    Paint the calendar strip, and the day shading that goes with it.
+
+    PARAMETERS:
+    -----------
+    sx : callable
+        Scales a layout coordinate to the supersampled image.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The shading is drawn down the whole chart before the bars, so it sits
+    behind them; the strip itself is drawn at the top. Non-working days and
+    today are fills rather than text, which is what keeps a denser header
+    from costing anything - the labels went from one full date every 82px to
+    one number every 22px, and the number of *text* draws barely moved.
+    """
+    plot_top = MARGIN_TOP - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
+    band_bottom = plot_top + HEADER_MONTH_HEIGHT
+    cell_bottom = band_bottom + HEADER_CELL_HEIGHT
+    chart_bottom = layout.height - MARGIN_BOTTOM
+    line_width = max(1, int(scale))
+
+    # ---- shading down the chart, behind everything ----------------------
+    for x0, x1, _label, is_today, is_working, _week in layout.day_cells:
+        if is_today:
+            colour = s['header_today_bg']
+        elif not is_working:
+            colour = s['header_non_working']
+        else:
+            continue
+        draw.rectangle([(sx(x0), sx(cell_bottom)), (sx(x1), sx(chart_bottom))],
+                       fill=colour)
+
+    # ---- the week rules -------------------------------------------------
+    for x, _label in layout.date_ticks:
+        draw.line([(sx(x), sx(cell_bottom)), (sx(x), sx(chart_bottom))],
+                  fill=s['grid_color'], width=line_width)
+
+    # ---- the month band -------------------------------------------------
+    for x0, x1, label in layout.month_bands:
+        draw.rectangle([(sx(x0), sx(plot_top)), (sx(x1), sx(band_bottom))],
+                       fill=s['header_month_bg'])
+        draw.line([(sx(x0), sx(plot_top)), (sx(x0), sx(band_bottom))],
+                  fill=s['header_week_rule'], width=line_width)
+        # Centred in whatever of the band is on the chart, so a month running
+        # off either edge still shows its name rather than losing it
+        draw.text((sx((x0 + x1) / 2), sx((plot_top + band_bottom) / 2)), label,
+                  font=font, fill=s['header_month_text'], anchor='mm')
+
+    # ---- the day cells --------------------------------------------------
+    for x0, x1, label, is_today, is_working, starts_week in layout.day_cells:
+        if is_today:
+            fill, ink = s['header_today_bg'], s['header_today_text']
+        elif not is_working:
+            fill, ink = s['header_non_working'], s['header_day_text']
+        else:
+            fill, ink = s['header_cell_bg'], s['header_day_text']
+
+        draw.rectangle([(sx(x0), sx(band_bottom)), (sx(x1), sx(cell_bottom))],
+                       fill=fill)
+        draw.line([(sx(x0), sx(band_bottom)), (sx(x0), sx(cell_bottom))],
+                  fill=s['header_week_rule'] if starts_week else s['header_rule'],
+                  width=line_width)
+        draw.text((sx((x0 + x1) / 2), sx((band_bottom + cell_bottom) / 2)),
+                  label, font=font, fill=ink, anchor='mm')
+
+    # ---- the rules closing the strip off --------------------------------
+    # The cells draw a rule on their left edge only, so the last one needs
+    # its right edge drawn or the strip ends in mid-air.
+    if layout.day_cells:
+        draw.line([(sx(layout.plot_right), sx(plot_top)),
+                   (sx(layout.plot_right), sx(cell_bottom))],
+                  fill=s['header_week_rule'], width=line_width)
+
+    for y in (plot_top, band_bottom, cell_bottom):
+        draw.line([(sx(layout.plot_left), sx(y)),
+                   (sx(layout.plot_right), sx(y))],
+                  fill=s['header_week_rule'], width=line_width)
+
+
 def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400, scale: float = 2.0,
                  min_width: int = MIN_WIDTH,
@@ -792,12 +1102,7 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                   font=label_font, fill='#7f8c8d', anchor='mm')
         return image.resize((layout.width, layout.height), Image.LANCZOS)
 
-    for x, label in layout.date_ticks:
-        draw.line([(sx(x), sx(MARGIN_TOP - 10)),
-                   (sx(x), sx(layout.height - MARGIN_BOTTOM))],
-                  fill=s['grid_color'], width=max(1, int(scale)))
-        draw.text((sx(x), sx(layout.height - MARGIN_BOTTOM + 16)), label,
-                  font=small_font, fill=s['text_color'], anchor='ma')
+    _draw_date_header(draw, layout, s, sx, scale, small_font)
 
     for y, label in layout.row_labels:
         draw.text((sx(MARGIN_LEFT - 12), sx(y)), label, font=label_font,
