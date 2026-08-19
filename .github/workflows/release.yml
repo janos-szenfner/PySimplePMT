@@ -280,6 +280,11 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+        with:
+          # The whole history and every tag, because the release notes list
+          # what changed since the previous one - and a shallow checkout has
+          # neither the commits to list nor the tag to measure from.
+          fetch-depth: 0
 
       # Both platforms' artifacts are gathered here rather than each job
       # publishing its own. A release that appears with only half its packages
@@ -341,9 +346,43 @@ jobs:
           deb_name=$(basename "$(ls release/*.deb)")
           dmg_name=$(basename "$(ls release/*.dmg)")
 
+          # What changed since the previous release.
+          #
+          # Built from the commit subjects rather than from GitHub's own
+          # generated notes, which list merged pull requests - and this
+          # repository commits straight to main, so that list comes back
+          # empty. The subjects here are written to be read, so they make
+          # the changelog on their own.
+          #
+          # The version bumps are left out. They are one line each, say
+          # nothing that the heading above does not, and would otherwise be
+          # half the list.
+          previous=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$previous" ]; then
+            range="${previous}..${TAG}"
+          else
+            range="$TAG"
+            echo "No earlier tag found; listing everything up to ${TAG}."
+          fi
+
+          changes=$(git log --no-merges --reverse --pretty=format:'* %s' \
+                      "$range" | grep -v '^\* Bump version to' || true)
+          if [ -z "$changes" ]; then
+            changes="* Housekeeping only; see the commit history for detail."
+          fi
+
+          changes_file="$(mktemp)"
+          printf '%s\n' "$changes" > "$changes_file"
+          echo "Changes since ${previous:-the beginning}:"
+          cat "$changes_file"
+
           notes_file="$(mktemp)"
           cat > "$notes_file" <<'NOTES'
           ## PySimplePMT VERSION_PLACEHOLDER
+
+          ### Changes
+
+          CHANGES_PLACEHOLDER
 
           ### Packages
 
@@ -405,16 +444,31 @@ jobs:
           sed -i "s/DEB_NAME_PLACEHOLDER/${deb_name}/g" "$notes_file"
           sed -i "s/DMG_NAME_PLACEHOLDER/${dmg_name}/g" "$notes_file"
 
-          # Append GitHub's generated changelog. Asking gh for both
-          # --notes-file and --generate-notes is rejected, so the notes are
-          # fetched from the API and concatenated instead. Failing to get
-          # them must not cost us the release, so it is best effort.
-          if generated=$(gh api -X POST \
-                "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-                -f tag_name="$TAG" --jq '.body' 2>/dev/null); then
-            printf '\n\n---\n\n%s\n' "$generated" >> "$notes_file"
-          else
-            echo "Could not fetch generated release notes; continuing." >&2
+          # The changelog goes in by file rather than through sed: a subject
+          # line may hold slashes, ampersands or backslashes, every one of
+          # which sed would read as syntax.
+          python3 - "$notes_file" "$changes_file" <<'PY'
+          import sys
+
+          notes_path, changes_path = sys.argv[1], sys.argv[2]
+          with open(notes_path) as handle:
+              notes = handle.read()
+          with open(changes_path) as handle:
+              changes = handle.read().rstrip('\n')
+
+          with open(notes_path, 'w') as handle:
+              handle.write(notes.replace('CHANGES_PLACEHOLDER', changes))
+          PY
+
+          # A link to the full diff, which is the one thing GitHub's own
+          # generated notes were worth here. The rest of what they produce is
+          # a list of merged pull requests, and this repository has none - so
+          # the Changes section above replaces them rather than sitting
+          # beside a second, emptier changelog.
+          if [ -n "$previous" ]; then
+            printf '\n\n**Full changelog**: %s/compare/%s...%s\n' \
+              "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" "$previous" "$TAG" \
+              >> "$notes_file"
           fi
 
           prerelease=""
