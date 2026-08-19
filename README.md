@@ -1488,13 +1488,13 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1411 tests, all passing.
+1420 tests, all passing.
 
 ## Known Limitations
 
 1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 2. **Public holidays from source**: the `holidays` package is in `requirements.txt` and is bundled into every packaged build, so a released build always has it. Only a source checkout installed without its requirements lacks it — and there the picker still saves a selection and says on its face that the choice takes effect once the package is installed, rather than silently dropping it
-3. **Performance**: large plans are slow to draw. Measured on synthetic plans with hierarchy and dependencies: ~180ms at 100 tasks, ~575ms at 500, ~1.0s at 1000. Rendering dominates — text alone is about 59% of it — and past ~500 tasks the row heights are compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow. Redraws that change nothing (resize, zoom, theme) are much cheaper than the first: the critical-path analysis behind them is cached, which takes the layout stage from 155ms to 9ms at 1000 tasks
+3. **Performance**: large plans are slow to draw. Measured on synthetic plans with hierarchy and dependencies: ~180ms at 100 tasks, ~575ms at 500, ~1.0s at 1000. Rendering dominates — text alone is about 59% of it — and past ~500 tasks the row heights are compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow. Redraws that change nothing (resize, zoom, theme) are much cheaper than the first: the critical-path analysis behind them is cached, which takes the layout stage from 155ms to 9ms at 1000 tasks. `works_any_weekday` is cached too — `is_working_day` asks it before every other rule and one redraw calls that over 200,000 times, so rebuilding a seven-element set each time cost about 25ms of every cold pass
 4. **Subdivision names come from the `holidays` package**, so a region it has no name for is listed by its code
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
@@ -1544,5 +1544,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.40.0
+**Version**: 1.40.1
 **Last Updated**: 2026-08-18

@@ -1054,5 +1054,95 @@ class TestSettingTheWorkingWeek(unittest.TestCase):
         self.assertTrue(reopened.calendar.is_working_day(date(2026, 9, 12)))
 
 
+class TestTheWorkingWeekIsNotRebuiltEveryTime(unittest.TestCase):
+    """
+    works_any_weekday is asked before every other rule in is_working_day.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    One chart redraw on a large plan calls is_working_day over two hundred
+    thousand times, and this used to build `set(range(7))` and subtract from
+    it on every one of them. The answer is cached; these are the ways it
+    could go stale.
+    """
+
+    def test_the_standard_week_works_some_weekday(self):
+        """The plain case, which the cache must not get wrong."""
+        self.assertTrue(WorkingCalendar().works_any_weekday)
+
+    def test_a_week_with_nothing_in_it_does_not(self):
+        """The guard the whole property exists for."""
+        self.assertFalse(
+            WorkingCalendar(non_working_days=range(7)).works_any_weekday)
+
+    def test_assigning_a_new_week_is_noticed(self):
+        """Which is how the settings dialog changes it."""
+        calendar = WorkingCalendar()
+        self.assertTrue(calendar.works_any_weekday)
+
+        calendar.non_working_days = set(range(7))
+
+        self.assertFalse(calendar.works_any_weekday)
+
+    def test_assigning_back_is_noticed_too(self):
+        """A cache that only invalidates one way is still a stale cache."""
+        calendar = WorkingCalendar(non_working_days=range(7))
+        self.assertFalse(calendar.works_any_weekday)
+
+        calendar.non_working_days = {5, 6}
+
+        self.assertTrue(calendar.works_any_weekday)
+
+    def test_mutating_the_set_in_place_is_noticed(self):
+        """
+        The way round the setter, which a length check catches.
+
+        Nothing in the application does this today. A cache that silently
+        answers for last week's calendar is a bad way to find out that
+        something started.
+        """
+        calendar = WorkingCalendar()
+        self.assertTrue(calendar.works_any_weekday)      # warm it
+
+        for day in range(7):
+            calendar.non_working_days.add(day)
+
+        self.assertFalse(calendar.works_any_weekday)
+
+    def test_removing_a_day_in_place_is_noticed(self):
+        """The same, the other way."""
+        calendar = WorkingCalendar(non_working_days=range(7))
+        self.assertFalse(calendar.works_any_weekday)
+
+        calendar.non_working_days.discard(0)      # Monday
+
+        self.assertTrue(calendar.works_any_weekday)
+
+    def test_the_week_still_reads_back(self):
+        """It is a property now, and everything reads it as a set."""
+        calendar = WorkingCalendar(non_working_days=[5, 6])
+
+        self.assertEqual(calendar.non_working_days, {5, 6})
+        self.assertEqual(calendar.to_dict()['non_working_days'], [5, 6])
+
+    def test_an_iterable_is_taken_as_well_as_a_set(self):
+        """The setter normalises, as the constructor always did."""
+        calendar = WorkingCalendar()
+
+        calendar.non_working_days = [0, 1, 1]
+
+        self.assertEqual(calendar.non_working_days, {0, 1})
+
+    def test_scheduling_is_unchanged(self):
+        """The cache is only worth having while the answers are the same."""
+        calendar = WorkingCalendar()
+        friday, saturday = date(2026, 9, 11), date(2026, 9, 12)
+
+        self.assertTrue(calendar.is_working_day(friday))
+        self.assertFalse(calendar.is_working_day(saturday))
+        self.assertEqual(calendar.add_working_days(friday, 2),
+                         date(2026, 9, 14))
+
+
 if __name__ == '__main__':
     unittest.main()

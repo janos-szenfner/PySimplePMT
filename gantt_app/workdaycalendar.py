@@ -77,6 +77,11 @@ MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY = range(7)
 #: The standard week: Monday to Friday worked, the weekend not.
 DEFAULT_NON_WORKING_DAYS: Set[int] = {SATURDAY, SUNDAY}
 
+#: Every weekday, built once. works_any_weekday subtracts the non-working
+#: days from this, and it was rebuilding `set(range(7))` on every call - of
+#: which one chart redraw makes over two hundred thousand.
+_ALL_WEEKDAYS: frozenset = frozenset(range(7))
+
 #: Ceiling on any day-by-day walk. A duration arriving from a corrupted file
 #: as several million days would otherwise spin here rather than being drawn
 #: wrong and noticed.
@@ -524,7 +529,11 @@ class WorkingCalendar:
                  recurring_holidays: Optional[Iterable[Tuple[int, int]]] = None,
                  countries: Optional[Iterable[str]] = None,
                  overrides: Optional[Iterable['DateOverride']] = None):
-        self.non_working_days: Set[int] = (
+        #: Set through the property below, which keeps the cached answer to
+        #: works_any_weekday in step with it.
+        self._works_any_weekday: Optional[bool] = None
+        self._cached_week_size: int = -1
+        self.non_working_days = (
             set(non_working_days) if non_working_days is not None
             else set(DEFAULT_NON_WORKING_DAYS)
         )
@@ -666,9 +675,48 @@ class WorkingCalendar:
     # ---- what the calendar is ------------------------------------------
 
     @property
+    def non_working_days(self) -> Set[int]:
+        """
+        Weekday indices that are never worked, as date.weekday() numbers them.
+
+        A property so that assigning to it can drop the cached answer to
+        works_any_weekday; see that property for why there is one.
+        """
+        return self._non_working_days
+
+    @non_working_days.setter
+    def non_working_days(self, days: Iterable[int]) -> None:
+        """Take a new week, and forget what the old one worked out to."""
+        self._non_working_days = set(days)
+        self._works_any_weekday = None
+
+    @property
     def works_any_weekday(self) -> bool:
-        """Whether at least one weekday is worked."""
-        return bool(set(range(7)) - self.non_working_days)
+        """
+        Whether at least one weekday is worked.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Cached, because is_working_day asks this before anything else and a
+        single chart redraw calls that over two hundred thousand times on a
+        large plan. It used to build `set(range(7))` and subtract from it on
+        every one of them, which came to some 40ms of a redraw spent
+        constructing the same seven-element set.
+
+        Assigning a new week clears the cache through the setter above. The
+        length is checked as well, which catches the other way the week
+        could move - add, discard, remove or clear on the set itself. That
+        costs about a third of what the cache saves and is worth it: nothing
+        in the application mutates the set in place today, and a cache that
+        silently answers for last week's calendar is a bad way to find out
+        that something started.
+        """
+        if (self._works_any_weekday is None
+                or self._cached_week_size != len(self._non_working_days)):
+            self._cached_week_size = len(self._non_working_days)
+            self._works_any_weekday = bool(
+                _ALL_WEEKDAYS - self._non_working_days)
+        return self._works_any_weekday
 
     def is_working_day(self, check_date: DateLike) -> bool:
         """
