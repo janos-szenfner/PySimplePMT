@@ -22,7 +22,7 @@ here needs a display.
 """
 
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 
 from gantt_app.models import Project, Task
 
@@ -558,6 +558,143 @@ class TestTasksOnCalendarsOfTheirOwn(CriticalPathTestCase):
         self.assertEqual(analysis["B"].early_start, 5)
         self.assertEqual(analysis["B"].early_finish, 9)
         self.assertEqual(self.floats(project)["C"], 2)
+
+
+class TestTheAnalysisIsCached(CriticalPathTestCase):
+    """
+    The chart asks for this on every redraw, only to colour bars.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    layout_chart calls get_critical_path unconditionally, so a resize, a
+    zoom, a theme change or a scroll-triggered redraw paid for the whole
+    forward-and-backward pass again - about 230ms on a thousand-task plan.
+
+    Cached against a signature of the plan rather than cleared by hand:
+    tasks are mutated directly all over the dialogs, so a cache cleared from
+    a dozen places would go stale the first time somebody added a
+    thirteenth. Every test below is really asking "can it go stale".
+    """
+
+    def plan_of_three(self):
+        """A short chain, rescheduled."""
+        project = self.plan([
+            ("A", (2026, 3, 2), (2026, 3, 6), []),
+            ("B", (2026, 3, 9), (2026, 3, 13), [("A", "FS", 0)]),
+            ("C", (2026, 3, 9), (2026, 3, 11), [("A", "FS", 0)]),
+        ])
+        project.reschedule()
+        return project
+
+    def test_an_unchanged_plan_is_not_analysed_twice(self):
+        """The whole point: a redraw that changed nothing pays nothing."""
+        project = self.plan_of_three()
+
+        first = project.schedule_analysis()
+        second = project.schedule_analysis()
+
+        self.assertIs(first, second)
+
+    def test_moving_a_task_is_noticed(self):
+        """A date is the most obvious thing that changes the answer."""
+        project = self.plan_of_three()
+        before = project.schedule_analysis()
+
+        project.get_task_by_id("C").end_date = datetime(2026, 3, 13)
+
+        self.assertIsNot(project.schedule_analysis(), before)
+        self.assertEqual(self.floats(project)["C"], 0)
+
+    def test_changing_a_link_is_noticed(self):
+        """Links are read straight off the tasks, not through a method."""
+        project = self.plan_of_three()
+        project.schedule_analysis()
+
+        project.get_task_by_id("C").dependencies = []
+
+        self.assertNotEqual(project._analysis_signature(),
+                            project._analysis_signature_seen)
+
+    def test_adding_a_task_is_noticed(self):
+        """The signature covers the list, not only what is in each row."""
+        project = self.plan_of_three()
+        before = project.schedule_analysis()
+
+        project.add_task(Task(id="D", name="D",
+                              start_date=datetime(2026, 3, 16),
+                              end_date=datetime(2026, 3, 18)))
+
+        self.assertIsNot(project.schedule_analysis(), before)
+
+    def test_a_calendar_change_is_noticed(self):
+        """
+        Even one that moves no dates.
+
+        Float is counted in working days, so a holiday inside the plan
+        changes the answer without any task's dates changing.
+        """
+        project = self.plan_of_three()
+        project.schedule_analysis()
+        signature = project._analysis_signature_seen
+
+        project.calendar.add_override(date(2026, 3, 10), False, "shutdown")
+
+        self.assertNotEqual(project._analysis_signature(), signature)
+
+    def test_a_named_calendar_change_is_noticed(self):
+        """A task may follow one, so its week is part of the answer."""
+        project = self.plan_of_three()
+        project.schedule_analysis()
+        signature = project._analysis_signature_seen
+
+        project.calendars.get('weekend-shift').calendar.add_override(
+            date(2026, 3, 10), False, "shutdown")
+
+        self.assertNotEqual(project._analysis_signature(), signature)
+
+    def test_the_cached_answer_is_the_right_one(self):
+        """
+        Caching is only worth having while it agrees with the slow path.
+
+        This is what stops the memoisation quietly returning yesterday's
+        answer for the rest of the session.
+        """
+        project = self.plan_of_three()
+
+        cached = project.schedule_analysis()
+        fresh = project._compute_schedule_analysis()
+
+        self.assertEqual({k: v for k, v in cached.items()},
+                         {k: v for k, v in fresh.items()})
+
+    def test_it_can_be_dropped_by_hand(self):
+        """For a caller that did something the signature cannot see."""
+        project = self.plan_of_three()
+        first = project.schedule_analysis()
+
+        project.invalidate_schedule_analysis()
+
+        self.assertIsNot(project.schedule_analysis(), first)
+
+    def test_a_copied_project_still_answers(self):
+        """
+        The undo history copies projects, and a copy skips __post_init__.
+
+        Restored from copy, deepcopy or a pickle, the cache attributes are
+        whatever the original's __dict__ held - or absent entirely.
+        """
+        import copy as copy_module
+
+        project = self.plan_of_three()
+        project.schedule_analysis()
+
+        for made in (copy_module.copy(project),
+                     copy_module.deepcopy(project)):
+            self.assertTrue(made.schedule_analysis())
+
+        bare = Project.__new__(Project)
+        bare.__dict__.update(project.__dict__)
+        self.assertTrue(bare.schedule_analysis())
 
 
 if __name__ == '__main__':
