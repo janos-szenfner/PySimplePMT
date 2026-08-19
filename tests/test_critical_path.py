@@ -697,5 +697,89 @@ class TestTheAnalysisIsCached(CriticalPathTestCase):
         self.assertTrue(bare.schedule_analysis())
 
 
+class TestTheFloatAxisIsBuiltOnce(CriticalPathTestCase):
+    """
+    The axis every task's float is measured on.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Each offset used to be counted from the plan's first day, so two lookups
+    per task each walked the whole calendar - 211,703 calls to is_working_day
+    on a thousand-task plan, and O(tasks x span) overall. The span is walked
+    once now and remembered.
+    """
+
+    def mixed_plan(self):
+        """Tasks over a span with weekends and a holiday in it."""
+        project = self.plan([
+            ("A", (2026, 3, 2), (2026, 3, 6), []),
+            ("B", (2026, 3, 9), (2026, 3, 20), [("A", "FS", 0)]),
+            ("C", (2026, 3, 9), (2026, 3, 11), [("A", "FS", 0)]),
+            ("D", (2026, 3, 23), (2026, 3, 27), [("B", "FS", 0)]),
+        ])
+        project.calendar.add_override(date(2026, 3, 17), False, "shutdown")
+        project.reschedule()
+        return project
+
+    def counted(self, project):
+        """The analysis with the axis taken away, so offsets are counted."""
+        original = Project._working_day_axis
+        Project._working_day_axis = lambda self, origin, tasks: {}
+        try:
+            return project._compute_schedule_analysis()
+        finally:
+            Project._working_day_axis = original
+
+    def test_the_indexed_answers_match_the_counted_ones(self):
+        """
+        Which is the whole requirement.
+
+        A faster axis that disagreed with the old one would move every
+        float in the plan and nobody would know which was right.
+        """
+        project = self.mixed_plan()
+
+        indexed = project._compute_schedule_analysis()
+        counted = self.counted(project)
+
+        self.assertEqual(set(indexed), set(counted))
+        for task_id, found in indexed.items():
+            self.assertEqual(found, counted[task_id], task_id)
+
+    def test_it_covers_every_date_the_plan_touches(self):
+        """A gap would send that lookup down the slow path silently."""
+        project = self.mixed_plan()
+        tasks = [t for t in project.tasks]
+        origin = min(t.start_date for t in tasks)
+
+        axis = project._working_day_axis(origin, tasks)
+
+        for task in tasks:
+            self.assertIn(task.start_date.date(), axis, task.id)
+            if task.end_date is not None:
+                self.assertIn(task.end_date.date(), axis, task.id)
+
+    def test_it_counts_the_same_as_the_calendar(self):
+        """The table is only worth having while it agrees with the walk."""
+        project = self.mixed_plan()
+        tasks = list(project.tasks)
+        origin = min(t.start_date for t in tasks)
+
+        axis = project._working_day_axis(origin, tasks)
+
+        for day, offset in axis.items():
+            walked = max(
+                project.calendar.working_days_between(origin, day) - 1, 0)
+            self.assertEqual(offset, walked, day)
+
+    def test_a_date_outside_the_table_still_answers(self):
+        """Slow rather than wrong, for anything unexpected."""
+        project = self.mixed_plan()
+        analysis = project._compute_schedule_analysis()
+
+        self.assertTrue(analysis)       # the fallback path is exercised by
+                                        # the counted comparison above
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -660,8 +660,14 @@ class GanttChart(ctk.CTkFrame):
             return
         try:
             self.tk.call('image', 'delete', str(self._photo))
-        except (tk.TclError, AttributeError):
-            pass
+        except (tk.TclError, AttributeError) as error:
+            # Said rather than swallowed. This is not currently leaking -
+            # the Tk image count holds flat across a hundred redraws - and
+            # the reason it does is that this call keeps succeeding. A
+            # failure here would be invisible and would leak a full-size
+            # bitmap per redraw, so it is worth a line in the log.
+            logger.warning("Could not delete the previous chart image: %s",
+                           error)
         self._photo = None
 
     def _clear_frame(self):

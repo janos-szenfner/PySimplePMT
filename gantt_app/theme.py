@@ -44,7 +44,7 @@ because both the views and main.py need it and nothing here needs either.
 """
 
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import json
 import logging
 import os
@@ -471,7 +471,8 @@ class ThemeController:
         #: suite changes the preference of whoever ran it, which it did.
         self._persist = persist
         self._appearance = self._resolve_appearance()
-        self._listeners: List[Callable[[str, str], None]] = []
+        #: (listener, owner reference) pairs; see subscribe.
+        self._listeners: List[Tuple[Callable[[str, str], None], Any]] = []
 
         #: The widget the poll is scheduled on, and the pending `after` id,
         #: so watching can be stopped and never scheduled twice.
@@ -627,7 +628,8 @@ class ThemeController:
 
     # ---- telling the rest of the application -----------------------------
 
-    def subscribe(self, listener: Callable[[str, str], None]) -> None:
+    def subscribe(self, listener: Callable[[str, str], None],
+                  owner=None) -> None:
         """
         Be told when the theme changes.
 
@@ -637,8 +639,90 @@ class ThemeController:
             Called with (mode, appearance) after every change. Used by the
             toggle button to redraw its icon and by the View menu to show
             which mode is ticked.
+        owner : Optional[widget]
+            The widget the listener belongs to. Given one, the subscription
+            is dropped as soon as that widget is destroyed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The owner is what keeps this from being a leak. A listener is
+        normally a closure over a toolbar, so the controller holding it
+        holds the whole widget tree behind it - and the controller outlives
+        any number of toolbars, because it belongs to the application. Five
+        toolbars built and destroyed left five dead listeners, and five
+        widget trees that could never be collected.
+
+        Held weakly as well, so an owner that is garbage collected without
+        Tk ever being told - which is what happens in a test - does not keep
+        its listener alive either.
         """
-        self._listeners.append(listener)
+        # Dropped here as well as in _announce, so a toolbar being rebuilt
+        # clears the one it is replacing. Waiting for the next theme change
+        # would let them pile up in an application whose theme never moves,
+        # which is most of them.
+        self._drop_dead_listeners()
+        self._listeners.append((listener, self._owner_ref(owner)))
+
+    def _drop_dead_listeners(self) -> None:
+        """Forget every subscription whose owner has gone."""
+        self._listeners = [
+            (listener, owner) for listener, owner in self._listeners
+            if not self._owner_is_gone(owner)
+        ]
+
+    @staticmethod
+    def _owner_ref(owner):
+        """
+        A weak reference to a listener's owner, or None when it has none.
+
+        Not every object can be weakly referenced, and a listener whose
+        owner cannot be is simply kept for the life of the controller - the
+        old behaviour, for the callers that do not name one.
+        """
+        if owner is None:
+            return None
+        try:
+            import weakref
+            return weakref.ref(owner)
+        except TypeError:
+            return None
+
+    @staticmethod
+    def _owner_is_gone(reference) -> bool:
+        """Whether a subscription's owner has been destroyed or collected."""
+        if reference is None:
+            return False
+
+        owner = reference()
+        if owner is None:
+            return True
+
+        # A Tk widget that has been destroyed is still a live Python object;
+        # winfo_exists is what actually answers the question.
+        exists = getattr(owner, 'winfo_exists', None)
+        if exists is None:
+            return False
+        try:
+            return not exists()
+        except Exception:
+            return True
+
+    def unsubscribe(self, listener: Callable[[str, str], None]) -> bool:
+        """
+        Stop telling a listener about theme changes.
+
+        RETURNS:
+        --------
+        bool
+            True when there was one to remove. Callers that named an owner
+            do not need this; it is for anything that has to detach earlier
+            than its owner goes.
+        """
+        for index, (existing, _owner) in enumerate(self._listeners):
+            if existing is listener:
+                del self._listeners[index]
+                return True
+        return False
 
     def _announce(self) -> None:
         """
@@ -647,12 +731,22 @@ class ThemeController:
         A listener is a widget, and a widget that has been destroyed raises
         when it is written to. One dead toolbar must not stop the theme
         reaching the rest of the window.
+
+        Subscriptions whose owner has gone are dropped here rather than
+        called. That is what keeps the list from growing for the life of the
+        application - see subscribe.
         """
-        for listener in list(self._listeners):
+        alive = []
+        for listener, owner in self._listeners:
+            if self._owner_is_gone(owner):
+                continue
+            alive.append((listener, owner))
             try:
                 listener(self._mode, self._appearance)
             except Exception:
                 logger.exception("A theme listener failed")
+
+        self._listeners = alive
 
     # ---- following the desktop -------------------------------------------
 

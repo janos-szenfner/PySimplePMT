@@ -1955,6 +1955,8 @@ class IconToolbar(ctk.CTkFrame):
         
         # Store button references for state management
         self.icon_buttons = {}
+        #: One CTkImage per icon name, built once; see _icon_image.
+        self._icon_images = {}
         #: The dividers between groups, kept so they can be found again
         self.separators = []
         
@@ -2109,8 +2111,12 @@ class IconToolbar(ctk.CTkFrame):
 
         controller = self._theme_controller()
         if controller is not None:
+            # Owned by this row, so the subscription goes when the row
+            # does - the controller belongs to the application and outlives
+            # any number of toolbars. See ThemeController.subscribe.
             controller.subscribe(
-                lambda _mode, _appearance: self._refresh_theme_control())
+                lambda _mode, _appearance: self._refresh_theme_control(),
+                owner=self)
         self._refresh_theme_control()
 
     def _theme_controller(self):
@@ -2234,12 +2240,24 @@ class IconToolbar(ctk.CTkFrame):
         """
         from gantt_app.resources.icons import draw_icon
 
+        cached = self._icon_images.get(icon_name)
+        if cached is not None:
+            return cached
+
         light = draw_icon(icon_name, self.ICON_SIZE, theme.ICON_INK_LIGHT)
         dark = draw_icon(icon_name, self.ICON_SIZE, theme.ICON_INK_DARK)
         if light is None or dark is None:
             return None
-        return ctk.CTkImage(light_image=light, dark_image=dark,
-                            size=(self.ICON_SIZE, self.ICON_SIZE))
+
+        # Kept, because CTkImage builds Tk images of its own and the theme
+        # button asks for one on every appearance change - twenty flips made
+        # twenty images where two will do. Per instance rather than per
+        # class: a CTkImage belongs to the interpreter that made it, and the
+        # tests build several.
+        image = ctk.CTkImage(light_image=light, dark_image=dark,
+                             size=(self.ICON_SIZE, self.ICON_SIZE))
+        self._icon_images[icon_name] = image
+        return image
 
     def _create_icon_button(self, icon_name: str, tooltip: str, command: Callable):
         """

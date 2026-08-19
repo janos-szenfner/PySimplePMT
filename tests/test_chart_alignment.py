@@ -352,5 +352,90 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
                          self.app.task_list.GRID_ROW_HEIGHT)
 
 
+class TestTheChartFontIsChosenForSpeedToo(unittest.TestCase):
+    """
+    Which face the chart draws with is a performance decision.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Text is some 95% of the cost of drawing a chart - 2,247 draw.text calls
+    on a thousand-task plan - so the face matters. Arial and Helvetica are
+    metric compatible, measure the same to the pixel, and Helvetica
+    rasterises in about half the time, so it leads on macOS.
+    """
+
+    def test_the_candidates_are_all_absolute_paths(self):
+        """
+        Nothing is fetched; only what is already on the machine is used.
+
+        Checked by shape rather than with os.path.isabs, which only knows
+        the conventions of the platform it is running on - the Windows
+        entries are not absolute to a Mac.
+        """
+        from gantt_app.utils.chart_render import FONT_CANDIDATES
+
+        for candidate in FONT_CANDIDATES:
+            windows = len(candidate) > 2 and candidate[1:3] == ':\\'
+            self.assertTrue(candidate.startswith('/') or windows, candidate)
+
+    def test_helvetica_is_preferred_to_arial(self):
+        """
+        The two are interchangeable to the pixel; one is twice as fast.
+
+        Pinned because the order looks arbitrary and is not.
+        """
+        from gantt_app.utils.chart_render import FONT_CANDIDATES
+
+        paths = list(FONT_CANDIDATES)
+        helvetica = next((i for i, p in enumerate(paths) if 'Helvetica' in p),
+                         None)
+        arial = next((i for i, p in enumerate(paths)
+                      if p.endswith('Supplemental/Arial.ttf')), None)
+
+        if helvetica is None or arial is None:
+            self.skipTest("the macOS candidates are not in the list")
+        self.assertLess(helvetica, arial)
+
+    def test_the_chosen_face_measures_the_labels_the_same(self):
+        """
+        The header's column widths are derived from the font.
+
+        A face with different metrics would change how many dates fit, so
+        the two have to agree - which is what metric compatible means.
+        """
+        from gantt_app.utils.chart_render import _font, find_font_file
+        import os
+
+        if not find_font_file():
+            self.skipTest("no system font was found")
+
+        arial = '/System/Library/Fonts/Supplemental/Arial.ttf'
+        if not os.path.exists(arial):
+            self.skipTest("Arial is not on this machine")
+
+        from PIL import ImageFont
+        chosen = _font(10)
+        other = ImageFont.truetype(arial, 10)
+
+        self.assertEqual(chosen.getbbox('2026-08-17')[2],
+                         other.getbbox('2026-08-17')[2])
+
+    def test_accented_text_still_renders(self):
+        """
+        The reason the candidate list exists at all.
+
+        Pillow's built-in face turns "kialakítása" into a row of boxes.
+        """
+        from PIL import Image, ImageDraw
+        from gantt_app.utils.chart_render import _font
+
+        font = _font(14)
+        image = Image.new('L', (400, 30), 255)
+        ImageDraw.Draw(image).text((2, 2), "árvíztűrő ÁÉÍÓŐÚŰ",
+                                   font=font, fill=0)
+
+        self.assertGreater(sum(1 for p in image.getdata() if p < 128), 200)
+
+
 if __name__ == '__main__':
     unittest.main()

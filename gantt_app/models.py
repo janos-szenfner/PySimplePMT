@@ -5,7 +5,7 @@ Contains the Task and Project classes that form the core data structure.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Set
 import logging
 import uuid
@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
 from gantt_app.calendarregistry import CalendarRegistry, default_registry
-from gantt_app.workdaycalendar import WorkingCalendar, default_calendar
+from gantt_app.workdaycalendar import (
+    WorkingCalendar, as_date, default_calendar,
+)
 
 
 #: How a dependency constrains the dependent task.
@@ -2752,6 +2754,49 @@ class Project:
         """
         return {task.parent_task_id for task in self.tasks if task.parent_task_id}
 
+    def _working_day_axis(self, origin: datetime,
+                          tasks: List[Task]) -> Dict[date, int]:
+        """
+        Every date the plan touches, as working days from its first day.
+
+        RETURNS:
+        --------
+        Dict[date, int]
+            The same number offset() used to count out, for every date from
+            the plan's first day to its last.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Built once and read, rather than counted from the origin on every
+        lookup. Counting made the float analysis O(tasks x span): each of
+        two lookups per task walked the whole calendar from the plan's start,
+        which came to 211,703 calls to is_working_day on a thousand-task
+        plan. Walking the span once and remembering makes it O(span + tasks).
+
+        The plan's own calendar, like the offsets it replaces. A task
+        following a calendar of its own is still placed on this axis - it is
+        the one ruler every task's float is compared against.
+        """
+        finish = origin
+        for task in tasks:
+            end = task.end_date or task.start_date
+            if end is not None and end > finish:
+                finish = end
+
+        axis: Dict[date, int] = {}
+        calendar = self.calendar
+        worked = 0
+        day = as_date(origin)
+        last = as_date(finish)
+
+        while day <= last:
+            if calendar.is_working_day(day):
+                worked += 1
+            axis[day] = max(worked - 1, 0)
+            day += timedelta(days=1)
+
+        return axis
+
     def _analysis_signature(self):
         """
         Everything schedule_analysis reads, as a cheap comparable value.
@@ -2881,6 +2926,9 @@ class Project:
         by_id = {task.id: task for task in tasks}
         origin = min(task.start_date for task in tasks)
 
+        # Every date the plan touches, counted once - see _working_day_axis
+        axis = self._working_day_axis(origin, tasks)
+
         def offset(moment: datetime) -> int:
             """
             Working days from the plan's first day to a date.
@@ -2891,7 +2939,15 @@ class Project:
             number for the same day - so slack between two tasks on different
             calendars would come out as whatever the difference between their
             weeks happened to be.
+
+            Read from a table built once rather than counted from the plan's
+            first day on every call; see _working_day_axis. A date outside
+            the table - which nothing in the plan should produce - falls back
+            to counting, so an unexpected one is slow rather than wrong.
             """
+            found = axis.get(as_date(moment))
+            if found is not None:
+                return found
             return max(self.calendar.working_days_between(origin, moment) - 1, 0)
 
         # ---- forward: where each task is, as scheduled ------------------

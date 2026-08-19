@@ -1497,13 +1497,17 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1425 tests, all passing.
+1439 tests, all passing.
 
 ## Known Limitations
 
 1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
 2. **Public holidays from source**: the `holidays` package is in `requirements.txt` and is bundled into every packaged build, so a released build always has it. Only a source checkout installed without its requirements lacks it — and there the picker still saves a selection and says on its face that the choice takes effect once the package is installed, rather than silently dropping it
-3. **Performance**: large plans are slow to draw. Measured on synthetic plans with hierarchy and dependencies: ~180ms at 100 tasks, ~575ms at 500, ~1.0s at 1000. Rendering dominates — text alone is about 59% of it — and past ~500 tasks the row heights are compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow. Redraws that change nothing (resize, zoom, theme) are much cheaper than the first: the critical-path analysis behind them is cached, which takes the layout stage from 155ms to 9ms at 1000 tasks. `works_any_weekday` is cached too — `is_working_day` asks it before every other rule and one redraw calls that over 200,000 times, so rebuilding a seven-element set each time cost about 25ms of every cold pass
+3. **Performance**: large plans are slow to draw, though far less so than they were. Measured on synthetic plans with hierarchy and dependencies: ~140ms at 100 tasks, ~350ms at 500, ~580ms at 1000 — down from 180ms / 575ms / 1165ms. Past ~500 tasks the row heights are still compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow.
+
+   What remains is almost entirely **text**: about 95% of a render is `draw.text`, and the whole plan is rasterised even though a window shows perhaps 5% of it. Drawing only the visible band is the fix that would remove the limitation rather than shrink it, and it is not done — it inverts a deliberate trade-off (scrolling currently only moves a pre-rendered image) and needs care with the row alignment and the exports.
+
+   What *is* done: the critical-path analysis is cached against a signature of the plan, so a redraw that changes nothing costs 9ms instead of 155ms; the float axis is a table built once rather than counted per task, taking a cold analysis from 120ms to 2.8ms; `works_any_weekday` is cached, which `is_working_day` asks before every other rule; and the chart prefers Helvetica over Arial, which are metric compatible to the pixel while Helvetica rasterises in half the time
 4. **Subdivision names come from the `holidays` package**, so a region it has no name for is listed by its code
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column

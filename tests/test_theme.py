@@ -870,5 +870,101 @@ class TestThePanesFollowTheTheme(unittest.TestCase):
                          theme.CHART_BG[1])
 
 
+class TestSubscriptionsDoNotPileUp(ThemeControllerTestCase):
+    """
+    The controller belongs to the application and outlives its widgets.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A listener is normally a closure over a toolbar, so the controller
+    holding it holds the whole widget tree behind it. Five toolbars built and
+    destroyed left five dead listeners and five trees that could never be
+    collected. An owner is named now, and a subscription goes when its owner
+    does.
+    """
+
+    class Owner:
+        """Something that can be destroyed, standing in for a widget."""
+
+        def __init__(self):
+            self.alive = True
+
+        def winfo_exists(self):
+            return self.alive
+
+    def test_a_listener_without_an_owner_is_kept(self):
+        """The old behaviour, for a caller that names none."""
+        controller = self.controller()
+        controller.subscribe(lambda *_a: None)
+
+        controller.toggle()
+
+        self.assertEqual(len(controller._listeners), 1)
+
+    def test_a_listener_goes_when_its_owner_does(self):
+        """Which is what stops the list growing for the life of the app."""
+        controller = self.controller()
+        owner = self.Owner()
+        controller.subscribe(lambda *_a: None, owner=owner)
+
+        owner.alive = False
+        controller.toggle()
+
+        self.assertEqual(controller._listeners, [])
+
+    def test_a_dead_listener_is_not_called(self):
+        """Writing to a destroyed widget raises; it is dropped instead."""
+        controller = self.controller()
+        owner = self.Owner()
+        seen = []
+        controller.subscribe(lambda *_a: seen.append(True), owner=owner)
+
+        owner.alive = False
+        controller.toggle()
+
+        self.assertEqual(seen, [])
+
+    def test_subscribing_clears_the_ones_that_have_gone(self):
+        """
+        Rather than waiting for the next theme change.
+
+        A toolbar being rebuilt should clear the one it replaces, in an
+        application whose theme never moves - which is most of them.
+        """
+        controller = self.controller()
+        for _ in range(5):
+            owner = self.Owner()
+            controller.subscribe(lambda *_a: None, owner=owner)
+            owner.alive = False
+
+        controller.subscribe(lambda *_a: None, owner=self.Owner())
+
+        self.assertEqual(len(controller._listeners), 1)
+
+    def test_a_collected_owner_takes_its_listener_with_it(self):
+        """Held weakly, so an owner Tk never hears about still counts."""
+        import gc
+
+        controller = self.controller()
+        owner = self.Owner()
+        controller.subscribe(lambda *_a: None, owner=owner)
+
+        del owner
+        gc.collect()
+        controller.toggle()
+
+        self.assertEqual(controller._listeners, [])
+
+    def test_one_can_be_detached_by_hand(self):
+        """For anything that has to go earlier than its owner."""
+        controller = self.controller()
+        listener = lambda *_a: None
+        controller.subscribe(listener)
+
+        self.assertTrue(controller.unsubscribe(listener))
+        self.assertFalse(controller.unsubscribe(listener))
+        self.assertEqual(controller._listeners, [])
+
+
 if __name__ == '__main__':
     unittest.main()

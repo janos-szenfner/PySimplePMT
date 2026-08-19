@@ -883,10 +883,14 @@ FONT_CANDIDATES = (
     '/usr/share/fonts/TTF/DejaVuSans.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf',
-    # macOS
+    # macOS. Helvetica leads Arial deliberately: the two are metric
+    # compatible - the same string measures the same to the pixel - and
+    # Helvetica rasterises in about half the time. Text is some 95% of the
+    # cost of drawing a chart, so which face is picked is a performance
+    # decision as much as a typographic one.
+    '/System/Library/Fonts/Helvetica.ttc',
     '/System/Library/Fonts/Supplemental/Arial.ttf',
     '/Library/Fonts/Arial.ttf',
-    '/System/Library/Fonts/Helvetica.ttc',
     # Windows
     r'C:\Windows\Fonts\arial.ttf',
     r'C:\Windows\Fonts\segoeui.ttf',

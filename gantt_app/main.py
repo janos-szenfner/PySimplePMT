@@ -95,7 +95,7 @@ class GanttApp(ctk.CTk):
         self.theme_controller = theme.ThemeController()
         ctk.set_appearance_mode(self.theme_controller.appearance)
         self.theme_controller.start_watching(self)
-        self.theme_controller.subscribe(self._theme_changed)
+        self.theme_controller.subscribe(self._theme_changed, owner=self)
         logger.info("Appearance %s (%s mode)",
                     self.theme_controller.appearance,
                     self.theme_controller.mode)
