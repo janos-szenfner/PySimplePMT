@@ -1981,6 +1981,18 @@ class IconToolbar(ctk.CTkFrame):
     #: The name standing in for a divider rather than a button.
     SEPARATOR = 'separator'
 
+    #: What the ? keeps clear of the right edge, so it lands under the Log
+    #: button on the row above.
+    #:
+    #: Where the centre of the Log button sits, measured in from the right
+    #: edge of the toolbar: it is 70 wide and keeps 10px clear.
+    LOG_CENTRE_FROM_RIGHT = 10 + 70 // 2
+
+    #: What the ? keeps clear of the right edge so its own centre lands on
+    #: that same line. Both rows fill the toolbar's width, which is what
+    #: makes the two measurements comparable at all.
+    HELP_RIGHT_PAD = LOG_CENTRE_FROM_RIGHT - BUTTON_SIZE // 2
+
     ICON_ACTIONS = (
         ('open', 'Open Project', 'load_project'),
         ('new_project', 'New Project', 'new_project'),
@@ -2045,7 +2057,12 @@ class IconToolbar(ctk.CTkFrame):
         else:
             self.help_button.configure(text="?")
         self.help_button.tooltip = "Help"
-        self.help_button.pack(side="left", padx=2, pady=2)
+        # Packed to the right rather than after the day/night control, so it
+        # sits under the Log button on the menu row above. Both rows fill the
+        # toolbar's width, so lining the two up is a matter of matching what
+        # each keeps clear of the right edge - see HELP_RIGHT_PAD.
+        self.help_button.pack(side="right", padx=(2, self.HELP_RIGHT_PAD),
+                              pady=2)
 
     def show_help(self):
         """Open the user guide, or raise the copy already open."""

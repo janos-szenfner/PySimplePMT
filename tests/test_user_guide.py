@@ -337,16 +337,20 @@ class TestTheGuideWindow(unittest.TestCase):
 
         self.assertIs(first, second)
 
-    def test_the_short_references_have_no_search_box(self):
+    def test_search_is_opt_in_per_window(self):
         """
-        A screen or two is faster read than searched.
+        A short reference is faster read than searched; a long one is not.
 
-        The flag is opt-in for that reason; this pins that it stayed opt-in.
+        The dependency reference is a handful of sections and keeps none.
+        The guide and the task editor's reference are both long enough to be
+        looked things up in, and have it.
         """
+        from gantt_app.help.dependencyhelp import DependencyHelpWindow
         from gantt_app.help.editorhelp import EditorHelpWindow
         from gantt_app.help.userguide import UserGuideWindow
 
-        self.assertFalse(EditorHelpWindow.SEARCHABLE)
+        self.assertFalse(DependencyHelpWindow.SEARCHABLE)
+        self.assertTrue(EditorHelpWindow.SEARCHABLE)
         self.assertTrue(UserGuideWindow.SEARCHABLE)
 
 
@@ -410,6 +414,187 @@ class TestReachingTheGuide(unittest.TestCase):
         self.toolbar.show_help()
 
         self.assertIs(UserGuideWindow._open_window, opened)
+
+
+class TestTheTaskEditorReference(unittest.TestCase):
+    """
+    The reference behind the task editor's own Help button.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    It used to explain the form's older half - dates, milestones, progress,
+    colour - and say nothing about the fields that decide where a task
+    actually lands: the scheduling mode, the calendar, the earliest begin
+    date. Somebody asking "why did this finish there" found nothing.
+    """
+
+    def body(self) -> str:
+        """Every word of it, lower case, as one string."""
+        from gantt_app.help.editorhelp import HELP_SECTIONS
+
+        return '\n'.join(
+            heading + '\n' + '\n'.join(paragraphs)
+            for heading, paragraphs in HELP_SECTIONS
+        ).lower()
+
+    def test_it_covers_every_field_on_the_form(self):
+        """A box with nothing said about it is the one being looked up."""
+        body = self.body()
+        for field in ('type', 'start date', 'end date', 'duration',
+                      'is milestone', 'scheduling options', 'earliest begin',
+                      'working calendar', 'progress', 'priority',
+                      'show in timeline', 'shape', 'colour', 'details'):
+            self.assertIn(field, body, field)
+
+    def test_it_says_how_the_dates_are_worked_out(self):
+        """Which was the largest thing missing from it."""
+        body = self.body()
+        for phrase in ('walked, not added', 'working', 'calendar days',
+                       'end date is calculated', 'start date is calculated',
+                       'duration is calculated'):
+            self.assertIn(phrase, body, phrase)
+
+    def test_it_explains_the_working_calendar_and_its_priority(self):
+        """All four rules, in the order they are read."""
+        body = self.body()
+        for phrase in ('manual override', 'public holiday', 'working week',
+                       'highest priority'):
+            self.assertIn(phrase, body, phrase)
+
+    def test_it_explains_a_shaded_box(self):
+        """
+        The commonest "is this broken" question about the form.
+
+        A shaded field is one the application is filling in, and nothing on
+        the form itself says so.
+        """
+        self.assertIn('shaded', self.body())
+
+    def test_the_worked_examples_are_true(self):
+        """
+        Re-derived from the scheduler, like the guide's.
+
+        The reference is read while the form is open, so a wrong example is
+        acted on immediately.
+        """
+        # 'five days of work starting Thursday 3 September 2026 finishes on
+        # Wednesday 9 September'
+        self.assertEqual(
+            WorkingCalendar().add_working_days(date(2026, 9, 3), 5),
+            date(2026, 9, 9))
+
+        # 'a three-day task starting Thursday 10 September 2026 runs to
+        # Monday 14 September on the standard week ... on a weekend-only
+        # calendar it starts on Saturday 12 September ... on a 24/7 calendar
+        # it runs 10 to 12 September'
+        project = Project(name="Editor help")
+        for identifier, calendar_id in (("d", None),
+                                        ("w", "weekend-shift"),
+                                        ("c", "continuous")):
+            project.add_task(Task(id=identifier, name=identifier,
+                                  start_date=datetime(2026, 9, 10),
+                                  end_date=datetime(2026, 9, 10),
+                                  duration=3, calendar_id=calendar_id))
+        project.reschedule()
+
+        self.assertEqual(project.get_task_by_id("d").end_date.date(),
+                         date(2026, 9, 14))
+        self.assertEqual(project.get_task_by_id("w").start_date.date(),
+                         date(2026, 9, 12))
+        self.assertEqual(project.get_task_by_id("c").end_date.date(),
+                         date(2026, 9, 12))
+
+
+class TestMoreDatesOnTheAxis(unittest.TestCase):
+    """
+    How many date labels the chart shows.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The step was chosen to keep the count under a dozen whatever the width,
+    so a month-long plan was labelled once a week however wide the window -
+    and widening it added blank space between the same four dates.
+    """
+
+    def steps(self, days, width, font_size=12):
+        """The gap the axis would use, in days."""
+        from gantt_app.utils.chart_render import _tick_step
+        return _tick_step(days, width, font_size)
+
+    def test_a_wider_chart_shows_more_dates(self):
+        """Which is the whole complaint."""
+        narrow = self.steps(34, 600)
+        wide = self.steps(34, 1900)
+
+        self.assertLess(wide, narrow)
+
+    def test_a_month_on_a_normal_window_is_not_weekly(self):
+        """It was every seven days, which came to four labels."""
+        self.assertLessEqual(self.steps(34, 1400), 3)
+
+    def test_labels_are_never_packed_closer_than_they_fit(self):
+        """A denser axis is only an improvement while it stays readable."""
+        from gantt_app.utils.chart_render import _tick_label_px
+
+        for days in (14, 34, 90, 365):
+            for width in (500, 900, 1400, 1900, 2400):
+                step = self.steps(days, width)
+                labels = days / step
+                self.assertLessEqual(labels * _tick_label_px(12), width * 1.05,
+                                     f"{days}d at {width}px")
+
+    def test_bigger_type_thins_the_labels_out(self):
+        """
+        The tick size follows the chart's font_size, which is a setting.
+
+        A fixed label width was safe at the default and overlapped the moment
+        anybody made the type bigger.
+        """
+        self.assertGreaterEqual(self.steps(34, 1400, font_size=20),
+                                self.steps(34, 1400, font_size=10))
+
+    def test_a_caller_with_no_width_still_gets_a_step(self):
+        """The exporters ask without one."""
+        from gantt_app.utils.chart_render import _tick_step
+
+        self.assertGreater(_tick_step(34), 0)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheHelpButtonSitsUnderLog(unittest.TestCase):
+    """
+    Where the ? is on the icon row.
+
+    Both rows fill the toolbar's width, so lining the two up is a matter of
+    matching what each keeps clear of the right edge.
+    """
+
+    def test_the_two_are_measured_from_the_same_edge(self):
+        """The arithmetic the alignment rests on, without needing a window."""
+        from gantt_app.views.toolbar import IconToolbar
+
+        centre_of_help = (IconToolbar.HELP_RIGHT_PAD
+                          + IconToolbar.BUTTON_SIZE / 2)
+
+        self.assertEqual(centre_of_help, IconToolbar.LOG_CENTRE_FROM_RIGHT)
+
+    def test_the_question_mark_is_packed_to_the_right(self):
+        """Rather than after the day/night control, where it used to be."""
+        import customtkinter as ctk
+        from gantt_app.models import Project
+        from gantt_app.views.toolbar import Toolbar
+
+        root = ctk.CTk()
+        root.withdraw()
+        try:
+            toolbar = Toolbar(root, Project(name="P"))
+            toolbar.update_idletasks()
+
+            info = toolbar.icon_toolbar.help_button.pack_info()
+
+            self.assertEqual(info['side'], 'right')
+        finally:
+            root.destroy()
 
 
 if __name__ == '__main__':

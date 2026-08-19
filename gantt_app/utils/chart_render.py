@@ -209,12 +209,81 @@ def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
     ]
 
 
-def _tick_step(days: int) -> int:
-    """Choose a sensible gap between date labels for the given span."""
-    for step in (1, 2, 7, 14, 30, 60, 90, 180, 365):
-        if days / step <= 12:
+#: Clear space to leave between two date labels, in pixels.
+#:
+#: The labels themselves are measured - see _tick_label_px - so this is only
+#: the gap, and it is what stops "2026-08-17" and "2026-08-19" reading as one
+#: long number.
+TICK_LABEL_GAP_PX = 28
+
+
+def _tick_label_px(font_size: int) -> float:
+    """
+    How much room one date label needs, at a given font size.
+
+    Measured from the font rather than assumed, because the tick size
+    follows the chart's font_size setting - which the user can raise in
+    View > Settings. A fixed number was safe at the default and overlapped
+    the moment anybody made the type bigger.
+    """
+    font = _font(max(6, int(font_size) - 2))
+    sample = '2026-08-17'
+    try:
+        width = font.getbbox(sample)[2]
+    except AttributeError:                  # very old Pillow
+        width = font.getsize(sample)[0]
+    return width + TICK_LABEL_GAP_PX
+
+#: The gaps a date axis is allowed to step by, in days.
+#:
+#: Three, four and five are in here for the middle sizes. Without them the
+#: list jumped straight from 2 to 7, so a month-long plan on a wide window
+#: was labelled once a week however much room there was - which is what a
+#: chart showing four dates across its whole width was.
+TICK_STEPS = (1, 2, 3, 4, 5, 7, 10, 14, 21, 30, 60, 90, 180, 365)
+
+
+def _tick_step(days: int, plot_span: float = 0, font_size: int = 12) -> int:
+    """
+    Choose the gap between date labels.
+
+    PARAMETERS:
+    -----------
+    days : int
+        How many days the axis covers.
+    plot_span : float
+        How many pixels it covers. Zero falls back to a fixed dozen labels,
+        for a caller that has no width to offer.
+    font_size : int
+        The chart's font size, which the tick labels are sized from.
+
+    RETURNS:
+    --------
+    int
+        Days between labels: the smallest step in TICK_STEPS whose labels
+        still fit.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Worked out from the room available rather than from a fixed count. A
+    dozen labels is right for a narrow window and wrong for a wide one, and
+    it was the same dozen either way - so widening the window, or zooming
+    in, added blank space between the same four dates rather than
+    more dates.
+
+    The pixel budget is what decides it now, so a wider chart or a deeper
+    zoom shows more of the calendar, and a narrow one thins the labels out
+    rather than overlapping them.
+    """
+    if plot_span > 0:
+        fits = max(2, int(plot_span // _tick_label_px(font_size)))
+    else:
+        fits = 12
+
+    for step in TICK_STEPS:
+        if days / step <= fits:
             return step
-    return max(1, days // 12)
+    return max(1, int(days // fits))
 
 
 #: Horizontal space each day should get before the chart starts scrolling.
@@ -434,7 +503,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                 x_for(task.start_date), y_for(positions[task.id])
             ))
 
-    step = _tick_step(total_days)
+    step = _tick_step(total_days, plot_span, resolved.get('font_size', 12))
     tick = min_date
     while tick <= max_date:
         layout.date_ticks.append((x_for(tick), tick.strftime('%Y-%m-%d')))
