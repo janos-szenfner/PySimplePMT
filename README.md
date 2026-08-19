@@ -1459,7 +1459,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1385 tests, all passing.
+1389 tests, all passing.
 
 ## Known Limitations
 
@@ -1515,5 +1515,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.39.0
+**Version**: 1.39.1
 **Last Updated**: 2026-08-18

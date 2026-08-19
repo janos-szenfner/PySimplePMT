@@ -113,6 +113,50 @@ class ReferenceWindow(ctk.CTkToplevel):
 
         self._build_ui()
         self._fill()
+        self._claim_grab_if_needed()
+
+    def _claim_grab_if_needed(self):
+        """
+        Take the input grab, but only when another window is holding one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A grab is exclusive. The task editor is modal, so it receives every
+        click in the application - and a window opened from it is a separate
+        Toplevel rather than one of its children, so it gets nothing. It
+        draws correctly, scrolls nowhere, and no button in it responds. That
+        is what both Help buttons on the editor were doing.
+
+        Only when something else holds one, which is the whole point of the
+        test. Opened from the toolbar - the user guide - nothing is modal and
+        nothing should become modal: the guide is meant to be read beside the
+        window it describes, and taking the grab there would lock the
+        application behind it. Opened from a modal dialog there is no such
+        choice to make; the alternative to taking the grab is a window that
+        cannot be used at all.
+
+        take_grab hands the grab back to whoever had it when this window
+        closes, so the editor underneath is still modal afterwards. See
+        views/modal.take_grab, which the colour picker and the date picker
+        use for the same reason.
+
+        Imported here rather than at the top of the module: importing
+        gantt_app.views runs its __init__, which reaches the task form and
+        through it the dependency reference - which imports this module, and
+        deadlocks on a module still being defined.
+        """
+        from gantt_app.views.modal import take_grab
+        try:
+            holder = self.grab_current()
+        except tk.TclError:
+            return
+
+        if holder is None or holder is self:
+            return
+
+        logger.debug("%s is opening over a modal window; taking the grab",
+                     type(self).__name__)
+        take_grab(self)
 
     @classmethod
     def show(cls, master=None):

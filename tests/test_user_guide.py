@@ -22,6 +22,7 @@ run everywhere.
 """
 
 import unittest
+from unittest import mock
 from datetime import date, datetime, timedelta
 
 from gantt_app.help.userguide import GUIDE_SECTIONS
@@ -595,6 +596,110 @@ class TestTheHelpButtonSitsUnderLog(unittest.TestCase):
             self.assertEqual(info['side'], 'right')
         finally:
             root.destroy()
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestHelpOpensOverAModalDialog(unittest.TestCase):
+    """
+    A help window opened from the task editor has to be usable.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A grab is exclusive. The task editor is modal, so it receives every click
+    in the application, and a window opened from it is a separate Toplevel
+    rather than one of its children - so it got nothing. It drew correctly,
+    scrolled nowhere, and no button in it responded. Both Help buttons on the
+    editor had been dead since they were added.
+
+    The decision is tested rather than the Tk state, because take_grab defers
+    until the window manager has mapped the window - so asserting on
+    grab_current() is a race, and a test that sleeps to avoid one is a test
+    that fails on a slow machine.
+    """
+
+    def setUp(self):
+        """A root window to open references over."""
+        import customtkinter as ctk
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+    def tearDown(self):
+        """Tear it down, and forget any window left open."""
+        from gantt_app.help.editorhelp import EditorHelpWindow
+        from gantt_app.help.userguide import UserGuideWindow
+
+        for cls in (EditorHelpWindow, UserGuideWindow):
+            cls._open_window = None
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def open_with_grab_held_by(self, holder):
+        """
+        Build a reference window, reporting whether it claimed the grab.
+
+        `holder` stands in for whatever grab_current() would return: None
+        when nothing is modal, or an object when something is.
+        """
+        from gantt_app.help.editorhelp import EditorHelpWindow
+
+        with mock.patch('gantt_app.views.modal.take_grab') as claimed, \
+             mock.patch.object(EditorHelpWindow, 'grab_current',
+                               return_value=holder):
+            window = EditorHelpWindow(self.root)
+            self.addCleanup(window.close)
+
+        return claimed.called
+
+    def test_it_takes_the_grab_when_something_else_holds_one(self):
+        """Or the window opens and nothing in it can be clicked."""
+        modal_window = object()
+
+        self.assertTrue(self.open_with_grab_held_by(modal_window))
+
+    def test_it_leaves_the_grab_alone_when_nothing_is_modal(self):
+        """
+        The guide is meant to be read beside the window it describes.
+
+        Taking the grab whenever a reference opened would lock the whole
+        application behind the guide - which is the same bug, pointed the
+        other way.
+        """
+        self.assertFalse(self.open_with_grab_held_by(None))
+
+    def test_it_does_not_take_the_grab_from_itself(self):
+        """A window already holding it has nothing to claim."""
+        from gantt_app.help.editorhelp import EditorHelpWindow
+
+        with mock.patch('gantt_app.views.modal.take_grab') as claimed:
+            window = EditorHelpWindow(self.root)
+            self.addCleanup(window.close)
+            claimed.reset_mock()
+
+            with mock.patch.object(window, 'grab_current',
+                                   return_value=window):
+                window._claim_grab_if_needed()
+
+        self.assertFalse(claimed.called)
+
+    def test_every_reference_window_does_this(self):
+        """
+        All three share the base class, so all three are fixed at once.
+
+        The dependency reference is opened from the same modal editor and had
+        the same bug.
+        """
+        from gantt_app.help.dependencyhelp import DependencyHelpWindow
+        from gantt_app.help.editorhelp import EditorHelpWindow
+        from gantt_app.help.reference import ReferenceWindow
+        from gantt_app.help.userguide import UserGuideWindow
+
+        for cls in (EditorHelpWindow, DependencyHelpWindow, UserGuideWindow):
+            self.assertTrue(issubclass(cls, ReferenceWindow), cls.__name__)
+            self.assertTrue(hasattr(cls, '_claim_grab_if_needed'),
+                            cls.__name__)
 
 
 if __name__ == '__main__':
