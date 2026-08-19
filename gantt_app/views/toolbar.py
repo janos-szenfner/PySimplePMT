@@ -23,6 +23,8 @@ from gantt_app.utils.mermaid_importer import import_mermaid_file
 from gantt_app.utils.xlsx_importer import import_xlsx_file
 from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
 from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
+from gantt_app.utils.gan_exporter import export_project_to_gan
+from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.views.modal import grab_when_visible
 from gantt_app import theme
@@ -921,6 +923,8 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "XLSX...", "command": self.import_xlsx},
                     ]},
                     {"text": "Export", "submenu": [
+                        {"text": "GAN...", "command": self.export_gan},
+                        {"text": "MS Project...", "command": self.export_msproject},
                         {"text": "Mermaid...", "command": self.export_mermaid},
                         {"text": "HTML...", "command": self.export_html},
                         {"text": "SVG...", "command": self.export_svg},
@@ -1577,6 +1581,65 @@ class Toolbar(ctk.CTkFrame):
                 "Failed to import XLSX file.\n\n"
                 "Check that openpyxl is installed and that the sheet has a "
                 "header row naming a task column plus a start date or duration."
+            )
+
+    def export_gan(self):
+        """Export the current project to a GanttProject (.gan) file."""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".gan",
+            filetypes=[("GanttProject Files", "*.gan"), ("All Files", "*.*")],
+            title="Export Project to GAN"
+        )
+
+        if not file_path:
+            return
+
+        logger.info("Exporting the project to GAN: %s", file_path)
+        if export_project_to_gan(self.project, file_path):
+            messagebox.showinfo("Success", "Project exported to GAN successfully!")
+        else:
+            messagebox.showerror(
+                "Error",
+                "Failed to export project to GAN.\n\n"
+                "See the Log window for details."
+            )
+
+    def export_msproject(self):
+        """
+        Export the current project to a Microsoft Project (MSPDI) file.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The extension is .xml rather than .mpp, and the dialog says so: .mpp
+        is an undocumented binary format that only Project itself writes, and
+        offering it here would produce a file Project refuses to open. MSPDI
+        is Microsoft's own published interchange XML and Project opens it
+        directly - so the success message names it, rather than leaving
+        somebody looking for the .mpp they thought they asked for.
+        """
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xml",
+            filetypes=[("MS Project XML Files", "*.xml"), ("All Files", "*.*")],
+            title="Export Project to MS Project XML"
+        )
+
+        if not file_path:
+            return
+
+        logger.info("Exporting the project to MS Project XML: %s", file_path)
+        if export_project_to_msproject(self.project, file_path):
+            messagebox.showinfo(
+                "Success",
+                "Project exported to Microsoft Project XML.\n\n"
+                "Open it in MS Project with File > Open; the dates are held "
+                "by Start No Earlier Than constraints, so nothing moves "
+                "unless you move it."
+            )
+        else:
+            messagebox.showerror(
+                "Error",
+                "Failed to export project to MS Project XML.\n\n"
+                "See the Log window for details."
             )
 
     def export_mermaid(self):

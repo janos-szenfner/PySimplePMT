@@ -21,6 +21,9 @@ Two further details of the format are easy to get wrong:
 Files written by GanttProject 3.x carry no XML namespace, while some older
 versions namespaced everything under http://ganttproject.sf.net/. Namespaces
 are stripped up front so both parse through the same code path.
+
+Writing the format lives in gantt_app.utils.gan_exporter, whose notes are the
+mirror image of these: the same two details, read from the other side.
 """
 
 import re
@@ -581,30 +584,6 @@ class GANImporter:
         except Exception as e:
             logger.exception(f"Error importing GAN file: {e}")
             return None
-
-
-class GANExporter:
-    """
-    Exports Project objects to GAN format (for potential future use).
-    """
-
-    def __init__(self):
-        pass
-
-    def export_gan(self, project: Project, filepath: str) -> bool:
-        """
-        Export a Project to GAN format.
-
-        Note: This is a simplified exporter and may not include all GAN features.
-        """
-        try:
-            # This would require implementing the full GAN XML structure
-            # For now, we'll just return False as this is not a priority
-            logger.warning("GAN export not yet implemented")
-            return False
-        except Exception as e:
-            logger.exception(f"Error exporting GAN file: {e}")
-            return False
 
 
 # Convenience functions

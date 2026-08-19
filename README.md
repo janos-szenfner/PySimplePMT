@@ -21,6 +21,7 @@ This is a complete implementation of a project management tool with:
 - **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export the plan to a three page PDF — work item list beside the chart, the chart alone, then the list as a full table — to PNG, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
+- **Planning Tool Export**: Hand the plan to GanttProject as a .gan file, or to Microsoft Project as MSPDI .xml. Both carry the hierarchy, the links with their types and lags, the progress, the notes and the working calendar; both are written so the dates the other tool shows are the dates shown here
 - **Work Item Hierarchy**: Phase > Deliverable > Task > Subtask, with milestones at any level. Indenting and outdenting keep a task's type wherever the new parent can hold it, so a Task moved under a Deliverable stays a Task
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
@@ -99,7 +100,10 @@ gantt_app/
 │   ├── copypastecut.py     # The clipboard behind Copy, Cut and Paste
 │   ├── file_io.py          # JSON save/load functionality
 │   ├── gan_importer.py     # GAN (GanttProject) file import
+│   ├── gan_exporter.py     # GAN (GanttProject) file export
 │   ├── mpp_importer.py     # MPP (MS Project) file import
+│   ├── msproject_exporter.py # MS Project (MSPDI .xml) export
+│   ├── plan_export.py      # What both interchange exporters ask of a plan
 │   ├── mermaid_importer.py # Mermaid (.mmd) file import
 │   ├── mermaid_exporter.py # Mermaid (.mmd) file export
 │   ├── xlsx_importer.py    # Excel XLSX project plan import
@@ -695,8 +699,8 @@ Two rows, one above the other, because they are two different things.
 on any desktop does:
 
 - **Project**: New Project, Load Project, Save Project
-- **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (Mermaid, HTML, SVG,
-  PNG, PDF, XLSX)
+- **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (GAN, MS Project,
+  Mermaid, HTML, SVG, PNG, PDF, XLSX)
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
   Project Title, Calendar Settings, and Critical Path
 - **Edit**: Undo, Redo, Cut, Copy, Paste
@@ -788,6 +792,89 @@ preserved in the project's own JSON format.
 
 `MermaidExporter` in `mermaid_importer.py` is a backwards-compatible wrapper
 that delegates here, so the two cannot drift apart.
+
+### GAN Exporter (`utils/gan_exporter.py`)
+
+Writes the plan as a **GanttProject file**, the format the application has
+read since the beginning. Reading a format without writing it makes the other
+tool a source and this one a destination, which is the wrong shape for a plan
+that gets passed around.
+
+**GanttProject never stores an end date.** It stores a start and a duration
+counted in working days, and works the finish out by replaying the
+`<calendars>` block in the file — so an export can be perfectly well-formed
+and still show a plan finishing on the wrong day. Two things prevent that: the
+calendar goes with the plan, and every duration is counted against that same
+calendar.
+
+That is also why a task following a **named calendar of its own** has its
+duration counted against the *plan's* calendar rather than its own. A .gan
+holds one calendar, so counting any other way would land the finish on a
+different day. Such a task keeps its dates and loses the number of days it was
+given, which is the right way round: a date somebody can act on beats a number
+nobody reads.
+
+- **Hierarchy**: sub-tasks are nested `<task>` elements, to any depth
+- **Dependencies**: `<depend>` hangs off the *predecessor* and names the
+  successor, so every edge is reversed on the way out — the mirror image of
+  what `gan_importer` does on the way in. All four link types and the lag
+  travel, and Hard/Rubber map onto GanttProject's own Strong/Rubber
+- **Calendar**: the working week as `<default-week>`, recurring holidays with
+  an empty year, and everything else a calendar takes off — listed holidays,
+  public holidays in an observed country, days taken off by hand — as dated
+  entries, written from the plan's first day to a year past its last
+- **Task IDs**: the format wants integers and this application has strings, so
+  each task is written as its outline position. A file exported and read back
+  comes home renumbered from 1, which is what GanttProject would have done
+  with it too
+- **What does not survive**: a named calendar per task (above), and a day the
+  plan *works* that its own week says it should not — a `<date>` entry only
+  ever takes a day off. Both are logged rather than written wrong
+
+### MS Project Exporter (`utils/msproject_exporter.py`)
+
+Writes the plan as **MSPDI**, the XML interchange format Microsoft publishes
+and Project opens with File > Open. It is not `.mpp`: that is an undocumented
+binary format whose only complete writer is Project itself, and the readers
+that exist — this application's own MPP import among them — are
+reverse-engineered. MSPDI is also what every other planning tool reads, which
+`.mpp` is not.
+
+**The dates are pinned.** MSPDI states a schedule the way Project thinks about
+one — a duration, a set of links, and a constraint saying what the task is
+allowed to do — so handing over durations and links alone hands Project a plan
+it will re-solve: every task without a predecessor collapses onto the project
+start, and anything scheduled here through something MSPDI cannot say moves.
+Each piece of work therefore carries a **Start No Earlier Than** constraint on
+the date the plan says. That is a floor rather than a pin: the links are still
+written and still push a task out when its predecessor slips, but nothing is
+pulled earlier than it was planned. Summary rows carry no constraint, since
+Project computes those from their children and refuses a summary that
+disagrees.
+
+The rule is the one the spreadsheet export follows for its formulas: a file
+that recalculates is worth having, and a file that recalculates to something
+other than the plan is worth less than one that does not recalculate at all.
+
+- **Hierarchy**: one flat `<Task>` list with `OutlineLevel` and `WBS` — the
+  opposite of the .gan file, where the same hierarchy is nesting
+- **Dependencies**: `<PredecessorLink>` sits on the successor, which is how
+  `Task.dependencies` already holds it, so nothing is reversed. Lag is written
+  in tenths of a minute, the unit MSPDI counts every span in whatever
+  `LagFormat` says the reader should display
+- **Per-task calendars**: written as separate `<Calendar>` elements and named
+  by the task's `CalendarUID`. This is the one thing MSPDI holds and the
+  GanttProject format cannot
+- **Calendar**: the working week from Sunday (MSPDI numbers Sunday 1 where
+  Python starts at Monday), then every date that departs from it — including a
+  Saturday the plan *works*, which the .gan export cannot express at all
+- **Element order**: MSPDI's schema is a sequence and Project rejects a file
+  that reorders it. `CalendarUID` really does belong between `ConstraintType`
+  and `ConstraintDate`; the links really do come after every scalar field,
+  `Notes` included. Both look like mistakes, so both are pinned down by tests
+- **What does not survive**: task colours, which MSPDI has no field for, and
+  the difference between a Phase and a Deliverable, since Project has one kind
+  of summary row. Everything that decides a date goes across
 
 ### PDF Export (`utils/page_render.py`)
 
@@ -1139,6 +1226,8 @@ pysimplepmt --log-file      # print the log file path
 
 12. **Export Projects**
     - Choose **File -> Export** and pick the format:
+    - "GAN..." to hand the plan to GanttProject
+    - "MS Project..." to write Microsoft Project's MSPDI `.xml`, which Project opens with File -> Open
     - "Mermaid..." to export project to Mermaid format
     - "PNG..." to export Gantt chart as PNG image
     - "PDF..." to export Gantt chart as PDF document
@@ -1528,6 +1617,8 @@ Unit tests cover:
 - ✅ **Dialog Chrome**: That every toolbar icon reaches a handler, that a secondary button is visible and tells itself apart from the primary one, that a popup opened over a modal dialog takes the input grab and hands it back, and that opening a submenu does not dismiss the menu it belongs to
 - ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
 - ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, that a formula is never written where it would disagree with the plan, and that an ongoing task carries its percentage
+- ✅ **GAN Export**: Nesting, the reversed dependency edge, milestones written both ways, durations counted over a holiday, both kinds of holiday in the calendar block, and a round trip through the importer that compares every date against the plan that went in
+- ✅ **MS Project Export**: The pinned dates and the unpinned summaries, the outline levels and WBS, lag in tenths of a minute, the weekday numbering that starts at Sunday, the per-task calendars, a worked Saturday written as an exception, and the schema's element order at the two places it looks wrong
 - ✅ **PDF Pages**: That there are three, that they are all one physical size, what the work item table holds, and that the written page is the size it claims to be
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
 
@@ -1551,7 +1642,10 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
 7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
-8. **XLSX Export of a worked weekend**: a Saturday or Sunday that is worked - whether by an override or by the working week itself - cannot be written as a live formula, since Excel's `WORKDAY` has a fixed Monday-to-Friday week. Tasks reaching such a day get their finish written as a date and stop recalculating; the sheet still says what the plan says. A day taken *off* stays live, because that is just another date on the holiday sheet
+8. **GAN Export of a per-task calendar**: a `.gan` file holds one calendar, so a task following a named calendar of its own is written with its duration counted against the plan's calendar instead. The dates survive; the number of days shown against that task in GanttProject does not match the one shown here. Export to MS Project where the per-task calendars matter
+9. **GAN Export of a worked weekend**: a `<date>` entry only ever takes a day off, so a day the plan works that its own week says it should not cannot be expressed. Those days are counted and logged rather than written wrong
+10. **MS Project Export is MSPDI, not `.mpp`**: nothing outside Project writes the binary format. The `.xml` opens with File -> Open. Task colours and the Phase/Deliverable distinction have no field in MSPDI and are dropped; everything that decides a date goes across
+11. **XLSX Export of a worked weekend**: a Saturday or Sunday that is worked - whether by an override or by the working week itself - cannot be written as a live formula, since Excel's `WORKDAY` has a fixed Monday-to-Friday week. Tasks reaching such a day get their finish written as a date and stop recalculating; the sheet still says what the plan says. A day taken *off* stays live, because that is just another date on the holiday sheet
 
 ## Future Enhancements
 
@@ -1580,10 +1674,11 @@ Done:
 - [x] Manual date overrides, outranking holidays and weekends alike
 - [x] Editing the weekend rule from the application
 - [x] Per-task calendars, so one strand of work can follow a different week
+- [x] GAN file export, with the calendar the durations were counted against
+- [x] Microsoft Project export as MSPDI, with the dates pinned so Project does not re-solve them
 
 Still to do:
 
-- [ ] GAN file export
 - [ ] Resource management
 - [ ] Filtering and grouping
 - [ ] Recursive copy of a whole branch

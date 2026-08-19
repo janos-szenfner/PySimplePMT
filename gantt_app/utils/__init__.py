@@ -9,7 +9,12 @@ from gantt_app.workdaycalendar import (
 )
 from .file_io import JSONFileIO, save_project, load_project
 from .gan_importer import GANImporter, import_gan_file
+from .gan_exporter import export_project_to_gan, generate_gan_content
 from .mpp_importer import MPPImporter, import_mpp_file, MPPImportManager
+from .msproject_exporter import (
+    export_project_to_msproject,
+    generate_msproject_content,
+)
 from .mermaid_importer import MermaidImporter, import_mermaid_file
 from .mermaid_exporter import export_project_to_mermaid, generate_mermaid_content
 from .image_export import (
@@ -39,7 +44,9 @@ __all__ = [
     'WorkingCalendar', 'CalendarTask', 'default_calendar',
     'JSONFileIO', 'save_project', 'load_project',
     'GANImporter', 'import_gan_file',
+    'export_project_to_gan', 'generate_gan_content',
     'MPPImporter', 'import_mpp_file', 'MPPImportManager',
+    'export_project_to_msproject', 'generate_msproject_content',
     'MermaidImporter', 'import_mermaid_file',
     'export_project_to_mermaid', 'generate_mermaid_content',
     'export_gantt_to_png',

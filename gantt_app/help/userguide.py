@@ -488,7 +488,27 @@ GUIDE_SECTIONS = (
     (
         "Files: exporting",
         [
-            "File > Export writes Mermaid, HTML, SVG, PNG, PDF and XLSX.",
+            "File > Export writes GAN, MS Project, Mermaid, HTML, SVG, PNG, "
+            "PDF and XLSX.",
+
+            "GAN - a GanttProject file. GanttProject stores a start and a "
+            "duration rather than an end date and works the finish out from "
+            "the calendar in the file, so the calendar goes with the plan "
+            "and the durations are counted against it. The dates it shows "
+            "are the dates shown here. The format holds one calendar, so a "
+            "task following a named calendar of its own keeps its dates and "
+            "loses the number of days it was given.",
+
+            "MS Project - an .xml file in Microsoft's MSPDI interchange "
+            "format, which Project opens with File > Open. It is not .mpp: "
+            "nothing outside Project writes that format. Each piece of work "
+            "carries a Start No Earlier Than constraint on the date the plan "
+            "says, so opening the file does not re-solve the schedule - the "
+            "links still push a task out when its predecessor slips, but "
+            "nothing is pulled earlier than it was planned. Summary rows "
+            "carry no constraint, since Project computes those from what is "
+            "under them. Per-task calendars survive, which is the one thing "
+            "this format holds and the GanttProject one does not.",
 
             "The XLSX export is a live sheet, not a picture. Duration is a "
             "number you can change, and Start and End are WORKDAY formulas "

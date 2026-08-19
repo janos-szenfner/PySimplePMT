@@ -89,8 +89,8 @@ class TestMenuContents(unittest.TestCase):
         exports = next(i for i in items if i['text'] == 'Export')
 
         self.assertEqual(labels(exports['submenu']),
-                         ['Mermaid...', 'HTML...', 'SVG...',
-                          'PNG...', 'PDF...', 'XLSX...'])
+                         ['GAN...', 'MS Project...', 'Mermaid...', 'HTML...',
+                          'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
 
     def test_actions_nests_create(self):
         """Actions carries Create as a submenu, then the project-wide entries."""
