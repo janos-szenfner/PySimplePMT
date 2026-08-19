@@ -972,8 +972,10 @@ Each release on the [Releases page](../../releases) carries:
 Both are **self-contained**: the Python interpreter, the Tcl/Tk runtime and
 every third-party library are bundled, so no Python installation and no pip
 packages are required, and nothing is downloaded at runtime. `SHA256SUMS`
-covers every file, and the exact library set is recorded in
-`dependency-manifest.txt` and `dependency-manifest-macos.txt`.
+covers every file attached to the release, and the exact library set is
+recorded in the build's own artifacts, under the Actions run that produced
+it — off the release page, which carries only the two packages, the macOS
+instructions and the checksums.
 
 ### Installing on macOS
 

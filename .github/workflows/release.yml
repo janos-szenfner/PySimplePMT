@@ -295,9 +295,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
+          # What the release page shows, and nothing else. The .app zip and
+          # the dependency manifests are still built and still uploaded as
+          # workflow artifacts - they are useful when a build has to be
+          # picked apart - but a release page listing nine files buries the
+          # two anybody actually wants.
           find artifacts -type f \
-            \( -name '*.deb' -o -name '*.dmg' -o -name '*-app.zip' \
-               -o -name 'README-macOS.md' -o -name 'dependency-manifest*.txt' \) \
+            \( -name '*.deb' -o -name '*.dmg' -o -name 'README-macOS.md' \) \
             -exec cp {} release/ \;
 
           version="${GITHUB_REF_NAME#v}"
@@ -354,7 +358,7 @@ jobs:
           **Open** → click **Open** in the security dialog. Every launch after
           that is an ordinary double-click.
 
-          See `README-macOS.md` in the macOS artifact — it is also inside the
+          See `README-macOS.md` attached below — it is also inside the
           DMG — for the full instructions, including what to do on macOS
           Sequoia (15), where the first attempt takes a different route.
 
@@ -367,8 +371,6 @@ jobs:
 
           * **DMG**: mount it, drag **PySimplePMT** to **Applications**, then
             right-click → **Open**
-          * **.app zip**: unzip, move **PySimplePMT.app** to `/Applications`,
-            then right-click → **Open**
 
           **Linux**
 
@@ -390,10 +392,9 @@ jobs:
           every third-party library. **No Python installation and no pip
           packages are required**, and nothing is downloaded at runtime.
 
-          The exact set of bundled libraries is recorded in
-          `dependency-manifest.txt` for Linux and
-          `dependency-manifest-macos.txt` for macOS. `SHA256SUMS` covers every
-          file attached here.
+          The exact set of bundled libraries is recorded in the build's own
+          artifacts, under the Actions run that produced this release.
+          `SHA256SUMS` covers every file attached here.
 
           ### Removal
 
@@ -494,9 +495,7 @@ jobs:
           gh release view "$TAG" --json assets \
             --jq '.assets[] | "  \(.name)  \(.size) bytes"'
 
-          for required in ".deb" ".dmg" "-app.zip" "README-macOS.md" \
-                          "SHA256SUMS" "dependency-manifest.txt" \
-                          "dependency-manifest-macos.txt"; do
+          for required in ".deb" ".dmg" "README-macOS.md" "SHA256SUMS"; do
             if ! gh release view "$TAG" --json assets --jq '.assets[].name' \
                  | grep -q -- "$required"; then
               echo "ERROR: ${required} is missing from the release" >&2
