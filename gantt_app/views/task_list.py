@@ -138,6 +138,18 @@ class DragDropTaskList(ctk.CTkFrame):
 
         self.tree.configure(style='Gantt.Treeview')
 
+    def _is_search_context(self, task) -> bool:
+        """
+        Whether a row is on screen only to say where a match sits.
+
+        An ancestor kept for context is not itself a hit, and reads as one
+        unless it is drawn differently.
+        """
+        matches = getattr(self, '_search_matches', None)
+        if not matches:
+            return False
+        return task.id not in matches
+
     def _apply_row_tag_colours(self):
         """
         Colour the row tags for the appearance in force.
@@ -164,6 +176,12 @@ class DragDropTaskList(ctk.CTkFrame):
         # would fade one, so it is greyed instead - the same thing said in
         # the way this widget can say it.
         self.tree.tag_configure('cut',
+                                foreground=theme.now(self.CUT_ROW_TEXT))
+
+        # An ancestor shown only for context, greyed so it does not read as
+        # a hit. The same colour the cut rows use: both mean "here, but not
+        # the thing you are looking at".
+        self.tree.tag_configure('search_context',
                                 foreground=theme.now(self.CUT_ROW_TEXT))
 
     def apply_theme(self):
@@ -1234,6 +1252,48 @@ class DragDropTaskList(ctk.CTkFrame):
         # Check if target depends on source (directly or indirectly)
         return check_circle(target_id, set())
     
+    def apply_search(self, needle: str):
+        """
+        Show only the rows carrying a piece of text, and their ancestors.
+
+        PARAMETERS:
+        -----------
+        needle : str
+            What was typed. Empty puts every row back.
+
+        RETURNS:
+        --------
+        Tuple[int, int]
+            How many rows matched in their own right, and how many work
+            items the plan holds - what the box beside the search reports.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The tree is rebuilt with the filter in force rather than rows being
+        detached and put back. Rebuilding reuses the one populate path that
+        is already right about indentation, banding and ordering; detaching
+        would need a second implementation of where a row goes, and the two
+        would drift.
+
+        The chart follows without being told: it draws from visible_rows,
+        which reads the tree. Nothing here touches the project, so the
+        schedule, the roll-up and the critical path are all measured on the
+        whole plan whatever is on screen.
+        """
+        from gantt_app.views.searchbox import matching_task_ids, visible_task_ids
+
+        self._search_visible = visible_task_ids(self.project, needle)
+        self._search_matches = matching_task_ids(self.project, needle)
+        self.update_task_list()
+        return len(self._search_matches), len(self.project.tasks)
+
+    def _hidden_by_search(self, task) -> bool:
+        """Whether the current search leaves a row off the list."""
+        visible = getattr(self, '_search_visible', None)
+        if visible is None:
+            return False
+        return task.id not in visible
+
     def update_task_list(self):
         """
         Update the task list display with all task information.
@@ -1283,6 +1343,8 @@ class DragDropTaskList(ctk.CTkFrame):
 
         # First pass: add all root tasks
         for task in self.project.get_root_tasks():
+            if self._hidden_by_search(task):
+                continue
             item_id = self._add_task_to_tree(task, indent_level=0)
             tree_items[task.id] = item_id
 
@@ -1290,7 +1352,8 @@ class DragDropTaskList(ctk.CTkFrame):
         # Imported files (notably GanttProject) can nest tasks several levels
         # deep, so keep sweeping until a pass places nothing new - a single
         # pass would silently drop anything below the second level.
-        remaining = [t for t in self.project.tasks if t.parent_task_id]
+        remaining = [t for t in self.project.tasks
+                     if t.parent_task_id and not self._hidden_by_search(t)]
 
         while remaining:
             placed = []
@@ -1304,7 +1367,10 @@ class DragDropTaskList(ctk.CTkFrame):
                 placed.append(task)
 
             if not placed:
-                # Orphaned subtasks (parent missing or a cycle) - show at root
+                # Orphaned subtasks (parent missing or a cycle) - show at
+                # root. A search reaches here too: a match whose parent is
+                # filtered out has nowhere to hang, and the alternative to
+                # showing it at the top is not showing the match at all.
                 for task in remaining:
                     tree_items[task.id] = self._add_task_to_tree(task, indent_level=0)
                 break
@@ -1395,6 +1461,9 @@ class DragDropTaskList(ctk.CTkFrame):
             tags.append('subtask')
         if task.id in self._cut_task_ids():
             tags.append('cut')
+        if self._is_search_context(task):
+            # On screen to say where a match sits, not because it is one
+            tags.append('search_context')
         self.tree.item(item_id, tags=tuple(tags))
 
         return item_id

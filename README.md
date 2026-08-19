@@ -32,6 +32,7 @@ This is a complete implementation of a project management tool with:
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
+- **Search**: a box on the icon bar finds a row by anything written on it — name, ID, type, **notes** (so a ticket number pasted into the details is findable), either date, duration, progress, priority, what it depends on, and which calendar it follows. A match brings its parents along so you can see where it sits, and a `2 of 40` count sits beside the box so a filtered list is never mistaken for a short plan
 - **Built-in Help**: the **?** on the icon bar and **View → Help** open one searchable guide covering every field, the scheduling rules, the task types and hierarchy, the calendars, dependencies, float, and the import/export formats. The search box matches any text or number, highlights every hit, counts them, and walks them with Enter / Shift+Enter. Two shorter references stay where they were needed — a Help button on the task editor — searchable too, covering every field, how the calculated date is worked out, and how the working calendar decides — and one on the Dependency tab for the link types
 - **Day / Night Theme**: follows the desktop by default and keeps following it — the window switches when the OS does. The toolbar's ☀ **Day** / 🌙 **Night** button flips it by hand and detaches from the OS; **Sync with system** appears beside it only while that override is in force. Also under View → System UI mode. The choice is remembered between runs
 - **Per-Task Calendars**: a task may follow a calendar of its own instead of the plan's — a weekend-only shift for a migration that can only touch production on a Saturday, a 24/7 run for an unattended load test. Set from the task editor's **Working calendar** dropdown, which re-dates the task as soon as it is picked. Three presets come with every plan; a task that names none follows the project's calendar exactly as before
@@ -70,6 +71,7 @@ gantt_app/
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── holidaydialog.py   # Working week, public holidays, date overrides
+│   ├── searchbox.py       # Finding a row by anything written on it
 │   ├── criticalpath.py    # The critical path analysis, task by task
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
@@ -213,6 +215,41 @@ reserves about 70px above its first row (a heading and the column titles),
 so the title and both tiers are sized to fit inside it. Two tests hold that:
 one on the arithmetic, one that asks the running window where each pane
 actually put its first row.
+
+#### Searching the plan (`views/searchbox.py`)
+
+One box, no field to choose first — somebody who knew which field it was in
+would not need to search. It matches against everything a work item carries:
+name, ID, type, notes, both dates, earliest begin, duration, progress,
+priority, shape, each dependency's target and kind, and the calendar the task
+follows.
+
+Dates go in as `YYYY-MM-DD`, so `2026-09` finds a September and `2026-09-14`
+finds the day. Numbers go in bare, so `40` finds progress as well as a
+duration. Matching is case-insensitive and **literal**, so a ticket number or
+a date finds itself rather than being read as a pattern.
+
+**A match brings its ancestors, not its children.** Without the parents a
+matching sub-task floats at the top level with no sign of what it belongs to,
+and the indentation would be showing a structure that is not there; those
+context rows are greyed, because they are on screen to say *where* rather than
+because they hit. Bringing children instead would mean one broad word putting
+the whole plan back on screen.
+
+The predecessor's *name* is deliberately **not** searchable, though its id is.
+Including it meant searching a task by name also returned everything depending
+on it — so the commonest search of all came back padded with rows that merely
+mentioned the thing being looked for. `T1` still finds both, which is the
+precise way to ask.
+
+**It is a view, not an edit.** Nothing in `models.py` consults the list, so the
+schedule, the roll-up and the critical path are all measured on every task
+whether or not it is showing. The chart narrows with the list for free: it
+draws from `visible_rows()`, which reads the tree.
+
+Typing is debounced by 120ms — each keystroke would otherwise rebuild the tree
+and redraw the chart with it, which is eight renders nobody sees while somebody
+types "milestone".
 
 #### The user guide (`help/userguide.py`)
 
@@ -1499,7 +1536,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1439 tests, all passing.
+1474 tests, all passing.
 
 ## Known Limitations
 

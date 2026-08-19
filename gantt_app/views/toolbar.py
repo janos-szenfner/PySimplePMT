@@ -2033,8 +2033,44 @@ class IconToolbar(ctk.CTkFrame):
             )
 
         self._create_separator()
+        self._create_search_box()
+        self._create_separator()
         self._create_theme_control()
         self._create_help_button()
+
+    def _create_search_box(self):
+        """
+        The box that finds a row by anything written on it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Set apart from the action icons by a divider on each side: it neither
+        creates anything nor moves anything about, and a text box wedged
+        against a row of buttons reads as one of them.
+
+        What it hides is the task list's business - see
+        DragDropTaskList.apply_search. This only says what was typed and
+        reports back how much of the plan is left, which is the count the
+        reader needs to know a short list is a filtered one.
+        """
+        from gantt_app.views.searchbox import TaskSearchBox
+
+        self.search_box = TaskSearchBox(self, on_search=self._search_tasks)
+        self.search_box.pack(side="left", padx=(2, 2), pady=2)
+
+    def _search_tasks(self, needle: str):
+        """Hide every row that does not carry the text, and say how many."""
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'apply_search'):
+            return
+
+        try:
+            shown, total = task_list.apply_search(needle)
+        except Exception:
+            logger.exception("Could not apply the task search")
+            return
+
+        self.search_box.report(shown, total)
 
     def _create_help_button(self):
         """
