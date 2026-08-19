@@ -57,14 +57,26 @@ MARGIN_RIGHT = 60
 #: look away from the bars to read a date. gantt_chart floors its
 #: row alignment at this, so the panes go slightly out of line rather than
 #: drawing bars over the dates; see GanttChart._first_row_offset.
-MARGIN_TOP = 104
+MARGIN_TOP = 70
 
 #: Room below the last row. Small now: the dates used to live down here.
 MARGIN_BOTTOM = 30
 
+#: Where the chart's title sits, as the centre of its line. Above the
+#: calendar strip and clear of it; see HEADER_MONTH_HEIGHT for the budget.
+TITLE_BASELINE = 16
+
 #: The two tiers of the strip, in pixels, measured up from the plot top.
-HEADER_MONTH_HEIGHT = 24
-HEADER_CELL_HEIGHT = 28
+#:
+#: Sized so the title and both tiers fit inside MARGIN_TOP, which is what
+#: keeps the chart's rows level with the task list's. The list reserves
+#: about 70px above its first row - a heading label and the column titles -
+#: and the chart floors its row alignment at MARGIN_TOP, so a strip needing
+#: more than that does not make the chart taller: it pushes every bar down
+#: and out of line with the list beside it, which is what a first attempt
+#: at 24 and 28 did.
+HEADER_MONTH_HEIGHT = 18
+HEADER_CELL_HEIGHT = 22
 MIN_WIDTH = 900
 MILESTONE_RADIUS = 9
 
@@ -775,7 +787,8 @@ def render_svg(project: Project, settings: Optional[Dict[str, Any]] = None,
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{layout.width}" '
         f'height="{layout.height}" viewBox="0 0 {layout.width} {layout.height}">',
         f'<rect width="100%" height="100%" fill="{s["bg_color"]}"/>',
-        f'<text x="{layout.width / 2}" y="34" text-anchor="middle" '
+        f'<text x="{layout.width / 2}" y="{TITLE_BASELINE + 6}" '
+        f'text-anchor="middle" '
         f'font-family="sans-serif" font-size="18" font-weight="bold" '
         f'fill="{s["text_color"]}">{escape(layout.title)}</text>',
     ]
@@ -1094,8 +1107,8 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         """Scale a coordinate."""
         return value * scale
 
-    draw.text((size[0] / 2, sx(24)), layout.title, font=title_font,
-              fill=s['text_color'], anchor='mm')
+    draw.text((size[0] / 2, sx(TITLE_BASELINE)), layout.title,
+              font=title_font, fill=s['text_color'], anchor='mm')
 
     if layout.empty_message:
         draw.text((size[0] / 2, size[1] / 2), layout.empty_message,

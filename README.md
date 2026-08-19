@@ -205,6 +205,15 @@ Three densities, chosen from the room available: a cell per day, a cell per
 week, or the month band alone. The band survives all three, since a bare
 `17` needs it to mean anything.
 
+**The strip has to fit inside `MARGIN_TOP`**, which is what keeps the
+chart's rows level with the task list's. The chart floors its row alignment
+at that constant, so a strip needing more room does not make the chart
+taller — it pushes every bar down and out of line with the list. The list
+reserves about 70px above its first row (a heading and the column titles),
+so the title and both tiers are sized to fit inside it. Two tests hold that:
+one on the arithmetic, one that asks the running window where each pane
+actually put its first row.
+
 #### The user guide (`help/userguide.py`)
 
 **?** on the icon bar and **View → Help** open the same window — one
@@ -1488,7 +1497,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1420 tests, all passing.
+1425 tests, all passing.
 
 ## Known Limitations
 
@@ -1544,5 +1553,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.40.1
+**Version**: 1.40.2
 **Last Updated**: 2026-08-18

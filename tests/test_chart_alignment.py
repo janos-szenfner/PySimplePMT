@@ -242,5 +242,115 @@ class TestWhatTheListReports(unittest.TestCase):
         self.assertEqual(self.task_list.visible_rows()[0], "004")
 
 
+class TestTheHeaderFitsTheMarginItIsGiven(unittest.TestCase):
+    """
+    The calendar strip has to fit above the first row, not push it down.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The chart floors its row alignment at MARGIN_TOP - see
+    GanttChart._first_row_offset - so a strip needing more room than that
+    does not make the chart taller. It pushes every bar down, and the rows
+    stop lining up with the list beside them.
+
+    That is exactly what happened when the strip was first drawn at 24 and
+    28 pixels a tier: MARGIN_TOP went to 104, the task list reserves about
+    70, and every bar sat 35px below its row. The arithmetic is checked here
+    because the symptom is only visible on screen.
+    """
+
+    def test_the_title_and_both_tiers_fit_inside_the_margin(self):
+        """Or the first row is pushed below where the list puts it."""
+        from gantt_app.utils import chart_render as cr
+
+        # The title is centred on its baseline, so it reaches half a line
+        # above and below it; 18pt is the size render_image draws it at.
+        title_bottom = cr.TITLE_BASELINE + 9
+        needed = (cr.HEADER_MONTH_HEIGHT + cr.HEADER_CELL_HEIGHT)
+
+        self.assertLessEqual(title_bottom + needed, cr.MARGIN_TOP)
+
+    def test_the_strip_does_not_overlap_the_title(self):
+        """They are drawn into the same band of pixels."""
+        from gantt_app.utils import chart_render as cr
+
+        band_top = cr.MARGIN_TOP - cr.HEADER_MONTH_HEIGHT - cr.HEADER_CELL_HEIGHT
+
+        self.assertGreater(band_top, cr.TITLE_BASELINE + 9)
+
+    def test_the_margin_is_no_larger_than_a_task_list_reserves(self):
+        """
+        The list puts its first row about 70px down - a heading and the
+        column titles - and the chart cannot ask for more than that without
+        the two going out of line.
+
+        A little slack is allowed for a platform whose headings are taller;
+        35px of it is what the bug looked like.
+        """
+        from gantt_app.utils.chart_render import MARGIN_TOP
+
+        self.assertLessEqual(MARGIN_TOP, 80)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheRowsLineUpOnScreen(unittest.TestCase):
+    """
+    The measurement the arithmetic above stands in for.
+
+    This is the one that would have caught the strip pushing the bars down:
+    it asks the running application where each pane actually put its rows.
+    """
+
+    def setUp(self):
+        """A window with a plan in it, given time to settle."""
+        from unittest import mock
+        from gantt_app import theme
+
+        saver = mock.patch.object(theme, 'save_mode', return_value=True)
+        saver.start()
+        self.addCleanup(saver.stop)
+
+        from gantt_app.main import GanttApp
+        self.app = GanttApp()
+        self.app.geometry("1500x900")
+        self.addCleanup(self._destroy)
+
+        # The window manager needs a moment before the tree can say where
+        # its first row is; see GanttChart._first_row_offset.
+        self.app.update()
+        self.app.update_idletasks()
+
+    def _destroy(self):
+        """Tear the window down."""
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def test_the_first_rows_start_within_a_pixel_of_each_other(self):
+        """A constant offset drifts nothing, but it still has to be small."""
+        chart = self.app.gantt_chart
+
+        rows_top, settled = chart._task_rows_top()
+        if not settled:
+            self.skipTest("the window had not settled")
+
+        listed = rows_top - chart.chart_frame.winfo_rooty()
+        drawn = chart._first_row_offset()
+
+        self.assertLessEqual(abs(drawn - listed), 2,
+                             f"chart rows start {drawn - listed}px from the "
+                             f"list's")
+
+    def test_the_two_panes_use_the_same_row_height(self):
+        """Equal heights are what keep a constant offset from becoming drift."""
+        chart = self.app.gantt_chart
+        chart.draw_chart()
+        self.app.update_idletasks()
+
+        self.assertEqual(chart._drawn_row_height,
+                         self.app.task_list.GRID_ROW_HEIGHT)
+
+
 if __name__ == '__main__':
     unittest.main()
