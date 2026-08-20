@@ -297,22 +297,30 @@ class TestImportersLogFailures(unittest.TestCase):
         self.assertIsNone(import_gan_file('/nonexistent/plan.gan'))
         self.assertIn('/nonexistent/plan.gan', get_log_text())
 
-    def test_absent_optional_dependency_is_not_an_error(self):
-        """A missing optional MPP reader does not register as an error."""
-        from gantt_app.utils.mpp_importer import import_mpp_file
+    def test_a_binary_mpp_is_not_an_error(self):
+        """
+        Being handed a .mpp does not register as an error.
+
+        The file is intact and the user did nothing wrong - the format simply
+        cannot be read outside Project - so the Log window's error count and
+        its Error filter must stay meaningful.
+        """
+        from gantt_app.utils.mpp_importer import (
+            OLE2_SIGNATURE, import_mpp_file,
+        )
+
+        handle, path = tempfile.mkstemp(suffix='.mpp')
+        with os.fdopen(handle, 'wb') as binary:
+            binary.write(OLE2_SIGNATURE + b'\x00' * 64)
 
         try:
-            import tasklib  # noqa: F401
-            self.skipTest("tasklib is installed, so nothing is reported")
-        except ImportError:
-            pass
+            self.assertIsNone(import_mpp_file(path))
+        finally:
+            os.unlink(path)
 
-        self.assertIsNone(import_mpp_file('/nonexistent/plan.mpp'))
-
-        # The Log window's error count and Error filter must stay meaningful
         self.assertEqual(count_records(logging.ERROR), 0)
         self.assertNotIn('Traceback', get_log_text())
-        self.assertIn('tasklib', get_log_text().lower())
+        self.assertIn('save it as xml', get_log_text().lower())
 
     def test_malformed_file_logs_a_traceback(self):
         """A parse failure is logged at error level with its traceback."""

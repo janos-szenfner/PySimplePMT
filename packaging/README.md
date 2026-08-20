@@ -128,14 +128,21 @@ application falls back to Tk's chooser and everything still works:
 xdg-utils, fonts-dejavu-core, zenity
 ```
 
-**Deliberately excluded**: MS Project (`.mpp`) import, which needs the
-optional `tasklib` reader. The feature degrades gracefully and reports what to
-install.
+**Nothing is excluded for MS Project import.** It reads MSPDI — the XML
+Microsoft publishes a schema for, which Project writes from File > Save As >
+XML — with the standard library, so the packaged build imports it exactly as a
+source checkout does, with nothing bundled and nothing to install.
 
-A JPype + mpxj backend was removed outright: it is a Java bridge rather than a
-Python solution, requiring a JVM and a separately downloaded `mpxj.jar` on the
-user's machine. Neither can go inside a self-contained package, so it would
-have put an external runtime back onto the end user.
+This entry used to say the feature needed the optional `tasklib` reader.
+`tasklib` is the official Python library for Taskwarrior and has nothing to do
+with Microsoft Project; the importer called a class it does not define, so the
+feature had never worked and installing that package would not have made it.
+
+Binary `.mpp` is still not read, and no package would change that. A JPype +
+mpxj backend was removed outright: it is a Java bridge rather than a Python
+solution, requiring a JVM and a separately downloaded `mpxj.jar` on the user's
+machine. Neither can go inside a self-contained package, so it would have put
+an external runtime back onto the end user.
 
 ## Verifying a build
 

@@ -1,221 +1,159 @@
 """
-MPP file importer for the Gantt Project Management Tool.
+Microsoft Project import: working out what has actually been handed over.
 
-Imports Microsoft Project (.mpp) files using Tasklib.
+WHY THIS MODULE EXISTS:
+======================
+"Import MS Project" means two different files. One is .mpp, Project's own
+binary save format. The other is MSPDI, the XML Microsoft publishes a schema
+for, which Project writes from File > Save As > XML and every other planning
+tool reads. Only the second can be read by anything that is not Project, so
+this sniffs the file it is given and sends the XML to msproject_importer.
 
-DEVELOPMENT NOTES:
-------------------
-Tasklib is a pure Python reader and stays an optional dependency: it is not
-bundled into the packaged build, and its absence disables MPP import without
-affecting anything else.
+WHAT HAPPENED TO THE OPTIONAL READER:
+=====================================
+This module used to call `tasklib.ProjectFile(filepath)` behind a check for
+whether tasklib was installed, and reported "install tasklib" whenever the
+import produced nothing - which was always. tasklib is the official Python
+library for *Taskwarrior*, the command-line to-do list. It has no ProjectFile
+and nothing to do with Microsoft Project, so the call raised AttributeError,
+the surrounding except swallowed it, and the import returned None. Installing
+the package it recommended would not have changed that. MS Project import has
+therefore never worked, and the "optional dependency" was a dependency on the
+wrong library for a call that could not succeed.
 
-A JPype + mpxj backend was removed. It was a Java bridge rather than a Python
-solution - it needed a JVM and a separately downloaded mpxj.jar on the user's
-machine, which cannot be shipped inside a self-contained package and put an
-external runtime back onto the end user.
+Nothing is optional now. MSPDI is read with the standard library, so the
+feature works in a source checkout and in the packaged build alike, with
+nothing installed and nothing bundled.
+
+WHY .mpp IS STILL NOT READ:
+===========================
+It is an OLE2 compound document holding undocumented, partly compressed
+streams whose layout changes with every release of Project. The one complete
+reader is MPXJ, which is a large Java library and decades of reverse
+engineering; the JPype bridge to it was removed from this application
+precisely because it needed a JVM and a jar that cannot go inside a
+self-contained package. There is no Python reader to bundle instead.
+
+Guessing at the format would be worse than not reading it. A plan is acted
+on: a file that half-parses into tasks with plausible names and wrong dates
+is more expensive than one that refuses to open and says why. So a binary
+.mpp is identified as one, and the message names the one action that turns it
+into a file this application can read completely - which takes about ten
+seconds in Project.
 """
 
-import os
-import sys
-from datetime import datetime
-from typing import Optional, List, Dict, Any
 from pathlib import Path
+from typing import Optional
 
-from gantt_app.models import Project, Task
+from gantt_app.models import Project
 from gantt_app.utils.log import get_logger
+from gantt_app.utils.msproject_importer import import_msproject_file
 
 logger = get_logger(__name__)
 
 
-class MPPImporter:
-    """
-    Base class for MPP file import.
-    
-    Provides a unified interface for different MPP import methods.
-    """
-    
-    def import_mpp(self, filepath: str) -> Optional[Project]:
-        """
-        Import a .mpp file and convert it to a Project object.
-        
-        This method should be implemented by subclasses.
-        """
-        raise NotImplementedError("MPP import method not implemented")
+#: The OLE2 compound document signature every binary .mpp starts with. Also
+#: the first bytes of a .doc or an .xls, which is why it says "binary Office
+#: document" rather than "Microsoft Project file".
+OLE2_SIGNATURE = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
+
+#: How many bytes are read to tell one format from another.
+SNIFF_BYTES = 512
+
+#: What to tell somebody holding a .mpp. Kept here rather than in the dialog
+#: so the log and the message box say the same thing.
+BINARY_MPP_MESSAGE = (
+    "This is a binary .mpp file, which only Microsoft Project itself can "
+    "read.\n\n"
+    "Open it in MS Project and choose File > Save As, then pick "
+    "\"XML Format (*.xml)\". Importing that file brings in the whole plan - "
+    "tasks, hierarchy, dependencies, calendars and progress."
+)
 
 
-class TasklibMPPImporter(MPPImporter):
+def looks_like_xml(head: bytes) -> bool:
     """
-    Imports MPP files using Tasklib library.
-    
-    Tasklib is a pure Python library for reading MS Project files.
-    Install with: pip install tasklib
+    Whether a file's opening bytes are XML.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Decoded rather than compared as bytes, because MSPDI written on Windows
+    frequently carries a UTF-8 or UTF-16 byte order mark, and a comparison
+    against b'<?xml' misses every one of those files. Whitespace before the
+    declaration is legal and appears in files that have been through a
+    templating step.
     """
-    
-    def __init__(self):
-        self.tasklib_available = False
+    for encoding in ('utf-8-sig', 'utf-16', 'utf-8'):
         try:
-            import tasklib
-            self.tasklib = tasklib
-            self.tasklib_available = True
-        except ImportError:
-            # An absent optional dependency is expected, not a fault: log it
-            # at info level and without a traceback, so the Log window's
-            # error count and Error filter stay meaningful
-            logger.info(
-                "Tasklib not installed; MPP import disabled "
-                "(enable with: pip install tasklib)"
-            )
-    
-    def import_mpp(self, filepath: str) -> Optional[Project]:
-        """
-        Import MPP file using Tasklib.
-        """
-        if not self.tasklib_available:
-            logger.warning("Tasklib is not available for MPP import")
-            return None
-        
-        try:
-            if not Path(filepath).exists():
-                logger.warning(f"File not found: {filepath}")
-                return None
-            
-            # Open MPP file with Tasklib
-            project_file = self.tasklib.ProjectFile(filepath)
-            
-            # Get project name
-            project_name = getattr(project_file, 'name', 'Imported MPP Project')
-            
-            # Parse tasks
-            tasks = self._parse_tasklib_tasks(project_file)
-            
-            # Create Project
-            project = Project(name=project_name, tasks=tasks)
-            
-            return project
-            
-        except Exception as e:
-            logger.exception(f"Error importing MPP file with Tasklib: {e}")
-            return None
-    
-    def _parse_tasklib_tasks(self, project_file) -> List[Task]:
-        """
-        Parse tasks from Tasklib project file.
-        """
-        tasks = []
-        
-        # Get all tasks from Tasklib
-        tasklib_tasks = getattr(project_file, 'tasks', [])
-        
-        for tasklib_task in tasklib_tasks:
-            task = self._parse_tasklib_task(tasklib_task)
-            if task:
-                tasks.append(task)
-        
-        return tasks
-    
-    def _parse_tasklib_task(self, tasklib_task) -> Optional[Task]:
-        """
-        Parse a single task from Tasklib.
-        """
-        try:
-            # Get task properties
-            task_id = str(getattr(tasklib_task, 'id', str(uuid.uuid4())))
-            name = getattr(tasklib_task, 'name', 'Unnamed Task')
-            
-            # Get dates
-            start_date = self._parse_tasklib_date(getattr(tasklib_task, 'start', None))
-            end_date = self._parse_tasklib_date(getattr(tasklib_task, 'finish', None))
-            
-            # Check if this is a milestone (duration = 0)
-            duration = getattr(tasklib_task, 'duration', None)
-            is_milestone = duration is not None and duration.total_seconds() == 0
-            
-            if is_milestone:
-                end_date = None
-            
-            # Get progress
-            percent_complete = getattr(tasklib_task, 'percent_complete', 0)
-            progress = int(percent_complete) if percent_complete is not None else 0
-            
-            # Get dependencies
-            dependencies = []
-            predecessors = getattr(tasklib_task, 'predecessors', [])
-            for pred in predecessors:
-                pred_id = getattr(pred, 'task_id', None)
-                if pred_id:
-                    dependencies.append(str(pred_id))
-            
-            # Create Task object
-            task = Task(
-                id=task_id,
-                name=name,
-                start_date=start_date or datetime.now(),
-                end_date=end_date,
-                progress=progress,
-                dependencies=dependencies,
-                color='#1f6aa5',
-                is_milestone=is_milestone
-            )
-            
-            return task
-            
-        except Exception as e:
-            logger.exception(f"Error parsing Tasklib task: {e}")
-            return None
-    
-    def _parse_tasklib_date(self, date_obj) -> Optional[datetime]:
-        """
-        Parse date from Tasklib (could be datetime or None).
-        """
-        if date_obj is None:
-            return None
-        if isinstance(date_obj, datetime):
-            return date_obj
-        try:
-            return datetime.fromisoformat(str(date_obj))
-        except (ValueError, TypeError):
-            return None
+            text = head.decode(encoding, errors='strict').lstrip('﻿ \t\r\n')
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+        if text.startswith('<'):
+            return True
+    return False
 
 
-class MPPImportManager:
+def import_mpp_file(filepath: str) -> Optional[Project]:
     """
-    Manages MPP import methods, trying each available approach in turn.
+    Import a Microsoft Project file, whichever of the two it turns out to be.
+
+    PARAMETERS:
+    -----------
+    filepath : str
+        Path to the file. The extension is not trusted: a .mpp that is really
+        MSPDI imports, and an .xml that is really a binary save does not.
+
+    RETURNS:
+    --------
+    Optional[Project]
+        The plan for an MSPDI file, or None for a binary .mpp or anything
+        unrecognised - with the reason in the log either way.
+
+    EXAMPLE:
+    --------
+    >>> from gantt_app.utils.mpp_importer import import_mpp_file
+    >>> project = import_mpp_file("/path/to/plan.xml")
     """
-
-    def __init__(self):
-        self.importers = []
-
-        # Try to initialize Tasklib importer
-        tasklib_importer = TasklibMPPImporter()
-        if tasklib_importer.tasklib_available:
-            self.importers.append(tasklib_importer)
-
-    def import_mpp(self, filepath: str) -> Optional[Project]:
-        """
-        Import MPP file using the first available importer.
-        """
-        for importer in self.importers:
-            try:
-                project = importer.import_mpp(filepath)
-                if project:
-                    return project
-            except Exception as e:
-                logger.exception(f"Importer {importer.__class__.__name__} failed: {e}")
-                continue
-
-        logger.warning(
-            "MPP import is unavailable. Install the optional reader with: "
-            "pip install tasklib"
-        )
+    path = Path(filepath)
+    if not path.exists():
+        logger.warning("File not found: %s", filepath)
         return None
 
+    try:
+        with open(path, 'rb') as handle:
+            head = handle.read(SNIFF_BYTES)
+    except OSError:
+        logger.exception("Could not read %s", filepath)
+        return None
 
-# Convenience functions
-def import_mpp_file(filepath: str) -> Optional[Project]:
-    """Import a .mpp file using the best available method."""
-    manager = MPPImportManager()
-    return manager.import_mpp(filepath)
+    if head.startswith(OLE2_SIGNATURE):
+        # Not an error: the file is intact and the user did nothing wrong,
+        # so this must not count towards the Log window's error total
+        logger.warning("%s is a binary Microsoft Project file, which cannot "
+                       "be read outside Project. Save it as XML from Project "
+                       "and import that instead.", filepath)
+        return None
+
+    if not looks_like_xml(head):
+        logger.warning("%s is neither MSPDI XML nor a Microsoft Project "
+                       "binary; nothing to import", filepath)
+        return None
+
+    return import_msproject_file(filepath)
 
 
-# Handle import for uuid
-import uuid
+def is_binary_mpp(filepath: str) -> bool:
+    """
+    Whether a file is a binary .mpp rather than something readable.
+
+    RETURNS:
+    --------
+    bool
+        True for an OLE2 compound document. Used by the import action to tell
+        somebody what to do about it, rather than reporting a failure.
+    """
+    try:
+        with open(filepath, 'rb') as handle:
+            return handle.read(len(OLE2_SIGNATURE)) == OLE2_SIGNATURE
+    except OSError:
+        return False

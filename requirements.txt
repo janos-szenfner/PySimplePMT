@@ -34,14 +34,21 @@ et-xmlfile>=2.0.0,<3.0.0        # openpyxl
 
 # --- Deliberately NOT bundled --------------------------------------------
 #
-# MS Project (.mpp) import stays optional. Install the reader yourself if you
-# need it from a source checkout:
+# MS Project import needs nothing. It reads MSPDI - the XML Microsoft
+# publishes a schema for, which Project writes from File > Save As > XML -
+# with the standard library, so it works in a source checkout and in the
+# packaged build alike.
 #
-#   pip install tasklib      # pure Python reader
+# There was a `pip install tasklib` note here. tasklib is the official Python
+# library for Taskwarrior and has nothing to do with Microsoft Project; the
+# importer called a class it does not define, so the feature had never worked
+# and installing the package would not have made it work.
 #
-# A JPype + mpxj backend was removed: it is a Java bridge, not a Python
-# solution. It required a JVM and a separately downloaded mpxj.jar on the
-# user's machine, neither of which can go inside a self-contained package.
+# Binary .mpp is still not read, and no package would change that. It is an
+# undocumented OLE2 container and the one complete reader is MPXJ, a large
+# Java library - the JPype bridge to it was removed for exactly this reason:
+# it required a JVM and a separately downloaded mpxj.jar on the user's
+# machine, neither of which can go inside a self-contained package.
 #
 # matplotlib and numpy were removed entirely.
 #

@@ -27,8 +27,12 @@ REQUIRED_PACKAGES = [
 ]
 
 #: Packages that improve the app but whose absence is handled gracefully.
+#:
+#: MS Project import used to be listed here against `tasklib`, which is a
+#: Taskwarrior client rather than anything to do with Project. That import
+#: reads MSPDI with the standard library now, so it is not optional and has
+#: nothing to check for.
 OPTIONAL_PACKAGES = [
-    ('tasklib', 'MS Project import'),
     ('holidays', 'EU public holidays'),
 ]
 

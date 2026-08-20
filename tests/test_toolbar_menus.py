@@ -81,7 +81,7 @@ class TestMenuContents(unittest.TestCase):
         imports = next(i for i in items if i['text'] == 'Import')
 
         self.assertEqual(labels(imports['submenu']),
-                         ['MPP...', 'GAN...', 'Mermaid...', 'XLSX...'])
+                         ['MS Project...', 'GAN...', 'Mermaid...', 'XLSX...'])
 
     def test_export_submenu_formats(self):
         """Every export format is reachable under File > Export."""

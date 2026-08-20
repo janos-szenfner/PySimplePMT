@@ -18,7 +18,9 @@ import customtkinter as ctk
 from gantt_app.models import Task, Project
 from gantt_app.utils.file_io import save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
-from gantt_app.utils.mpp_importer import import_mpp_file
+from gantt_app.utils.mpp_importer import (
+    BINARY_MPP_MESSAGE, import_mpp_file, is_binary_mpp,
+)
 from gantt_app.utils.mermaid_importer import import_mermaid_file
 from gantt_app.utils.xlsx_importer import import_xlsx_file
 from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
@@ -917,7 +919,7 @@ class Toolbar(ctk.CTkFrame):
                 'text': 'File',
                 'items': [
                     {"text": "Import", "submenu": [
-                        {"text": "MPP...", "command": self.import_mpp},
+                        {"text": "MS Project...", "command": self.import_mpp},
                         {"text": "GAN...", "command": self.import_gan},
                         {"text": "Mermaid...", "command": self.import_mermaid},
                         {"text": "XLSX...", "command": self.import_xlsx},
@@ -1472,17 +1474,38 @@ class Toolbar(ctk.CTkFrame):
             messagebox.showerror("Error", "Failed to import GAN file")
     
     def import_mpp(self):
-        """Import a Microsoft Project (.mpp) file."""
-        # Ask for file path
+        """
+        Import a Microsoft Project file.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Both Microsoft formats are offered, because somebody choosing this
+        does not necessarily know which one they have. MSPDI XML is read in
+        full; a binary .mpp cannot be read outside Project, so it is
+        identified as one and answered with the step that turns it into a
+        file this application can read - see mpp_importer.
+
+        That case gets showinfo rather than showerror. Nothing has gone
+        wrong: the file is intact, the user did nothing incorrect, and there
+        is a short way forward. An error dialog would say the application
+        failed at something it never claimed to do.
+        """
         file_path = filedialog.askopenfilename(
-            filetypes=[("Microsoft Project Files", "*.mpp"), ("All Files", "*.*")],
-            title="Import MPP File"
+            filetypes=[("Microsoft Project Files", "*.xml *.mpp"),
+                       ("MS Project XML", "*.xml"),
+                       ("MS Project Binary", "*.mpp"),
+                       ("All Files", "*.*")],
+            title="Import MS Project File"
         )
-        
+
         if not file_path:
             return
-        
-        # Import MPP file
+
+        if is_binary_mpp(file_path):
+            logger.info("Declined a binary .mpp: %s", file_path)
+            messagebox.showinfo("Save it as XML first", BINARY_MPP_MESSAGE)
+            return
+
         project = import_mpp_file(file_path)
         if project:
             # Replace current project
@@ -1501,13 +1524,15 @@ class Toolbar(ctk.CTkFrame):
             if self.on_project_changed:
                 self.on_project_changed()
             
-            tk.messagebox.showinfo("Success", f"Imported {len(project.tasks)} tasks from MPP file")
+            messagebox.showinfo(
+                "Success",
+                f"Imported {len(project.tasks)} tasks from the MS Project file"
+            )
         else:
             messagebox.showerror(
                 "Error",
-                "Failed to import MPP file.\n\n"
-                "MS Project import needs the optional Tasklib reader:\n"
-                "    pip install tasklib"
+                "Failed to import the MS Project file.\n\n"
+                "See the Log window for details."
             )
     
     def import_mermaid(self):

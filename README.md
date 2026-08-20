@@ -8,7 +8,7 @@ This is a complete implementation of a project management tool with:
 - Interactive Gantt chart visualization
 - Drag-and-drop task list for arranging the plan by hand
 - Support for milestones (single-date tasks)
-- JSON storage and file import for GAN/MPP/Mermaid files
+- JSON storage and file import for GAN/MS Project/Mermaid files
 - Modern UI using CustomTkinter
 
 ## Features
@@ -18,7 +18,7 @@ This is a complete implementation of a project management tool with:
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
-- **File Import**: Import from GanttProject (.gan), MS Project (.mpp), Mermaid (.mmd), and Excel (.xlsx) files
+- **File Import**: Import from GanttProject (.gan), MS Project (MSPDI .xml), Mermaid (.mmd), and Excel (.xlsx) files. Every reader is standard library or an already-bundled package, so no import needs anything installed
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export the plan to a three page PDF — work item list beside the chart, the chart alone, then the list as a full table — to PNG, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
 - **Planning Tool Export**: Hand the plan to GanttProject as a .gan file, or to Microsoft Project as MSPDI .xml. Both carry the hierarchy, the links with their types and lags, the progress, the notes and the working calendar; both are written so the dates the other tool shows are the dates shown here
@@ -101,7 +101,8 @@ gantt_app/
 │   ├── file_io.py          # JSON save/load functionality
 │   ├── gan_importer.py     # GAN (GanttProject) file import
 │   ├── gan_exporter.py     # GAN (GanttProject) file export
-│   ├── mpp_importer.py     # MPP (MS Project) file import
+│   ├── mpp_importer.py     # Which of the two MS Project formats a file is
+│   ├── msproject_importer.py # MS Project (MSPDI .xml) import
 │   ├── msproject_exporter.py # MS Project (MSPDI .xml) export
 │   ├── plan_export.py      # What both interchange exporters ask of a plan
 │   ├── mermaid_importer.py # Mermaid (.mmd) file import
@@ -699,8 +700,8 @@ Two rows, one above the other, because they are two different things.
 on any desktop does:
 
 - **Project**: New Project, Load Project, Save Project
-- **File**: Import (MPP, GAN, Mermaid, XLSX) and Export (GAN, MS Project,
-  Mermaid, HTML, SVG, PNG, PDF, XLSX)
+- **File**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
+  Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
   Project Title, Calendar Settings, and Critical Path
 - **Edit**: Undo, Redo, Cut, Copy, Paste
@@ -976,9 +977,59 @@ so the level stays readable.
 - **Optional Dependency**: Gracefully handles missing openpyxl library
 - **Directory Creation**: Automatically creates parent directories
 
-### MPP Importer (`utils/mpp_importer.py`)
-- **Pure Python**: Uses the Tasklib reader; no Java runtime involved
-- **Optional Dependency**: Absent Tasklib disables MPP import and is reported at info level, not as an error
+### MS Project Importer (`utils/mpp_importer.py`, `utils/msproject_importer.py`)
+
+**"Import MS Project" is offered two entirely different files.** One is
+`.mpp`, Project's own binary save. The other is MSPDI, the XML Microsoft
+publishes a schema for, which Project writes from File > Save As > XML. Only
+the second can be read by anything that is not Project, so `mpp_importer`
+sniffs the file it is given — the extension is not trusted, because MSPDI
+arrives named `.mpp` more often than not — and sends the XML to
+`msproject_importer`.
+
+**Nothing is optional.** MSPDI is read with the standard library, so the
+feature works in a source checkout and in the packaged build alike, with
+nothing installed and nothing bundled.
+
+This module used to call `tasklib.ProjectFile(filepath)` behind a check for
+whether `tasklib` was installed, and reported "install tasklib" whenever the
+import produced nothing — which was always. `tasklib` is the official Python
+library for **Taskwarrior**, the command-line to-do list; it has no
+`ProjectFile` and nothing to do with Microsoft Project, so the call raised
+`AttributeError`, the surrounding `except` swallowed it, and the import
+returned `None`. Installing the recommended package would not have changed
+that. MS Project import had never worked, and nothing caught it because
+nothing tested the reading of an actual file.
+
+What comes back from an MSPDI file:
+
+- **Hierarchy**: `OutlineLevel` is the only statement of it — tasks are a flat
+  list and a parent is the nearest row above at one level less, so this walks
+  a stack. An outline that skips a level attaches to the deepest row above it
+  rather than dropping the task
+- **Dates**: a Microsoft finish is a moment and an end date here is an
+  inclusive day. A finish at midnight means the start of the day after the
+  last one worked, so the day before is taken
+- **Links**: held on the successor, as they are here, so nothing is reversed.
+  Lag arrives in tenths of a minute whatever `LagFormat` says
+- **Calendars**: the working week (`DayType` numbers Sunday 1 where Python
+  starts at Monday), both exception forms — the older `WeekDay`/`TimePeriod`
+  one this application writes and the `<Exceptions>` block Project itself
+  writes — and the per-task calendars, which land in the registry
+- **Not imported**: a task at outline level 0, which is the project summary
+  row rather than work, and a row marked `IsNull`
+
+**Binary `.mpp` is identified, not guessed at.** It is an OLE2 compound
+document holding undocumented, partly compressed streams whose layout changes
+with every release of Project; the one complete reader is MPXJ, a large Java
+library, and the JPype bridge to it was removed from this application for
+exactly the reason it could not be brought back — a JVM and a jar cannot go
+inside a self-contained package. A plan is acted on, so a file that
+half-parses into tasks with plausible names and wrong dates is more expensive
+than one that refuses to open and says why. Choosing a `.mpp` gets the step
+that fixes it — Save As, XML Format — in an information dialog rather than an
+error, and it is not recorded as an error in the log either: the file is
+intact and the user did nothing wrong
 - **Date Conversion**: Java Date to Python datetime
 - **Task Properties**: Full task import with dependencies and progress
 - **Error Handling**: Graceful degradation when libraries not available
@@ -1078,8 +1129,7 @@ applied and plans are scheduled on weekends alone.
 # For GAN file import (included in standard library)
 pip install lxml  # For better XML parsing performance
 
-# For MPP file import
-pip install tasklib  # Pure Python MPP reader
+# Nothing further. MS Project import reads MSPDI with the standard library
 ```
 
 ## Usage
@@ -1218,7 +1268,7 @@ pysimplepmt --log-file      # print the log file path
 
 11. **Import Projects**
     - Choose **File -> Import** and pick the format:
-    - "MPP..." to import MS Project files (requires Tasklib)
+    - "MS Project..." to import an MSPDI `.xml` written by Project (File -> Save As -> XML)
     - "GAN..." to import GanttProject files
     - "Mermaid..." to import Mermaid Gantt chart files (.mmd, .mermaid)
     - "XLSX..." to import an Excel project plan (requires openpyxl)
@@ -1421,12 +1471,16 @@ whole cell as a single name before splitting it, so a task called
 references - `/` does not, because names such as "Education / training"
 contain one.
 
-### MPP Import
-Supports Microsoft Project files (when Tasklib is available):
-- Tasks and milestones
-- Dependencies (predecessors)
-- Progress tracking
-- Dates and durations
+### MS Project Import
+Reads MSPDI `.xml` with nothing installed:
+- Tasks, summary rows and milestones, with the outline turned back into a hierarchy
+- Dependencies with their type and lag
+- Progress, notes and priorities
+- Dates and durations, and the working calendar they were counted against
+- Per-task calendars, which land in the calendar registry
+
+A binary `.mpp` is identified and answered with the one step that fixes it,
+rather than being guessed at.
 
 ### Mermaid Import/Export
 Supports Mermaid Gantt chart format:
@@ -1471,10 +1525,10 @@ The application uses CustomTkinter's theming system. You can switch between ligh
 - Moves are confined to a task's own siblings, so nothing is reparented by accident
 - A press becomes a drag only past a small threshold, leaving clicks alone
 
-### 3. MPP Import Flexibility
-- Multiple import methods with automatic fallback
-- Graceful degradation when libraries not available
-- Clear error messages for users
+### 3. Import That Does Not Trust the File Name
+- MS Project's two formats are told apart by sniffing the file, not the extension
+- MSPDI named `.mpp` still imports; a binary save named `.xml` still does not
+- The unreadable case is answered with the action that fixes it, not an error
 
 ### 4. Critical Path Analysis
 
@@ -1618,6 +1672,8 @@ Unit tests cover:
 - ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
 - ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, that a formula is never written where it would disagree with the plan, and that an ongoing task carries its percentage
 - ✅ **GAN Export**: Nesting, the reversed dependency edge, milestones written both ways, durations counted over a holiday, both kinds of holiday in the calendar block, and a round trip through the importer that compares every date against the plan that went in
+- ✅ **MS Project Import**: A round trip against the exporter comparing every field that decides a date, the newer `<Exceptions>` calendar block Project itself writes, a project summary row at outline level 0, an outline that skips a level, a finish stated at midnight, and that a pin on a task's own start is not read back as a floor it never had
+- ✅ **MS Project Format Sniffing**: That the extension is not trusted in either direction - MSPDI named `.mpp` imports, a binary save named `.xml` does not - that a byte order mark does not hide the XML, and that the unreadable case names the step that fixes it without recording an error
 - ✅ **MS Project Export**: The pinned dates and the unpinned summaries, the outline levels and WBS, lag in tenths of a minute, the weekday numbering that starts at Sunday, the per-task calendars, a worked Saturday written as an exception, and the schema's element order at the two places it looks wrong
 - ✅ **PDF Pages**: That there are three, that they are all one physical size, what the work item table holds, and that the written page is the size it claims to be
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
@@ -1631,7 +1687,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ## Known Limitations
 
-1. **MPP Import**: Requires the optional Tasklib package and is not bundled into the packaged build
+1. **MPP Import**: Binary `.mpp` is not read — it is an undocumented OLE2 container with no Python reader to bundle. Save it as XML from Project and import that; MSPDI import needs nothing installed
 2. **Public holidays from source**: the `holidays` package is in `requirements.txt` and is bundled into every packaged build, so a released build always has it. Only a source checkout installed without its requirements lacks it — and there the picker still saves a selection and says on its face that the choice takes effect once the package is installed, rather than silently dropping it
 3. **Performance**: large plans are slow to draw, though far less so than they were. Measured on synthetic plans with hierarchy and dependencies: ~140ms at 100 tasks, ~350ms at 500, ~580ms at 1000 — down from 180ms / 575ms / 1165ms. Past ~500 tasks the row heights are still compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow.
 
