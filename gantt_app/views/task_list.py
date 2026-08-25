@@ -630,14 +630,17 @@ class DragDropTaskList(ctk.CTkFrame):
         for attempt in (0, 1):
             try:
                 box = self.tree.bbox(task_id, column)
+                if box:
+                    return box
+                if attempt == 0:
+                    # Scrolled out of sight; bring it back and ask again
+                    self.tree.see(task_id)
+                    self.tree.update_idletasks()
             except tk.TclError:
+                # A row that has gone, or a widget being torn down. Both
+                # happen: this runs from a double-click and from a focus
+                # change, and neither waits for the plan to hold still.
                 return None
-            if box:
-                return box
-            if attempt == 0:
-                # Scrolled out of sight; bring it back and ask again
-                self.tree.see(task_id)
-                self.tree.update_idletasks()
         return None
 
     def _editor_text(self):

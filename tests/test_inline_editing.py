@@ -77,6 +77,16 @@ class InlineEditingTestCase(unittest.TestCase):
             project_tracker=ProjectStateTracker(self.project, self.manager))
         self.root.update_idletasks()
 
+        # Where the cell is on screen is answered by the widget, and a
+        # window that has never been mapped does not always have an answer:
+        # locally the first row had geometry and the rest did not, and on CI
+        # under xvfb it differed again. That is the environment rather than
+        # the code, and it is not what any of these tests are about - so the
+        # box is a fixed rectangle and everything downstream of it runs the
+        # same way everywhere. _cell_box's own behaviour is checked in
+        # TestFindingTheCell, which does not stub it.
+        self.task_list._cell_box = lambda _task_id, _column: (0, 0, 200, 20)
+
     def tearDown(self):
         """Close the window."""
         try:
@@ -170,6 +180,38 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
     def test_another_column_opens_nothing(self):
         """Only the two that are typed over are typed over."""
         self.double_click('u1', column='Start')
+
+        self.assertIsNone(self.task_list._cell_editor)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestFindingTheCell(InlineEditingTestCase):
+    """
+    Where a cell is, which is the one thing the environment decides.
+
+    Everything else in this module stubs it; this is what checks it, and it
+    checks the answers that do not depend on a window being on screen.
+    """
+
+    def setUp(self):
+        """Undo the stub the other tests rely on."""
+        super().setUp()
+        del self.task_list._cell_box
+
+    def test_a_row_that_is_not_there_has_no_cell(self):
+        """The commit runs from a focus change, so the row may have gone."""
+        self.assertIsNone(self.task_list._cell_box('nobody', '#0'))
+
+    def test_no_geometry_means_no_editor_rather_than_a_crash(self):
+        """
+        A box cannot be placed over a cell nobody can point at.
+
+        Opening one at 0,0 instead would put a typing box in the corner of
+        the grid over whatever row happened to be there.
+        """
+        self.task_list._cell_box = lambda _task_id, _column: None
+
+        self.task_list.edit_name_cell('u1')
 
         self.assertIsNone(self.task_list._cell_editor)
 
