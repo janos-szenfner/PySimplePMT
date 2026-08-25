@@ -18,6 +18,7 @@ This is a complete implementation of a project management tool with:
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
+- **Type dependencies into the grid**: The Dependencies column takes the notation every planning tool uses — `3`, `3SS+1d`, `3FS-2d`, `3SF+50%`, several per cell. Double-click, type, Enter. It resolves the numbers, refuses a self-reference, an unknown task, a duplicate or anything that would run in a circle, reschedules, and writes the cell back in the same form
 - **Sequential IDs that keep up**: The ID column numbers rows 1..N down the list with no gaps, and follows every insert, delete, drag and indent. The number is a *position*; dependencies are held against the task itself, so a link never breaks when the numbers move — it just shows a different one
 - **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen. The task name lives in the tree column, so the indentation is drawn against the name itself, and an **Outline Level** column gives the same depth as a number (1 at the top, 2 under it), the way Microsoft Project does
 - **Keyboard-first task editing**: Enter saves and closes the task editor, Escape cancels, and Enter still types a newline in the Details box (Cmd/Ctrl+Enter saves from in there). Save & Close is drawn as the primary button, Cancel as the secondary one
@@ -838,6 +839,53 @@ The group sits on the icon bar between two hairlines, with `Ctrl+B` / `Ctrl+I`
 of each letter are bound: Tk reports `<Control-B>` when caps lock is on, and a
 shortcut that stops working with caps lock is the kind of fault nobody reports
 and everybody notices.
+
+### The Dependencies Column (`dependencysyntax.py`)
+
+`003SS+1d` is how every planning tool has spelt a dependency for thirty years,
+and the column now takes it. The grammar is a predecessor's number, then
+optionally the kind of link, then optionally a signed lag with a unit —
+everything else is defaults: no type means Finish-Start, no unit means days.
+
+**The grammar is a contract**, because the cell is normalised after every
+edit: what is written back has to be readable by the same parser, or the
+column rewrites the reader's work every time they press Enter. There is a test
+that round-trips every form in the specification's table.
+
+**Nothing is guessed at and nothing vanishes.** A cell that cannot be read
+entirely is not stored at all — not even the part that parsed, because
+storing half of it would silently drop the rest and leave the reader comparing
+what they typed against what came back. The four things a number alone cannot
+answer — a task that is not there, a task naming itself, the same task twice,
+and a link that closes a loop — are all checked against the plan, and each
+link is checked against the ones already accepted from the same cell as well
+as against what the task already holds. `1, 2` where 2 already waits for 1 is
+a loop that only exists once both have been taken.
+
+**The number is the display id, not the identity** — the column asks for what
+is on screen. Resolving it to the task it names happens in
+`Project.parse_dependencies`, which is also where the guards live, because
+every one of them needs the plan.
+
+Lag gained a unit: days, or a percentage of the predecessor's own duration, so
+a plan can say "start this when that one is half done" without working out
+what half of it is and reworking it whenever that task changes length.
+
+**The scheduling engine is unchanged for every link that already existed.**
+Adding a unit put a branch in front of every read of a lag, and that branch
+has to be invisible: `Project.lag_days` returns a lag in days untouched, so
+the forward pass, the backward pass and the float all compute exactly what
+they computed before. A percentage is the only new arithmetic, and it can only
+apply to a link that could not previously be stated at all. It rounds half
+away from zero rather than through `round()`, which rounds half to even —
+half of a five-day task came out as two days and half of a seven-day task as
+four, which is not a rule anybody would guess at.
+
+The unit had to reach four other places to avoid being silently dropped: the
+undo snapshot, the clipboard, the reversed graph the backward pass walks, and
+the signature the critical-path cache is keyed on — a signature that could not
+see the change would hand back a stale float for as long as the window stayed
+open.
 
 ### Two Identifiers (`Project.display_ids`)
 
@@ -1857,6 +1905,8 @@ Unit tests cover:
 - ✅ **Progress Tracking**: The five thresholds over a whole selection, that a phase marks the work under it, that past work goes to 100% and future work stays at 0%, that a weekend and a holiday both count correctly, that a milestone is done or not done, and that a whole press is one undo step
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
 - ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
+- ✅ **Dependency Grammar**: Every row of the specification's token table, commas and semicolons, case and spacing, a lag with no type and a type with no lag, and a round trip through every form the cell can hold
+- ✅ **The Dependencies Column**: That an unreadable cell stores nothing and says so, that the four guards refuse what they should, that the plan is left untouched by a check that fails, that a whole cell is one undo step, and that the task editor shows what the grid stored
 - ✅ **Exported IDs**: That the GanttProject and MSPDI files number tasks the way the list does, that the shared plan walk agrees with `display_ids` rather than counting for itself, that the spreadsheet's ID column holds numbers the plan shows, and that no identity reaches either file
 - ✅ **Display IDs**: The specification's table row by row — inserting between pushes the rest down, a drag swaps two numbers, a delete leaves no gap, an indent renumbers what moved past it — and, on the other side, that identities, dependencies and parents are all untouched while it happens
 - ✅ **Outline Level**: Counting from one at the top, following an indent and an outdent, an unknown row, a missing parent, and a parent cycle that must not hang the redraw

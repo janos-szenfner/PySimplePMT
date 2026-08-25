@@ -80,7 +80,7 @@ class DependencyEditor(ctk.CTkFrame):
 
         # Work on a copy so cancelling the dialog changes nothing
         self.links: List[Dependency] = [
-            Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+            Dependency(d.task_id, d.dep_type, d.hardness, d.lag, d.lag_unit)
             for d in task.dependencies
         ]
 
@@ -369,7 +369,7 @@ class DependencyEditor(ctk.CTkFrame):
 
     def get_links(self) -> List[Dependency]:
         """Get the edited links, for the dialog to store on the task."""
-        return [Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+        return [Dependency(d.task_id, d.dep_type, d.hardness, d.lag, d.lag_unit)
                 for d in self.links]
 
     def required_start_date(self, start_date):

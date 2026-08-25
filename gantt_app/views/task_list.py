@@ -29,6 +29,7 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.models import Task, Project
+from gantt_app.dependencysyntax import format_links
 from gantt_app.taskstyle import resolve as resolve_style
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.contextmenu import TaskContextMenu
@@ -512,10 +513,198 @@ class DragDropTaskList(ctk.CTkFrame):
         if not item:
             return None
 
+        # The Dependencies cell is typed into rather than folded. It is the
+        # one column somebody edits far more often than they open a dialog
+        # for, which is what the whole grammar exists for.
+        if self._column_name(event.x) == 'Dependencies':
+            self.edit_dependencies_cell(item)
+            return 'break'
+
         if self.tree.get_children(item):
             self.tree.item(item, open=not self.tree.item(item, 'open'))
 
         return 'break'
+
+    def _column_name(self, x: int):
+        """
+        Which column an x position falls in, by name rather than by number.
+
+        RETURNS:
+        --------
+        Optional[str]
+            The column's name, '#0' for the tree column, or None when the
+            position is not over a column at all.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        identify_column answers '#4', counting the data columns from one and
+        calling the tree column '#0'. A number is the wrong thing to compare
+        against: adding a column shifts every one after it, and the code
+        that cared would go on working and mean something else.
+        """
+        try:
+            reference = self.tree.identify_column(x)
+        except tk.TclError:
+            return None
+
+        if reference == '#0':
+            return '#0'
+        try:
+            index = int(reference.lstrip('#')) - 1
+        except ValueError:
+            return None
+
+        columns = self.tree.cget('columns')
+        return columns[index] if 0 <= index < len(columns) else None
+
+    def edit_dependencies_cell(self, task_id: str):
+        """
+        Type into the Dependencies cell of one row.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The row being edited.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        An entry placed over the cell rather than a dialog opened beside it.
+        The whole point of the column is that a run of links can be typed
+        down it without leaving the grid, and a window in the way defeats
+        that as thoroughly as the dialog it replaces.
+
+        The entry is a plain tkinter one. A CTkEntry is a frame holding an
+        entry and draws its own border and corners, which at the height of a
+        grid row leaves the text clipped and the cell it is covering
+        showing round the edges.
+        """
+        if not self.tree.exists(task_id):
+            return
+        self._close_cell_editor()
+
+        try:
+            box = self.tree.bbox(task_id, 'Dependencies')
+        except tk.TclError:
+            box = None
+        if not box:
+            # The row is scrolled out of sight; bring it back and try again
+            self.tree.see(task_id)
+            self.tree.update_idletasks()
+            box = self.tree.bbox(task_id, 'Dependencies')
+            if not box:
+                return
+
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+
+        current = format_links(task.dependencies, self.project.display_ids())
+
+        x, y, width, height = box
+        editor = tk.Entry(self.tree, borderwidth=1, relief='solid',
+                          highlightthickness=0)
+        editor.insert(0, current)
+        editor.select_range(0, tk.END)
+        editor.place(x=x, y=y, width=width, height=height)
+        editor.focus_set()
+
+        self._cell_editor = editor
+        self._cell_editor_task = task_id
+
+        editor.bind('<Return>', lambda _event: self._commit_dependencies())
+        editor.bind('<KP_Enter>', lambda _event: self._commit_dependencies())
+        editor.bind('<Escape>', lambda _event: self._close_cell_editor())
+        editor.bind('<FocusOut>', lambda _event: self._commit_dependencies())
+
+    def _close_cell_editor(self):
+        """Take the entry away, if one is open."""
+        editor = getattr(self, '_cell_editor', None)
+        self._cell_editor = None
+        self._cell_editor_task = None
+        if editor is None:
+            return
+        try:
+            editor.destroy()
+        except tk.TclError:
+            pass
+
+    def _commit_dependencies(self):
+        """
+        Read the cell, store what it said, and say what it could not.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The entry is taken away first. Storing the links redraws the list,
+        which destroys the row the entry is sitting on - and an entry left
+        over a row that no longer exists is a box floating over the wrong
+        task.
+
+        A cell that could not be read entirely is not stored at all. Storing
+        the half of it that parsed would silently drop the rest, and the
+        reader would have to compare what they typed against what came back
+        to notice.
+        """
+        editor = getattr(self, '_cell_editor', None)
+        task_id = getattr(self, '_cell_editor_task', None)
+        if editor is None or task_id is None:
+            return
+
+        try:
+            text = editor.get()
+        except tk.TclError:
+            text = None
+        self._close_cell_editor()
+
+        if text is None or task_id not in {t.id for t in self.project.tasks}:
+            return
+
+        links, errors = self.project.parse_dependencies(task_id, text)
+
+        if errors:
+            messagebox.showerror("Dependencies", "\n\n".join(errors))
+            return
+
+        self.set_dependencies(task_id, links)
+
+    def set_dependencies(self, task_id: str, links):
+        """
+        Put a task's links where the cell said, as one undoable step.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being linked.
+        links : List[Dependency]
+            What it should now wait for. An empty list clears the cell.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Through the tracker, so typing a cell is one entry in the undo
+        history like every other change to a task.
+
+        The plan is rescheduled afterwards rather than the dates being left
+        as they were: a link that has just been stated is one the dates are
+        supposed to obey, and a column that accepted a link and moved
+        nothing would look like it had not worked.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+
+        if list(task.dependencies) == list(links):
+            return
+
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id, dependencies=links)
+        else:
+            task.dependencies = links
+
+        self.project.reschedule()
+        logger.info("Set %d dependency(ies) on task %s", len(links), task_id)
+
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
 
     def edit_task(self, task_id: str):
         """
@@ -1346,55 +1535,28 @@ class DragDropTaskList(ctk.CTkFrame):
     def _would_create_circle(self, source_id: str, target_id: str) -> bool:
         """
         Check if adding a dependency would create a circular reference.
-        
-        This prevents:
-        1. Direct circular dependencies (A -> B -> A)
-        2. Indirect circular dependencies (A -> B -> C -> A)
-        3. A task depending on itself
-        4. A task depending on its own subtask (parent-child circular dependency)
-        
+
         PARAMETERS:
         -----------
         source_id : str
             The task that would have target_id added as a dependency
         target_id : str
             The dependency to be added
-        
+
         RETURNS:
         --------
         bool
             True if adding this dependency would create a circle
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The walk itself lives on the plan now. It is a fact about the plan
+        rather than about this list, and the Dependencies column needed the
+        same answer - so rather than have two of it, with the two free to
+        disagree, this asks.
         """
-        # Cannot depend on self
-        if source_id == target_id:
-            return True
-        
-        # Cannot depend on own subtask (directly or indirectly)
-        if self.project.is_descendant(target_id, source_id):
-            return True
-        
-        # Check for circular dependencies through the dependency graph
-        def check_circle(task_id: str, visited: set) -> bool:
-            if task_id in visited:
-                return True
-            
-            task = self.project.get_task_by_id(task_id)
-            if not task:
-                return False
-            
-            visited.add(task_id)
-            
-            for dep_id in task.dependency_ids:
-                if dep_id == source_id:
-                    return True
-                if check_circle(dep_id, visited.copy()):
-                    return True
-            
-            return False
-        
-        # Check if target depends on source (directly or indirectly)
-        return check_circle(target_id, set())
-    
+        return self.project.would_create_dependency_cycle(source_id, target_id)
+
     def apply_search(self, needle: str):
         """
         Show only the rows carrying a piece of text, and their ancestors.
@@ -1617,15 +1779,13 @@ class DragDropTaskList(ctk.CTkFrame):
         str
             The tree item ID created
         """
-        # Predecessors, by the number shown beside them rather than by
-        # name. The number is what the reader is looking at in the ID column
-        # of the row above, and it follows a reorder without anything being
-        # rewritten - see Project.display_ids. A link to a task that is not
-        # in the plan is left out rather than shown as a blank.
+        # Predecessors in the grammar the cell itself takes back - '001',
+        # '003SS+1d' - so what is shown is what can be typed. By the numbers
+        # shown beside them rather than by name: the number is what the
+        # reader is looking at in the ID column, and it follows a reorder
+        # without anything being rewritten. See dependencysyntax.format_links.
         numbers = getattr(self, '_display_ids', None) or self.project.display_ids()
-        deps = [str(numbers[dep_id]) for dep_id in task.dependency_ids
-                if dep_id in numbers]
-        deps_str = ', '.join(deps) if deps else 'None'
+        deps_str = format_links(task.dependencies, numbers) or 'None'
         
         # Format dates
         start_str = task.start_date.strftime('%Y-%m-%d')

@@ -571,6 +571,29 @@ GUIDE_SECTIONS = (
             "The Predecessors column names what a task waits for by those "
             "same numbers, so the links renumber with the rows.",
 
+            "You can type the links straight into the Dependencies column. "
+            "Double-click the cell and write the number of the task this "
+            "one waits for: 3. Add the kind of link if it is not the usual "
+            "Finish-Start - 3SS, 3FF, 3SF - and a lag if there is one: "
+            "3SS+1d waits a day after the other one starts, 3FS-2d overlaps "
+            "it by two. A share works too: 3SF+50% means when the other "
+            "task is half done. Several links go in one cell, separated by "
+            "commas.",
+
+            "Enter stores it and Escape leaves the cell alone. The cell is "
+            "written back in the same form afterwards, so what it shows can "
+            "always be typed straight back in.",
+
+            "A cell that cannot be read is not stored at all - not even the "
+            "part of it that made sense - and it says what it could not "
+            "read. It refuses a task that is not in the plan, a task "
+            "depending on itself, the same task listed twice, and any link "
+            "that would run in a circle.",
+
+            "What you type in the cell and what the task editor's "
+            "Dependency tab shows are the same links: the column stores "
+            "them on the task rather than keeping a string of its own.",
+
             "Exported files carry the same numbers. A GanttProject file, "
             "a Microsoft Project file and the spreadsheet all name a task "
             "by what the list calls it, so a file read back beside the plan "

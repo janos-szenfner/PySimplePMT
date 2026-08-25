@@ -196,9 +196,10 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task_dict['start_date'], "2024-01-01T00:00:00")
         self.assertEqual(task_dict['end_date'], "2024-01-10T00:00:00")
         self.assertEqual(task_dict['progress'], 25)
-        # Dependencies serialise with their type and hardness
+        # Dependencies serialise with their type, hardness and lag unit
         self.assertEqual(task_dict['dependencies'],
                          [{'task_id': 'dep1', 'dep_type': 'FS',
+                           'lag_unit': 'days',
                            'hardness': 'Hard', 'lag': 0}])
         self.assertEqual(task_dict['color'], "#3498db")
         self.assertFalse(task_dict['is_milestone'])

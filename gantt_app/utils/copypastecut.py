@@ -682,7 +682,10 @@ class ClipboardService:
                     task_id=dep_dict['task_id'],
                     dep_type=dep_dict.get('dep_type', 'FS'),
                     hardness=dep_dict.get('hardness', 'Hard'),
-                    lag=dep_dict.get('lag', 0)
+                    lag=dep_dict.get('lag', 0),
+                    # Absent from anything copied before a lag could be a
+                    # share of a duration, and days is what those meant
+                    lag_unit=dep_dict.get('lag_unit', 'days'),
                 )
                 deps.append(dep)
             task_dict['dependencies'] = deps

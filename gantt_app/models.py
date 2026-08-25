@@ -4,6 +4,7 @@ Data models for the Gantt Project Management Tool.
 Contains the Task and Project classes that form the core data structure.
 """
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Set
@@ -38,6 +39,16 @@ FINISH_CONSTRAINED_TYPES = ('FF', 'SF')
 
 #: How strictly the constraint is applied.
 DEPENDENCY_HARDNESS = ('Hard', 'Rubber')
+
+#: What a lag is counted in.
+#:
+#: 'days' is a number of working days. 'percent' is a share of the
+#: predecessor's own duration, which is how a plan says "start this when the
+#: one before it is half done" without having to work out what half of it is
+#: and re-work it every time that task's length changes.
+LAG_DAYS = 'days'
+LAG_PERCENT = 'percent'
+LAG_UNITS = (LAG_DAYS, LAG_PERCENT)
 
 #: Labels shown in the user interface.
 DEPENDENCY_TYPE_LABELS = {
@@ -246,10 +257,16 @@ class Dependency:
     dep_type: str = 'FS'
     hardness: str = 'Hard'
     lag: int = 0
+    #: What the lag counts in; see LAG_UNITS. Days unless something says
+    #: otherwise, which is what every link written before this existed meant.
+    lag_unit: str = LAG_DAYS
 
     def __post_init__(self):
         """Normalise the type, hardness and lag to usable values."""
         self.task_id = str(self.task_id)
+
+        unit = str(self.lag_unit or LAG_DAYS).lower()
+        self.lag_unit = unit if unit in LAG_UNITS else LAG_DAYS
 
         dep_type = str(self.dep_type or 'FS').upper()
         # Anything unrecognised falls back to Finish-Start, by far the most
@@ -274,6 +291,41 @@ class Dependency:
         """Whether this link fixes the successor's finish rather than start."""
         return self.dep_type in FINISH_CONSTRAINED_TYPES
 
+    def to_syntax_string(self, predecessor_number) -> str:
+        """
+        The link written the way the Dependencies column takes it.
+
+        PARAMETERS:
+        -----------
+        predecessor_number : int or str
+            The number the predecessor is shown as - what the reader typed
+            and what they will read back. The link itself holds an identity,
+            which is a key nobody sees; see Project.display_ids.
+
+        RETURNS:
+        --------
+        str
+            '003', '003SS+1d', '003FF', '003SF+50%'.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A plain Finish-Start link with no lag is written as the number alone,
+        because that is by far the commonest link and 'FS' on the end of
+        every one of them is noise. The type reappears the moment there is a
+        lag to attach it to, so '003+2d' - which reads as if the type had
+        been forgotten - is never produced.
+        """
+        unit = '%' if self.lag_unit == LAG_PERCENT else 'd'
+        if self.lag > 0:
+            lag_text = f"+{self.lag}{unit}"
+        elif self.lag < 0:
+            lag_text = f"{self.lag}{unit}"
+        else:
+            lag_text = ''
+
+        type_text = '' if self.dep_type == 'FS' and not lag_text else self.dep_type
+        return f"{predecessor_number}{type_text}{lag_text}"
+
     def to_dict(self) -> dict:
         """Convert to a dictionary for serialization."""
         return {
@@ -281,6 +333,7 @@ class Dependency:
             'dep_type': self.dep_type,
             'hardness': self.hardness,
             'lag': self.lag,
+            'lag_unit': self.lag_unit,
         }
 
     @classmethod
@@ -302,6 +355,9 @@ class Dependency:
                 dep_type=value.get('dep_type', 'FS'),
                 hardness=value.get('hardness', 'Hard'),
                 lag=value.get('lag', 0),
+                # Absent from every link saved before a lag could be a
+                # share of anything, and days is what those meant
+                lag_unit=value.get('lag_unit', LAG_DAYS),
             )
         return cls(task_id=str(value))
 
@@ -605,7 +661,8 @@ class Task:
         return None
 
     def add_dependency(self, task_id: str, dep_type: str = 'FS',
-                       hardness: str = 'Hard', lag: int = 0) -> 'Dependency':
+                       hardness: str = 'Hard', lag: int = 0,
+                       lag_unit: str = LAG_DAYS) -> 'Dependency':
         """
         Add or update a link to a predecessor.
 
@@ -620,11 +677,13 @@ class Task:
             existing.dep_type = dep_type
             existing.hardness = hardness
             existing.lag = lag
+            existing.lag_unit = lag_unit
             existing.__post_init__()
             return existing
 
         dependency = Dependency(task_id=task_id, dep_type=dep_type,
-                                hardness=hardness, lag=lag)
+                                hardness=hardness, lag=lag,
+                                lag_unit=lag_unit)
         self.dependencies.append(dependency)
         return dependency
 
@@ -1638,7 +1697,8 @@ class Project:
         return (
             list(self.tasks),
             {t.id: (t.parent_task_id, t.task_type) for t in self.tasks},
-            {t.id: [Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+            {t.id: [Dependency(d.task_id, d.dep_type, d.hardness, d.lag,
+                               d.lag_unit)
                     for d in t.dependencies]
              for t in self.tasks},
         )
@@ -1652,7 +1712,8 @@ class Project:
                 task.parent_task_id, task.task_type = parents[task.id]
             if task.id in links:
                 task.dependencies = [
-                    Dependency(d.task_id, d.dep_type, d.hardness, d.lag)
+                    Dependency(d.task_id, d.dep_type, d.hardness, d.lag,
+                               d.lag_unit)
                     for d in links[task.id]
                 ]
         self._update_dates()
@@ -1817,6 +1878,206 @@ class Project:
     #: nest deeper than this, and a file whose parents form a cycle should
     #: cost a warning rather than a loop with no end.
     MAX_OUTLINE_DEPTH = 100
+
+    def lag_days(self, dependency) -> int:
+        """
+        A link's lag as a number of working days.
+
+        PARAMETERS:
+        -----------
+        dependency : Dependency
+            The link to measure.
+
+        RETURNS:
+        --------
+        int
+            The lag itself when it is already in days, and the share of the
+            predecessor's duration it names when it is a percentage.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A lag in days is returned untouched, which is not a detail: every
+        link that existed before a lag could be a share of anything is in
+        days, so the scheduler computes exactly what it computed before.
+        The percentage is the only new arithmetic, and it can only apply to
+        a link that could not previously be stated at all.
+
+        The share is of the *predecessor's* duration - "start this when that
+        one is half done" is a statement about that one - which is what
+        every planning tool means by it.
+
+        A link whose predecessor has gone contributes nothing rather than
+        raising. The scheduler runs on every redraw, and a plan that will
+        not draw because a link dangles is a far worse answer than a link
+        that adds no delay.
+        """
+        if dependency.lag_unit != LAG_PERCENT:
+            return dependency.lag
+
+        predecessor = self.get_task_by_id(dependency.task_id)
+        if predecessor is None:
+            return 0
+
+        days = self.working_duration(predecessor) * dependency.lag / 100
+        # Rounded half away from zero rather than with round(), which rounds
+        # half to even: half of a five-day task would come out as two days
+        # and half of a seven-day task as four, which is not a rule anybody
+        # would guess at and not one worth explaining.
+        return int(days + 0.5) if days >= 0 else -int(-days + 0.5)
+
+    def would_create_dependency_cycle(self, successor_id: str,
+                                      predecessor_id: str) -> bool:
+        """
+        Whether one more link would close a loop.
+
+        PARAMETERS:
+        -----------
+        successor_id : str
+            The task that would wait.
+        predecessor_id : str
+            The task it would wait for.
+
+        RETURNS:
+        --------
+        bool
+            True for a task depending on itself, on one of its own
+            descendants, or on anything that already waits for it however
+            far around.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A plan with a loop in it cannot be scheduled - every pass moves a
+        task and the next pass moves it back - so this is checked before a
+        link is stored rather than left for the scheduler to fail on.
+
+        Walking forward from the predecessor and looking for the successor
+        is the cheap direction: it stops at the first hit, and a plan has
+        far fewer links than tasks.
+
+        This lived in the task list, which is a view. It is a fact about the
+        plan, and the Dependencies column needed the same answer - so rather
+        than have two of it, it is here.
+        """
+        if successor_id == predecessor_id:
+            return True
+        if self.is_descendant(predecessor_id, successor_id):
+            return True
+
+        seen = set()
+        stack = [predecessor_id]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+
+            task = self.get_task_by_id(current)
+            if task is None:
+                continue
+            for link in task.dependency_ids:
+                if link == successor_id:
+                    return True
+                stack.append(link)
+
+        return False
+
+    def parse_dependencies(self, task_id: str, text: str):
+        """
+        Read a Dependencies cell into links this plan can hold.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task the cell belongs to.
+        text : str
+            What was typed; see gantt_app.dependencysyntax for the grammar.
+
+        RETURNS:
+        --------
+        Tuple[List[Dependency], List[str]]
+            The links, and a message for everything that could not become
+            one. Anything rejected is left out rather than guessed at.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The numbers are resolved here rather than in the parser, because
+        only the plan knows what number names what task - and the three
+        things that can be wrong with a link once it has been read all need
+        the plan too: a number naming nothing, a task depending on itself,
+        and a link that would close a loop.
+
+        Each link is checked against the ones already accepted from the same
+        cell, not only against what the task holds now. Typing "4, 5" where
+        5 already waits for 4 is a loop that only exists once both have been
+        taken, and checking against the stored links alone would let it
+        through.
+        """
+        from gantt_app.dependencysyntax import parse
+
+        parsed, errors = parse(text)
+        numbers = self.display_ids()
+        by_number = {number: identity for identity, number in numbers.items()}
+
+        links = []
+        taken = set()
+        for item in parsed:
+            try:
+                predecessor = by_number.get(int(item.number))
+            except (TypeError, ValueError):
+                predecessor = None
+
+            if predecessor is None:
+                errors.append(f"There is no task {item.number} in this plan.")
+                continue
+            if predecessor == task_id:
+                errors.append("A task cannot depend on itself.")
+                continue
+            if predecessor in taken:
+                errors.append(f"Task {item.number} is listed more than once.")
+                continue
+
+            # Against what has been accepted so far as well as what is
+            # stored, so a cell that closes a loop within itself is caught
+            probe = Task(id=task_id, name='probe',
+                         start_date=datetime.now(),
+                         dependencies=[Dependency(link.task_id) for link in links])
+            with self._links_replaced(task_id, probe.dependencies):
+                if self.would_create_dependency_cycle(task_id, predecessor):
+                    errors.append(
+                        f"Task {item.number} already waits for this one, so "
+                        f"linking them would run in a circle.")
+                    continue
+
+            taken.add(predecessor)
+            links.append(Dependency(predecessor, item.dep_type, 'Hard',
+                                    item.lag, item.lag_unit))
+
+        return links, errors
+
+    @contextmanager
+    def _links_replaced(self, task_id: str, links):
+        """
+        Hold a different set of links on one task for the length of a check.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The cycle check reads the plan, so testing a link that has not been
+        stored yet means putting it there and taking it out again. A context
+        manager rather than a pair of assignments because the check between
+        them can raise, and a plan left holding a probe's links would be a
+        far worse fault than the one being guarded against.
+        """
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            yield
+            return
+
+        original = list(task.dependencies)
+        task.dependencies = links
+        try:
+            yield
+        finally:
+            task.dependencies = original
 
     def display_order(self) -> List[Task]:
         """
@@ -2121,7 +2382,8 @@ class Project:
 
             # Counted on the plan's own calendar, whatever week either end
             # of the link keeps; see _shift_working_days.
-            required = self._shift_working_days(required, dependency.lag)
+            required = self._shift_working_days(required,
+                                                self.lag_days(dependency))
 
             if dependency.constrains_finish:
                 target = hard_ends if dependency.hardness == 'Hard' else floor_ends
@@ -3016,7 +3278,8 @@ class Project:
                 (task.id, task.start_date, task.end_date, task.duration,
                  task.is_milestone, task.task_type, task.parent_task_id,
                  task.calendar_id,
-                 tuple((link.task_id, link.dep_type, link.hardness, link.lag)
+                 tuple((link.task_id, link.dep_type, link.hardness,
+                        link.lag, link.lag_unit)
                        for link in task.dependencies))
                 for task in self.tasks
             ),
@@ -3173,7 +3436,8 @@ class Project:
                         Dependency(task_id=task.id,
                                    dep_type=dependency.dep_type,
                                    hardness=dependency.hardness,
-                                   lag=dependency.lag)
+                                   lag=dependency.lag,
+                                   lag_unit=dependency.lag_unit)
                     )
 
         # ---- backward: how late each could be without moving the end ----
@@ -3204,16 +3468,20 @@ class Project:
                     )
                     continue
                 other_late_start = late_finish[other.id] - span[other.id]
+                # In days, whatever the link states it in. For a link in
+                # days this is the link's own number, so the backward pass
+                # computes exactly what it computed before; see lag_days.
+                lag = self.lag_days(link)
                 if link.dep_type == 'FS':
-                    allowed = other_late_start - 1 - link.lag
+                    allowed = other_late_start - 1 - lag
                 elif link.dep_type == 'SS':
                     # Only the start has to clear, so this may run on past it
-                    allowed = (other_late_start - link.lag
+                    allowed = (other_late_start - lag
                                + span[task_id])
                 elif link.dep_type == 'FF':
-                    allowed = late_finish[other.id] - link.lag
+                    allowed = late_finish[other.id] - lag
                 else:                                   # SF
-                    allowed = (late_finish[other.id] - link.lag
+                    allowed = (late_finish[other.id] - lag
                                + span[task_id])
                 limit = min(limit, allowed)
             return limit
