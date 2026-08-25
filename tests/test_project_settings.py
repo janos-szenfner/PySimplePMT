@@ -419,5 +419,114 @@ class TestThePanel(PlanTestCase):
         self.assertEqual(self.spans(self.project), before)
 
 
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestThePanelIsLaidOut(PlanTestCase):
+    """
+    That the form is a form.
+
+    WHY THIS EXISTS:
+    ================
+    The first version built every control with the window as its master and
+    then packed it into a per-row frame. Tk permits that - the frame shares
+    the controls' master ancestry - and then lays them out against the
+    toplevel rather than against the frame. The labels came out cascading
+    down the top left, the controls stacked at the bottom of the window, and
+    half the text ran off the right-hand edge.
+
+    Nothing about it raised, and the tests of the time all passed: they asked
+    what the panel did, and it did all of it. So this asks about the shape.
+    """
+
+    def setUp(self):
+        """A panel over the fixture."""
+        import customtkinter as ctk
+
+        from gantt_app.views.projectsettings import ProjectSettingsDialog
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.project = self.plan()
+        self.panel = ProjectSettingsDialog(self.root, self.project)
+        self.panel.update_idletasks()
+
+    def tearDown(self):
+        """Close the window."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def controls(self):
+        """Every control on the panel, by the attribute it is kept under."""
+        return {name: getattr(self.panel, name) for name in
+                ('name_entry', 'direction_menu', 'start_entry',
+                 'finish_entry', 'calendar_menu', 'status_entry',
+                 'priority_entry')}
+
+    def test_every_control_belongs_to_the_frame_it_sits_in(self):
+        """
+        The fault, stated directly.
+
+        A control whose master is the window lays out against the window,
+        wherever it was told to sit.
+        """
+        for name, widget in self.controls().items():
+            self.assertIs(widget.master, self.panel.content, name)
+
+    def test_every_control_is_actually_placed(self):
+        """One built and never gridded is one that is simply not there."""
+        for name, widget in self.controls().items():
+            self.assertTrue(widget.grid_info(), name)
+
+    def test_the_labels_and_the_controls_are_in_their_own_columns(self):
+        """Which is what makes it read as a form rather than a cascade."""
+        for widget in self.controls().values():
+            self.assertEqual(int(widget.grid_info()['column']), 1)
+
+    def test_the_controls_take_the_slack(self):
+        """Or a wide window leaves them all bunched against the labels."""
+        self.assertEqual(
+            self.panel.content.grid_columnconfigure(1).get('weight'), 1)
+
+    def test_two_columns_and_a_row_for_everything(self):
+        """
+        grid_size answers columns first, then rows.
+
+        Worth stating: read the other way round this looks like a panel of
+        two rows and sixteen columns, which is what the layout used to be
+        accused of being.
+        """
+        columns, rows = self.panel.content.grid_size()
+
+        self.assertEqual(columns, 2)
+        self.assertGreaterEqual(rows, len(self.controls()))
+
+    def test_no_explanation_runs_off_the_edge(self):
+        """
+        Every note wraps.
+
+        Unwrapped, they ran past the right-hand edge of the window and were
+        cut off mid-word - "Forward: worl" and the like.
+        """
+        import customtkinter as ctk
+
+        notes = [child for child in self.panel.content.winfo_children()
+                 if isinstance(child, ctk.CTkLabel) and child.cget('wraplength')]
+
+        self.assertTrue(notes, "the panel should explain some of its fields")
+        for note in notes:
+            self.assertLessEqual(int(note.cget('wraplength')),
+                                 self.panel.NOTE_WRAP)
+
+    def test_the_window_is_big_enough_for_what_is_in_it(self):
+        """It cannot be resized, so it has to be right at the size it opens."""
+        wanted = self.panel.content.winfo_reqheight()
+        width, _, height = self.panel.GEOMETRY.partition('x')
+
+        self.assertGreaterEqual(int(height), wanted)
+        self.assertGreaterEqual(int(width),
+                                self.panel.content.winfo_reqwidth())
+
 if __name__ == '__main__':
     unittest.main()

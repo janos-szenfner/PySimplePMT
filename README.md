@@ -880,6 +880,15 @@ places: the title behind a one-line prompt, the calendar behind a different
 dialog, and the start date not settable at all — it was whatever the earliest
 task happened to say, so moving a plan meant editing every task in it.
 
+**The form is a grid, and every control is a child of the frame it sits in.**
+The first version built them all with the window as their master and packed
+them into per-row frames. Tk permits that — the frame shares the controls'
+master ancestry — and then lays them out against the *toplevel* rather than
+the frame: labels cascading down the top left, controls stacked at the bottom,
+half the text off the right-hand edge. Nothing raised, and every test of the
+time passed, because they all asked what the panel *did* rather than what
+shape it was. There are now tests for the shape.
+
 **Not everything on it is a setting.** The start date is not a field on a
 project — it is derived from the tasks — so that box is a *command*: typing a
 date moves the whole plan. Every task shifts by the same number of calendar
@@ -2003,6 +2012,7 @@ Unit tests cover:
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
 - ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
 - ✅ **Menu Dismissal**: That two watchers can coexist and removing one leaves the other, that the window's own bindings survive, that a menu closes on a click outside and not on one inside, that closing it stops the watch, and the exact two-menu sequence that used to leave one undismissable
+- ✅ **The Settings Layout**: That every control belongs to the frame it is gridded into rather than to the window, that labels and controls are in their own columns, that the notes wrap rather than running off the edge, and that the window opens big enough for what is in it
 - ✅ **Project Settings**: That the settings survive a saved file and an older one opens with the defaults, that a priority out of range is clamped rather than refusing the plan, that moving the plan keeps every duration and gap and carries the earliest-begin floors with it, and that the panel refuses a backward schedule with no deadline
 - ✅ **Backward Scheduling**: That the plan ends on the deadline, that durations survive, that every link is still satisfied without a reschedule afterwards, that a task with float moves late rather than staying early, that a deadline in the past still moves the plan, and that a forward plan is settled byte for byte as it was before
 - ✅ **Inline Editing**: That a double-click opens an editor over the right cell and routes the name and the dependencies to their own, that Enter stores the name and Escape does not, that an empty name reverts, that a row deleted under the editor is not renamed, that it is one undo step, and that renaming does not disturb the rest of the task

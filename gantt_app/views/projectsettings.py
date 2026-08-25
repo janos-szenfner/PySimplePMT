@@ -76,8 +76,14 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
         redraw. Given nothing: everything it needs is on the project.
     """
 
-    GEOMETRY = "520x560"
-    LABEL_WIDTH = 130
+    #: Roomy enough for every note to sit on one or two lines. The panel
+    #: is not resizable, so this is the size it has to be right at.
+    GEOMETRY = "560x640"
+
+    #: How wide a line of explanation runs before it wraps. Anything wider
+    #: ran off the right-hand edge, which is how the first version lost half
+    #: of every note it wrote.
+    NOTE_WRAP = 360
 
     def __init__(self, master, project: Project,
                  on_apply: Optional[Callable] = None, **kwargs):
@@ -98,85 +104,123 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
 
     # ---- building -------------------------------------------------------
 
-    def _row(self, parent, label: str, widget, note: str = ""):
-        """One labelled row, with an optional line of explanation under it."""
-        frame = ctk.CTkFrame(parent, fg_color='transparent')
-        frame.pack(fill=tk.X, padx=16, pady=(8, 0))
+    def _field(self, label: str, widget, note: str = ""):
+        """
+        One labelled row of the form.
 
-        ctk.CTkLabel(frame, text=label, width=self.LABEL_WIDTH, anchor=tk.W
-                     ).pack(side=tk.LEFT)
-        widget.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        PARAMETERS:
+        -----------
+        label : str
+            What the row is called.
+        widget : widget
+            The control, which must already have been built with
+            self.content as its master; see the note below.
+        note : str
+            An optional line of explanation under the control.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every control has to be a child of the frame it is gridded into.
+        The first version of this built them all with the window as their
+        master and then packed them into a per-row frame, which Tk permits -
+        the frame shares their master's ancestry - and then lays out
+        against the toplevel rather than the frame. The labels came out
+        cascading down the top left, the controls stacked at the bottom, and
+        half the text off the right-hand edge.
+
+        Grid rather than pack, because that is what a form of labels beside
+        controls is: two columns, the second taking the slack, and nothing
+        depending on the order things were created in.
+        """
+        row = self.content.grid_size()[1]
+
+        ctk.CTkLabel(self.content, text=label, anchor=tk.W
+                     ).grid(row=row, column=0, sticky=tk.W, padx=(0, 12),
+                            pady=(8, 0))
+        widget.grid(row=row, column=1, sticky=tk.EW, pady=(8, 0))
 
         if note:
-            ctk.CTkLabel(parent, text=note, anchor=tk.W, justify=tk.LEFT,
+            ctk.CTkLabel(self.content, text=note, anchor=tk.W, justify=tk.LEFT,
                          text_color=theme.MUTED_TEXT,
                          font=ctk.CTkFont(size=11),
-                         ).pack(fill=tk.X, padx=(16 + self.LABEL_WIDTH, 16))
+                         wraplength=self.NOTE_WRAP,
+                         ).grid(row=row + 1, column=1, sticky=tk.W,
+                                pady=(2, 0))
         return widget
 
     def _build(self):
         """Lay the panel out: what the plan is, then when, then how."""
         ctk.CTkLabel(self, text="Project Settings",
                      font=ctk.CTkFont(size=16, weight="bold"),
-                     ).pack(anchor=tk.W, padx=16, pady=(14, 0))
+                     ).pack(anchor=tk.W, padx=16, pady=(14, 4))
 
-        self.name_entry = ctk.CTkEntry(self)
+        self.content = ctk.CTkFrame(self, fg_color='transparent')
+        self.content.pack(fill=tk.BOTH, expand=True, padx=16)
+        # The controls take the slack; the labels stay the width they need
+        self.content.grid_columnconfigure(1, weight=1)
+
+        self.name_entry = ctk.CTkEntry(self.content)
         self.name_entry.insert(0, self.project.name or '')
-        self._row(self, "Title:", self.name_entry)
+        self._field("Title:", self.name_entry)
 
         self._separator()
 
         self.direction_menu = ctk.CTkOptionMenu(
-            self, values=list(DIRECTION_LABELS),
+            self.content, values=list(DIRECTION_LABELS),
             command=lambda _value: self._show_direction())
         self.direction_menu.set(
             DIRECTION_NAMES.get(self.project.schedule_from,
                                 "Project Start Date"))
-        self._row(self, "Schedule from:", self.direction_menu,
-                  "Forward: work starts as soon as its links allow.\n"
-                  "Backward: work is fitted in before the finish date.")
+        self._field("Schedule from:", self.direction_menu,
+                    "Forward: work starts as soon as its links allow. "
+                    "Backward: work is fitted in before the finish date.")
 
-        self.start_entry = DateEntry(self, date=self.project.start_date)
-        self._row(self, "Start date:", self.start_entry,
-                  "Changing this moves the whole plan, keeping every\n"
-                  "duration and every gap between tasks.")
+        self.start_entry = DateEntry(self.content, date=self.project.start_date)
+        self._field("Start date:", self.start_entry,
+                    "Changing this moves the whole plan, keeping every "
+                    "duration and every gap between tasks.")
 
         self.finish_entry = DateEntry(
-            self, date=self.project.deadline or self.project.end_date)
-        self._row(self, "Finish date:", self.finish_entry)
+            self.content, date=self.project.deadline or self.project.end_date)
+        self._field("Finish date:", self.finish_entry)
         self.finish_note = ctk.CTkLabel(
-            self, text="", anchor=tk.W, justify=tk.LEFT,
-            text_color=theme.MUTED_TEXT, font=ctk.CTkFont(size=11))
-        self.finish_note.pack(fill=tk.X, padx=(16 + self.LABEL_WIDTH, 16))
+            self.content, text="", anchor=tk.W, justify=tk.LEFT,
+            text_color=theme.MUTED_TEXT, font=ctk.CTkFont(size=11),
+            wraplength=self.NOTE_WRAP)
+        self.finish_note.grid(row=self.content.grid_size()[1], column=1,
+                              sticky=tk.W, pady=(2, 0))
 
         self._separator()
 
-        self.calendar_menu = ctk.CTkOptionMenu(self, values=self._calendars())
+        self.calendar_menu = ctk.CTkOptionMenu(self.content,
+                                               values=self._calendars())
         self.calendar_menu.set(PLAN_CALENDAR_LABEL)
-        self._row(self, "Calendar:", self.calendar_menu,
-                  "Which days the plan works. Edit them in\n"
-                  "Actions > Calendar Settings.")
+        self._field("Calendar:", self.calendar_menu,
+                    "Which days the plan works. Edit them in "
+                    "Actions > Calendar Settings.")
 
-        today = ctk.CTkLabel(self, anchor=tk.W,
-                             text=datetime.now().strftime('%Y-%m-%d'))
-        self._row(self, "Current date:", today)
+        self._field("Current date:",
+                    ctk.CTkLabel(self.content, anchor=tk.W,
+                                 text=datetime.now().strftime('%Y-%m-%d')))
 
-        self.status_entry = DateEntry(self, date=self.project.status_date)
-        self._row(self, "Status date:", self.status_entry,
-                  "What Mark on Track reports against. Empty means today.")
+        self.status_entry = DateEntry(self.content,
+                                      date=self.project.status_date)
+        self._field("Status date:", self.status_entry,
+                    "What Mark on Track reports against. Empty means today.")
 
-        self.priority_entry = ctk.CTkEntry(self, width=90)
+        self.priority_entry = ctk.CTkEntry(self.content, width=90)
         self.priority_entry.insert(0, str(self.project.priority))
-        self._row(self, "Priority:", self.priority_entry,
-                  f"{MIN_PROJECT_PRIORITY} to {MAX_PROJECT_PRIORITY}, "
-                  f"{DEFAULT_PROJECT_PRIORITY} by default.")
+        self._field("Priority:", self.priority_entry,
+                    f"{MIN_PROJECT_PRIORITY} to {MAX_PROJECT_PRIORITY}, "
+                    f"{DEFAULT_PROJECT_PRIORITY} by default.")
 
         self._build_buttons()
 
     def _separator(self):
-        """A hairline between two groups of settings."""
-        ctk.CTkFrame(self, height=1, fg_color=theme.SEPARATOR
-                     ).pack(fill=tk.X, padx=16, pady=(12, 2))
+        """A hairline across both columns, between two groups of settings."""
+        ctk.CTkFrame(self.content, height=1, fg_color=theme.SEPARATOR
+                     ).grid(row=self.content.grid_size()[1], column=0,
+                            columnspan=2, sticky=tk.EW, pady=(12, 2))
 
     def _calendars(self):
         """What the calendar menu offers: the plan's own, then the named."""
