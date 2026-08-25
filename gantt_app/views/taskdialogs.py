@@ -186,10 +186,13 @@ class EditTaskDialog(TaskFormDialog):
                     calendar_id=new_task.calendar_id,
                     details=new_task.details,
                 ):
+                    logger.info("Edited task %s %r", new_task.id,
+                                new_task.name)
                     if self.on_save:
                         self.on_save(new_task)
                     return True
 
+            logger.info("Edited task %s %r", self.task.id, self.task.name)
             if self.on_save:
                 self.on_save(self.task)
             return True

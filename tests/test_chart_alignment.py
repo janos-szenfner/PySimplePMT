@@ -16,6 +16,7 @@ up on a particular desktop is a matter of what the window manager made of
 the panes, which no test here can see.
 """
 
+import time
 import unittest
 from datetime import datetime, timedelta
 
@@ -299,7 +300,17 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
 
     This is the one that would have caught the strip pushing the bars down:
     it asks the running application where each pane actually put its rows.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The only test here that puts a window on screen, and the only one that
+    can be affected by the desktop it runs on. It skips rather than waits if
+    the window does not map; see setUp for why waiting is the wrong answer.
     """
+
+    #: How long the window is given to appear before the test gives up on
+    #: the desktop rather than on the code.
+    SETTLE_SECONDS = 5.0
 
     def setUp(self):
         """A window with a plan in it, given time to settle."""
@@ -315,13 +326,41 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
         self.app.geometry("1500x900")
         self.addCleanup(self._destroy)
 
-        # The window manager needs a moment before the tree can say where
-        # its first row is; see GanttChart._first_row_offset.
-        self.app.update()
+        # This is the one test that needs a window actually on screen: it
+        # asks the running application where each pane put its rows, and a
+        # withdrawn window has no answer.
+        #
+        # It is given a deadline rather than being waited on. update() on a
+        # mapped window hands control to the window server, and on a desktop
+        # that is slow to map one - a Mac under load, a session with no
+        # compositor - it may not come back for minutes. That leaves a
+        # window sitting on somebody's screen mid-run, and closing it by
+        # hand raises the application's own "save before exiting?" prompt,
+        # which then blocks the suite until it is answered. A test suite
+        # must not need a person.
+        deadline = time.monotonic() + self.SETTLE_SECONDS
+        while time.monotonic() < deadline:
+            self.app.update_idletasks()
+            if self.app.winfo_viewable():
+                break
+        else:
+            self.skipTest("the window never became viewable")
+
         self.app.update_idletasks()
 
     def _destroy(self):
-        """Tear the window down."""
+        """
+        Tear the window down without going through the close handler.
+
+        destroy() is not the window manager's close button, so the exit
+        prompt is not reached - which is what keeps the teardown silent.
+        The window is withdrawn first so that nothing is left on screen for
+        somebody to close by hand while the rest of the suite runs.
+        """
+        try:
+            self.app.withdraw()
+        except Exception:
+            pass
         try:
             self.app.destroy()
         except Exception:

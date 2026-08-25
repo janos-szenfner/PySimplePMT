@@ -1608,6 +1608,8 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.project_tracker:
             self.project_tracker.restructure_tasks(before, after, label)
 
+        logger.info("%s: %d row(s)", label, len(self._as_ids(task_ids)))
+
         self.update_task_list()
 
         self._report_dropped_links(self.project.dropped_links(before, after))
@@ -1657,6 +1659,8 @@ class DragDropTaskList(ctk.CTkFrame):
 
         if self.project_tracker:
             self.project_tracker.reorder_tasks(before, list(self.project.tasks))
+
+        logger.info("Moved task %s", task_id)
 
         self.update_task_list()
 

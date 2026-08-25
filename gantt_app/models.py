@@ -2038,6 +2038,10 @@ class Project:
         if self.deadline is not None and self.shift_to_finish(self.deadline):
             moved = True
 
+        if moved:
+            logger.info("Scheduled %r backwards from %s", self.name,
+                        as_date(self.deadline) if self.deadline
+                        else 'its own finish')
         return moved
 
     def shift_to_finish(self, deadline: datetime) -> bool:
