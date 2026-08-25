@@ -365,14 +365,52 @@ jobs:
             echo "No earlier tag found; listing everything up to ${TAG}."
           fi
 
-          changes=$(git log --no-merges --reverse --pretty=format:'* %s' \
-                      "$range" | grep -v '^\* Bump version to' || true)
-          if [ -z "$changes" ]; then
-            changes="* Housekeeping only; see the commit history for detail."
-          fi
+          # Subject *and* body. The subjects alone said what changed and
+          # nothing about why, which is the half worth reading - and this
+          # repository writes the why into the commit message, so it was
+          # being thrown away at exactly the point somebody would look for
+          # it. A reader of a release page should not have to go and find
+          # the commits.
+          raw_file="$(mktemp)"
+          git log --no-merges --reverse \
+                  --pretty=format:'<<<COMMIT>>>%n%s%n<<<BODY>>>%n%b' \
+                  "$range" > "$raw_file"
 
           changes_file="$(mktemp)"
-          printf '%s\n' "$changes" > "$changes_file"
+          python3 - "$raw_file" "$changes_file" <<'PY'
+          import sys
+
+          raw_path, out_path = sys.argv[1], sys.argv[2]
+          with open(raw_path) as handle:
+              raw = handle.read()
+
+          sections = []
+          for entry in raw.split('<<<COMMIT>>>'):
+              if not entry.strip():
+                  continue
+              subject, _, body = entry.partition('<<<BODY>>>')
+              subject = subject.strip()
+
+              # The version bumps say nothing the heading above does not,
+              # and would otherwise be half the list
+              if not subject or subject.startswith('Bump version to'):
+                  continue
+
+              section = ['#### ' + subject]
+              body = body.strip()
+              if body:
+                  section.append('')
+                  section.append(body)
+              sections.append('\n'.join(section))
+
+          text = '\n\n'.join(sections)
+          if not text.strip():
+              text = 'Housekeeping only; see the commit history for detail.'
+
+          with open(out_path, 'w') as handle:
+              handle.write(text + '\n')
+          PY
+
           echo "Changes since ${previous:-the beginning}:"
           cat "$changes_file"
 
