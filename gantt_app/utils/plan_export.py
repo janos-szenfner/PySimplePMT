@@ -55,9 +55,11 @@ class PlanRow:
     task : Task
         The task itself.
     number : int
-        Its position in the outline, counted from one. Both formats identify
-        a task by an integer, so this is what an exporter writes as the ID and
-        what a dependency refers to.
+        The number the application shows beside the row - its position in the
+        list, counted from one; see Project.display_ids. Both formats
+        identify a task by an integer, so this is what an exporter writes as
+        the ID and what a dependency refers to, which means an exported file
+        and the task list name a task by the same number.
     level : int
         Depth in the outline, a root task being level 1.
     outline_number : str
@@ -102,6 +104,13 @@ def outline(project: Project) -> List[PlanRow]:
     is appended at the top level rather than dropped: an export that quietly
     loses work would be far worse than one showing a task at an odd level.
     """
+    # The numbers the application shows beside these rows. Written into the
+    # files rather than a count kept here, so what a reader sees in the task
+    # list and what they see in an exported file are the same number - and
+    # so there is one definition of the order rather than two that agree
+    # until somebody changes one. See Project.display_ids.
+    numbers = project.display_ids()
+
     children: Dict[Optional[str], List[Task]] = {}
     known = {task.id for task in project.tasks}
     for task in project.tasks:
@@ -122,7 +131,7 @@ def outline(project: Project) -> List[PlanRow]:
             number = f"{prefix}.{position}" if prefix else str(position)
             rows.append(PlanRow(
                 task=task,
-                number=len(rows) + 1,
+                number=numbers.get(task.id, len(rows) + 1),
                 level=level,
                 outline_number=number,
                 parent=by_id.get(parent_id) if parent_id else None,
@@ -139,7 +148,7 @@ def outline(project: Project) -> List[PlanRow]:
                            "plan; exporting it at the top level", task.name)
             rows.append(PlanRow(
                 task=task,
-                number=len(rows) + 1,
+                number=numbers.get(task.id, len(rows) + 1),
                 level=1,
                 outline_number=str(len(rows) + 1),
                 parent=None,
@@ -156,9 +165,10 @@ def numbering(rows: Sequence[PlanRow]) -> Dict[str, int]:
     RETURNS:
     --------
     Dict[str, int]
-        Task ID to outline number. Both formats identify a task by an integer
-        and this application's IDs are strings - '001', or whatever an
-        importer put there - so every reference in a file goes through here.
+        Task ID to the number it is written as - the one the task list shows
+        beside it. Both formats identify a task by an integer and this
+        application's identities are opaque strings the reader never sees, so
+        every reference in a file goes through here.
     """
     return {row.task.id: row.number for row in rows}
 

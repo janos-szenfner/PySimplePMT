@@ -74,8 +74,19 @@ class EditTaskDialog(TaskFormDialog):
     # ---- the two rows only an existing task has -----------------------
 
     def _build_identity(self, frame):
-        """Show the task's ID, which is assigned and not editable."""
-        self.id_label = ctk.CTkLabel(frame, text=self.task.id)
+        """
+        Show the task's number, which is assigned and not editable.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The number the list shows, not Task.id. The two used to be the same
+        thing; they are not any more, and the identity is a key rather than
+        something a reader has any use for - see Project.display_ids. Showing
+        it here would put a number in front of somebody that matches nothing
+        in the ID column they were just looking at.
+        """
+        self.id_label = ctk.CTkLabel(frame,
+                                     text=self.project.display_id(self.task.id))
         self._field(frame, "ID:", self.id_label, sticky=tk.W)
 
     def _build_parent(self, frame):

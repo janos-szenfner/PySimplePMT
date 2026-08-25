@@ -36,6 +36,7 @@ from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.formcheck import FormChecks
 from gantt_app.views.scrollframe import ScrollFrame
 from gantt_app.views.dependency_editor import DependencyEditor
+from gantt_app.shortcuts import bind_all as bind_shortcut
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -1255,13 +1256,102 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         frame = ctk.CTkFrame(self)
         frame.pack(fill=tk.X, padx=20, pady=10)
 
+        #: The action buttons by label, so their styling can be checked and
+        #: so a subclass can reach one without hunting through the frame
+        self.action_buttons = {}
+
         self._build_leading_buttons(frame)
 
-        for label, command in (("Save & New", self.save_and_new),
-                               ("Save & Close", self.save),
-                               ("Close", self.cancel)):
-            ctk.CTkButton(frame, text=label, width=self.ACTION_WIDTH,
-                          command=command).pack(side=tk.RIGHT, padx=5)
+        # Save & Close is the primary action and looks like it; Cancel is
+        # the way out and is drawn quietly, as a secondary button. Save & New
+        # sits between them at the ordinary weight - it is a save, but not
+        # the one Enter performs.
+        secondary = {
+            'fg_color': 'transparent',
+            'border_width': 1,
+            'border_color': theme.SEPARATOR,
+            'text_color': theme.TEXT,
+            'hover_color': theme.MENU_HOVER,
+        }
+
+        for label, command, style in (
+                ("Save & New", self.save_and_new, {}),
+                ("Save & Close", self.save, {}),
+                ("Cancel", self.cancel, secondary)):
+            button = ctk.CTkButton(frame, text=label, width=self.ACTION_WIDTH,
+                                   command=command, **style)
+            button.pack(side=tk.RIGHT, padx=5)
+            self.action_buttons[label] = button
+
+        self._bind_exit_shortcuts()
+
+    def _bind_exit_shortcuts(self):
+        """
+        Enter saves and closes, Escape cancels.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Bound on the window rather than on each field, so they answer
+        wherever the focus is - which is the point of a shortcut for someone
+        working down a list of tasks.
+
+        Enter has to leave the notes box alone. A newline is what Enter means
+        inside a multi-line box, so the handler asks what has focus and does
+        nothing when the answer is a text area. It can afford to: Tk runs the
+        widget's own class binding before this one, so by the time this is
+        reached the newline has already been typed. The modifier form saves
+        from in there, which is the convention everywhere else.
+        """
+        self.bind('<Return>', self._return_pressed, add='+')
+        self.bind('<KP_Enter>', self._return_pressed, add='+')
+        self.bind('<Escape>', lambda _event: self.cancel(), add='+')
+
+        # Cmd+Enter on a Mac, Ctrl+Enter elsewhere; see gantt_app.shortcuts
+        bind_shortcut(self, 'Return', lambda _event: self.save())
+        bind_shortcut(self, 'KP_Enter', lambda _event: self.save())
+
+    def _return_pressed(self, _event=None):
+        """
+        Save and close, unless the newline was meant for a text box.
+
+        RETURNS:
+        --------
+        Optional[str]
+            'break' when it saved, so nothing further acts on the key.
+        """
+        if self._focus_is_multiline():
+            return None
+        self.save()
+        return 'break'
+
+    def _focus_is_multiline(self) -> bool:
+        """
+        Whether what has focus is a box a newline belongs in.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A CTkTextbox is a frame holding a tkinter.Text, and which of the two
+        Tk names as the focus depends on the CustomTkinter version - so
+        neither check is enough on its own. The walk up the parents catches
+        both, and catches a scrolled text box wrapped in another frame if one
+        ever appears.
+
+        Depth-limited as a guard. Nothing here nests more than a couple of
+        levels, but a widget tree that somehow cycled would otherwise spin
+        inside a key press.
+        """
+        try:
+            focused = self.focus_get()
+        except (tk.TclError, KeyError):
+            return False
+
+        for _ in range(4):
+            if focused is None or focused is self:
+                return False
+            if isinstance(focused, (tk.Text, ctk.CTkTextbox)):
+                return True
+            focused = getattr(focused, 'master', None)
+        return False
 
     def _build_leading_buttons(self, frame):
         """Buttons on the left of the row. Help button by default."""

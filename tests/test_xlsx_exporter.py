@@ -268,7 +268,10 @@ class TestFormulasNeverDisagreeWithThePlan(ExporterTestCase):
 
         self.assertEqual(sheet[f"H{row}"].value, third.start_date)
         self.assertNotEqual(third.start_date, project.start_date)
-        self.assertEqual(sheet[f"F{row}"].value, "2SS")
+        # By the number the application shows beside the predecessor, not a
+        # count of the rows in this sheet; see Project.display_ids
+        self.assertEqual(sheet[f"F{row}"].value,
+                         f"{project.display_ids()['T2']}SS")
 
     def test_a_lagged_link_is_written_as_a_date(self):
         """The chain cannot count the days a lag adds, so it is not used."""
@@ -284,7 +287,8 @@ class TestFormulasNeverDisagreeWithThePlan(ExporterTestCase):
                    if sheet.cell(row=r, column=3).value == "Procurement demand")
 
         self.assertEqual(sheet[f"H{row}"].value, second.start_date)
-        self.assertEqual(sheet[f"F{row}"].value, "1FS+3")
+        self.assertEqual(sheet[f"F{row}"].value,
+                         f"{project.display_ids()['T1']}FS+3")
 
     def test_an_unlinked_task_that_starts_later_keeps_its_date(self):
         """Only a task that starts the project can point at the start cell."""

@@ -462,6 +462,23 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Leaving the task editor",
+        [
+            "Enter saves the task and closes the editor. Escape closes it "
+            "without saving - nothing is written until a save, so nothing "
+            "is lost that had been stored.",
+
+            "Inside the Details box Enter types a newline, because that is "
+            "what it means in a box you can type paragraphs into. Command "
+            "and Enter together saves from in there on a Mac; Ctrl and "
+            "Enter elsewhere.",
+
+            "Save & Close is drawn as the main button and Cancel as the "
+            "quiet one beside it, so the row says which of the three Enter "
+            "performs.",
+        ],
+    ),
+    (
         "Saying where the work has got to",
         [
             "The five buttons on the icon bar - 0%, 25%, 50%, 75%, 100% - "
@@ -508,8 +525,11 @@ GUIDE_SECTIONS = (
             "bar under the A and the highlighter shows the colour each would "
             "apply next.",
 
-            "Ctrl+B, Ctrl+I and Ctrl+U do the same from the keyboard, "
-            "wherever the focus is in the window.",
+            "The same three are on the keyboard, wherever the focus is in "
+            "the window - Command+B, I and U on a Mac, Ctrl+B, I and U "
+            "everywhere else. Every shortcut in the application follows "
+            "that rule, and the hover text names whichever key this machine "
+            "actually answers to.",
 
             "The presets apply a whole look in one press: Financial "
             "Milestone is a yellow fill with bold black text, Deliverable "
@@ -540,6 +560,26 @@ GUIDE_SECTIONS = (
             "A row that has work under it is drawn in bold and carries the "
             "expander that folds its branch away. The work under it is "
             "indented one level per step down the plan.",
+
+            "The ID column numbers the rows down the list: 1 at the top "
+            "through to the last row, with no gaps. It is a position rather "
+            "than a name, so it follows whatever you do to the plan - "
+            "insert a row and everything below it moves down a number, "
+            "delete one and they close back up, drag a row or indent it and "
+            "the numbers follow it.",
+
+            "The Predecessors column names what a task waits for by those "
+            "same numbers, so the links renumber with the rows.",
+
+            "Exported files carry the same numbers. A GanttProject file, "
+            "a Microsoft Project file and the spreadsheet all name a task "
+            "by what the list calls it, so a file read back beside the plan "
+            "names the same rows.",
+
+            "Nothing breaks when the numbers move. A dependency is held "
+            "against the task itself rather than against the number beside "
+            "it, so a link keeps pointing at the task it always pointed at "
+            "and simply shows a different number.",
 
             "The Outline Level column says the same thing as a number: the "
             "top of the plan is 1, a row under it is 2, and so on. It is "
@@ -578,6 +618,11 @@ GUIDE_SECTIONS = (
 
             "Every button says what it is if you rest the pointer on it, "
             "which is the fastest way to learn the row.",
+
+            "The search box, the Day / Night control and the ? sit together "
+            "against the right-hand end. None of them acts on the plan, and "
+            "the actions grow from the left as icons are added, so these "
+            "three stay where they are.",
 
             "Save and Save As come first, then the three that act on "
             "whichever task is selected in the list: edit it, indent it to "

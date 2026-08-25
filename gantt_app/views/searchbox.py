@@ -76,8 +76,18 @@ def task_haystack(task, project=None) -> str:
     Everything is included rather than a chosen few. A field left out is a
     field somebody searches for once and concludes the search is broken.
     """
-    parts: List[str] = [
-        str(task.id or ''),
+    # The number shown beside the row, not Task.id. The identity is a key
+    # the reader never sees - see Project.display_ids - so searching for it
+    # would match rows by a number that is nowhere on screen, and searching
+    # for the number that *is* on screen would find the wrong row.
+    numbers = project.display_ids() if project is not None else {}
+    if task.id in numbers:
+        parts_head = [str(numbers[task.id]),
+                      str(numbers[task.id]).zfill(project.ID_WIDTH)]
+    else:
+        parts_head = []
+
+    parts: List[str] = parts_head + [
         str(task.name or ''),
         str(task.task_type or ''),
         str(task.details or ''),
@@ -102,7 +112,10 @@ def task_haystack(task, project=None) -> str:
     # search of all came back with rows that only mentioned the thing being
     # looked for. The id still finds both, which is the precise way to ask.
     for link in task.dependencies:
-        parts.append(str(link.task_id))
+        # By the number it is shown as, for the same reason as above
+        if link.task_id in numbers:
+            parts.append(str(numbers[link.task_id]))
+            parts.append(str(numbers[link.task_id]).zfill(project.ID_WIDTH))
         parts.append(str(link.dep_type or ''))
         parts.append(str(link.hardness or ''))
         if link.lag:

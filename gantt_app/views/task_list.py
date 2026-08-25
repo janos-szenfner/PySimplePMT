@@ -1555,6 +1555,11 @@ class DragDropTaskList(ctk.CTkFrame):
         Sorting is left to the Gantt chart, which is where a reader looks for
         the plan in date order.
         """
+        # The number beside each row, worked out once for the whole plan
+        # rather than per row: display_ids walks the hierarchy, and asking it
+        # per row would walk it once per row. See Project.display_ids.
+        self._display_ids = self.project.display_ids()
+
         # Map task IDs to tree items for parent-child relationships
         tree_items = {}
 
@@ -1612,13 +1617,15 @@ class DragDropTaskList(ctk.CTkFrame):
         str
             The tree item ID created
         """
-        # Format dependencies
-        dep_names = []
-        for dep_id in task.dependencies:
-            dep_task = self.project.get_task_by_id(dep_id)
-            if dep_task:
-                dep_names.append(dep_task.name)
-        deps_str = ', '.join(dep_names) if dep_names else 'None'
+        # Predecessors, by the number shown beside them rather than by
+        # name. The number is what the reader is looking at in the ID column
+        # of the row above, and it follows a reorder without anything being
+        # rewritten - see Project.display_ids. A link to a task that is not
+        # in the plan is left out rather than shown as a blank.
+        numbers = getattr(self, '_display_ids', None) or self.project.display_ids()
+        deps = [str(numbers[dep_id]) for dep_id in task.dependency_ids
+                if dep_id in numbers]
+        deps_str = ', '.join(deps) if deps else 'None'
         
         # Format dates
         start_str = task.start_date.strftime('%Y-%m-%d')
@@ -1655,7 +1662,9 @@ class DragDropTaskList(ctk.CTkFrame):
                                  text=task.name,
                                  open=True,
                                  values=(
-                                     task.id,  # IDs are short sequential numbers
+                                     # What the row shows is its position,
+                                     # not its identity; see display_ids
+                                     self._display_label(task),
                                      type_str,
                                      duration_str,
                                      start_str,
@@ -1680,6 +1689,22 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.item(item_id, tags=tuple(tags))
 
         return item_id
+
+    def _display_label(self, task) -> str:
+        """
+        The number shown in the ID column, zero-padded as the list writes it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The identity is never shown, whatever happens. It is a key, not a
+        number a reader has any use for, and one appearing in the column
+        where every other row shows its position would be read as a
+        position - so a row drawn outside a repopulation asks the plan
+        rather than falling back to task.id.
+        """
+        numbers = getattr(self, '_display_ids', None) or self.project.display_ids()
+        number = numbers.get(task.id)
+        return '' if number is None else str(number).zfill(self.project.ID_WIDTH)
 
     def _paint_rows(self):
         """

@@ -104,13 +104,22 @@ class TestEditDialogButtons(DialogTestCase):
         return dialog
 
     def test_the_buttons_read_in_order(self):
-        """Help, Delete sit apart, then Close, Save & Close, Save & New."""
+        """Help, Delete sit apart, then Cancel, Save & Close, Save & New."""
         self.assertEqual(self.button_row(self.dialog()),
-                         ["Help", "Delete", "Close", "Save & Close", "Save & New"])
+                         ["Help", "Delete", "Cancel", "Save & Close",
+                          "Save & New"])
 
-    def test_there_is_no_cancel(self):
-        """Close replaced it; nothing is written until a Save is pressed."""
-        self.assertNotIn("Cancel", self.button_row(self.dialog()))
+    def test_the_way_out_is_called_cancel(self):
+        """
+        It was called Close, on the grounds that nothing is written until a
+        Save is pressed, so there was nothing to cancel.
+
+        That is still true of the behaviour and it is the wrong name anyway:
+        the key that does it is Escape, every dialog in every application
+        calls that Cancel, and a button whose shortcut and label disagree is
+        one the reader has to think about.
+        """
+        self.assertIn("Cancel", self.button_row(self.dialog()))
 
     def test_save_and_close_saves(self):
         """The renamed task is stored."""
@@ -199,7 +208,7 @@ class TestCreateDialogButtons(DialogTestCase):
     def test_the_buttons_read_in_order(self):
         """Help, no Delete here - the task does not exist yet."""
         self.assertEqual(self.button_row(self.dialog()),
-                         ["Help", "Close", "Save & Close", "Save & New"])
+                         ["Help", "Cancel", "Save & Close", "Save & New"])
 
     def test_save_and_new_keeps_the_dialog_open(self):
         """
@@ -565,10 +574,10 @@ class TestButtonWidths(DialogTestCase):
         """The three actions on the right are one width."""
         widths = self.widths(self.edit_dialog())
 
-        self.assertEqual(widths["Close"], widths["Save & Close"])
-        self.assertEqual(widths["Close"], widths["Save & New"])
+        self.assertEqual(widths["Cancel"], widths["Save & Close"])
+        self.assertEqual(widths["Cancel"], widths["Save & New"])
 
-    def test_close_is_not_the_widest(self):
+    def test_cancel_is_not_the_widest(self):
         """
         The shortest label had the widest button.
 
@@ -577,14 +586,14 @@ class TestButtonWidths(DialogTestCase):
         """
         widths = self.widths(self.edit_dialog())
 
-        self.assertLessEqual(widths["Close"], widths["Save & Close"])
+        self.assertLessEqual(widths["Cancel"], widths["Save & Close"])
 
     def test_the_create_dialog_matches_too(self):
         """Both dialogs use the same widths."""
         edit = self.widths(self.edit_dialog())
         create = self.widths(self.create_dialog())
 
-        self.assertEqual(create["Close"], edit["Close"])
+        self.assertEqual(create["Cancel"], edit["Cancel"])
         self.assertEqual(create["Save & Close"], edit["Save & Close"])
 
     def test_the_row_fits_the_minimum_window(self):
@@ -651,3 +660,153 @@ class TestAppearanceIsPinned(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheKeyboardExits(DialogTestCase):
+    """
+    Enter saves and closes, Escape cancels.
+
+    WHY THESE LOOK LIKE THIS:
+    =========================
+    A run of edits down a task list is a keyboard job, and reaching for the
+    mouse to confirm each one is the friction the shortcuts exist to remove.
+
+    The interesting case is the notes box. Enter means a newline in there,
+    so the handler has to leave it alone - and it can, because Tk runs the
+    text widget's own binding first and the newline is already typed by the
+    time the window's handler is reached.
+
+    The keys cannot be pressed here: Tk does not deliver a synthetic key
+    event to a window that has never been mapped, and every window in a test
+    run is withdrawn. So the handlers are called directly, which is the same
+    code the key reaches.
+    """
+
+    def dialog(self):
+        """An edit dialog over the fixture task."""
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.task, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        dialog.update_idletasks()
+        return dialog
+
+    def test_enter_saves_and_closes(self):
+        """The default action, from anywhere that is not a text area."""
+        dialog = self.dialog()
+        dialog.name_entry.delete(0, 'end')
+        dialog.name_entry.insert(0, "Renamed by Enter")
+
+        dialog._return_pressed()
+
+        self.assertEqual(self.task.name, "Renamed by Enter")
+        self.assertFalse(dialog.winfo_exists())
+
+    def test_enter_stops_there(self):
+        """
+        It reports that it handled the key.
+
+        Without that the same press reaches whatever else is listening,
+        which for a form inside a window with its own bindings means the
+        action running twice.
+        """
+        dialog = self.dialog()
+
+        self.assertEqual(dialog._return_pressed(), 'break')
+
+    def test_enter_in_the_notes_box_types_a_newline(self):
+        """
+        And does not save.
+
+        The newline is already in the box by the time the window's handler
+        runs, so all it has to do is keep out of the way.
+
+        The focus is reported rather than set. focus_set does nothing on a
+        window that has never been mapped, so the real widget is handed to
+        the handler the way Tk would hand it over - which is what the branch
+        actually reads.
+        """
+        dialog = self.dialog()
+        inner = dialog.details_text.winfo_children()[0]
+
+        with mock.patch.object(dialog, 'focus_get', return_value=inner):
+            result = dialog._return_pressed()
+
+        self.assertIsNone(result, "it should not claim the key")
+        self.assertTrue(dialog.winfo_exists(), "it should not have closed")
+
+    def test_the_wrapper_counts_as_the_box_too(self):
+        """
+        Which of the two Tk names as the focus depends on the version.
+
+        A check against only the inner text widget passes on one release of
+        CustomTkinter and saves the form on the next.
+        """
+        dialog = self.dialog()
+
+        with mock.patch.object(dialog, 'focus_get',
+                               return_value=dialog.details_text):
+            self.assertTrue(dialog._focus_is_multiline())
+
+    def test_a_single_line_field_is_not_a_text_area(self):
+        """Enter in the name box saves, which is the whole point."""
+        dialog = self.dialog()
+
+        with mock.patch.object(dialog, 'focus_get',
+                               return_value=dialog.name_entry):
+            self.assertFalse(dialog._focus_is_multiline())
+
+    def test_the_modifier_saves_from_the_notes_box(self):
+        """The way out of a multi-line field, as everywhere else."""
+        dialog = self.dialog()
+
+        dialog.save()
+
+        self.assertFalse(dialog.winfo_exists())
+
+    def test_escape_closes_without_saving(self):
+        """What was typed is discarded, which is what Cancel means."""
+        dialog = self.dialog()
+        dialog.name_entry.delete(0, 'end')
+        dialog.name_entry.insert(0, "Not saved")
+
+        dialog.cancel()
+
+        self.assertEqual(self.task.name, "Alpha")
+        self.assertFalse(dialog.winfo_exists())
+
+    def test_all_the_exit_keys_are_bound(self):
+        """
+        Enter, the keypad's Enter, Escape, and the modifier form of each.
+
+        Matched on the key rather than the modifier: Tk stores a binding
+        under a spelling of its own - <Command-Return> comes back as
+        <Mod1-Key-Return> - and which modifier goes in is pinned in
+        test_shortcuts.py.
+        """
+        bound = self.dialog().bind()
+
+        self.assertIn('<Key-Return>', bound)
+        self.assertIn('<Key-Escape>', bound)
+        self.assertTrue(
+            any(sequence.endswith('-Key-Return>') and sequence != '<Key-Return>'
+                for sequence in bound),
+            "the modifier form of Enter is not bound")
+
+    def test_the_primary_action_looks_like_one(self):
+        """
+        Save & Close is the call to action; Cancel is the quiet way out.
+
+        A row of three identical buttons says nothing about which one Enter
+        performs.
+        """
+        dialog = self.dialog()
+
+        primary = dialog.action_buttons["Save & Close"]
+        secondary = dialog.action_buttons["Cancel"]
+
+        self.assertNotEqual(str(primary.cget('fg_color')), 'transparent')
+        self.assertEqual(str(secondary.cget('fg_color')), 'transparent')
+        self.assertGreater(int(secondary.cget('border_width')), 0)

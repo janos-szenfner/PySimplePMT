@@ -731,7 +731,16 @@ def _create_tasks_workbook(project: Project):
     # Numbered and placed before anything is written, so a row can point at
     # one further down the sheet - which a plan whose links run backwards up
     # the list will do.
-    numbers = {task.id: index for index, task in enumerate(tasks, start=1)}
+    #
+    # The ID column carries the number the application shows beside the row,
+    # not a count of the rows in this sheet. The two are not the same: a
+    # sheet holds one row per piece of work and shows the phases as a column
+    # beside them, so the numbers here have gaps where the phases sit. That
+    # is the right way round - somebody reading the sheet against the plan is
+    # looking for the task the plan calls 4, and a sheet that called it 3
+    # would be quietly wrong. See Project.display_ids.
+    shown = project.display_ids()
+    numbers = {task.id: shown[task.id] for task in tasks if task.id in shown}
     rows = {task.id: ROW_FIRST_TASK + index
             for index, task in enumerate(tasks)}
 

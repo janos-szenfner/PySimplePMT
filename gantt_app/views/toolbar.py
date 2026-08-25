@@ -29,6 +29,7 @@ from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.gan_exporter import export_project_to_gan
 from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
+from gantt_app.shortcuts import bind_all as bind_shortcut
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.tooltip import attach as attach_tooltip
 from gantt_app import theme
@@ -2133,19 +2134,12 @@ class Toolbar(ctk.CTkFrame):
         self._bind_style_hotkeys()
         self.refresh_style_bar()
 
-    #: The formatting each hotkey toggles.
-    STYLE_HOTKEYS = {
-        '<Control-b>': 'bold',
-        '<Control-B>': 'bold',
-        '<Control-i>': 'italic',
-        '<Control-I>': 'italic',
-        '<Control-u>': 'underline',
-        '<Control-U>': 'underline',
-    }
+    #: The letter each formatting hotkey is on.
+    STYLE_HOTKEY_KEYS = {'b': 'bold', 'i': 'italic', 'u': 'underline'}
 
     def _bind_style_hotkeys(self):
         """
-        Ctrl+B, Ctrl+I and Ctrl+U, on the window rather than on a widget.
+        The formatting shortcuts, on the window rather than on a widget.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -2153,19 +2147,19 @@ class Toolbar(ctk.CTkFrame):
         window, which is the point of a hotkey - a reader who has just
         clicked a row should not have to click something else first.
 
-        Both cases of each letter are bound. Tk reports <Control-B> when
-        caps lock is on, and a shortcut that stops working with caps lock is
-        the kind of fault nobody reports and everybody notices.
+        The modifier is the platform's; see gantt_app.shortcuts. These were
+        written out as Control, which is not the key a Mac user reaches for
+        and not one macOS reports for Cmd+B - so on a Mac the shortcuts did
+        nothing at all while their captions promised otherwise.
         """
         try:
             window = self.winfo_toplevel()
         except tk.TclError:
             return
 
-        for sequence, name in self.STYLE_HOTKEYS.items():
-            window.bind(sequence,
-                        lambda _event, kind=name: self._hotkey_style(kind),
-                        add='+')
+        for key, name in self.STYLE_HOTKEY_KEYS.items():
+            bind_shortcut(window, key,
+                          lambda _event, kind=name: self._hotkey_style(kind))
 
     def _hotkey_style(self, kind: str):
         """Toggle one emphasis from the keyboard, if anything is selected."""
@@ -2600,11 +2594,28 @@ class IconToolbar(ctk.CTkFrame):
             if icon_name == self.STYLE_GROUP_AFTER:
                 self._create_style_bar()
 
-        self._create_separator()
-        self._create_search_box()
-        self._create_separator()
-        self._create_theme_control()
+        self._create_right_hand_controls()
+
+    def _create_right_hand_controls(self):
+        """
+        Help, the day/night control and the search box, against the right.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Packed in the order they appear from the right, because side="right"
+        stacks widgets right to left: the first one packed is the rightmost.
+        So help goes first and the search box last, and the row reads
+        search, day/night, help from the left.
+
+        They are held apart from the actions by a divider, and against the
+        right edge because none of them acts on the plan. The actions grow
+        from the left as icons are added; these three do not move.
+        """
         self._create_help_button()
+        self._create_theme_control()
+        self._create_separator(side="right")
+        self._create_search_box()
+        self._create_separator(side="right")
 
     def _create_style_bar(self):
         """
@@ -2703,7 +2714,7 @@ class IconToolbar(ctk.CTkFrame):
         from gantt_app.views.searchbox import TaskSearchBox
 
         self.search_box = TaskSearchBox(self, on_search=self._search_tasks)
-        self.search_box.pack(side="left", padx=(2, 2), pady=2)
+        self.search_box.pack(side="right", padx=(2, 2), pady=2)
 
     def _search_tasks(self, needle: str):
         """Hide every row that does not carry the text, and say how many."""
@@ -2784,7 +2795,7 @@ class IconToolbar(ctk.CTkFrame):
             text_color=WIN_MENU_TEXT, corner_radius=4, anchor="w",
             command=self._toggle_theme,
         )
-        self.theme_button.pack(side="left", padx=2, pady=2)
+        self.theme_button.pack(side="right", padx=2, pady=2)
 
         self.theme_sync_button = ctk.CTkButton(
             self, text="Sync with system", width=124,
@@ -2869,19 +2880,30 @@ class IconToolbar(ctk.CTkFrame):
         if controller.following_system:
             sync.pack_forget()
         elif not sync.winfo_manager():
-            sync.pack(side="left", padx=2, pady=2)
+            # Right, like the control it belongs to. Packed left it would
+            # jump to the far end of the actions the moment a manual
+            # appearance was chosen.
+            sync.pack(side="right", padx=2, pady=2)
 
-    def _create_separator(self):
+    def _create_separator(self, side: str = "left"):
         """
         A divider between two groups of icons.
 
         A hairline rather than a gap: the row runs from making things to
         moving them about, and the two read as one long row of buttons
         without a line to say where one ends.
+
+        PARAMETERS:
+        -----------
+        side : str
+            Which end it is packed against. The controls at the right of the
+            row are packed right to left, so their dividers have to be too -
+            a left-packed divider among them lands at the far end of the
+            actions instead, which is where the last one went.
         """
         divider = ctk.CTkFrame(self, width=1, height=self.SEPARATOR_HEIGHT,
                                fg_color=SEPARATOR_COLOR, corner_radius=0)
-        divider.pack(side="left", fill=None, padx=self.SEPARATOR_PAD, pady=6)
+        divider.pack(side=side, fill=None, padx=self.SEPARATOR_PAD, pady=6)
         divider.pack_propagate(False)
         self.separators.append(divider)
 

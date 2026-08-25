@@ -18,7 +18,10 @@ This is a complete implementation of a project management tool with:
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
+- **Sequential IDs that keep up**: The ID column numbers rows 1..N down the list with no gaps, and follows every insert, delete, drag and indent. The number is a *position*; dependencies are held against the task itself, so a link never breaks when the numbers move — it just shows a different one
 - **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen. The task name lives in the tree column, so the indentation is drawn against the name itself, and an **Outline Level** column gives the same depth as a number (1 at the top, 2 under it), the way Microsoft Project does
+- **Keyboard-first task editing**: Enter saves and closes the task editor, Escape cancels, and Enter still types a newline in the Details box (Cmd/Ctrl+Enter saves from in there). Save & Close is drawn as the primary button, Cancel as the secondary one
+- **Shortcuts follow the platform**: Command on macOS, Control everywhere else — and the hover text names whichever key the machine actually answers to
 - **The list keeps its place**: Formatting, indenting or outdenting a row leaves it selected and leaves folded branches folded, so a run of changes takes one click rather than one click each
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
@@ -756,6 +759,25 @@ to wherever the plan was last saved or loaded from, and only asks when there
 is nowhere to write yet. A new plan clears that path, so Save on a new plan
 asks rather than writing over the file the last one came from.
 
+### Keyboard Shortcuts (`shortcuts.py`)
+
+Every shortcut in the application was written out as `Control`. On a Mac that
+is not the key anybody reaches for, and it is not the key macOS reports when
+they press Cmd — so the shortcuts did nothing there while their captions
+promised otherwise.
+
+The sequence Tk binds and the text a tooltip shows come from the same place,
+because they have to agree: a caption naming a key that is not bound is worse
+than no caption, and the two drift the moment they are written separately.
+Both letter cases are bound, since Tk reports the upper case one under caps
+lock.
+
+One thing worth knowing when testing this: Tk stores a binding under a
+spelling of its own choosing — `<Command-b>` comes back as `<Mod1-Key-b>` —
+so a test cannot check the modifier by reading the binding back. Which
+modifier goes *in* is pinned exactly in `test_shortcuts.py`; the tests that
+bind them check only that something arrived for each key.
+
 ### Progress Tracking (`views/progressgroup.py`)
 
 **Reporting is a weekly job over forty rows, and almost none of it involves
@@ -816,6 +838,45 @@ The group sits on the icon bar between two hairlines, with `Ctrl+B` / `Ctrl+I`
 of each letter are bound: Tk reports `<Control-B>` when caps lock is on, and a
 shortcut that stops working with caps lock is the kind of fault nobody reports
 and everybody notices.
+
+### Two Identifiers (`Project.display_ids`)
+
+A task carries two numbers that used to be one.
+
+**`Task.id` is the identity.** Dependencies, parents, the clipboard, the
+tree's row ids and every entry in the undo history are keyed on it, and it
+never changes because a row moved. It is also **never shown**: it is a key,
+and a key in the column where every other row shows its position would be read
+as a position. The task editor, the dependency chooser and the search all use
+the display number instead.
+
+**The display id is where the row currently sits**, counted from one down the
+list — and it is *derived*, not stored. That is the whole design. A stored
+number would have to be rewritten on every reorder, insert, delete and indent,
+and each of those is already recorded in the undo history against `Task.id`;
+renumbering a stored field after the change would leave that history pointing
+at numbers naming nothing, so undo would restore an order of rows that had
+ceased to exist. Derived, there is nothing to renumber and nothing to undo,
+and the number is right the moment the row moves.
+
+The Predecessors column shows those same numbers rather than task names, so a
+link renumbers with the rows while still pointing at the task it always
+pointed at.
+
+**The exports carry the number, not the identity.** A GanttProject file, an
+MSPDI file and the spreadsheet all name a task by what the task list calls it
+— otherwise a file read back against the plan names rows by a key the reader
+was never shown. Both XML exporters take it from `Project.display_ids` through
+the shared plan walk, so neither can drift from the list.
+
+The spreadsheet's numbers have gaps where phases sit, because it holds one row
+per piece of work and shows phases as a column beside them. That is the right
+way round: a sheet read against the plan has to call a task what the plan
+calls it.
+
+Mermaid is the exception. Its ids are a syntax token that `after` references
+point at inside the same file, not a number anybody looks up, and they carry
+the lossless round trip — so they are left alone.
 
 ### How a Row Is Painted (`views/task_list.py`)
 
@@ -1791,9 +1852,13 @@ Unit tests cover:
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Row Formatting**: What a default style serialises to, that a summary can be un-bolded on purpose and comes back bold when cleared, that an ordinary edit does not strip a row's formatting or its calendar, and that rows formatted alike share one tag
+- ✅ **Keyboard Shortcuts**: The platform branch, both letter cases, that a named key is bound once, and that the caption names the key that is actually bound
+- ✅ **Task Editor Exits**: That Enter saves and claims the key, that it leaves a multi-line box alone under either of the two widgets Tk might report as focused, that Escape discards, and that the primary and secondary buttons look different
 - ✅ **Progress Tracking**: The five thresholds over a whole selection, that a phase marks the work under it, that past work goes to 100% and future work stays at 0%, that a weekend and a holiday both count correctly, that a milestone is done or not done, and that a whole press is one undo step
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
 - ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
+- ✅ **Exported IDs**: That the GanttProject and MSPDI files number tasks the way the list does, that the shared plan walk agrees with `display_ids` rather than counting for itself, that the spreadsheet's ID column holds numbers the plan shows, and that no identity reaches either file
+- ✅ **Display IDs**: The specification's table row by row — inserting between pushes the rest down, a drag swaps two numbers, a delete leaves no gap, an indent renumbers what moved past it — and, on the other side, that identities, dependencies and parents are all untouched while it happens
 - ✅ **Outline Level**: Counting from one at the top, following an indent and an outdent, an unknown row, a missing parent, and a parent cycle that must not hang the redraw
 - ✅ **Visual Hierarchy**: That a row with children is bold whatever its Type says, that an empty Phase still reads as one, and that the greying of a cut row outranks the ink it was given
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it, which buttons the row holds, where the dividers fall, and that nothing on it is live without a plan open

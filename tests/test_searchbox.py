@@ -90,8 +90,24 @@ class TestEveryFieldCanBeSearched(SearchTestCase):
     def test_by_name(self):
         self.assertEqual(self.found("mockups"), ["UI Mockups"])
 
-    def test_by_id(self):
-        self.assertIn("Server migration", self.found("T2"))
+    def test_by_the_number_shown_beside_it(self):
+        """
+        The number in the ID column, not Task.id.
+
+        The identity is a key the reader never sees - see
+        Project.display_ids - so it is deliberately not searchable: matching
+        on it would find rows by a number that is nowhere on screen, and the
+        number that *is* on screen would find the wrong row.
+        """
+        shown = self.project.display_ids()["T2"]
+
+        self.assertIn("Server migration", self.found(str(shown)))
+        self.assertIn("Server migration",
+                      self.found(str(shown).zfill(self.project.ID_WIDTH)))
+
+    def test_the_identity_is_not_searchable(self):
+        """It is a key, and one nobody can see to type."""
+        self.assertEqual(self.found("T2"), [])
 
     def test_by_type(self):
         self.assertEqual(self.found("subtask"), ["Wireframe"])
@@ -119,14 +135,16 @@ class TestEveryFieldCanBeSearched(SearchTestCase):
 
     def test_by_what_it_depends_on(self):
         """
-        By the id the link holds, which is what the task stores.
+        By the number the predecessor is shown as.
 
         Not by the predecessor's name: including that meant searching a task
         by name also returned everything depending on it, so the commonest
         search of all came back with rows that merely mentioned the thing
         being looked for.
         """
-        self.assertIn("Server migration", self.found("T1"))
+        predecessor = self.project.display_ids()["T1"]
+
+        self.assertIn("Server migration", self.found(str(predecessor)))
         self.assertEqual(self.found("UI Mockups"), ["UI Mockups"])
 
     def test_by_the_kind_of_link(self):

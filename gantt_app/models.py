@@ -1818,6 +1818,76 @@ class Project:
     #: cost a warning rather than a loop with no end.
     MAX_OUTLINE_DEPTH = 100
 
+    def display_order(self) -> List[Task]:
+        """
+        Every task in the order the list shows them.
+
+        RETURNS:
+        --------
+        List[Task]
+            Parents before their children, siblings in plan order, and any
+            task orphaned by a missing parent at the end rather than lost.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The same walk the reordering uses, so what the list draws and what
+        the numbering counts cannot disagree - see _flatten, which is where
+        the orphan rule lives.
+        """
+        return self._flatten(self._children_by_parent())
+
+    def display_ids(self) -> Dict[str, int]:
+        """
+        The number each task shows, counted down the display order.
+
+        RETURNS:
+        --------
+        Dict[str, int]
+            Task ID to the number beside it: 1 for the first row, N for the
+            last, contiguous throughout.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Worked out rather than stored, and that is the whole design.
+
+        A stored number would have to be rewritten on every reorder, every
+        insert, every delete and every indent - and each of those is already
+        recorded in the undo history against Task.id. Renumbering a stored
+        field after the change would leave the history pointing at numbers
+        that no longer name anything, so undo would restore an order of rows
+        that had ceased to exist.
+
+        Derived, there is nothing to renumber and nothing to undo. The number
+        is a fact about where a row currently sits, so it is right the moment
+        the row moves, and it cannot drift out of step with the list.
+
+        Task.id stays what it always was: the identity. Dependencies, parents,
+        the clipboard, the tree's own row ids and every undo snapshot are
+        keyed on it, and none of them is touched by a row moving. That is the
+        static key the specification asks for; this is the number beside it.
+        """
+        return {task.id: number
+                for number, task in enumerate(self.display_order(), start=1)}
+
+    def display_id(self, task_id: str) -> str:
+        """
+        The number one task shows, written the way the list writes it.
+
+        RETURNS:
+        --------
+        str
+            Zero-padded to ID_WIDTH - '001', '002' - or an empty string for
+            a task that is not in the plan.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Convenient for one task and wasteful for a list of them: it walks the
+        whole plan to answer. Anything drawing more than a row or two asks
+        display_ids once instead.
+        """
+        number = self.display_ids().get(task_id)
+        return '' if number is None else str(number).zfill(self.ID_WIDTH)
+
     def progress_on_track(self, task: Task, status_date: datetime) -> int:
         """
         The completion a task would have if it were exactly on schedule.

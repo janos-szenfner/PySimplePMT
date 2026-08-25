@@ -231,8 +231,14 @@ class DependencyEditor(ctk.CTkFrame):
         return sorted(candidates, key=lambda t: t.start_date)
 
     def _label_for(self, task: Task) -> str:
-        """Format a task for the chooser."""
-        return f"{task.id} - {task.name}"
+        """
+        Format a task for the chooser.
+
+        The number the list shows it as, not its identity: the reader is
+        picking a row they can see, and the two stopped being the same thing
+        when the number became a position - see Project.display_ids.
+        """
+        return f"{self.project.display_id(task.id)} - {task.name}"
 
     def refresh(self, notify: bool = True):
         """

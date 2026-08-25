@@ -133,10 +133,17 @@ class TestTheGroupIsSetApart(StyleBarTestCase):
             self.assertTrue(attached.text.strip(), name)
 
     def test_the_hotkeys_are_named_in_the_captions(self):
-        """Somewhere a reader will actually look for them."""
-        for name, key in (('bold', 'Ctrl+B'), ('italic', 'Ctrl+I'),
-                          ('underline', 'Ctrl+U')):
-            self.assertIn(key, self.bar.CAPTIONS[name])
+        """
+        Somewhere a reader will actually look for them.
+
+        Named with this platform's modifier: a hover promising Ctrl+B on a
+        Mac names a key that does nothing there.
+        """
+        from gantt_app.shortcuts import accelerator
+
+        for name, letter in (('bold', 'B'), ('italic', 'I'),
+                             ('underline', 'U')):
+            self.assertIn(accelerator(letter), self.bar.CAPTIONS[name])
 
     def test_the_group_holds_every_control_the_spec_names(self):
         """Three toggles, two colours, the presets and the way back."""
@@ -324,20 +331,24 @@ class TestItGoesThroughTheUndoHistory(StyleBarTestCase):
 
 
 class TestTheHotkeys(StyleBarTestCase):
-    """Ctrl+B, Ctrl+I and Ctrl+U, from wherever the focus is."""
+    """The formatting shortcuts, from wherever the focus is."""
 
     def test_all_three_are_bound_on_the_window(self):
         """
         Bound to a widget, they would stop working once a row is clicked.
 
-        Tk stores a binding under its own spelling - <Control-b> comes back
-        as <Control-Key-b> - so the normalised form is what to look for.
+        Matched on the key rather than on the modifier, because Tk stores a
+        binding under its own spelling and that spelling is not the one it
+        was given: <Command-b> comes back as <Mod1-Key-b> on a Mac. Which
+        modifier goes into the sequence is pinned exactly in
+        test_shortcuts.py; what matters here is that all three arrived.
         """
         bound = self.root.bind()
 
-        for sequence in ('<Control-Key-b>', '<Control-Key-i>',
-                         '<Control-Key-u>'):
-            self.assertIn(sequence, bound)
+        for letter in ('b', 'i', 'u'):
+            self.assertTrue(
+                any(sequence.endswith(f'-Key-{letter}>') for sequence in bound),
+                f"nothing bound for {letter}")
 
     def test_both_cases_are_bound(self):
         """
@@ -348,9 +359,10 @@ class TestTheHotkeys(StyleBarTestCase):
         """
         bound = self.root.bind()
 
-        for sequence in ('<Control-Key-B>', '<Control-Key-I>',
-                         '<Control-Key-U>'):
-            self.assertIn(sequence, bound)
+        for letter in ('B', 'I', 'U'):
+            self.assertTrue(
+                any(sequence.endswith(f'-Key-{letter}>') for sequence in bound),
+                f"nothing bound for {letter}")
 
     def test_the_hotkey_toggles_the_selected_rows(self):
         """The same path the button takes."""

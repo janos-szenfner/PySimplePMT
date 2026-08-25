@@ -31,8 +31,10 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from gantt_app import theme
+from gantt_app.shortcuts import accelerator
 from gantt_app.taskstyle import FILL_COLOURS, PRESETS, TEXT_COLOURS, ResolvedStyle
 from gantt_app.utils.log import get_logger
+from gantt_app.views.modal import take_grab
 from gantt_app.views.tooltip import attach as attach_tooltip
 
 logger = get_logger(__name__)
@@ -49,10 +51,13 @@ INDICATOR_HEIGHT = 3
 #: What a colour bar shows when the row carries no colour of its own.
 INDICATOR_DEFAULT = ('#9aa0a6', '#71767c')
 
+#: Where the full picker starts when it is opened from a swatch grid.
+DEFAULT_CUSTOM_COLOUR = '#1f6aa5'
+
 
 class SwatchPopup(ctk.CTkToplevel):
     """
-    A small grid of colours, opened under the button that asked for it.
+    A small grid of colours, opened from the button that asked for it.
 
     PARAMETERS:
     -----------
@@ -70,26 +75,45 @@ class SwatchPopup(ctk.CTkToplevel):
 
     DEVELOPMENT NOTES:
     ------------------
-    A Toplevel rather than a frame in the toolbar, because a palette has to
-    hang past the bottom edge of a 40-pixel-high row.
+    This is shaped like ColorPickerPopup, which is the colour window this
+    application already had and which works. The first version was not, and
+    was broken in three separate ways:
 
-    It closes on any press outside itself. Without that, opening a second
-    palette while the first was up left two on screen and the toolbar behind
-    both of them unreachable.
+      * It was an overrideredirect, always-on-top window. On macOS an
+        update() with one of those open does not return, and mainloop is
+        update() in a loop - so opening the palette wedged the window.
+      * It watched for a click elsewhere by binding <Button-1> on
+        winfo_toplevel(), which for a Toplevel is itself. The binding went
+        on the palette rather than on the window behind it, so clicking
+        outside never closed it.
+      * Closing unbound that <Button-1> from the *main* window instead.
+        Tkinter's unbind(sequence, funcid) does not remove one binding: it
+        clears every binding for that sequence on the widget it is called
+        on. So using the palette once silently removed every <Button-1>
+        handler the main window had, taking the menu dismissal with it.
+
+    None of that is worth rebuilding carefully. A window with a title bar
+    that takes the input grab is what the rest of the application uses, and
+    take_grab hands the grab back to whatever held it when this closes.
     """
 
     def __init__(self, master, colours, on_pick: Callable,
                  allow_custom: bool = True, **kwargs):
         super().__init__(master, **kwargs)
         self.on_pick = on_pick
-        self._dismiss_binding = None
 
-        self.wm_overrideredirect(True)
-        self.attributes('-topmost', True)
-        self.configure(fg_color=theme.DROPDOWN_BG)
+        self.title("Choose Colour")
+        self.resizable(False, False)
+        self.transient(master.winfo_toplevel())
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.bind('<Escape>', lambda _event: self.close())
+
+        # The toolbar's own menus can hold a grab, and a grab is exclusive:
+        # without taking it this window would receive no clicks at all
+        take_grab(self)
 
         body = ctk.CTkFrame(self, fg_color='transparent')
-        body.pack(padx=6, pady=6)
+        body.pack(padx=10, pady=(10, 4))
 
         for index, (name, value) in enumerate(colours):
             self._swatch(body, name, value,
@@ -97,14 +121,18 @@ class SwatchPopup(ctk.CTkToplevel):
 
         if allow_custom:
             ctk.CTkButton(
-                self, text="Custom colour...", height=26,
-                fg_color='transparent', text_color=theme.TEXT,
-                hover_color=theme.MENU_HOVER, anchor='w',
+                self, text="Custom colour...", height=28,
                 command=self._open_picker,
-            ).pack(fill=tk.X, padx=6, pady=(0, 6))
+            ).pack(fill=tk.X, padx=10, pady=(4, 4))
 
-        self._place_under(master)
-        self.after(10, self._watch_for_clicks_outside)
+        ctk.CTkButton(
+            self, text="Cancel", height=28, fg_color='transparent',
+            border_width=1, border_color=theme.SEPARATOR,
+            text_color=theme.TEXT, hover_color=theme.MENU_HOVER,
+            command=self.close,
+        ).pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        self._place_near(master)
 
     def _swatch(self, parent, name: str, value: Optional[str],
                 row: int, column: int):
@@ -127,51 +155,49 @@ class SwatchPopup(ctk.CTkToplevel):
         button.tooltip_widget = attach_tooltip(button, name)
 
     def _open_picker(self):
-        """Hand over to the full colour picker."""
+        """
+        Hand over to the full colour picker.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The parent is read before this window closes, because self.master is
+        gone once it has. The picker is opened after the close so the grab
+        this window holds is released first - opening it underneath a live
+        grab is precisely the fault take_grab exists to describe, and the
+        picker would have come up unable to receive a click.
+        """
         from gantt_app.views.colorpicker import ColorPickerPopup
 
         parent = self.master
-        self._close()
+        self.close()
         try:
-            ColorPickerPopup(parent, '#1f6aa5', self.on_pick)
+            ColorPickerPopup(parent, DEFAULT_CUSTOM_COLOUR, self.on_pick)
         except Exception:
             logger.exception("Could not open the colour picker")
 
     def _picked(self, colour: Optional[str]):
         """Report the choice and go away."""
-        self._close()
+        self.close()
         try:
             self.on_pick(colour)
         except Exception:
             logger.exception("Could not apply the colour %r", colour)
 
-    def _place_under(self, widget):
-        """Sit under the button that opened this."""
+    def _place_near(self, widget):
+        """Sit under the button that opened this, and on screen."""
         try:
             self.update_idletasks()
             x = widget.winfo_rootx()
-            y = widget.winfo_rooty() + widget.winfo_height() + 2
-            self.wm_geometry(f"+{x}+{y}")
+            y = widget.winfo_rooty() + widget.winfo_height() + 4
+            # Not off the bottom or the right of the display
+            x = min(x, max(0, self.winfo_screenwidth() - self.winfo_width()))
+            y = min(y, max(0, self.winfo_screenheight() - self.winfo_height()))
+            self.geometry(f"+{max(0, x)}+{max(0, y)}")
         except tk.TclError:
             pass
 
-    def _watch_for_clicks_outside(self):
-        """Close as soon as something else is pressed."""
-        try:
-            self._dismiss_binding = self.winfo_toplevel().bind(
-                "<Button-1>", lambda _event: self._close(), add="+")
-        except tk.TclError:
-            pass
-
-    def _close(self, *_args):
-        """Take the palette off screen once."""
-        try:
-            if self._dismiss_binding is not None:
-                self.master.winfo_toplevel().unbind(
-                    "<Button-1>", self._dismiss_binding)
-                self._dismiss_binding = None
-        except tk.TclError:
-            pass
+    def close(self, *_args):
+        """Take the palette off screen once, whatever state it is in."""
         try:
             self.destroy()
         except tk.TclError:
@@ -206,9 +232,12 @@ class StyleBar(ctk.CTkFrame):
 
     #: What each control is called, and what it says on hover.
     CAPTIONS = {
-        'bold': "Bold  (Ctrl+B)",
-        'italic': "Italic  (Ctrl+I)",
-        'underline': "Underline  (Ctrl+U)",
+        # The modifier is the platform's, and the caption says whichever it
+        # is: a hover promising Ctrl+B on a Mac names a key that does
+        # nothing. See gantt_app.shortcuts.
+        'bold': f"Bold  ({accelerator('B')})",
+        'italic': f"Italic  ({accelerator('I')})",
+        'underline': f"Underline  ({accelerator('U')})",
         'text_color': "Text colour",
         'fill_color': "Background fill",
         'style_preset': "Style presets",
