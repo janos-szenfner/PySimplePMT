@@ -18,6 +18,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
+from gantt_app.taskstyle import TaskStyle
 from gantt_app.calendarregistry import CalendarRegistry, default_registry
 from gantt_app.workdaycalendar import (
     WorkingCalendar, as_date, default_calendar,
@@ -454,6 +455,11 @@ class Task:
     #: since been deleted falls back to the plan's own too, so removing a
     #: calendar never leaves a task without one.
     calendar_id: Optional[str] = None
+    #: How this row is painted in the task list: its ink, its fill and its
+    #: emphasis. Default for almost every row in almost every plan - see
+    #: gantt_app.taskstyle, which is also where the defaults a summary row
+    #: gets without asking are folded in.
+    style: TaskStyle = field(default_factory=TaskStyle)
     
     def __post_init__(self):
         """
@@ -506,6 +512,10 @@ class Task:
         """
         if name == 'dependencies' and value is not None:
             value = value if isinstance(value, DependencyList) else DependencyList(value)
+        # The same courtesy for the row's formatting: the importers, the
+        # undo history and every saved file hand over a plain dictionary
+        elif name == 'style':
+            value = TaskStyle.from_any(value)
         super().__setattr__(name, value)
 
     @property
@@ -932,7 +942,10 @@ class Task:
             'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
             'scheduling_options': self.scheduling_options,
             'details': self.details,
-            'calendar_id': self.calendar_id
+            'calendar_id': self.calendar_id,
+            # None for a row nobody has formatted, which is nearly all of
+            # them; see TaskStyle.to_dict
+            'style': self.style.to_dict(),
         }
     
     @classmethod
@@ -1007,7 +1020,10 @@ class Task:
             earliest_begin=earliest_begin,
             scheduling_options=scheduling_options,
             details=data.get('details', ''),
-            calendar_id=data.get('calendar_id') or None
+            calendar_id=data.get('calendar_id') or None,
+            # Absent in every plan saved before formatting existed, which
+            # opens with plain rows rather than failing
+            style=TaskStyle.from_any(data.get('style')),
         )
 
 

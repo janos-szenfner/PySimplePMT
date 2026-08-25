@@ -29,6 +29,7 @@ from gantt_app.utils.gan_exporter import export_project_to_gan
 from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.views.modal import grab_when_visible
+from gantt_app.views.tooltip import attach as attach_tooltip
 from gantt_app import theme
 from gantt_app.utils.log import get_logger
 
@@ -739,10 +740,16 @@ class Toolbar(ctk.CTkFrame):
         # Copy, Cut, Paste, Delete - raised AttributeError instead of
         # finding nothing selected.
         self.task_list = None
-        
+
+        #: Where the plan was last saved or loaded from, so Save can write
+        #: back to it rather than asking every time - which is what it used
+        #: to do, making it a second Save As with a different name on it.
+        #: None until a file has been chosen; see save_project.
+        self.current_file_path = None
+
         # Create UI
         self._create_ui()
-    
+
     def _create_ui(self):
         """
         Create the toolbar user interface.
@@ -825,6 +832,10 @@ class Toolbar(ctk.CTkFrame):
         if missing:
             logger.error("Icon actions with no handler on the toolbar: %s",
                          ', '.join(missing))
+
+        # The formatting bar is not in ICON_ACTIONS - it is a group of
+        # controls rather than one icon - so its handler is connected here
+        self.icon_toolbar.apply_task_style = self.apply_task_style
     
     def _delete_selected_tasks(self):
         """Delete selected tasks from the task list."""
@@ -913,6 +924,7 @@ class Toolbar(ctk.CTkFrame):
                     {"text": "New Project...", "command": self.new_project},
                     {"text": "Load Project...", "command": self.load_project},
                     {"text": "Save Project...", "command": self.save_project},
+                    {"text": "Save Project As...", "command": self.save_project_as},
                 ],
             },
             {
@@ -1011,6 +1023,8 @@ class Toolbar(ctk.CTkFrame):
             text_color="white"
         )
         self.log_button.pack(side=tk.LEFT, padx=5, pady=5)
+        self.log_button.tooltip_widget = attach_tooltip(
+            self.log_button, "Log - what the application has been doing")
 
     def show_log(self):
         """Open the application log window."""
@@ -1366,23 +1380,55 @@ class Toolbar(ctk.CTkFrame):
         show_critical_path(self.master, self.project)
 
     def save_project(self):
-        """Save the current project to a JSON file."""
-        # Ask for file path
+        """
+        Save the plan back to the file it came from.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This used to open a file chooser every time, which made it a second
+        Save As under a different name: saving twice meant picking the same
+        file twice and confirming the overwrite. It writes back to
+        current_file_path now and only asks when there is nowhere to write -
+        a plan that has never been saved, which is the one case where the
+        question is the right one.
+        """
+        if not self.current_file_path:
+            self.save_project_as()
+            return
+
+        self._write_project(self.current_file_path)
+
+    def save_project_as(self):
+        """
+        Save the plan to a file chosen now, and keep writing there.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The chosen path becomes current_file_path, so this is also how a
+        plan that has never been saved acquires one - see save_project,
+        which hands over to this rather than asking the question twice.
+        """
         file_path = filedialog.asksaveasfilename(
             defaultextension=".json",
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
-            title="Save Project"
+            title="Save Project As",
+            initialfile=f"{self.project.name.replace(' ', '_')}.json",
         )
-        
+
         if not file_path:
             return
-        
-        # Save project
+
+        self._write_project(file_path)
+
+    def _write_project(self, file_path: str):
+        """Write the plan to one path, and remember it if that worked."""
         logger.info("Saving project %r to %s", self.project.name, file_path)
         if save_project(self.project, file_path):
+            self.current_file_path = file_path
             messagebox.showinfo("Success", "Project saved successfully!")
         else:
             messagebox.showerror("Error", "Failed to save project")
+
     
     def load_project(self):
         """Load a project from a JSON file."""
@@ -1399,6 +1445,8 @@ class Toolbar(ctk.CTkFrame):
         logger.info("Loading project from %s", file_path)
         project = load_project(file_path)
         if project:
+            # Save writes back here from now on, rather than asking
+            self.current_file_path = file_path
             # Replace current project
             self.project.name = project.name
             project.renumber_task_ids()
@@ -1425,6 +1473,10 @@ class Toolbar(ctk.CTkFrame):
         )
         
         if new_name:
+            # A new plan has never been saved, so Save has to ask where -
+            # writing it over whatever file the last plan came from is the
+            # one thing it must not do
+            self.current_file_path = None
             # Clear current project
             self.project.name = new_name
             self.project.tasks = []
@@ -1439,6 +1491,67 @@ class Toolbar(ctk.CTkFrame):
             if self.on_project_changed:
                 self.on_project_changed()
     
+    def _selected_task_ids(self):
+        """
+        What is selected in the task list, or an empty list.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The list is set after this toolbar is built - see set_task_list - so
+        every action asking what is selected has to cope with there being no
+        list yet rather than assuming one.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'get_selected_task_ids'):
+            return []
+        return list(task_list.get_selected_task_ids() or [])
+
+    def edit_selected_task(self):
+        """
+        Open the editor for the selected row.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The pencil used to open the project title box, which is a different
+        thing entirely: a plan has one title and a great many tasks, and the
+        icon sitting among the actions that work on a row read as the one
+        that edits a row. Renaming the plan is on the Actions menu, where
+        the other project-wide settings are.
+
+        One row only. The editor edits a single task, and picking the first
+        of several silently would edit something the user did not point at.
+        """
+        selected = self._selected_task_ids()
+        if not selected:
+            messagebox.showinfo("Edit Task",
+                                "Select the task you want to edit first.")
+            return
+        if len(selected) > 1:
+            messagebox.showinfo(
+                "Edit Task",
+                "Several tasks are selected. Choose the one to edit.")
+            return
+
+        self.task_list.edit_task(selected[0])
+
+    def indent_selected(self):
+        """Make the selected rows sub-tasks of the row above them."""
+        selected = self._selected_task_ids()
+        if not selected:
+            messagebox.showinfo("Indent",
+                                "Select the task or tasks to indent first.")
+            return
+        self.task_list.indent_task(selected)
+
+    def outdent_selected(self):
+        """Move the selected rows out to sit beside their parent."""
+        selected = self._selected_task_ids()
+        if not selected:
+            messagebox.showinfo("Outdent",
+                                "Select the task or tasks to outdent first.")
+            return
+        self.task_list.outdent_task(selected)
+
     def import_gan(self):
         """Import a GanttProject (.gan) file."""
         # Ask for file path
@@ -1992,10 +2105,185 @@ class Toolbar(ctk.CTkFrame):
                 self.on_project_changed()
         
     def set_task_list(self, task_list):
-        """Set the task list reference for copy/paste operations."""
+        """
+        Set the task list reference for copy/paste operations.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Also where the formatting bar starts following the selection. The
+        binding is added here rather than at construction because the list
+        does not exist yet then, and it is added to the tree's own selection
+        event with add='+' so the list's existing handlers are untouched.
+        """
         self.task_list = task_list
         if hasattr(self, 'icon_toolbar'):
             self.icon_toolbar.set_task_list(task_list)
+
+        tree = getattr(task_list, 'tree', None)
+        if tree is not None:
+            try:
+                tree.bind('<<TreeviewSelect>>',
+                          lambda _event: self.refresh_style_bar(), add='+')
+            except tk.TclError:
+                logger.debug("Could not follow the task list selection")
+        self._bind_style_hotkeys()
+        self.refresh_style_bar()
+
+    #: The formatting each hotkey toggles.
+    STYLE_HOTKEYS = {
+        '<Control-b>': 'bold',
+        '<Control-B>': 'bold',
+        '<Control-i>': 'italic',
+        '<Control-I>': 'italic',
+        '<Control-u>': 'underline',
+        '<Control-U>': 'underline',
+    }
+
+    def _bind_style_hotkeys(self):
+        """
+        Ctrl+B, Ctrl+I and Ctrl+U, on the window rather than on a widget.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Bound to the toplevel so they work wherever the focus is in the
+        window, which is the point of a hotkey - a reader who has just
+        clicked a row should not have to click something else first.
+
+        Both cases of each letter are bound. Tk reports <Control-B> when
+        caps lock is on, and a shortcut that stops working with caps lock is
+        the kind of fault nobody reports and everybody notices.
+        """
+        try:
+            window = self.winfo_toplevel()
+        except tk.TclError:
+            return
+
+        for sequence, name in self.STYLE_HOTKEYS.items():
+            window.bind(sequence,
+                        lambda _event, kind=name: self._hotkey_style(kind),
+                        add='+')
+
+    def _hotkey_style(self, kind: str):
+        """Toggle one emphasis from the keyboard, if anything is selected."""
+        bar = getattr(getattr(self, 'icon_toolbar', None), 'style_bar', None)
+        if bar is None or not bar.enabled:
+            return 'break'
+        self.apply_task_style(kind, not getattr(bar, f"_{kind}_on", False))
+        return 'break'
+
+    def _selected_style(self):
+        """
+        What the selected rows look like now, as one answer.
+
+        RETURNS:
+        --------
+        Optional[ResolvedStyle]
+            None when nothing is selected. Where the selection disagrees,
+            the common ground: an emphasis is shown as on only when every
+            selected row has it, and a colour only when they all carry the
+            same one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Showing the first row's formatting for a mixed selection would be a
+        lie about the other rows, and pressing B would then appear to turn
+        bold off for rows that never had it. Common ground makes the press
+        mean "make them all bold", which is what a reader intends.
+        """
+        from gantt_app.taskstyle import ResolvedStyle, resolve
+
+        selected = self._selected_task_ids()
+        if not selected:
+            return None
+
+        resolved = []
+        for task_id in selected:
+            task = self.project.get_task_by_id(task_id)
+            if task is None:
+                continue
+            summary = (self.task_list.is_summary_row(task)
+                       if hasattr(self.task_list, 'is_summary_row') else False)
+            resolved.append(resolve(task.style, summary))
+
+        if not resolved:
+            return None
+
+        def shared(name):
+            """One value where every row agrees, otherwise nothing."""
+            values = {getattr(item, name) for item in resolved}
+            return values.pop() if len(values) == 1 else None
+
+        return ResolvedStyle(
+            text_color=shared('text_color'),
+            fill_color=shared('fill_color'),
+            bold=all(item.bold for item in resolved),
+            italic=all(item.italic for item in resolved),
+            underline=all(item.underline for item in resolved),
+        )
+
+    def refresh_style_bar(self):
+        """Show the selection's formatting on the bar, or grey it out."""
+        bar = getattr(getattr(self, 'icon_toolbar', None), 'style_bar', None)
+        if bar is None:
+            return
+        try:
+            resolved = self._selected_style()
+            bar.set_state(resolved is not None, resolved)
+        except Exception:
+            logger.exception("Could not refresh the formatting bar")
+
+    def apply_task_style(self, kind: str, value):
+        """
+        Apply one formatting change to every selected row.
+
+        PARAMETERS:
+        -----------
+        kind : str
+            'bold', 'italic', 'underline', 'text_color', 'fill_color',
+            'preset' or 'reset'.
+        value : object
+            What to set it to. A TaskStyle for 'preset', ignored for
+            'reset'.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Through the tracker, so the whole change is one entry in the undo
+        history rather than one per row: marking forty rows and pressing
+        undo once should put all forty back.
+        """
+        from gantt_app.taskstyle import TaskStyle
+
+        selected = self._selected_task_ids()
+        if not selected:
+            return
+
+        # The tracker belongs to the task list, which is what owns the
+        # undo history for changes to tasks
+        tracker = getattr(self.task_list, 'project_tracker', None)
+        for task_id in selected:
+            task = self.project.get_task_by_id(task_id)
+            if task is None:
+                continue
+
+            if kind == 'reset':
+                style = TaskStyle()
+            elif kind == 'preset':
+                style = TaskStyle.from_any(value)
+            else:
+                style = task.style.with_changes(**{kind: value})
+
+            if style == task.style:
+                continue
+            if tracker is not None:
+                tracker.update_task(task_id, style=style)
+            else:
+                task.style = style
+
+        logger.info("Applied %s formatting to %d row(s)", kind, len(selected))
+        if self.on_project_changed:
+            self.on_project_changed()
+        self.refresh_style_bar()
+        self.update_undo_redo_buttons()
 
 
 class IconToolbar(ctk.CTkFrame):
@@ -2084,18 +2372,15 @@ class IconToolbar(ctk.CTkFrame):
     HELP_RIGHT_PAD = LOG_CENTRE_FROM_RIGHT - BUTTON_SIZE // 2
 
     ICON_ACTIONS = (
-        ('open', 'Open Project', 'load_project'),
-        ('new_project', 'New Project', 'new_project'),
         ('save', 'Save Project', 'save_project'),
+        ('save_as', 'Save Project As...', 'save_project_as'),
         (SEPARATOR, '', ''),
-        ('edit', 'Edit', 'edit_project_info'),
-        # The five work item types, outermost first, in the order the plan
-        # nests them - the same order the Create menus offer
-        ('phase', 'Create Phase', 'add_phase'),
-        ('deliverable', 'Create Deliverable', 'add_deliverable'),
-        ('task', 'Create Task', 'add_task'),
-        ('subtask', 'Create Subtask', 'add_subtask'),
-        ('milestone', 'Create Milestone', 'add_milestone'),
+        # Editing the selected row, then moving it between levels. The three
+        # act on what is selected in the task list, which is why they sit
+        # together and apart from the file actions.
+        ('edit', 'Edit Task...', 'edit_selected_task'),
+        ('indent', 'Indent Task', 'indent_selected'),
+        ('outdent', 'Outdent Task', 'outdent_selected'),
         (SEPARATOR, '', ''),
         # Set apart on both sides: it neither creates anything nor moves
         # anything about, so it belongs to neither group it sits between
@@ -2109,6 +2394,12 @@ class IconToolbar(ctk.CTkFrame):
         ('redo', 'Redo', 'redo'),
     )
 
+    #: The icon the formatting group is placed after.
+    #:
+    #: Held as a name rather than an index so the row can be reordered
+    #: without silently putting the group somewhere else.
+    STYLE_GROUP_AFTER = 'outdent'
+
     def _create_ui(self):
         """Build the row of icon buttons, divided into its groups."""
         for icon_name, tooltip, action in self.ICON_ACTIONS:
@@ -2119,12 +2410,56 @@ class IconToolbar(ctk.CTkFrame):
                 icon_name, tooltip,
                 lambda name=action: self._perform(name),
             )
+            if icon_name == self.STYLE_GROUP_AFTER:
+                self._create_style_bar()
 
         self._create_separator()
         self._create_search_box()
         self._create_separator()
         self._create_theme_control()
         self._create_help_button()
+
+    def _create_style_bar(self):
+        """
+        The formatting group, held apart from the row on both sides.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A divider either side because this is a different kind of control
+        from everything around it: the rest of the row does something to the
+        plan, and these change how the plan is drawn. Wedged against the
+        buttons that indent and outdent, the B would read as another action
+        on the task rather than as the start of a group.
+
+        The drawings come from this row's own cache, so the highlighter and
+        the tag are painted once per appearance like every other icon rather
+        than twice.
+        """
+        from gantt_app.views.stylebar import StyleBar
+
+        self._create_separator()
+        self.style_bar = StyleBar(
+            self, on_apply=self._style_applied,
+            button_size=self.BUTTON_SIZE, icon_image=self._icon_image)
+        self.style_bar.pack(side="left", padx=(1, 1), pady=0)
+        self._create_separator()
+
+    def _style_applied(self, kind: str, value):
+        """
+        Hand a formatting change to whoever knows what is selected.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Connected by Toolbar the same way every other action here is, and
+        for the same reason - this row has no task list and no undo history
+        of its own. A row built without a Toolbar says so rather than
+        half-applying anything; see _perform.
+        """
+        handler = getattr(self, 'apply_task_style', None)
+        if not callable(handler):
+            logger.warning("The formatting bar has no handler connected")
+            return
+        handler(kind, value)
 
     def _create_search_box(self):
         """
@@ -2183,6 +2518,8 @@ class IconToolbar(ctk.CTkFrame):
         else:
             self.help_button.configure(text="?")
         self.help_button.tooltip = "Help"
+        self.help_button.tooltip_widget = attach_tooltip(
+            self.help_button, "Help - open the user guide")
         # Packed to the right rather than after the day/night control, so it
         # sits under the Log button on the menu row above. Both rows fill the
         # toolbar's width, so lining the two up is a matter of matching what
@@ -2232,6 +2569,9 @@ class IconToolbar(ctk.CTkFrame):
             corner_radius=4, command=self._sync_theme,
         )
         # Packed by _refresh_theme_control when a manual choice is in force.
+        self.theme_sync_button.tooltip_widget = attach_tooltip(
+            self.theme_sync_button,
+            "Follow the desktop's own light or dark setting again")
 
         controller = self._theme_controller()
         if controller is not None:
@@ -2295,6 +2635,9 @@ class IconToolbar(ctk.CTkFrame):
             f"{controller.button_text()} mode"
             + ("" if controller.following_system else " (manual)")
         )
+        # Rebuilt rather than reworded, because the caption changes every
+        # time the mode does and a Tooltip holds the text it was given
+        button.tooltip_widget = attach_tooltip(button, button.tooltip)
 
         sync = getattr(self, 'theme_sync_button', None)
         if sync is None:
@@ -2422,6 +2765,9 @@ class IconToolbar(ctk.CTkFrame):
         # takes the picture off the button with it
         btn.icon_image = image
         btn.tooltip = tooltip
+        # And the caption said out loud. It was stored on the button and
+        # never shown, which made the row readable only to whoever drew it
+        btn.tooltip_widget = attach_tooltip(btn, tooltip)
 
         # Store button reference
         self.icon_buttons[icon_name] = btn

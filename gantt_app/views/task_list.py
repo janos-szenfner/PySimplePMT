@@ -29,6 +29,7 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.models import Task, Project
+from gantt_app.taskstyle import resolve as resolve_style
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.contextmenu import TaskContextMenu
 from gantt_app.views.taskdialogs import CreateTaskDialog
@@ -150,39 +151,164 @@ class DragDropTaskList(ctk.CTkFrame):
             return False
         return task.id not in matches
 
-    def _apply_row_tag_colours(self):
+    def is_summary_row(self, task) -> bool:
         """
-        Colour the row tags for the appearance in force.
+        Whether a row brackets other rows.
+
+        RETURNS:
+        --------
+        bool
+            True for a Phase or a Deliverable, and for any task that has
+            work nested under it.
 
         DEVELOPMENT NOTES:
         ------------------
-        Tag colours are held per tag rather than on the style, so they are
-        not re-resolved when the style is - which is why this is its own
-        method and why apply_theme calls both. Left out, the banding stayed
-        white on a dark grid and every other row glowed.
+        Having children is what decides it, not the Type column - a Task
+        with sub-tasks under it is a summary of them whatever its type says,
+        and the hierarchy has to read the same whether that column is on
+        screen or not. The container types are included as well so a Phase
+        with nothing in it yet still reads as the bracket it is.
         """
-        # Sub-tasks are ordinary work and read in the same colour as tasks;
-        # the indent and the Type column already mark them as nested
-        self.tree.tag_configure('subtask', foreground=theme.now(self.GRID_TEXT))
+        if task.is_container:
+            return True
+        return any(other.parent_task_id == task.id
+                   for other in self.project.tasks)
 
-        # Alternating row shading, which is what makes the rows read as a grid
-        self.tree.tag_configure('oddrow',
-                                background=theme.now(self.GRID_ROW_ALT))
-        self.tree.tag_configure('evenrow',
-                                background=theme.now(self.GRID_ROW_BASE))
+    def _base_font(self):
+        """
+        The family and size the grid draws in, read from the desktop's own.
 
-        # A row that has been cut and is waiting to be pasted somewhere.
-        # A Treeview row cannot be made half transparent the way a web page
-        # would fade one, so it is greyed instead - the same thing said in
-        # the way this widget can say it.
-        self.tree.tag_configure('cut',
-                                foreground=theme.now(self.CUT_ROW_TEXT))
+        RETURNS:
+        --------
+        Tuple[str, int]
+            TkDefaultFont's family and size, asked of this widget's own Tk
+            interpreter and kept.
 
-        # An ancestor shown only for context, greyed so it does not read as
-        # a hit. The same colour the cut rows use: both mean "here, but not
-        # the thing you are looking at".
-        self.tree.tag_configure('search_context',
-                                foreground=theme.now(self.CUT_ROW_TEXT))
+        DEVELOPMENT NOTES:
+        ------------------
+        Read rather than named here, so the rows follow whatever the desktop
+        uses - naming a family produced a task list in a different typeface
+        from the rest of the window on every platform but the one it was
+        written on.
+
+        Asked through self.tree rather than through tkinter.font.nametofont,
+        which resolves against the default root. A test suite builds and
+        destroys a root per test, so nametofont can end up asking an
+        interpreter that has already been torn down.
+        """
+        if self._base_font_spec is None:
+            actual = self.tree.tk.call('font', 'actual', 'TkDefaultFont')
+            values = dict(zip(actual[::2], actual[1::2]))
+            family = str(values.get('-family', 'TkDefaultFont'))
+            try:
+                size = int(values.get('-size', 10))
+            except (TypeError, ValueError):
+                size = 10
+            self._base_font_spec = (family, size or 10)
+        return self._base_font_spec
+
+    def _row_font(self, bold: bool, italic: bool, underline: bool):
+        """
+        The grid's own font, with the emphasis a row asked for.
+
+        RETURNS:
+        --------
+        Tuple[str, int, str]
+            A Tk font specification - family, size, and the modifiers.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A specification rather than a tkinter.font.Font, and that is not a
+        detail. A Font is an object in the Tk interpreter with a lifetime:
+        one built here outlives the root that made it, and deleting it later
+        reaches into an interpreter that may already be gone. A tuple is
+        just a description - Tk reads it when the tag is configured and
+        nothing owns anything afterwards.
+        """
+        family, size = self._base_font()
+        modifiers = ' '.join(name for name, wanted in (
+            ('bold', bold), ('italic', italic), ('underline', underline),
+        ) if wanted)
+        return (family, size, modifiers) if modifiers else (family, size)
+
+    def _row_tag(self, task, band: str) -> str:
+        """
+        One tag carrying everything about how a row is painted.
+
+        PARAMETERS:
+        -----------
+        task : Task
+            The row being drawn.
+        band : str
+            'oddrow' or 'evenrow', which decides the background where the
+            row carries no fill of its own.
+
+        RETURNS:
+        --------
+        str
+            The name of a tag configured with the row's ink, fill and font.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        One tag rather than several, and every visual option set on it,
+        because a Treeview row carrying two tags that both set a background
+        leaves which one wins up to Tk. Resolving the whole appearance here
+        makes the precedence something this file states and a test can check,
+        rather than something the platform decides.
+
+        The order is: what the row is doing now beats what it was given.
+        A row waiting to be pasted, or on screen only to say where a match
+        sits, is greyed whatever ink it carries - those say "this row is not
+        what you are looking at", which outranks decoration.
+
+        Tags are shared by every row that resolves the same way, so a plan
+        where forty rows are marked as financial milestones configures one
+        tag rather than forty.
+        """
+        resolved = resolve_style(task.style, self.is_summary_row(task))
+
+        background = resolved.fill_color or theme.now(
+            self.GRID_ROW_ALT if band == 'oddrow' else self.GRID_ROW_BASE)
+
+        if task.id in self._cut_task_ids() or self._is_search_context(task):
+            foreground = theme.now(self.CUT_ROW_TEXT)
+        else:
+            foreground = resolved.text_color or theme.now(self.GRID_TEXT)
+
+        name = (f"row_{background}_{foreground}"
+                f"_{int(resolved.bold)}{int(resolved.italic)}"
+                f"{int(resolved.underline)}").replace('#', '')
+
+        if name not in self._row_tags:
+            self.tree.tag_configure(
+                name, background=background, foreground=foreground,
+                font=self._row_font(resolved.bold, resolved.italic,
+                                    resolved.underline))
+            self._row_tags.add(name)
+
+        return name
+
+    def _apply_row_tag_colours(self):
+        """
+        Forget the row tags built for the appearance that has just changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The banding, the greying and the formatting a row was given all
+        arrive together on one tag per row - see _row_tag - so there is no
+        longer a fixed set of tags here to re-colour. What there is to do is
+        drop the ones already built, since every one of them names colours
+        that have just stopped being right; they are rebuilt as the rows are
+        drawn.
+
+        This used to configure 'oddrow', 'evenrow', 'cut' and
+        'search_context' directly, and left out, the banding stayed white on
+        a dark grid and every other row glowed. Those tags are still put on
+        the rows, as markers of what a row is, but they carry no colours:
+        two tags both setting a background leaves Tk to decide which wins,
+        which is the thing _row_tag exists to avoid.
+        """
+        self._row_tags.clear()
 
     def apply_theme(self):
         """
@@ -236,6 +362,14 @@ class DragDropTaskList(ctk.CTkFrame):
 
         #: Called when the rows on show change or scroll; see on_rows_changed
         self._row_watchers = []
+
+        #: The row tags configured so far. Shared by every row that
+        #: resolves the same way, so a plan with forty rows marked the same
+        #: way configures one tag. Cleared when the appearance changes; see
+        #: _apply_row_tag_colours.
+        self._row_tags = set()
+        #: The grid's family and size, asked of Tk once; see _base_font.
+        self._base_font_spec = None
 
         # Create UI
         self._create_ui()
@@ -1308,6 +1442,7 @@ class DragDropTaskList(ctk.CTkFrame):
             self.tree.delete(item)
 
         self._populate_tree_hierarchical()
+        self._paint_rows()
 
         # The rows are all new, so anything drawing from them - the Gantt
         # chart beside the list - is told once they are all in place. The
@@ -1335,9 +1470,6 @@ class DragDropTaskList(ctk.CTkFrame):
         Sorting is left to the Gantt chart, which is where a reader looks for
         the plan in date order.
         """
-        # Restart the row banding for each repopulation
-        self._row_counter = 0
-
         # Map task IDs to tree items for parent-child relationships
         tree_items = {}
 
@@ -1450,13 +1582,10 @@ class DragDropTaskList(ctk.CTkFrame):
                                      milestone_str
                                  ))
         
-        # Alternating background, counted over rows actually drawn so the
-        # banding stays continuous through nested sub-tasks
-        self._row_counter = getattr(self, '_row_counter', 0)
-        band = 'oddrow' if self._row_counter % 2 else 'evenrow'
-        self._row_counter += 1
-
-        tags = [band]
+        # What the row is. How it is painted is decided afterwards, once
+        # every row is in place and the order they are drawn in is known -
+        # see _paint_rows.
+        tags = []
         if task.task_type == 'Subtask':
             tags.append('subtask')
         if task.id in self._cut_task_ids():
@@ -1467,6 +1596,42 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.item(item_id, tags=tuple(tags))
 
         return item_id
+
+    def _paint_rows(self):
+        """
+        Give every row its banding and its formatting, in the order shown.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A second pass, and it has to be. The banding alternates over the
+        rows as they are drawn, and the rows are not inserted in that order:
+        the roots go in first and their children follow in later passes, so
+        a plan of a phase, its one task and a second root had the phase and
+        the nested task both counted even - two touching rows in the same
+        shade, with the banding restarting underneath them.
+
+        Walking the tree afterwards asks the widget what the order actually
+        is, which is the only thing that knows.
+        """
+        for index, item in enumerate(self._rows_in_display_order()):
+            task = self.project.get_task_by_id(item)
+            if task is None:
+                continue
+            band = 'oddrow' if index % 2 else 'evenrow'
+            markers = [tag for tag in self.tree.item(item, 'tags')
+                       if not tag.startswith('row_')]
+            self.tree.item(item, tags=tuple(
+                markers + [band, self._row_tag(task, band)]))
+
+    def _rows_in_display_order(self):
+        """Every row in the tree, parents before their children."""
+        def walk(parent):
+            """One level, then everything under it."""
+            for item in self.tree.get_children(parent):
+                yield item
+                yield from walk(item)
+
+        return list(walk(''))
     
     def add_task(self, task: Task):
         """Add a task to the project and update the list."""

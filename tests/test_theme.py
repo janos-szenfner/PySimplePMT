@@ -720,7 +720,7 @@ class TestTheToolbarControl(unittest.TestCase):
 
     def test_the_control_is_set_apart_by_a_divider(self):
         """It is a setting, not an action on the plan."""
-        self.assertEqual(len(self.icons.separators), 5)
+        self.assertEqual(len(self.icons.separators), 7)
 
     def test_a_destroyed_toolbar_does_not_break_the_theme(self):
         """

@@ -1,0 +1,439 @@
+"""
+The formatting group on the icon bar: ink, fill and emphasis for a row.
+
+WHY THIS MODULE EXISTS:
+======================
+The task list is the operational workspace, and a plan of any size is scanned
+rather than read. The rows worth finding again - the payment milestones, the
+phase gates, the things that are finished - have to be findable at a glance,
+and a Type column does not do that, because scanning is exactly the activity
+that skips columns.
+
+So the formatting lives on the main toolbar rather than behind the task
+editor. Marking a row up has to cost one press from where the reader already
+is; a dialog two clicks away is how a feature ends up unused.
+
+WHAT IT DOES NOT DO:
+====================
+It holds no state about the plan and changes nothing. It reports which control
+was pressed and shows what it is told to show - see StyleBar.set_state. What a
+press means for the selected rows, and how that reaches the undo history, is
+the toolbar's business.
+
+That split is deliberate: the same bar has to answer for one selected row and
+for forty, and "what is bold when three of five rows are" is a question about
+a selection rather than about a button.
+"""
+
+import tkinter as tk
+from typing import Callable, Optional
+
+import customtkinter as ctk
+
+from gantt_app import theme
+from gantt_app.taskstyle import FILL_COLOURS, PRESETS, TEXT_COLOURS, ResolvedStyle
+from gantt_app.utils.log import get_logger
+from gantt_app.views.tooltip import attach as attach_tooltip
+
+logger = get_logger(__name__)
+
+
+#: How the swatches in a colour popup are laid out.
+SWATCH_SIZE = 22
+SWATCH_PAD = 3
+SWATCH_COLUMNS = 6
+
+#: The height of the colour bar under the A and the highlighter.
+INDICATOR_HEIGHT = 3
+
+#: What a colour bar shows when the row carries no colour of its own.
+INDICATOR_DEFAULT = ('#9aa0a6', '#71767c')
+
+
+class SwatchPopup(ctk.CTkToplevel):
+    """
+    A small grid of colours, opened under the button that asked for it.
+
+    PARAMETERS:
+    -----------
+    master : widget
+        The button this hangs from; also what it is placed under.
+    colours : Sequence[Tuple[str, Optional[str]]]
+        Name and value per swatch. A value of None is the "no colour" entry -
+        the grid's own ink, or no fill - and is drawn as an outlined square
+        rather than a filled one, because a swatch of the background colour
+        on a background is invisible.
+    on_pick : Callable[[Optional[str]], None]
+        Given the chosen colour, or None for the "no colour" entry.
+    allow_custom : bool
+        Whether to offer the full picker underneath.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A Toplevel rather than a frame in the toolbar, because a palette has to
+    hang past the bottom edge of a 40-pixel-high row.
+
+    It closes on any press outside itself. Without that, opening a second
+    palette while the first was up left two on screen and the toolbar behind
+    both of them unreachable.
+    """
+
+    def __init__(self, master, colours, on_pick: Callable,
+                 allow_custom: bool = True, **kwargs):
+        super().__init__(master, **kwargs)
+        self.on_pick = on_pick
+        self._dismiss_binding = None
+
+        self.wm_overrideredirect(True)
+        self.attributes('-topmost', True)
+        self.configure(fg_color=theme.DROPDOWN_BG)
+
+        body = ctk.CTkFrame(self, fg_color='transparent')
+        body.pack(padx=6, pady=6)
+
+        for index, (name, value) in enumerate(colours):
+            self._swatch(body, name, value,
+                         index // SWATCH_COLUMNS, index % SWATCH_COLUMNS)
+
+        if allow_custom:
+            ctk.CTkButton(
+                self, text="Custom colour...", height=26,
+                fg_color='transparent', text_color=theme.TEXT,
+                hover_color=theme.MENU_HOVER, anchor='w',
+                command=self._open_picker,
+            ).pack(fill=tk.X, padx=6, pady=(0, 6))
+
+        self._place_under(master)
+        self.after(10, self._watch_for_clicks_outside)
+
+    def _swatch(self, parent, name: str, value: Optional[str],
+                row: int, column: int):
+        """One colour, as a square that says what it is on hover."""
+        if value is None:
+            button = ctk.CTkButton(
+                parent, text="/", width=SWATCH_SIZE, height=SWATCH_SIZE,
+                fg_color='transparent', border_width=1,
+                border_color=theme.SEPARATOR, text_color=theme.MUTED_TEXT,
+                hover_color=theme.MENU_HOVER,
+                command=lambda: self._picked(None))
+        else:
+            button = ctk.CTkButton(
+                parent, text="", width=SWATCH_SIZE, height=SWATCH_SIZE,
+                fg_color=value, border_width=1,
+                border_color=theme.SEPARATOR, hover_color=value,
+                command=lambda colour=value: self._picked(colour))
+
+        button.grid(row=row, column=column, padx=SWATCH_PAD, pady=SWATCH_PAD)
+        button.tooltip_widget = attach_tooltip(button, name)
+
+    def _open_picker(self):
+        """Hand over to the full colour picker."""
+        from gantt_app.views.colorpicker import ColorPickerPopup
+
+        parent = self.master
+        self._close()
+        try:
+            ColorPickerPopup(parent, '#1f6aa5', self.on_pick)
+        except Exception:
+            logger.exception("Could not open the colour picker")
+
+    def _picked(self, colour: Optional[str]):
+        """Report the choice and go away."""
+        self._close()
+        try:
+            self.on_pick(colour)
+        except Exception:
+            logger.exception("Could not apply the colour %r", colour)
+
+    def _place_under(self, widget):
+        """Sit under the button that opened this."""
+        try:
+            self.update_idletasks()
+            x = widget.winfo_rootx()
+            y = widget.winfo_rooty() + widget.winfo_height() + 2
+            self.wm_geometry(f"+{x}+{y}")
+        except tk.TclError:
+            pass
+
+    def _watch_for_clicks_outside(self):
+        """Close as soon as something else is pressed."""
+        try:
+            self._dismiss_binding = self.winfo_toplevel().bind(
+                "<Button-1>", lambda _event: self._close(), add="+")
+        except tk.TclError:
+            pass
+
+    def _close(self, *_args):
+        """Take the palette off screen once."""
+        try:
+            if self._dismiss_binding is not None:
+                self.master.winfo_toplevel().unbind(
+                    "<Button-1>", self._dismiss_binding)
+                self._dismiss_binding = None
+        except tk.TclError:
+            pass
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
+
+
+class StyleBar(ctk.CTkFrame):
+    """
+    Bold, italic, underline, ink, fill, the presets, and the way back.
+
+    PARAMETERS:
+    -----------
+    master : widget
+        The icon toolbar this sits in.
+    on_apply : Callable[[str, object], None]
+        Called with what was pressed and what it means: ('bold', True),
+        ('text_color', '#c0392b'), ('preset', TaskStyle), ('reset', None).
+    button_size : int
+        Matched to the icons either side so the row stays one height.
+    icon_image : Callable[[str], object]
+        How to get a drawing, which the toolbar already caches per
+        appearance. Passed in rather than imported so this does not build a
+        second cache of the same pictures.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Every control is disabled until something is selected. A formatting bar
+    that looks live with nothing to format invites a press that silently does
+    nothing, and the user learns the bar is unreliable rather than that they
+    forgot to select a row.
+    """
+
+    #: What each control is called, and what it says on hover.
+    CAPTIONS = {
+        'bold': "Bold  (Ctrl+B)",
+        'italic': "Italic  (Ctrl+I)",
+        'underline': "Underline  (Ctrl+U)",
+        'text_color': "Text colour",
+        'fill_color': "Background fill",
+        'style_preset': "Style presets",
+        'clear_style': "Clear formatting",
+    }
+
+    def __init__(self, master, on_apply: Callable, button_size: int = 32,
+                 icon_image: Optional[Callable] = None, **kwargs):
+        super().__init__(master, fg_color='transparent', **kwargs)
+
+        self.on_apply = on_apply
+        self.button_size = button_size
+        self._icon_image = icon_image or (lambda _name: None)
+
+        #: Every control, by name, so state can be set in one sweep.
+        self.buttons = {}
+        #: The colour bars under the ink and fill buttons.
+        self.indicators = {}
+        #: Whether anything is selected; see set_state.
+        self.enabled = False
+
+        self._build()
+        self.set_state(False, None)
+
+    # ---- building -------------------------------------------------------
+
+    def _build(self):
+        """Lay the group out: emphasis, then colour, then the presets."""
+        for name, caption in (('bold', 'B'), ('italic', 'I'),
+                              ('underline', 'U')):
+            self._emphasis_button(name, caption)
+
+        self._colour_button('text_color', 'A')
+        self._colour_button('fill_color', None)
+        self._icon_button('style_preset', self._open_presets)
+        self._icon_button('clear_style', lambda: self._apply('reset', None))
+
+    def _new_button(self, name: str, **options) -> ctk.CTkButton:
+        """One button in the group, captioned and remembered."""
+        button = ctk.CTkButton(
+            self, width=self.button_size, height=self.button_size,
+            fg_color='transparent', hover_color=theme.MENU_HOVER,
+            text_color=theme.MENU_TEXT, corner_radius=4, **options)
+        button.tooltip_widget = attach_tooltip(button, self.CAPTIONS[name])
+        self.buttons[name] = button
+        return button
+
+    def _emphasis_button(self, name: str, caption: str):
+        """
+        A toggle, captioned with the letter it stands for.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A letter rather than a drawing, and set in the style it applies: a
+        bold B, an italic I, an underlined U. Every word processor ever
+        written does this, so it needs no learning - and a drawn glyph at 20
+        pixels would be less legible than the letter itself.
+        """
+        font = ctk.CTkFont(
+            size=14,
+            weight='bold' if name == 'bold' else 'normal',
+            slant='italic' if name == 'italic' else 'roman',
+            underline=name == 'underline')
+
+        button = self._new_button(
+            name, text=caption, font=font,
+            command=lambda: self._toggle(name))
+        button.pack(side='left', padx=1, pady=2)
+
+    def _colour_button(self, name: str, caption: Optional[str]):
+        """
+        A colour chooser, with the colour it last applied shown beneath it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The bar under the button is the whole point of the control: it says
+        what pressing it again would apply, which is what makes the second
+        row and the fortieth one press each rather than a trip through the
+        palette every time.
+        """
+        holder = ctk.CTkFrame(self, fg_color='transparent')
+        holder.pack(side='left', padx=1, pady=2)
+
+        options = {'command': lambda: self._open_colours(name)}
+        if caption is not None:
+            options['text'] = caption
+            options['font'] = ctk.CTkFont(size=14, weight='bold')
+        else:
+            options['text'] = ''
+            image = self._icon_image(name)
+            if image is not None:
+                options['image'] = image
+
+        button = ctk.CTkButton(
+            holder, width=self.button_size, height=self.button_size - 6,
+            fg_color='transparent', hover_color=theme.MENU_HOVER,
+            text_color=theme.MENU_TEXT, corner_radius=4, **options)
+        button.pack()
+        # Kept from the garbage collector, as everywhere else a CTkImage is
+        # put on a button
+        button.icon_image = options.get('image')
+        button.tooltip_widget = attach_tooltip(button, self.CAPTIONS[name])
+        self.buttons[name] = button
+
+        indicator = ctk.CTkFrame(holder, height=INDICATOR_HEIGHT,
+                                 width=self.button_size - 8,
+                                 fg_color=INDICATOR_DEFAULT)
+        indicator.pack(pady=(1, 0))
+        self.indicators[name] = indicator
+
+    def _icon_button(self, name: str, command: Callable):
+        """One of the two that carry a drawing rather than a letter."""
+        image = self._icon_image(name)
+        button = self._new_button(
+            name, text='' if image is not None else '?', image=image,
+            command=command)
+        button.icon_image = image
+        button.pack(side='left', padx=1, pady=2)
+
+    # ---- what the controls do ------------------------------------------
+
+    def _apply(self, kind: str, value):
+        """Report a press, and never let a handler take the toolbar down."""
+        if not self.enabled:
+            return
+        try:
+            self.on_apply(kind, value)
+        except Exception:
+            logger.exception("Could not apply the %s change", kind)
+
+    def _toggle(self, name: str):
+        """
+        Turn an emphasis on, or off if it is already on.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The button shows what the selection currently is - see set_state - so
+        pressing it means "make it the other thing". With a mixed selection
+        the button reads as off, and pressing it turns the emphasis on for
+        every selected row, which is what a reader means by pressing it.
+        """
+        self._apply(name, not self._active(name))
+
+    def _active(self, name: str) -> bool:
+        """Whether a toggle is currently showing as on."""
+        return bool(getattr(self, f"_{name}_on", False))
+
+    def _open_colours(self, name: str):
+        """Open the palette for the ink or for the fill."""
+        if not self.enabled:
+            return
+        colours = TEXT_COLOURS if name == 'text_color' else FILL_COLOURS
+        SwatchPopup(self.buttons[name], colours,
+                    lambda colour: self._apply(name, colour))
+
+    def _open_presets(self):
+        """Offer the combined styles, one press each."""
+        if not self.enabled:
+            return
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        button = self.buttons['style_preset']
+        items = [{"text": name,
+                  "command": (lambda style=style: self._apply('preset', style))}
+                 for name, style in PRESETS]
+
+        menu = CTkDropdownMenu(self, items=items)
+        menu.geometry(f"+{button.winfo_rootx()}"
+                      f"+{button.winfo_rooty() + button.winfo_height() + 2}")
+
+    # ---- what the controls show ----------------------------------------
+
+    def set_state(self, enabled: bool, resolved: Optional[ResolvedStyle]):
+        """
+        Show what the selection is, and whether there is one at all.
+
+        PARAMETERS:
+        -----------
+        enabled : bool
+            Whether anything is selected in the task list.
+        resolved : Optional[ResolvedStyle]
+            What the selection looks like now, or None when nothing is
+            selected. Where selected rows disagree, the toolbar passes the
+            common ground - see Toolbar._selected_style.
+        """
+        self.enabled = bool(enabled)
+        state = tk.NORMAL if self.enabled else tk.DISABLED
+
+        for name, button in self.buttons.items():
+            try:
+                button.configure(state=state)
+            except tk.TclError:
+                continue
+
+        for name in ('bold', 'italic', 'underline'):
+            on = bool(resolved and getattr(resolved, name))
+            setattr(self, f"_{name}_on", on)
+            self._show_toggle(name, on)
+
+        self._show_indicator('text_color', resolved.text_color if resolved else None)
+        self._show_indicator('fill_color', resolved.fill_color if resolved else None)
+
+    def _show_toggle(self, name: str, on: bool):
+        """
+        Give an active toggle a frame, so it reads as pressed.
+
+        A button that applies a style it is already showing has to look
+        different from one that would apply it, or the row's state is only
+        discoverable by pressing.
+        """
+        button = self.buttons.get(name)
+        if button is None:
+            return
+        try:
+            button.configure(
+                fg_color=theme.MENU_HOVER if on else 'transparent')
+        except tk.TclError:
+            pass
+
+    def _show_indicator(self, name: str, colour: Optional[str]):
+        """Paint the bar under a colour button with what it would apply."""
+        indicator = self.indicators.get(name)
+        if indicator is None:
+            return
+        try:
+            indicator.configure(fg_color=colour or INDICATOR_DEFAULT)
+        except tk.TclError:
+            pass

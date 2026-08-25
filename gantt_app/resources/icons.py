@@ -33,6 +33,12 @@ ICON_EMOJIS: Dict[str, str] = {
     'open': '\U0001f4c1',          # Folder (open)
     'open_project': '\U0001f4c1',  # Folder (open project)
     'save': '\U0001f4be',          # Floppy disk
+    'save_as': '\U0001f4be',       # Floppy disk: saving under a new name
+    'indent': '\U000027a1',        # Right arrow: one level deeper
+    'outdent': '\U00002b05',       # Left arrow: one level out
+    'fill_color': '\U0001f58d',    # Highlighter: the row's background
+    'style_preset': '\U0001f3a8',  # Palette: a whole look in one press
+    'clear_style': '\U0000274c',   # Cross: back to the grid's own
     'edit': '\U0001f4dd',          # Memo/pencil (edit)
     'new_project': '\U0001f4dd',   # Memo (new document)
     'task': '\U0001f4d3',          # Notebook
@@ -60,6 +66,12 @@ SVG_PATHS: Dict[str, str] = {
     'open': "M9 13h6m-3-3v6m-6 3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2z",
     'open_project': "M9 13h6m-3-3v6m-6 3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2z",
     'save': "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7zM14 17H8M14 13H8M14 9H8",
+    'save_as': "M13 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6zM19 15v6M22 18h-6",
+    'indent': "M3 4h18M9 9h12M9 14h12M3 20h18M3 9l3 2.5L3 14",
+    'outdent': "M3 4h18M9 9h12M9 14h12M3 20h18M6 9l-3 2.5L6 14",
+    'fill_color': "M4 13l7-7 7 7-7 7zM19 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z",
+    'style_preset': "M12 2a10 10 0 1 0 0 20 2 2 0 0 0 0-4 2 2 0 0 1 0-4h3a5 5 0 0 0 5-5 7 7 0 0 0-8-7z",
+    'clear_style': "M18 6L6 18M6 6l12 12",
     'edit': "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z",
     'new_project': "M12 2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2M12 18v-6M15 15h-6",
     'task': "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM12 18H8M16 16l-4-4-4 4",
@@ -87,8 +99,11 @@ ALWAYS_ACTIVE: List[str] = ['open']
 
 # Icons that should be active only when there's an open/new project
 ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
-    'new_project', 'save', 'edit',
+    'new_project', 'save', 'save_as', 'edit',
     'task', 'subtask', 'milestone', 'phase', 'deliverable',
+    'indent', 'outdent',
+    'bold', 'italic', 'underline',
+    'text_color', 'fill_color', 'style_preset', 'clear_style',
     'critical_path',
     'cut', 'copy', 'paste', 'delete',
     'undo', 'redo'
@@ -212,6 +227,53 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('line', [(0.16, 0.84), (0.24, 0.62), (0.68, 0.18),
                   (0.84, 0.34), (0.40, 0.78), (0.16, 0.84)]),
         ('line', [(0.60, 0.26), (0.76, 0.42)]),
+    ],
+    # Saving under a new name: the same floppy, drawn smaller to leave the
+    # corner for the plus that says it becomes a second file rather than
+    # overwriting the one already open.
+    'save_as': [
+        ('shape', [(0.06, 0.08), (0.54, 0.08), (0.66, 0.20),
+                   (0.66, 0.68), (0.06, 0.68)]),
+        ('shape', [(0.20, 0.08), (0.46, 0.08), (0.46, 0.28), (0.20, 0.28)]),
+        ('line', [(0.76, 0.64), (0.76, 0.94)]),
+        ('line', [(0.61, 0.79), (0.91, 0.79)]),
+    ],
+    # The row's background: a highlighter nib over the stripe it lays
+    # down. A paint bucket was tried first and read as a triangle at 20
+    # pixels, which is the size that matters.
+    'fill_color': [
+        ('line', [(0.20, 0.56), (0.56, 0.16), (0.76, 0.36),
+                  (0.40, 0.74), (0.20, 0.74), (0.20, 0.56)]),
+        ('fill', [(0.12, 0.84), (0.88, 0.94)]),
+    ],
+    # A whole look in one press, drawn as the tag it puts on a row.
+    'style_preset': [
+        ('shape', [(0.10, 0.10), (0.52, 0.10), (0.90, 0.48),
+                   (0.52, 0.86), (0.10, 0.86)]),
+        ('ellipse', [(0.22, 0.36), (0.36, 0.50)]),
+    ],
+    # Back to the grid's own. A cross rather than the bin used for Delete:
+    # this removes formatting, not the row, and the two must not look alike.
+    'clear_style': [
+        ('line', [(0.22, 0.22), (0.78, 0.78)]),
+        ('line', [(0.78, 0.22), (0.22, 0.78)]),
+    ],
+    # Indent and outdent: the plan as four rows with the middle two moved,
+    # and an arrow saying which way. Mirror images of each other, because
+    # that is the only thing that tells them apart at 20 pixels.
+    'indent': [
+        ('line', [(0.10, 0.14), (0.90, 0.14)]),
+        ('line', [(0.42, 0.38), (0.90, 0.38)]),
+        ('line', [(0.42, 0.62), (0.90, 0.62)]),
+        ('line', [(0.10, 0.86), (0.90, 0.86)]),
+        ('line', [(0.10, 0.36), (0.28, 0.50), (0.10, 0.64)]),
+    ],
+    'outdent': [
+        ('line', [(0.10, 0.14), (0.90, 0.14)]),
+        ('line', [(0.42, 0.38), (0.90, 0.38)]),
+        ('line', [(0.42, 0.62), (0.90, 0.62)]),
+        ('line', [(0.10, 0.86), (0.90, 0.86)]),
+        ('line', [(0.28, 0.36), (0.10, 0.50), (0.28, 0.64)]),
     ],
     'task': [
         ('shape', [(0.12, 0.34), (0.88, 0.34), (0.88, 0.66), (0.12, 0.66)]),

@@ -432,12 +432,14 @@ class TestTheWindowItOpens(CriticalPathTestCase):
 class TestTheToolbarOffersIt(unittest.TestCase):
     """Where the analysis is reached from."""
 
-    def test_the_icon_sits_between_milestone_and_cut(self):
+    def test_the_icon_stands_on_its_own_between_the_groups(self):
         """
         With a divider on each side.
 
-        It neither creates anything nor moves anything about, so it belongs
-        to neither of the groups it sits between.
+        It neither edits a row nor moves anything about, so it belongs to
+        neither of the groups it sits between - which is why it is pinned to
+        the dividers rather than to whichever icon currently happens to be
+        its neighbour.
         """
         from gantt_app.views.toolbar import IconToolbar
 
@@ -446,7 +448,7 @@ class TestTheToolbarOffersIt(unittest.TestCase):
 
         self.assertEqual(row[index - 1], IconToolbar.SEPARATOR)
         self.assertEqual(row[index + 1], IconToolbar.SEPARATOR)
-        self.assertEqual(row[index - 2], 'milestone')
+        self.assertEqual(row[index - 2], 'outdent')
         self.assertEqual(row[index + 2], 'cut')
 
     def test_the_icon_has_a_drawing_and_a_handler(self):

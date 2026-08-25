@@ -102,6 +102,109 @@ EU_COUNTRIES: Dict[str, str] = {
     "SI": "Slovenia", "ES": "Spain", "SE": "Sweden",
 }
 
+#: What each region of the world is called in the country picker, in the
+#: order the picker shows them.
+#:
+#: Held here beside EU_COUNTRIES and for the same reason: which countries a
+#: calendar can observe, and how they group, is a property of the calendar
+#: rather than of the dialog that happens to list them.
+REGION_AFRICA_MIDDLE_EAST = "Africa & Middle East Region"
+REGION_AMERICA = "America Region"
+REGION_ASIA_PACIFIC = "Asia Pacific Region"
+REGION_EUROPE = "Europe Region"
+REGION_OTHER = "Other Territories"
+
+#: The regions in the order the picker lists them: alphabetical, with the
+#: territories that belong to no region last.
+REGION_ORDER: Tuple[str, ...] = (
+    REGION_AFRICA_MIDDLE_EAST,
+    REGION_AMERICA,
+    REGION_ASIA_PACIFIC,
+    REGION_EUROPE,
+    REGION_OTHER,
+)
+
+#: Which region each country sits in, by ISO 3166-1 alpha-2 code.
+#:
+#: DEVELOPMENT NOTES:
+#: ------------------
+#: A country that straddles two continents is placed where somebody looking
+#: for it in a picker would look, not where the UN geoscheme puts it. Turkey,
+#: Russia, Armenia, Azerbaijan, Georgia and Cyprus are all listed under
+#: Europe on that basis; the geoscheme has the first five in Asia.
+#:
+#: The sub-Antarctic and uninhabited territories go to Other Territories
+#: rather than being forced into a continent, because any continent would be
+#: a guess and none of them has a public holiday to observe anyway.
+#:
+#: Anything absent falls to Other Territories rather than being dropped - see
+#: region_of. The holidays package gains countries between releases, and one
+#: arriving in an odd group is a great deal better than one vanishing from a
+#: list somebody is choosing from.
+COUNTRY_REGIONS: Dict[str, str] = {}
+
+COUNTRY_REGIONS.update(dict.fromkeys((
+    # Africa
+    "AO", "BF", "BI", "BJ", "BW", "CD", "CF", "CG", "CI", "CM", "CV", "DJ",
+    "DZ", "EG", "EH", "ER", "ET", "GA", "GH", "GM", "GN", "GQ", "GW", "KE",
+    "KM", "LR", "LS", "LY", "MA", "MG", "ML", "MR", "MU", "MW", "MZ", "NA",
+    "NE", "NG", "RE", "RW", "SC", "SD", "SH", "SL", "SN", "SO", "SS", "ST",
+    "SZ", "TD", "TG", "TN", "TZ", "UG", "YT", "ZA", "ZM", "ZW",
+    # Middle East
+    "AE", "BH", "IL", "IQ", "IR", "JO", "KW", "LB", "OM", "PS", "QA", "SA",
+    "SY", "YE",
+), REGION_AFRICA_MIDDLE_EAST))
+
+COUNTRY_REGIONS.update(dict.fromkeys((
+    "AG", "AI", "AR", "AW", "BB", "BL", "BM", "BO", "BQ", "BR", "BS", "BZ",
+    "CA", "CL", "CO", "CR", "CU", "CW", "DM", "DO", "EC", "FK", "GD", "GF",
+    "GL", "GP", "GT", "GY", "HN", "HT", "JM", "KN", "KY", "LC", "MF", "MQ",
+    "MS", "MX", "NI", "PA", "PE", "PM", "PR", "PY", "SR", "SV", "SX", "TC",
+    "TT", "US", "UY", "VC", "VE", "VG", "VI",
+), REGION_AMERICA))
+
+COUNTRY_REGIONS.update(dict.fromkeys((
+    "AF", "AS", "AU", "BD", "BN", "BT", "CC", "CK", "CN", "CX", "FJ", "FM",
+    "GU", "HK", "ID", "IN", "IO", "JP", "KH", "KG", "KI", "KP", "KR", "KZ",
+    "LA", "LK", "MH", "MM", "MN", "MO", "MP", "MV", "MY", "NC", "NF", "NP",
+    "NR", "NU", "NZ", "PF", "PG", "PH", "PK", "PN", "PW", "SB", "SG", "TH",
+    "TJ", "TK", "TL", "TM", "TO", "TV", "TW", "UM", "UZ", "VN", "VU", "WF",
+    "WS",
+), REGION_ASIA_PACIFIC))
+
+COUNTRY_REGIONS.update(dict.fromkeys((
+    "AD", "AL", "AM", "AT", "AX", "AZ", "BA", "BE", "BG", "BY", "CH", "CY",
+    "CZ", "DE", "DK", "EE", "ES", "FI", "FO", "FR", "GB", "GE", "GG", "GI",
+    "GR", "HR", "HU", "IE", "IM", "IS", "IT", "JE", "LI", "LT", "LU", "LV",
+    "MC", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT", "RO", "RS", "RU",
+    "SE", "SI", "SJ", "SK", "SM", "TR", "UA", "VA",
+), REGION_EUROPE))
+
+COUNTRY_REGIONS.update(dict.fromkeys((
+    "AQ", "BV", "GS", "HM", "TF",
+), REGION_OTHER))
+
+
+def region_of(code: str) -> str:
+    """
+    Which region a country is listed under.
+
+    PARAMETERS:
+    -----------
+    code : str
+        An ISO 3166-1 alpha-2 country code, or a country and subdivision -
+        "DE-BY" - in which case the country decides.
+
+    RETURNS:
+    --------
+    str
+        One of REGION_ORDER. A country the table does not name falls to
+        Other Territories rather than being dropped from the picker.
+    """
+    country = str(code or '').strip().upper().split(SUBDIVISION_SEPARATOR)[0]
+    return COUNTRY_REGIONS.get(country, REGION_OTHER)
+
+
 #: Every country the holidays package knows, worked out once. None until it
 #: has been asked for; see supported_countries.
 _country_names: Optional[Dict[str, str]] = None

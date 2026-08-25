@@ -982,9 +982,17 @@ class ProjectStateTracker:
             'show_in_timeline': kwargs.get('show_in_timeline', task.show_in_timeline),
             'earliest_begin': kwargs.get('earliest_begin', task.earliest_begin),
             'scheduling_options': kwargs.get('scheduling_options', task.scheduling_options),
-            'details': kwargs.get('details', task.details)
+            'details': kwargs.get('details', task.details),
+            # Every field the task carries has to be listed here, not just
+            # the ones a caller is likely to change: the new task is built
+            # from this dictionary alone, so anything left out is reset to
+            # its default by any update at all. calendar_id and style were
+            # both missing, which meant editing a task's name silently put
+            # it back on the plan's calendar and stripped its formatting.
+            'calendar_id': kwargs.get('calendar_id', task.calendar_id),
+            'style': kwargs.get('style', task.style),
         }
-        
+
         new_task = Task(**new_task_data)
         
         command = create_update_task_command(self.project, task_id, old_task, new_task)

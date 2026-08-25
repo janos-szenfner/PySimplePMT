@@ -1144,5 +1144,90 @@ class TestTheWorkingWeekIsNotRebuiltEveryTime(unittest.TestCase):
                          date(2026, 9, 14))
 
 
+
+class TestTheCountryRegions(unittest.TestCase):
+    """
+    Which region each country is listed under in the picker.
+
+    WHY THIS LOOKS LIKE THIS:
+    =========================
+    The table is 249 codes written out by hand, and the failure it invites is
+    a country quietly left out of it. That country would still appear in the
+    picker - region_of falls back rather than dropping it - but it would
+    appear under Other Territories, at the bottom, where nobody looking for
+    it would think to look. So the table is checked against the package's own
+    list rather than against anything written here.
+    """
+
+    def test_every_country_is_placed(self):
+        """Nothing falls through to the fallback by accident."""
+        from gantt_app.workdaycalendar import COUNTRY_REGIONS, supported_countries
+
+        missing = sorted(code for code in supported_countries()
+                         if code not in COUNTRY_REGIONS)
+
+        self.assertEqual(missing, [])
+
+    def test_the_table_names_no_country_that_does_not_exist(self):
+        """A code the package does not know is a typo in the table."""
+        from gantt_app.workdaycalendar import COUNTRY_REGIONS, supported_countries
+
+        countries = supported_countries()
+        unknown = sorted(code for code in COUNTRY_REGIONS
+                         if code not in countries)
+
+        self.assertEqual(unknown, [])
+
+    def test_every_region_named_is_one_of_the_regions_listed(self):
+        """The order the picker walks has to reach all of them."""
+        from gantt_app.workdaycalendar import COUNTRY_REGIONS, REGION_ORDER
+
+        self.assertEqual(set(COUNTRY_REGIONS.values()) - set(REGION_ORDER),
+                         set())
+
+    def test_every_region_has_somebody_in_it(self):
+        """A heading that can never appear is a heading worth deleting."""
+        from gantt_app.workdaycalendar import (
+            COUNTRY_REGIONS, REGION_ORDER,
+        )
+
+        for region in REGION_ORDER:
+            self.assertIn(region, COUNTRY_REGIONS.values(), region)
+
+    def test_a_subdivision_is_placed_by_its_country(self):
+        """Bavaria is in Europe because Germany is."""
+        from gantt_app.workdaycalendar import REGION_EUROPE, region_of
+
+        self.assertEqual(region_of('DE-BY'), REGION_EUROPE)
+        self.assertEqual(region_of('DE'), region_of('DE-BY'))
+
+    def test_an_unknown_code_falls_back_rather_than_raising(self):
+        """
+        The holidays package gains countries between releases.
+
+        One arriving in an odd group is a great deal better than one
+        vanishing from a list somebody is choosing from.
+        """
+        from gantt_app.workdaycalendar import REGION_OTHER, region_of
+
+        self.assertEqual(region_of('ZZ'), REGION_OTHER)
+        self.assertEqual(region_of(''), REGION_OTHER)
+        self.assertEqual(region_of(None), REGION_OTHER)
+
+    def test_a_lowercase_code_is_still_found(self):
+        """Codes are upper case here and not everywhere they come from."""
+        from gantt_app.workdaycalendar import region_of
+
+        self.assertEqual(region_of('de'), region_of('DE'))
+
+    def test_the_eu_members_are_all_in_europe(self):
+        """A cheap check on the largest group anyone will look at."""
+        from gantt_app.workdaycalendar import (
+            EU_COUNTRIES, REGION_EUROPE, region_of,
+        )
+
+        for code in EU_COUNTRIES:
+            self.assertEqual(region_of(code), REGION_EUROPE, code)
+
 if __name__ == '__main__':
     unittest.main()

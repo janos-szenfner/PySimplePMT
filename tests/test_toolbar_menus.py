@@ -63,8 +63,10 @@ class TestMenuContents(unittest.TestCase):
 
     def test_project_menu(self):
         """Project holds the file lifecycle actions."""
-        self.assertEqual(labels(find(self.tree, 'Project')['items']),
-                         ['New Project...', 'Load Project...', 'Save Project...'])
+        self.assertEqual(
+            labels(find(self.tree, 'Project')['items']),
+            ['New Project...', 'Load Project...', 'Save Project...',
+             'Save Project As...'])
 
     def test_file_menu_nests_import_and_export(self):
         """File carries Import and Export as submenus."""

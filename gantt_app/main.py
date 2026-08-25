@@ -85,8 +85,7 @@ class GanttApp(ctk.CTk):
 
         # Configure main window
         self.title("Gantt Project Manager")
-        self.geometry("1400x900")
-        self.minsize(1200, 800)
+        self._fit_to_screen()
         self._set_window_icon()
         
         # Who decides light or dark, and the watch on the desktop setting.
@@ -128,6 +127,108 @@ class GanttApp(ctk.CTk):
         # explanation anywhere. Route them into the log instead.
         self.report_callback_exception = self._on_callback_error
     
+    #: The size the layout was designed around, and the smallest it stays
+    #: usable at: a task list, the chart beside it, and a toolbar over both.
+    PREFERRED_MINIMUM = (1200, 800)
+
+    def _fit_to_screen(self):
+        """
+        Open filling whatever screen this is, rather than at a fixed size.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The window used to open at a flat 1400x900 with a minimum of
+        1200x800. That is bigger than a 1366x768 laptop screen in both
+        directions, and the minimum made it unfixable: the window could not
+        be shrunk to fit the display it had just opened too large for.
+
+        The size comes from wm_maxsize rather than from winfo_screenwidth,
+        and the difference is the point. winfo_screenwidth is the whole
+        display; wm_maxsize is what the window manager will actually let a
+        window occupy, which excludes the menu bar and the Dock on macOS and
+        the taskbar on Windows. Asking for the full display height puts the
+        bottom of the window behind the Dock.
+
+        No position is given. A geometry of "WxH" with no +x+y leaves the
+        placement to the window manager, which puts it somewhere visible on
+        every platform - working out an origin here means knowing how tall
+        the menu bar is, and there is no portable way to ask.
+
+        The minimum is clamped to what was actually opened. A minimum larger
+        than the screen is a window that cannot be resized to fit it, which
+        is the fault this replaced.
+
+        The scaling conversion is the part that is easy to miss. wm_maxsize
+        answers in real screen pixels, and CustomTkinter's geometry and
+        minsize both multiply what they are given by the window scaling - so
+        handing them screen pixels asks for a window that much larger than
+        the screen. It looks correct on a Mac, where the scaling is 1, and
+        opens half off the edge on a Windows machine at 150%.
+        """
+        width, height = self._usable_screen_area()
+
+        # Everything below is in the units CustomTkinter works in, which are
+        # the screen's only where the desktop is not scaled at all
+        scaling = self._window_scaling()
+        width = int(width / scaling)
+        height = int(height / scaling)
+
+        self.geometry(f"{width}x{height}")
+        self.minsize(min(self.PREFERRED_MINIMUM[0], width),
+                     min(self.PREFERRED_MINIMUM[1], height))
+        logger.info("Opening at %dx%d (scaling %.2f), the usable area of a "
+                    "%dx%d screen", width, height, scaling,
+                    self.winfo_screenwidth(), self.winfo_screenheight())
+
+    def _usable_screen_area(self):
+        """
+        How much of the screen a window is actually allowed to occupy.
+
+        RETURNS:
+        --------
+        Tuple[int, int]
+            Width and height in real screen pixels, excluding the menu bar,
+            the Dock or the taskbar - whichever this desktop has.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        wm_maxsize is what the window manager will permit, which is the
+        question being asked. winfo_screenwidth is the whole display and
+        would put the bottom of the window behind the Dock.
+
+        A window manager that will not say - some minimal X11 ones report
+        nothing useful - leaves the display size as the best guess, which is
+        wrong by the height of a panel rather than unusable.
+        """
+        try:
+            width, height = self.wm_maxsize()
+        except tk.TclError:
+            width = height = 0
+
+        if width <= 0 or height <= 0:
+            logger.debug("The window manager did not report a usable area; "
+                         "falling back to the full screen")
+            return self.winfo_screenwidth(), self.winfo_screenheight()
+        return width, height
+
+    def _window_scaling(self) -> float:
+        """
+        What CustomTkinter multiplies a requested geometry by.
+
+        RETURNS:
+        --------
+        float
+            The window scaling factor, or 1.0 where it cannot be read - a
+            window of the right size on an unscaled desktop being a better
+            failure than no window at all.
+        """
+        try:
+            scaling = float(self._get_window_scaling())
+        except Exception:
+            logger.debug("Could not read the window scaling; assuming 1.0")
+            return 1.0
+        return scaling if scaling > 0 else 1.0
+
     def _set_window_icon(self):
         """
         Give the window the application's own icon.

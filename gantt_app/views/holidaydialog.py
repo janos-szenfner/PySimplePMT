@@ -66,8 +66,9 @@ from gantt_app.calendarregistry import (
 )
 from gantt_app.views import dialogs as messagebox
 from gantt_app.workdaycalendar import (
-    DEFAULT_NON_WORKING_DAYS, DateOverride, EU_COUNTRIES, WorkingCalendar,
-    holidays_available, split_country, subdivisions, supported_countries,
+    DEFAULT_NON_WORKING_DAYS, REGION_ORDER, DateOverride, EU_COUNTRIES,
+    WorkingCalendar, holidays_available, region_of, split_country,
+    subdivisions, supported_countries,
 )
 from gantt_app import theme
 from gantt_app.utils.log import get_logger
@@ -279,9 +280,17 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
                               placeholder_text="Search by country or code...")
         search.pack(fill=tk.X, padx=5, pady=(10, 0))
 
+        # Two fonts, because the label says two different kinds of thing.
+        # "No countries selected" is a statement about the plan that the
+        # reader has to notice - it means the calendar is weekends only - so
+        # it is set apart from the ordinary running count beside it.
+        self.summary_font = ctk.CTkFont(size=12)
+        self.summary_warning_font = ctk.CTkFont(
+            size=12, weight="bold", slant="italic", underline=True)
+
         self.summary_label = ctk.CTkLabel(
             self.tab_holidays, anchor=tk.W, justify=tk.LEFT, text="",
-            text_color=theme.MUTED_TEXT,
+            text_color=theme.MUTED_TEXT, font=self.summary_font,
         )
         self.summary_label.pack(fill=tk.X, padx=5, pady=(6, 0))
 
@@ -323,6 +332,12 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
             self.rows.append(self._row(code, f"{name} ({code})",
                                        f"{name} {code}".lower(), chosen))
 
+        #: One heading per region, built once and shown or hidden as the
+        #: search empties a region out; see _apply_filter.
+        self.region_headings = {
+            region: self._region_heading(region) for region in REGION_ORDER
+        }
+
         # The regions, which only appear when they are searched for or
         # already selected; see _apply_filter.
         #
@@ -337,6 +352,29 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
             self._build_regions(code, chosen)
 
         self._apply_filter()
+
+    def _region_heading(self, region: str):
+        """
+        The caption over one region's countries, with its rule beneath it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A frame rather than a bare label, because the rule under the caption
+        is what separates one region from the next in a list two columns wide
+        - a caption alone reads as another entry in the column it happens to
+        start in.
+
+        Built for every region whether or not it has anything to show. A
+        search that empties a region hides the heading rather than destroying
+        it, so the next keystroke has it back without rebuilding anything.
+        """
+        frame = ctk.CTkFrame(self.scroller, fg_color='transparent')
+        ctk.CTkLabel(frame, text=region, anchor=tk.W, justify=tk.LEFT,
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     ).pack(fill=tk.X, anchor=tk.W)
+        ctk.CTkFrame(frame, height=1, fg_color=theme.MUTED_TEXT
+                     ).pack(fill=tk.X, pady=(2, 0))
+        return frame
 
     def _index_regions(self):
         """
@@ -431,14 +469,63 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
                 if needle in haystack:
                     self._build_regions(country)
 
-        shown = 0
-        for code, haystack, box, indent in self._visible_rows(needle):
-            box.grid(row=shown // self.COLUMNS, column=shown % self.COLUMNS,
-                     sticky=tk.W, padx=6 + indent * 18, pady=4)
-            shown += 1
-
-        self.shown_count = shown
+        self.shown_count = self._lay_out_by_region(self._visible_rows(needle))
         self._update_count()
+
+    def _lay_out_by_region(self, rows) -> int:
+        """
+        Grid the visible rows under their region headings.
+
+        PARAMETERS:
+        -----------
+        rows : Iterable
+            The rows to show, in display order, as _visible_rows yields them.
+
+        RETURNS:
+        --------
+        int
+            How many countries and regions ended up on screen, which is what
+            the summary line reports.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Bucketing is stable, so a country's subdivisions stay directly under
+        it: _visible_rows yields them adjacently and they share a region,
+        their country's - see workdaycalendar.region_of, which reads the
+        country out of a "DE-BY".
+
+        A region with nothing to show has its heading hidden rather than
+        left over an empty stretch of grid, which is what a search for one
+        country would otherwise leave behind in the other four.
+        """
+        by_region = {}
+        for row in rows:
+            by_region.setdefault(region_of(row[0]), []).append(row)
+
+        shown = 0
+        grid_row = 0
+        for region in REGION_ORDER:
+            found = by_region.get(region)
+            heading = self.region_headings[region]
+
+            if not found:
+                heading.grid_remove()
+                continue
+
+            heading.grid(row=grid_row, column=0, columnspan=self.COLUMNS,
+                         sticky=tk.EW, padx=6,
+                         pady=(12 if grid_row else 2, 4))
+            grid_row += 1
+
+            for offset, (_code, _haystack, box, indent) in enumerate(found):
+                box.grid(row=grid_row + offset // self.COLUMNS,
+                         column=offset % self.COLUMNS,
+                         sticky=tk.W, padx=6 + indent * 18, pady=4)
+
+            grid_row += -(-len(found) // self.COLUMNS)
+            shown += len(found)
+
+        return shown
 
     def _all_rows(self):
         """Every row built so far, countries and regions together."""
@@ -1138,7 +1225,13 @@ class CalendarSettingsDialog(ctk.CTkToplevel):
 
         if shown < available:
             text += f"  Showing {shown} of {available}."
-        self.summary_label.configure(text=text)
+
+        # The empty selection is the one worth looking at twice; see the
+        # fonts built in _build_header
+        self.summary_label.configure(
+            text=text,
+            font=self.summary_warning_font if not chosen else self.summary_font,
+        )
 
     def apply(self):
         """

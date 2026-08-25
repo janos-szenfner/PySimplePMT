@@ -131,8 +131,7 @@ class TestIconToolbarCreation(unittest.TestCase):
         """Test that IconToolbar creates icon buttons."""
         toolbar = IconToolbar(self.root, self.project)
         expected_icons = [
-            'open', 'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone',
+            'save', 'save_as', 'edit', 'indent', 'outdent',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_icons:
@@ -159,26 +158,28 @@ class TestIconToolbarCreation(unittest.TestCase):
         toolbar = IconToolbar(self.root, self.project)
 
         self.assertNotIn(toolbar.SEPARATOR, toolbar.icon_buttons)
-        # Five: after the file actions, one on each side of the critical
-        # path analysis - which belongs to neither group beside it - and one
-        # on each side of the search box, which is neither an action on the
-        # plan nor one of the settings it sits between.
-        self.assertEqual(len(toolbar.separators), 5)
+        # Seven: after the save actions, one on each side of the formatting
+        # group, one on each side of the critical path analysis - which
+        # belongs to neither group beside it - and one on each side of the
+        # search box, which is neither an action on the plan nor one of the
+        # settings it sits between.
+        self.assertEqual(len(toolbar.separators), 7)
         self.toolbar = toolbar
 
     def test_the_dividers_fall_between_the_groups(self):
         """
-        Making things is held apart from moving them about.
+        Saving is held apart from editing a row, and both from the clipboard.
 
-        One divider after the file actions, one after the work items, so the
-        row reads as three groups rather than one long run of buttons.
+        One divider after the two save actions and one after the three that
+        act on the selected task, so the row reads as groups rather than one
+        long run of buttons.
         """
         toolbar = IconToolbar(self.root, self.project)
         names = [name for name, _tip, _action in toolbar.ICON_ACTIONS]
 
         self.assertEqual(names.index(toolbar.SEPARATOR),
-                         names.index('save') + 1)
-        self.assertEqual(names[names.index('milestone') + 1],
+                         names.index('save_as') + 1)
+        self.assertEqual(names[names.index('outdent') + 1],
                          toolbar.SEPARATOR)
         self.toolbar = toolbar
 
@@ -248,13 +249,11 @@ class TestIconToolbarButtonProperties(unittest.TestCase):
     def test_buttons_have_tooltips(self):
         """Test that buttons have tooltip information."""
         expected_tooltips = {
-            'open': 'Open Project',
-            'new_project': 'New Project',
             'save': 'Save Project',
-            'edit': 'Edit',
-            'task': 'Create Task',
-            'subtask': 'Create Subtask',
-            'milestone': 'Create Milestone',
+            'save_as': 'Save Project As...',
+            'edit': 'Edit Task...',
+            'indent': 'Indent Task',
+            'outdent': 'Outdent Task',
             'cut': 'Cut',
             'copy': 'Copy',
             'paste': 'Paste',
@@ -266,6 +265,27 @@ class TestIconToolbarButtonProperties(unittest.TestCase):
             btn = self.toolbar.icon_buttons[icon_name]
             self.assertTrue(hasattr(btn, 'tooltip'))
             self.assertEqual(btn.tooltip, expected_tooltip)
+
+    def test_every_button_says_what_it_is_on_hover(self):
+        """
+        The caption is on screen, not just stored on the button.
+
+        Every icon carried a tooltip string from the start and none of them
+        was ever shown, which made the row readable only to whoever drew it.
+        """
+        from gantt_app.views.tooltip import Tooltip
+
+        for icon_name, btn in self.toolbar.icon_buttons.items():
+            attached = getattr(btn, 'tooltip_widget', None)
+            self.assertIsInstance(attached, Tooltip, icon_name)
+            self.assertTrue(attached.text, icon_name)
+
+    def test_the_help_button_says_what_it_is_too(self):
+        """It is a button on the same row, so it needs the same."""
+        from gantt_app.views.tooltip import Tooltip
+
+        self.assertIsInstance(
+            getattr(self.toolbar.help_button, 'tooltip_widget', None), Tooltip)
 
 
 class TestIconToolbarStateManagement(unittest.TestCase):
@@ -282,42 +302,31 @@ class TestIconToolbarStateManagement(unittest.TestCase):
             self.toolbar.destroy()
         self.root.destroy()
 
-    def test_open_button_always_active_with_project(self):
-        """Test that open button is active when project exists."""
+    def test_every_button_is_active_with_a_project(self):
+        """Every action in the row acts on a plan, so all of them light up."""
         project = Project(name="Test Project")
         toolbar = IconToolbar(self.root, project)
-        self.assertEqual(toolbar.icon_buttons['open'].cget("state"), "normal")
-        self.toolbar = toolbar
 
-    def test_open_button_always_active_without_project(self):
-        """Test that open button is active even without project."""
-        toolbar = IconToolbar(self.root, None)
-        self.assertEqual(toolbar.icon_buttons['open'].cget("state"), "normal")
-        self.toolbar = toolbar
-
-    def test_other_buttons_active_with_project(self):
-        """Test that other buttons are active when project exists."""
-        project = Project(name="Test Project")
-        toolbar = IconToolbar(self.root, project)
-        
-        # All buttons except 'open' should be active when project exists
-        for icon_name in ['save', 'edit', 'task', 'subtask', 'milestone',
-                        'cut', 'copy', 'paste', 'delete', 'undo', 'redo']:
+        for icon_name, button in toolbar.icon_buttons.items():
             self.assertEqual(
-                toolbar.icon_buttons[icon_name].cget("state"), "normal",
+                button.cget("state"), "normal",
                 f"Button '{icon_name}' should be active with project"
             )
         self.toolbar = toolbar
 
     def test_buttons_inactive_without_project(self):
-        """Test that buttons (except open) are inactive without project."""
+        """
+        With no plan open, nothing in the row can do anything.
+
+        Opening and creating a plan left the row when the icons for them
+        did; both live on the Project menu, which is always reachable. So
+        there is no longer an icon here that works without a project.
+        """
         toolbar = IconToolbar(self.root, None)
-        
-        # All buttons except 'open' should be disabled when no project
-        for icon_name in ['save', 'edit', 'new_project', 'task', 'subtask',
-                        'milestone', 'cut', 'copy', 'paste', 'delete', 'undo', 'redo']:
+
+        for icon_name, button in toolbar.icon_buttons.items():
             self.assertEqual(
-                toolbar.icon_buttons[icon_name].cget("state"), "disabled",
+                button.cget("state"), "disabled",
                 f"Button '{icon_name}' should be disabled without project"
             )
         self.toolbar = toolbar
@@ -332,8 +341,8 @@ class TestIconToolbarStateManagement(unittest.TestCase):
         toolbar.set_task_list(mock_task_list)
         
         # State should still be correct
-        self.assertEqual(toolbar.icon_buttons['open'].cget("state"), "normal")
         self.assertEqual(toolbar.icon_buttons['save'].cget("state"), "normal")
+        self.assertEqual(toolbar.icon_buttons['edit'].cget("state"), "normal")
         
         self.toolbar = toolbar
 
@@ -381,10 +390,8 @@ class TestIconToolbarActions(unittest.TestCase):
                    if icon != self.toolbar.SEPARATOR]
 
         self.assertEqual(actions, [
-            'load_project', 'new_project', 'save_project',
-            'edit_project_info',
-            'add_phase', 'add_deliverable', 'add_task', 'add_subtask',
-            'add_milestone',
+            'save_project', 'save_project_as',
+            'edit_selected_task', 'indent_selected', 'outdent_selected',
             'show_critical_path',
             'cut_tasks', 'copy_tasks', 'paste_tasks', 'delete_selected',
             'undo', 'redo',
@@ -398,7 +405,7 @@ class TestIconToolbarActions(unittest.TestCase):
         what the handlers it used to carry did: Create Task added a task
         called "New Task" with no dialog and no undo behind it.
         """
-        self.toolbar._perform('add_task')
+        self.toolbar._perform('indent_selected')
 
         self.assertEqual(len(self.project.tasks), 0)
 
@@ -411,20 +418,20 @@ class TestIconToolbarActions(unittest.TestCase):
         see and every icon ran the wrong thing.
         """
         called = []
-        self.toolbar.add_task = lambda: called.append('add_task')
+        self.toolbar.indent_selected = lambda: called.append('indent')
 
-        self.toolbar._perform('add_task')
+        self.toolbar._perform('indent_selected')
 
-        self.assertEqual(called, ['add_task'])
+        self.assertEqual(called, ['indent'])
 
     def test_pressing_the_button_runs_the_connected_action(self):
         """The same, through the button rather than past it."""
         called = []
-        self.toolbar.add_task = lambda: called.append('add_task')
+        self.toolbar.indent_selected = lambda: called.append('indent')
 
-        self.toolbar.icon_buttons['task'].invoke()
+        self.toolbar.icon_buttons['indent'].invoke()
 
-        self.assertEqual(called, ['add_task'])
+        self.assertEqual(called, ['indent'])
 
 
 class TestIconToolbarIntegration(unittest.TestCase):
@@ -466,8 +473,7 @@ class TestIconToolbarIntegration(unittest.TestCase):
         )
         
         expected_icons = [
-            'open', 'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone',
+            'save', 'save_as', 'edit', 'indent', 'outdent',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_icons:

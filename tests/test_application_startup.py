@@ -38,6 +38,127 @@ HAVE_DISPLAY = _display_available()
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestItOpensToFitTheScreen(unittest.TestCase):
+    """
+    The window is sized to the screen it opens on.
+
+    WHY THESE LOOK LIKE THIS:
+    =========================
+    It used to open at a flat 1400x900 with a minimum of 1200x800. That is
+    larger than a 1366x768 laptop screen in both directions, and the minimum
+    made it unfixable - the window could not be shrunk to fit the display it
+    had just opened too large for.
+
+    The screen this runs on cannot be chosen, so the two cases worth pinning
+    down are simulated by answering the two questions the sizing asks: how
+    much room the window manager allows, and what CustomTkinter multiplies a
+    requested geometry by.
+    """
+
+    def app(self, work_area=None, scaling=None):
+        """The application, optionally told what screen it is opening on."""
+        from gantt_app.main import GanttApp
+
+        class Fixed(GanttApp):
+            """A GanttApp on a screen of the test's choosing."""
+
+            if work_area is not None:
+                def wm_maxsize(self, *_args):
+                    return work_area
+
+            if scaling is not None:
+                def _window_scaling(self):
+                    return scaling
+
+        built = Fixed()
+        built.withdraw()
+        built.update_idletasks()
+        self.addCleanup(self._close, built)
+        return built
+
+    @staticmethod
+    def _close(app):
+        """Tear one down, whatever state it reached."""
+        try:
+            app.destroy()
+        except Exception:
+            pass
+
+    def test_it_fills_the_usable_area(self):
+        """Not the whole display: the Dock and the taskbar are not ours."""
+        app = self.app(work_area=(1600, 900))
+
+        self.assertEqual((app._current_width, app._current_height), (1600, 900))
+
+    def test_it_asks_the_window_manager_rather_than_the_display(self):
+        """
+        winfo_screenwidth is the whole screen, menu bar and Dock included.
+
+        Sizing to that puts the bottom of the window behind the Dock.
+        """
+        app = self.app()
+
+        self.assertEqual(app._usable_screen_area(), app.wm_maxsize())
+
+    def test_a_small_screen_gets_a_smaller_minimum(self):
+        """
+        The fault this replaced.
+
+        A minimum taller than the screen is a window that cannot be resized
+        to fit the display it is already on.
+        """
+        app = self.app(work_area=(1366, 728))
+
+        self.assertLessEqual(app._min_width, 1366)
+        self.assertLessEqual(app._min_height, 728)
+
+    def test_a_large_screen_keeps_the_designed_minimum(self):
+        """The layout still needs its room; it is a floor, not a target."""
+        app = self.app(work_area=(2560, 1400))
+
+        self.assertEqual((app._min_width, app._min_height),
+                         app.PREFERRED_MINIMUM)
+
+    def test_the_minimum_never_exceeds_what_was_opened(self):
+        """
+        Whatever the screen turns out to be.
+
+        Each window is torn down before the next is built. Two live Tk roots
+        share one image registry and the second one's icons resolve against
+        the first, which fails with "image pyimageN doesn't exist" - nothing
+        to do with what is being tested here, and the reason every other
+        test in this module builds one application at a time.
+        """
+        for area in ((1024, 640), (1366, 728), (1920, 1080)):
+            with self.subTest(screen=area):
+                app = self.app(work_area=area)
+                try:
+                    self.assertLessEqual(app._min_width, app._current_width)
+                    self.assertLessEqual(app._min_height, app._current_height)
+                finally:
+                    self._close(app)
+
+    def test_a_scaled_desktop_does_not_get_a_window_off_the_edge(self):
+        """
+        CustomTkinter multiplies a requested geometry by the scaling.
+
+        Handed screen pixels it asks for a window that much larger than the
+        screen - which looks right on a Mac, where the scaling is 1, and
+        opens half off the edge on Windows at 150%.
+        """
+        app = self.app(work_area=(2880, 1560), scaling=1.5)
+
+        self.assertEqual((app._current_width, app._current_height),
+                         (1920, 1040))
+
+    def test_a_window_manager_that_will_not_say_still_gets_a_window(self):
+        """Wrong by the height of a panel beats no window at all."""
+        app = self.app(work_area=(0, 0))
+
+        self.assertEqual(app._usable_screen_area(),
+                         (app.winfo_screenwidth(), app.winfo_screenheight()))
+
+
 class TestTheApplicationStarts(unittest.TestCase):
     """It builds, and its parts have found one another."""
 

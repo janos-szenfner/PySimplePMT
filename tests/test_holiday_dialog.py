@@ -248,6 +248,144 @@ class TestRegionsAndStates(HolidayDialogTestCase):
         self.assertIn("DE", window.selection())
 
 
+class TestTheListIsGroupedByRegion(HolidayDialogTestCase):
+    """
+    Two hundred and fifty names in one alphabetical run is a list nobody
+    reads. Grouped by region, a country is found by knowing roughly where it
+    is - which is what somebody looking for one actually knows.
+    """
+
+    def region_rows(self, window):
+        """Which grid row each region's heading landed on, in order."""
+        return {name: int(heading.grid_info()['row'])
+                for name, heading in window.region_headings.items()
+                if heading.grid_info()}
+
+    def test_every_region_has_a_heading(self):
+        """One per region, in the order the picker lists them."""
+        from gantt_app.workdaycalendar import REGION_ORDER
+
+        window = self.dialog()
+
+        self.assertEqual(list(window.region_headings), list(REGION_ORDER))
+
+    def test_the_headings_come_in_order_down_the_list(self):
+        """Africa & Middle East first, Other Territories last."""
+        from gantt_app.workdaycalendar import REGION_ORDER
+
+        window = self.dialog()
+        rows = self.region_rows(window)
+
+        self.assertEqual([name for name, _row in
+                          sorted(rows.items(), key=lambda pair: pair[1])],
+                         list(REGION_ORDER))
+
+    def test_a_country_sits_under_its_own_heading(self):
+        """
+        Between its region's heading and the next one.
+
+        This is the whole of the grouping: a country gridded outside that
+        span is filed under a region it does not belong to, and nothing else
+        in the dialog would notice.
+        """
+        from gantt_app.workdaycalendar import region_of
+
+        window = self.dialog()
+        rows = self.region_rows(window)
+        boundaries = sorted(rows.values()) + [10 ** 6]
+
+        for code, _haystack, box, _indent in window.rows:
+            region = region_of(code)
+            start = rows[region]
+            end = next(row for row in boundaries if row > start)
+            placed = int(box.grid_info()['row'])
+
+            self.assertTrue(start < placed < end,
+                            f"{code} sits outside {region}")
+
+    def test_a_region_with_nothing_to_show_hides_its_heading(self):
+        """
+        A search for one country must not leave four empty captions behind.
+        """
+        window = self.dialog()
+        window.search_var.set('brazil')
+        window.update_idletasks()
+
+        showing = self.region_rows(window)
+
+        self.assertEqual(list(showing), ['America Region'])
+
+    def test_clearing_the_search_brings_them_all_back(self):
+        """The headings are hidden rather than destroyed."""
+        from gantt_app.workdaycalendar import REGION_ORDER
+
+        window = self.dialog()
+        window.search_var.set('brazil')
+        window.update_idletasks()
+        window.search_var.set('')
+        window.update_idletasks()
+
+        self.assertEqual(len(self.region_rows(window)), len(REGION_ORDER))
+        self.assertEqual(window.shown_count, len(supported_countries()))
+
+    def test_a_region_of_a_country_is_grouped_with_its_country(self):
+        """
+        Bavaria belongs under Europe because Germany does.
+
+        The rows are bucketed by the country in the code, so a subdivision
+        follows its country rather than falling to Other Territories.
+        """
+        window = self.dialog(selected=['DE-BY'])
+        rows = self.region_rows(window)
+        boundaries = sorted(rows.values()) + [10 ** 6]
+
+        bavaria = next(box for code, _h, box, _i in window.region_rows['DE']
+                       if code == 'DE-BY')
+        start = rows['Europe Region']
+        end = next(row for row in boundaries if row > start)
+
+        self.assertTrue(start < int(bavaria.grid_info()['row']) < end)
+
+
+class TestTheEmptySelectionIsSaidLoudly(HolidayDialogTestCase):
+    """
+    No countries selected means weekends only and no public holidays at all.
+
+    That is a statement about the plan rather than a running count, and
+    somebody who does not notice it goes looking for why a date did not move.
+    """
+
+    def test_it_is_bold_italic_and_underlined(self):
+        """All three, so it reads as different in kind from the count."""
+        window = self.dialog(selected=[])
+        font = window.summary_label.cget('font')
+
+        self.assertIn("No countries selected", window.summary_label.cget('text'))
+        self.assertEqual(str(font.cget('weight')), 'bold')
+        self.assertEqual(str(font.cget('slant')), 'italic')
+        self.assertTrue(int(font.cget('underline')))
+
+    def test_the_running_count_is_left_plain(self):
+        """Emphasising both would emphasise neither."""
+        window = self.dialog(selected=['DE'])
+        font = window.summary_label.cget('font')
+
+        self.assertEqual(str(font.cget('weight')), 'normal')
+        self.assertEqual(str(font.cget('slant')), 'roman')
+        self.assertFalse(int(font.cget('underline')))
+
+    def test_it_changes_back_when_the_last_one_is_unticked(self):
+        """The emphasis follows the selection rather than the opening state."""
+        window = self.dialog(selected=['DE'])
+
+        window.checkboxes['DE'].set(False)
+        window.update_idletasks()
+
+        font = window.summary_label.cget('font')
+        self.assertEqual(str(font.cget('weight')), 'bold')
+        self.assertTrue(int(font.cget('underline')))
+
+
 class TestWhatTheDialogOffers(HolidayDialogTestCase):
     """The list of countries itself."""
 

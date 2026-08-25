@@ -16,6 +16,8 @@ This is a complete implementation of a project management tool with:
 - **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and today's column is tinted
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
+- **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
+- **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
 - **File Import**: Import from GanttProject (.gan), MS Project (MSPDI .xml), Mermaid (.mmd), and Excel (.xlsx) files. Every reader is standard library or an already-bundled package, so no import needs anything installed
@@ -23,6 +25,7 @@ This is a complete implementation of a project management tool with:
 - **File Export**: Export the plan to a three page PDF — work item list beside the chart, the chart alone, then the list as a full table — to PNG, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
 - **Planning Tool Export**: Hand the plan to GanttProject as a .gan file, or to Microsoft Project as MSPDI .xml. Both carry the hierarchy, the links with their types and lags, the progress, the notes and the working calendar; both are written so the dates the other tool shows are the dates shown here
 - **Work Item Hierarchy**: Phase > Deliverable > Task > Subtask, with milestones at any level. Indenting and outdenting keep a task's type wherever the new parent can hold it, so a Task moved under a Deliverable stays a Task
+- **Opens to fit the screen**: The window is sized to the area the desktop actually allows — the menu bar, Dock or taskbar excluded — rather than to a fixed 1400x900 that overflowed a 1366x768 laptop. The minimum is clamped to what was opened, so the window can always be resized to fit the display it is on
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Rows that line up**: the chart draws the rows the task list is showing, in its order and at its row height, so a bar sits on the line of the task it belongs to. Fold a branch away and its bars go with it; scroll the list and the chart follows
@@ -699,7 +702,7 @@ Two rows, one above the other, because they are two different things.
 **The menu bar** names everything the application can do, the way a menu bar
 on any desktop does:
 
-- **Project**: New Project, Load Project, Save Project
+- **Project**: New Project, Load Project, Save Project, Save Project As
 - **File**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
@@ -709,17 +712,109 @@ on any desktop does:
 - **Log**: Opens the application log window, at the end of the row
 
 **The action bar** under it carries the handful worth reaching for without
-opening a menu, in three groups divided by a hairline:
+opening a menu, in groups divided by a hairline:
 
-- open, new, save
-- edit, and the five work item types outermost first: Phase, Deliverable,
-  Task, Subtask, Milestone
+- save, save as
+- edit the selected task, indent it, outdent it
+- the formatting group — B, I, U, text colour, background fill, presets,
+  clear — set apart by a hairline on each side, because it changes how the
+  plan is *drawn* rather than what the plan says
+- critical path, alone between two hairlines: it neither edits a row nor
+  moves one about, so it belongs to neither group beside it
 - cut, copy, paste, delete, undo, redo
+
+Opening and creating a plan are on the **Project** menu rather than here, as
+are the five work item types, which are on **Actions → Create**. What is left
+on the bar is what gets used repeatedly while a plan is being built, which is
+the only thing an icon earns its place with.
+
+**The pencil edits the selected task**, not the project title. It used to open
+the project title box, which is a different kind of thing entirely: a plan has
+one title and a great many tasks, and an icon sitting among the actions that
+work on a row reads as the one that edits a row. Renaming the plan is on
+**Actions → Project Title**, beside the other project-wide settings.
+
+**Every button says what it is on hover** (`views/tooltip.py`). The captions
+had been written from the start — one per entry in `ICON_ACTIONS` — and were
+stored on the button as an attribute that nothing ever read, so the row was
+legible only to whoever drew it.
 
 The icons are **drawn** (`resources/icons.py`), a few strokes each painted with
 Pillow at four times the size and reduced. They were set in "Segoe UI Emoji"
 before, a font that ships with Windows and with nothing else, so the whole row
 came out blank on Linux. Drawing depends on no font being installed.
+
+**Save writes back; Save As asks.** Save used to open a file chooser every
+time, which made it a second Save As under a different name — saving twice
+meant picking the same file twice and confirming the overwrite. It now writes
+to wherever the plan was last saved or loaded from, and only asks when there
+is nowhere to write yet. A new plan clears that path, so Save on a new plan
+asks rather than writing over the file the last one came from.
+
+### Row Formatting (`taskstyle.py`, `views/stylebar.py`)
+
+**The chart is for sanity-checking dependencies; the task list is where the
+work happens.** A plan of any size is scanned rather than read, and the rows
+worth finding again — the payment milestones, the phase gates, the things that
+are finished — have to be findable at a glance. A Type column does not do
+that, because scanning is exactly the activity that skips columns.
+
+So a row carries a `TaskStyle`: an ink, a fill, and three emphases. It travels
+with the plan, it goes through the undo history, and marking forty rows and
+pressing undo once puts all forty back.
+
+**The emphasis flags are three-valued, and that is not fussiness.** A summary
+row is bold without anybody asking. With a plain `True`/`False` that automatic
+bold would be indistinguishable from one somebody chose, and two things would
+break: pressing **B** on a summary would appear to do nothing (it is already
+bold), and clearing a row's formatting would leave a summary looking like a
+leaf. `None` means "whatever this kind of row is by default"; see
+`taskstyle.resolve`.
+
+**A default style serialises to nothing.** Almost every row in almost every
+plan carries no formatting, so writing five nulls per task would grow every
+saved file for nothing.
+
+**What the selection says.** With several rows selected, a toggle reads as on
+only when every one of them has it and a colour only when they all carry the
+same one. Showing the first row's formatting would be a lie about the rest,
+and pressing **B** would then turn bold *off* for the rows that had it rather
+than on for the rows that did not.
+
+The group sits on the icon bar between two hairlines, with `Ctrl+B` / `Ctrl+I`
+/ `Ctrl+U` bound on the window so they work wherever the focus is. Both cases
+of each letter are bound: Tk reports `<Control-B>` when caps lock is on, and a
+shortcut that stops working with caps lock is the kind of fault nobody reports
+and everybody notices.
+
+### How a Row Is Painted (`views/task_list.py`)
+
+**One tag per row, carrying everything.** A `ttk.Treeview` row with two tags
+that both set a background leaves it to Tk which one wins. The whole
+appearance — banding, the row's fill and ink, the outline's bold, the greying
+of a cut row — is resolved in Python onto a single tag instead, so the
+precedence is something this application states and a test can check rather
+than something the platform decides.
+
+The order is: **what a row is doing beats what it was given.** A row waiting
+to be pasted, or on screen only to say where a search match sits, is greyed
+whatever ink it carries — those mean "not the row you are looking at", which
+outranks decoration. Its fill is left alone, so a marked-up row is still
+recognisable while you are moving it.
+
+Tags are shared by every row that resolves the same way, so a plan with forty
+rows marked as financial milestones configures one tag rather than forty.
+
+**Fonts are specifications, not objects.** A `tkinter.font.Font` is a thing in
+the Tk interpreter with a lifetime; one built here outlives the root that made
+it, and deleting it later reaches into an interpreter that may already be
+gone. A `(family, size, modifiers)` tuple is just a description — Tk reads it
+when the tag is configured and nothing owns anything afterwards.
+
+**The banding is applied after the rows are in place**, in the order the tree
+actually draws them. Roots are inserted first and their children follow in
+later passes, so counting at insert time put a phase and the task nested under
+it in the same shade with the banding restarting underneath them.
 
 ### File I/O (`utils/file_io.py`)
 - **JSON Serialization**: Handles datetime objects and None values
@@ -1253,8 +1348,10 @@ pysimplepmt --log-file      # print the log file path
      a task
 
 8. **Save Project**
-   - Choose **Project -> Save Project...**
-   - Choose file location and name
+   - Choose **Project -> Save Project...** or the save icon
+   - Writes back to the file the plan was last saved or loaded from
+   - Asks where to put it the first time, when there is no such file yet
+   - **Save Project As...** always asks, and the plan follows the new file
    - Project is saved in JSON format
 
 9. **Load Project**
@@ -1663,10 +1760,15 @@ Unit tests cover:
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, where pasted rows land, that a task cannot be pasted inside itself, and that the selection reaches the clipboard at all
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
-- ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it
+- ✅ **Row Formatting**: What a default style serialises to, that a summary can be un-bolded on purpose and comes back bold when cleared, that an ordinary edit does not strip a row's formatting or its calendar, and that rows formatted alike share one tag
+- ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
+- ✅ **Visual Hierarchy**: That a row with children is bold whatever its Type says, that an empty Phase still reads as one, and that the greying of a cut row outranks the ink it was given
+- ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it, which buttons the row holds, where the dividers fall, and that nothing on it is live without a plan open
+- ✅ **Hover Text**: That every button's caption reaches the canvas the pointer will actually be over - a CTkButton is a frame and the mouse is never on it - and that attaching does not bind the same handler twice
 - ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, the EU public holidays including the movable Easter feasts, and the manual date overrides that outrank all of them
 - ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
 - ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries and a thousand regions, when regions appear, the batch buttons, what Apply hands back and what Cancel does not
+- ✅ **Country Regions**: That every country the holidays package knows is placed in exactly one region and none is left out, and that a subdivision code is grouped by its country
 - ✅ **Desktop Integration**: That the packaged icon is named what the desktop entry asks for, at every size the theme wants, and that the window class matches what the entry declares
 - ✅ **Dialog Chrome**: That every toolbar icon reaches a handler, that a secondary button is visible and tells itself apart from the primary one, that a popup opened over a modal dialog takes the input grab and hands it back, and that opening a submenu does not dismiss the menu it belongs to
 - ✅ **Critical Path**: Float per task, both parallel strands coming out critical, each link type on the backward pass, summaries left out, cycles not hanging, and what the analysis window shows
@@ -1676,6 +1778,7 @@ Unit tests cover:
 - ✅ **MS Project Format Sniffing**: That the extension is not trusted in either direction - MSPDI named `.mpp` imports, a binary save named `.xml` does not - that a byte order mark does not hide the XML, and that the unreadable case names the step that fixes it without recording an error
 - ✅ **MS Project Export**: The pinned dates and the unpinned summaries, the outline levels and WBS, lag in tenths of a minute, the weekday numbering that starts at Sunday, the per-task calendars, a worked Saturday written as an exception, and the schema's element order at the two places it looks wrong
 - ✅ **PDF Pages**: That there are three, that they are all one physical size, what the work item table holds, and that the written page is the size it claims to be
+- ✅ **Window Sizing**: That the window fills the usable area rather than the whole display, that a small screen gets a smaller minimum so it stays resizable, and that a scaled desktop does not get a window asked for at the scaling factor twice over
 - ✅ **Application Icon**: That it draws at every packaged size, in the Python colours, identically every time, and reaches the window
 
 The GAN fixtures deliberately mirror the format GanttProject actually writes.

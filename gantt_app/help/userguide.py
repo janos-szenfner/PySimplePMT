@@ -241,6 +241,19 @@ GUIDE_SECTIONS = (
             "country or region by name or code, and the 27 EU member states "
             "sit behind one button.",
 
+            "The list is grouped by region - Africa & Middle East, America, "
+            "Asia Pacific, Europe - and alphabetical within each, so a "
+            "country is found by knowing roughly where it is rather than by "
+            "scrolling 250 names. A search that empties a region hides its "
+            "heading with it. A country that straddles two continents is "
+            "listed where somebody would look for it: Turkey, Russia, "
+            "Armenia, Azerbaijan, Georgia and Cyprus are all under Europe.",
+
+            "When nothing is selected the line under the search box says so "
+            "in bold - it means the plan is working weekends off and no "
+            "public holidays at all, which is worth noticing before you "
+            "wonder why a date did not move.",
+
             "The rule is the union: a date that is a public holiday in ANY "
             "selected country or region is a non-working day for the plan. "
             "That is what a project worked across several countries needs - "
@@ -449,12 +462,109 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Marking rows up",
+        [
+            "The task list is where the work happens, and a plan of any size "
+            "is scanned rather than read. The rows worth finding again - the "
+            "payment milestones, the phase gates, the things that are "
+            "finished - can be given a colour, a fill and an emphasis of "
+            "their own so they are findable at a glance.",
+
+            "Select one or more rows and use the formatting group on the "
+            "icon bar: B, I and U for bold, italic and underline; the A for "
+            "the text colour; the highlighter for the background fill. The "
+            "bar under the A and the highlighter shows the colour each would "
+            "apply next.",
+
+            "Ctrl+B, Ctrl+I and Ctrl+U do the same from the keyboard, "
+            "wherever the focus is in the window.",
+
+            "The presets apply a whole look in one press: Financial "
+            "Milestone is a yellow fill with bold black text, Deliverable "
+            "Complete is green text at normal weight, Phase Gate / Approval "
+            "is red bold italic, and Summary Phase is bold on a light slate "
+            "fill.",
+
+            "The X at the end of the group clears the formatting off the "
+            "selected rows in one press, back to how the grid draws "
+            "everything else.",
+
+            "With several rows selected, a toggle shows as on only when "
+            "every one of them has it, and a colour only when they all "
+            "carry the same one - so pressing it means make them all this, "
+            "which is what you meant by pressing it.",
+
+            "Nothing is selected means nothing to format, so the whole "
+            "group is greyed out until you pick a row.",
+
+            "Formatting is part of the plan: it is saved with the file, it "
+            "can be undone, and marking forty rows and pressing undo once "
+            "puts all forty back.",
+        ],
+    ),
+    (
+        "Reading the outline",
+        [
+            "A row that has work under it is drawn in bold and carries the "
+            "expander that folds its branch away. The work under it is "
+            "indented one level per step down the plan.",
+
+            "That is true of any row with children, whatever the Type "
+            "column says about it - a Task with sub-tasks is a summary of "
+            "them. The hierarchy reads the same whether that column is on "
+            "screen or scrolled out of sight, which is the point: scanning "
+            "a list is exactly the activity that skips columns.",
+
+            "A Phase or a Deliverable reads as a bracket even before "
+            "anything has been put in it.",
+
+            "A summary row can be told not to be bold, like any other row, "
+            "and clearing its formatting brings the bold back - bold is "
+            "what a summary is by default, not something applied to it.",
+        ],
+    ),
+    (
+        "The icon bar",
+        [
+            "The window opens filling whatever screen you are on, so the "
+            "task list and the chart get whatever room the desktop allows.",
+
+            "Every button says what it is if you rest the pointer on it, "
+            "which is the fastest way to learn the row.",
+
+            "Save and Save As come first, then the three that act on "
+            "whichever task is selected in the list: edit it, indent it to "
+            "sit under the row above, outdent it to sit beside its parent. "
+            "Indent and outdent take several selected rows at once.",
+
+            "Then the formatting group, set apart by a divider on each "
+            "side because it changes how the plan is drawn rather than what "
+            "it says - see Marking rows up above.",
+
+            "The pencil edits the selected task. Renaming the plan itself is "
+            "Actions > Project Title.",
+
+            "Creating work items is on Actions > Create, and opening or "
+            "starting a plan is on the Project menu.",
+
+            "Then the critical path analysis, set apart on both sides "
+            "because it neither edits a row nor moves one about, and then "
+            "cut, copy, paste, delete, undo and redo.",
+        ],
+    ),
+    (
         "Files: saving and opening",
         [
             "Project > Save and Project > Load use this application's own "
             "JSON format, which carries everything: the tasks, the links, "
             "the calendars, the overrides and the per-task calendar "
             "assignments.",
+
+            "Save writes back to the file the plan came from and only asks "
+            "where to put it the first time. Save As always asks, and the "
+            "plan follows the new file from then on. A new plan has no file "
+            "behind it, so Save asks again rather than writing over the one "
+            "the last plan came from.",
 
             "A plan saved by an older version opens in a newer one. Anything "
             "the older version did not have is simply absent rather than "
