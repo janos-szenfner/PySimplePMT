@@ -18,6 +18,8 @@ This is a complete implementation of a project management tool with:
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
+- **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
+- **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
 - **Type dependencies into the grid**: The Dependencies column takes the notation every planning tool uses — `3`, `3SS+1d`, `3FS-2d`, `3SF+50%`, several per cell. Double-click, type, Enter. It resolves the numbers, refuses a self-reference, an unknown task, a duplicate or anything that would run in a circle, reschedules, and writes the cell back in the same form
 - **Sequential IDs that keep up**: The ID column numbers rows 1..N down the list with no gaps, and follows every insert, delete, drag and indent. The number is a *position*; dependencies are held against the task itself, so a link never breaks when the numbers move — it just shows a different one
 - **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen. The task name lives in the tree column, so the indentation is drawn against the name itself, and an **Outline Level** column gives the same depth as a number (1 at the top, 2 under it), the way Microsoft Project does
@@ -839,6 +841,42 @@ The group sits on the icon bar between two hairlines, with `Ctrl+B` / `Ctrl+I`
 of each letter are bound: Tk reports `<Control-B>` when caps lock is on, and a
 shortcut that stops working with caps lock is the kind of fault nobody reports
 and everybody notices.
+
+### Project Settings (`views/projectsettings.py`)
+
+Everything on this panel used to be either unreachable or spread across three
+places: the title behind a one-line prompt, the calendar behind a different
+dialog, and the start date not settable at all — it was whatever the earliest
+task happened to say, so moving a plan meant editing every task in it.
+
+**Not everything on it is a setting.** The start date is not a field on a
+project — it is derived from the tasks — so that box is a *command*: typing a
+date moves the whole plan. Every task shifts by the same number of calendar
+days, which is what preserves it. Rescheduling from the new date instead would
+pull everything up against its links and collapse every gap somebody had put
+there on purpose.
+
+The finish date is the same while the plan runs forward, where it is an answer
+rather than a question, so the box and its calendar button are both shut — one
+that accepted a date and then ignored it would be worse than one that refused.
+Switch **Schedule from** to the finish date and it becomes the deadline.
+
+**Backward scheduling reuses the backward pass that was already there.**
+`schedule_analysis` computes a `late_start` and `late_finish` per task — the
+definition of "as late as this can be without the project finishing later" —
+and until now those were read for the float and thrown away.
+`apply_backward_schedule` writes them onto the tasks and then anchors the
+packed plan against the deadline. There is no second scheduler.
+
+Nothing is rescheduled afterwards, deliberately: `reschedule` only ever moves a
+task *later*, which is what the backward pass has just finished doing on
+purpose. The late dates satisfy every link by construction. The behaviour that
+tells this apart from merely sliding the plan is a task with float — a slide
+keeps it early, and As Late As Possible pushes it up against the finish.
+
+`Project.apply_schedule` dispatches on the direction and is what every refresh
+now calls. A plan scheduled forward gets `reschedule` and nothing else, which
+is the whole of the previous behaviour.
 
 ### The Dependencies Column (`dependencysyntax.py`)
 
@@ -1905,6 +1943,8 @@ Unit tests cover:
 - ✅ **Progress Tracking**: The five thresholds over a whole selection, that a phase marks the work under it, that past work goes to 100% and future work stays at 0%, that a weekend and a holiday both count correctly, that a milestone is done or not done, and that a whole press is one undo step
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
 - ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
+- ✅ **Project Settings**: That the settings survive a saved file and an older one opens with the defaults, that a priority out of range is clamped rather than refusing the plan, that moving the plan keeps every duration and gap and carries the earliest-begin floors with it, and that the panel refuses a backward schedule with no deadline
+- ✅ **Backward Scheduling**: That the plan ends on the deadline, that durations survive, that every link is still satisfied without a reschedule afterwards, that a task with float moves late rather than staying early, that a deadline in the past still moves the plan, and that a forward plan is settled byte for byte as it was before
 - ✅ **Dependency Grammar**: Every row of the specification's token table, commas and semicolons, case and spacing, a lag with no type and a type with no lag, and a round trip through every form the cell can hold
 - ✅ **The Dependencies Column**: That an unreadable cell stores nothing and says so, that the four guards refuse what they should, that the plan is left untouched by a check that fails, that a whole cell is one undo step, and that the task editor shows what the grid stored
 - ✅ **Exported IDs**: That the GanttProject and MSPDI files number tasks the way the list does, that the shared plan walk agrees with `display_ids` rather than counting for itself, that the spreadsheet's ID column holds numbers the plan shows, and that no identity reaches either file

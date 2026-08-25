@@ -99,7 +99,7 @@ class TestMenuContents(unittest.TestCase):
         items = find(self.tree, 'Actions')['items']
 
         self.assertEqual(labels(items),
-                         ['Create', 'Project Title...',
+                         ['Create', 'Project Settings...',
                           'Calendar Settings...', 'Critical Path...'])
         self.assertIn('submenu', items[0])
 
@@ -124,18 +124,20 @@ class TestMenuContents(unittest.TestCase):
                          ['Phase...', 'Deliverable...', 'Task...',
                           'Subtask...', 'Milestone...'])
 
-    def test_project_title_sits_directly_under_actions(self):
+    def test_project_settings_sits_directly_under_actions(self):
         """
-        Renaming the project is reachable in one step.
+        The settings that apply to the whole plan are reachable in one step.
 
-        It used to sit inside Create, which put a rename next to the three
-        create actions and behind an extra hop.
+        This entry used to sit inside Create, which put a rename next to the
+        three create actions and behind an extra hop. It used to be called
+        Project Title and ask for one; it opens the panel the title now sits
+        on, with the rest of what a plan is built from.
         """
         items = find(self.tree, 'Actions')['items']
-        title = next(i for i in items if i['text'] == 'Project Title...')
+        settings = next(i for i in items if i['text'] == 'Project Settings...')
 
-        self.assertNotIn('submenu', title)
-        self.assertTrue(callable(title['command']))
+        self.assertNotIn('submenu', settings)
+        self.assertTrue(callable(settings['command']))
 
     def test_project_info_left_the_view_menu(self):
         """View no longer offers Project Info."""

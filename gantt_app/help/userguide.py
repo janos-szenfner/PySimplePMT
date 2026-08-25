@@ -634,6 +634,45 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Project Settings",
+        [
+            "Actions > Project Settings holds what the whole plan is built "
+            "from. It used to be Project Title and ask only for a title; the "
+            "title is still there, with the rest of it.",
+
+            "Start date moves the whole plan. It is not a setting that gets "
+            "stored - a plan starts whenever its earliest task does - so "
+            "typing a date here is an instruction: every task moves by the "
+            "same number of days, keeping its length and keeping the gaps "
+            "between them. A task whose new start lands on a weekend is "
+            "pushed to the next working day.",
+
+            "Schedule from decides which end the dates are worked out from. "
+            "Project Start Date is forward, and is what a plan does unless "
+            "you say otherwise: work begins as soon as its links allow. "
+            "Project Finish Date is backward: the finish is fixed and the "
+            "work is fitted in before it, so nothing starts earlier than it "
+            "has to.",
+
+            "Finish date is an answer while the plan runs forward - it is "
+            "whatever the work adds up to - so the box is shut. Choose to "
+            "schedule from the finish date and it becomes the deadline the "
+            "plan is packed back from. It will move the plan into the past "
+            "if the deadline cannot be met from today, which is the point: "
+            "that is worth seeing rather than hiding.",
+
+            "Status date is what Mark on Track reports against. Leave it "
+            "empty and it uses today; set it and a plan frozen for a "
+            "reporting meeting stays frozen.",
+
+            "Priority is a number from 1 to 1000, 500 by default. Nothing "
+            "here acts on it - it is for whoever is levelling resources "
+            "across several plans - but it is carried and saved.",
+
+            "Nothing is applied until you press Apply.",
+        ],
+    ),
+    (
         "The icon bar",
         [
             "The window opens filling whatever screen you are on, so the "

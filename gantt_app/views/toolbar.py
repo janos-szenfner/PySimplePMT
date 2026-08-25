@@ -6,7 +6,6 @@ Contains action buttons for managing the project.
 
 import tkinter as tk
 from datetime import datetime
-from tkinter import simpledialog
 # Message boxes and file choosers that stay native on every desktop:
 # Tk's own are native on macOS and Windows but drawn by Tk on X11.
 # Aliased so the call sites below read exactly as they always have.
@@ -965,7 +964,7 @@ class Toolbar(ctk.CTkFrame):
                     ]},
                     # Renaming the project is not a create action, so it sits
                     # beside Create rather than inside it
-                    {"text": "Project Title...", "command": self.edit_project_info},
+                    {"text": "Project Settings...", "command": self.edit_project_info},
                     {"text": "Calendar Settings...", "command": self.edit_holidays},
                     {"text": "Critical Path...", "command": self.show_critical_path},
                 ],
@@ -1267,25 +1266,27 @@ class Toolbar(ctk.CTkFrame):
         return selected_task[0]
     
     def edit_project_info(self):
-        """Edit the project title with undo support."""
-        new_name = simpledialog.askstring(
-            "Project Title", "Enter the project title:",
-            parent=self.master, initialvalue=self.project.name
-        )
-        
-        if new_name and new_name != self.project.name:
-            if self.undo_redo_manager:
-                from gantt_app.utils.undoredo import create_update_project_name_command
-                command = create_update_project_name_command(self.project, self.project.name, new_name)
-                if self.undo_redo_manager.execute(command):
-                    self.update_undo_redo_buttons()
-                    if self.on_project_changed:
-                        self.on_project_changed()
-            else:
-                # Fallback to direct update
-                self.project.name = new_name
-                if self.on_project_changed:
-                    self.on_project_changed()
+        """
+        Open the settings that apply to the whole plan.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This asked for a title and nothing else. The title is still here, on
+        a panel with the rest of what a plan is built from - the date it
+        starts, the date it has to finish, which end it is scheduled from,
+        its calendar and its priority. See views/projectsettings.py.
+
+        The name is no longer changed through the undo history. The panel
+        applies several settings at once and most of them - the scheduling
+        direction, the deadline, moving the whole plan - have no command
+        behind them, so recording one of the six and not the others would be
+        an undo that put the title back and left the plan where the settings
+        had moved it.
+        """
+        from gantt_app.views.projectsettings import edit_project_settings
+
+        edit_project_settings(self.winfo_toplevel(), self.project,
+                              on_apply=self.on_project_changed)
     
     def edit_holidays(self):
         """
@@ -2371,14 +2372,17 @@ class Toolbar(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        Today is the status date. The specification allows for one named by
-        the reader instead, and there is nowhere to name it yet - so this
-        says which date it used in the log and in the message, rather than
-        leaving somebody to guess what "on track" was measured against.
+        The plan's status date when it has one, and today when it has not.
+        A status date is what a plan is frozen against for a reporting
+        meeting - see Project Settings - and "on track" measured against a
+        different day than the rest of the report is worse than useless.
+
+        Which date was used is said in the log and in the message either
+        way, rather than leaving somebody to guess.
         """
         from gantt_app.views.progressgroup import SCOPE_PROJECT
 
-        status_date = datetime.now()
+        status_date = self.project.status_date or datetime.now()
 
         if scope == SCOPE_PROJECT:
             targets = self._progress_targets(
