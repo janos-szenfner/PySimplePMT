@@ -699,7 +699,7 @@ class DragDropTaskList(ctk.CTkFrame):
         else:
             task.dependencies = links
 
-        self.project.reschedule()
+        self.project.apply_schedule()
         logger.info("Set %d dependency(ies) on task %s", len(links), task_id)
 
         self.update_task_list()

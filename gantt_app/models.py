@@ -1934,6 +1934,186 @@ class Project:
     #: cost a warning rather than a loop with no end.
     MAX_OUTLINE_DEPTH = 100
 
+    def date_for_offset(self, offset: int) -> Optional[datetime]:
+        """
+        A working-day offset from the plan's first day, as a date.
+
+        PARAMETERS:
+        -----------
+        offset : int
+            As schedule_analysis counts: 0 is the plan's first working day.
+
+        RETURNS:
+        --------
+        Optional[datetime]
+            The date, or None for a plan with no start.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The plan's own calendar, deliberately, even for a task following one
+        of its own: the axis is the single ruler every task's float is
+        measured on, and reading an offset back against a different week
+        would land on a different day than the one it was counted out from.
+
+        The +1 is the axis's own convention rather than an adjustment: an
+        offset of 0 is the first working day, and add_working_days counts
+        the days it advances over.
+        """
+        if self.start_date is None:
+            return None
+        return self.calendar.add_working_days(self.start_date, offset + 1)
+
+    def apply_backward_schedule(self) -> bool:
+        """
+        Move every piece of work as late as it can go, ending on the deadline.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        As Late As Possible, which is what scheduling from a finish date
+        means: the deadline is the fixed thing and the work is fitted in
+        before it, so nothing starts earlier than it has to.
+
+        The dates come from the backward pass the critical path analysis
+        already runs. Its late_start and late_finish are the definition of
+        "as late as this can be without the project finishing later", so
+        there is no second scheduler here - the answer was already being
+        computed and thrown away after the float was read off it.
+
+        The plan is settled forward first. The backward pass measures against
+        a consistent plan, and a plan whose links have not been applied is
+        not one.
+
+        Nothing is rescheduled afterwards, and that is deliberate: reschedule
+        only ever moves a task later, which is exactly what this has just
+        finished doing on purpose. Running it here would push everything
+        forward again and undo the whole operation. The late dates satisfy
+        every link by construction - that is what the backward pass computes -
+        so there is nothing left to settle.
+
+        Summaries are left to roll up from their children, as everywhere
+        else: a bracket's dates are its contents' dates.
+        """
+        if not self.tasks:
+            return False
+
+        self.reschedule()
+        analysis = self.schedule_analysis()
+        summary_ids = self.get_summary_task_ids()
+
+        moved = False
+        for task in self.tasks:
+            if task.id in summary_ids:
+                continue
+            found = analysis.get(task.id)
+            if found is None:
+                continue
+
+            new_start = self.date_for_offset(found.late_start)
+            if new_start is None:
+                continue
+
+            if task.effective_milestone:
+                if as_date(task.start_date) != as_date(new_start):
+                    task.start_date = new_start
+                    moved = True
+                continue
+
+            new_end = self.date_for_offset(found.late_finish)
+            current = (as_date(task.start_date),
+                       as_date(task.end_date) if task.end_date else None)
+            if current != (as_date(new_start), as_date(new_end)):
+                task.start_date = new_start
+                task.end_date = new_end
+                moved = True
+
+        self.enforce_working_calendar()
+        self.roll_up_summaries()
+        self._update_dates()
+
+        if self.deadline is not None and self.shift_to_finish(self.deadline):
+            moved = True
+
+        return moved
+
+    def shift_to_finish(self, deadline: datetime) -> bool:
+        """
+        Move the whole plan so its last day is the one given.
+
+        PARAMETERS:
+        -----------
+        deadline : datetime
+            The date the plan must be finished by.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The mirror of shift_to_start, anchored on the other end. Backward
+        scheduling packs the work as late as it can go and then this puts
+        that packed plan against the deadline - a plan can only be as late as
+        possible relative to something, and the deadline is the something.
+
+        It may well move the plan into the past. That is not a fault to
+        guard against: a deadline that cannot be met from today is exactly
+        what a reader needs to be shown, and quietly refusing to move would
+        hide it.
+        """
+        finishes = [task.end_date or task.start_date for task in self.tasks
+                    if task.start_date is not None]
+        if not finishes:
+            return False
+
+        delta = as_date(deadline) - as_date(max(finishes))
+        if delta.days == 0:
+            return False
+
+        for task in self.tasks:
+            if task.start_date is not None:
+                task.start_date += delta
+            if task.end_date is not None:
+                task.end_date += delta
+            if task.earliest_begin is not None:
+                task.earliest_begin += delta
+
+        self.enforce_working_calendar()
+        self.roll_up_summaries()
+        self._update_dates()
+        logger.info("Moved %r by %d day(s) to finish on %s",
+                    self.name, delta.days, as_date(deadline))
+        return True
+
+    def apply_schedule(self) -> bool:
+        """
+        Settle the plan from whichever end it is scheduled from.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The one call everything else makes, so that which direction a plan
+        is scheduled in is answered in one place rather than at every refresh
+        that wanted the dates settled.
+
+        A plan scheduled forward gets exactly what it always got: reschedule
+        and nothing else. That is not a courtesy - it is the whole of the
+        existing behaviour, and every plan is forward until somebody says
+        otherwise.
+        """
+        if self.schedule_from == SCHEDULE_FROM_FINISH:
+            return self.apply_backward_schedule()
+        return self.reschedule()
+
     def shift_to_start(self, new_start: datetime) -> bool:
         """
         Move the whole plan so it begins on a given date.

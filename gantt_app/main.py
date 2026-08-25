@@ -586,7 +586,9 @@ class GanttApp(ctk.CTk):
         reschedule returns whether anything moved and is a no-op on a settled
         plan, so calling it on every refresh costs a single pass.
         """
-        if self.project.reschedule():
+        # From whichever end the plan is scheduled from; a plan scheduled
+        # forward gets exactly what it always got. See Project.apply_schedule.
+        if self.project.apply_schedule():
             logger.debug("Rescheduled %r after a change", self.project.name)
 
         self.task_list.update_task_list()

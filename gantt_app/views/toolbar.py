@@ -1379,7 +1379,7 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.criticalpath import show_critical_path
 
-        if self.project.reschedule() and self.on_project_changed:
+        if self.project.apply_schedule() and self.on_project_changed:
             self.on_project_changed()
 
         show_critical_path(self.master, self.project)
