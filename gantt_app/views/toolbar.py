@@ -5,6 +5,7 @@ Contains action buttons for managing the project.
 """
 
 import tkinter as tk
+from datetime import datetime
 from tkinter import simpledialog
 # Message boxes and file choosers that stay native on every desktop:
 # Tk's own are native on macOS and Windows but drawn by Tk on X11.
@@ -833,9 +834,12 @@ class Toolbar(ctk.CTkFrame):
             logger.error("Icon actions with no handler on the toolbar: %s",
                          ', '.join(missing))
 
-        # The formatting bar is not in ICON_ACTIONS - it is a group of
-        # controls rather than one icon - so its handler is connected here
+        # The formatting bar and the progress group are not in ICON_ACTIONS
+        # - they are groups of controls rather than one icon each - so their
+        # handlers are connected here
         self.icon_toolbar.apply_task_style = self.apply_task_style
+        self.icon_toolbar.set_task_progress = self.set_task_progress
+        self.icon_toolbar.mark_on_track = self.mark_on_track
     
     def _delete_selected_tasks(self):
         """Delete selected tasks from the task list."""
@@ -2221,16 +2225,198 @@ class Toolbar(ctk.CTkFrame):
             underline=all(item.underline for item in resolved),
         )
 
+    def _apply_updates(self, updates: dict, label: str) -> bool:
+        """
+        Change several tasks as one undoable step, and redraw.
+
+        PARAMETERS:
+        -----------
+        updates : dict
+            The properties to change, by task ID.
+        label : str
+            What the change is called in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            True when anything changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The tracker belongs to the task list, which owns the undo history
+        for changes to tasks. Without one - a toolbar built on its own, as
+        the tests do - the change is still made, just not recorded.
+        """
+        if not updates:
+            return False
+
+        tracker = getattr(self.task_list, 'project_tracker', None)
+        if tracker is not None:
+            changed = tracker.update_tasks(updates, label)
+        else:
+            changed = False
+            for task_id, changes in updates.items():
+                task = self.project.get_task_by_id(task_id)
+                if task is None:
+                    continue
+                for name, value in changes.items():
+                    setattr(task, name, value)
+                changed = True
+
+        if changed and self.on_project_changed:
+            self.on_project_changed()
+        self.update_undo_redo_buttons()
+        return changed
+
     def refresh_style_bar(self):
         """Show the selection's formatting on the bar, or grey it out."""
         bar = getattr(getattr(self, 'icon_toolbar', None), 'style_bar', None)
-        if bar is None:
+        if bar is not None:
+            try:
+                resolved = self._selected_style()
+                bar.set_state(resolved is not None, resolved)
+            except Exception:
+                logger.exception("Could not refresh the formatting bar")
+
+        group = getattr(getattr(self, 'icon_toolbar', None),
+                        'progress_group', None)
+        if group is not None:
+            try:
+                group.set_state(bool(self._selected_task_ids()))
+            except Exception:
+                logger.exception("Could not refresh the progress group")
+
+    def _progress_targets(self, task_ids):
+        """
+        Which tasks a progress change should actually reach.
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str]
+            What is selected.
+
+        RETURNS:
+        --------
+        List[str]
+            The work items among them, with the work under any selected
+            summary included.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A summary's completion is rolled up from its children and would be
+        overwritten by the next reschedule, so writing a percentage onto one
+        does nothing that lasts - see Project.roll_up_summaries. Selecting a
+        phase and pressing 100% has an obvious meaning, though, so the work
+        beneath it is what gets marked instead of the press being ignored.
+        """
+        targets = []
+        seen = set()
+
+        def add(task_id):
+            """One task, or everything under it when it is a summary."""
+            task = self.project.get_task_by_id(task_id)
+            if task is None or task_id in seen:
+                return
+            seen.add(task_id)
+
+            children = self.project.get_subtasks(task_id)
+            if children:
+                for child in children:
+                    add(child.id)
+            elif not task.is_container:
+                targets.append(task_id)
+
+        for task_id in task_ids:
+            add(task_id)
+        return targets
+
+    def set_task_progress(self, percent: int):
+        """
+        Set the selected tasks to one of the preset thresholds.
+
+        PARAMETERS:
+        -----------
+        percent : int
+            0, 25, 50, 75 or 100.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        One entry in the undo history however many rows were marked, and
+        rows already at that percentage are left out of it so pressing the
+        same button twice does not cost a second undo step.
+        """
+        selected = self._selected_task_ids()
+        targets = self._progress_targets(selected)
+        if not targets:
+            if selected:
+                messagebox.showinfo(
+                    "Progress",
+                    "The selected rows have no work under them to mark.")
             return
-        try:
-            resolved = self._selected_style()
-            bar.set_state(resolved is not None, resolved)
-        except Exception:
-            logger.exception("Could not refresh the formatting bar")
+
+        percent = max(0, min(100, int(percent)))
+        updates = {task_id: {'progress': percent}
+                   for task_id in targets
+                   if self.project.get_task_by_id(task_id).progress != percent}
+
+        if not updates:
+            return
+
+        self._apply_updates(updates, f"Set {len(updates)} Task(s) to {percent}%")
+        logger.info("Set %d task(s) to %d%%", len(updates), percent)
+        self.refresh_style_bar()
+
+    def mark_on_track(self, scope: str = 'selected'):
+        """
+        Set tasks to where today's date says they should have got to.
+
+        PARAMETERS:
+        -----------
+        scope : str
+            'selected' for the selected rows, 'project' for the whole plan.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Today is the status date. The specification allows for one named by
+        the reader instead, and there is nowhere to name it yet - so this
+        says which date it used in the log and in the message, rather than
+        leaving somebody to guess what "on track" was measured against.
+        """
+        from gantt_app.views.progressgroup import SCOPE_PROJECT
+
+        status_date = datetime.now()
+
+        if scope == SCOPE_PROJECT:
+            targets = self._progress_targets(
+                [task.id for task in self.project.tasks])
+        else:
+            targets = self._progress_targets(self._selected_task_ids())
+
+        if not targets:
+            messagebox.showinfo(
+                "Mark on Track",
+                "There is no work to mark. Select some tasks, or choose "
+                "Entire Project from the arrow beside the button.")
+            return
+
+        updates = {}
+        for task_id in targets:
+            task = self.project.get_task_by_id(task_id)
+            expected = self.project.progress_on_track(task, status_date)
+            if task.progress != expected:
+                updates[task_id] = {'progress': expected}
+
+        if not updates:
+            messagebox.showinfo(
+                "Mark on Track",
+                f"Everything is already where {status_date:%d %b %Y} says "
+                f"it should be.")
+            return
+
+        self._apply_updates(updates, f"Mark {len(updates)} Task(s) on Track")
+        logger.info("Marked %d task(s) on track against %s",
+                    len(updates), status_date.date())
+        self.refresh_style_bar()
 
     def apply_task_style(self, kind: str, value):
         """
@@ -2247,9 +2433,14 @@ class Toolbar(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        Through the tracker, so the whole change is one entry in the undo
-        history rather than one per row: marking forty rows and pressing
-        undo once should put all forty back.
+        Through the tracker's batch update, so the whole change is one entry
+        in the undo history: marking forty rows and pressing undo once puts
+        all forty back.
+
+        This used to call update_task in a loop, which executes a command
+        per call - so it made forty entries and Undo put back one row per
+        press, while a comment here said otherwise. See
+        ProjectStateTracker.update_tasks.
         """
         from gantt_app.taskstyle import TaskStyle
 
@@ -2257,9 +2448,7 @@ class Toolbar(ctk.CTkFrame):
         if not selected:
             return
 
-        # The tracker belongs to the task list, which is what owns the
-        # undo history for changes to tasks
-        tracker = getattr(self.task_list, 'project_tracker', None)
+        updates = {}
         for task_id in selected:
             task = self.project.get_task_by_id(task_id)
             if task is None:
@@ -2272,18 +2461,16 @@ class Toolbar(ctk.CTkFrame):
             else:
                 style = task.style.with_changes(**{kind: value})
 
-            if style == task.style:
-                continue
-            if tracker is not None:
-                tracker.update_task(task_id, style=style)
-            else:
-                task.style = style
+            # A row already carrying it adds nothing to undo
+            if style != task.style:
+                updates[task_id] = {'style': style}
 
-        logger.info("Applied %s formatting to %d row(s)", kind, len(selected))
-        if self.on_project_changed:
-            self.on_project_changed()
+        if not updates:
+            return
+
+        self._apply_updates(updates, f"Format {len(updates)} Task(s)")
+        logger.info("Applied %s formatting to %d row(s)", kind, len(updates))
         self.refresh_style_bar()
-        self.update_undo_redo_buttons()
 
 
 class IconToolbar(ctk.CTkFrame):
@@ -2443,6 +2630,43 @@ class IconToolbar(ctk.CTkFrame):
             button_size=self.BUTTON_SIZE, icon_image=self._icon_image)
         self.style_bar.pack(side="left", padx=(1, 1), pady=0)
         self._create_separator()
+        self._create_progress_group()
+
+    def _create_progress_group(self):
+        """
+        The progress controls, held apart from the row on both sides.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Beside the formatting group and after it, because the two are what a
+        reader does to a row they have already picked out: mark it up, then
+        say where it has got to. Both are separated from the actions that
+        change the plan's shape.
+        """
+        from gantt_app.views.progressgroup import ProgressGroup
+
+        self.progress_group = ProgressGroup(
+            self, on_preset=self._progress_applied,
+            on_mark_on_track=self._mark_on_track_applied,
+            button_size=self.BUTTON_SIZE, icon_image=self._icon_image)
+        self.progress_group.pack(side="left", padx=(1, 1), pady=0)
+        self._create_separator()
+
+    def _progress_applied(self, percent: int):
+        """Hand a threshold to whoever knows what is selected."""
+        handler = getattr(self, 'set_task_progress', None)
+        if not callable(handler):
+            logger.warning("The progress group has no handler connected")
+            return
+        handler(percent)
+
+    def _mark_on_track_applied(self, scope: str):
+        """Hand a Mark on Track to whoever knows what is selected."""
+        handler = getattr(self, 'mark_on_track', None)
+        if not callable(handler):
+            logger.warning("The progress group has no handler connected")
+            return
+        handler(scope)
 
     def _style_applied(self, kind: str, value):
         """

@@ -461,3 +461,59 @@ class TestMovingSeveralRowsAtOnce(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestTheOutlineLevel(unittest.TestCase):
+    """
+    How deep a task sits, counted from one.
+
+    Counted from one because that is the number the Outline Level column
+    shows, and the number Microsoft Project shows in its own - a reader
+    comparing the two should not find them off by one.
+    """
+
+    def project(self, *parents):
+        """A plan whose Nth task has the given parent."""
+        from datetime import datetime
+
+        from gantt_app.models import Project, Task
+
+        built = Project(name="Levels")
+        for index, parent in enumerate(parents, start=1):
+            built.add_task(Task(id=str(index), name=f"Task {index}",
+                                start_date=datetime(2026, 8, 19),
+                                parent_task_id=parent))
+        return built
+
+    def test_a_root_task_is_level_one(self):
+        """The top of the plan, not level zero."""
+        self.assertEqual(self.project(None).outline_level('1'), 1)
+
+    def test_each_step_down_adds_one(self):
+        """Which is what the column counts."""
+        plan = self.project(None, '1', '2', '3')
+
+        self.assertEqual([plan.outline_level(str(n)) for n in (1, 2, 3, 4)],
+                         [1, 2, 3, 4])
+
+    def test_a_task_that_is_not_in_the_plan_is_level_one(self):
+        """An unknown row is drawn at the top rather than not at all."""
+        self.assertEqual(self.project(None).outline_level('nope'), 1)
+
+    def test_a_parent_cycle_does_not_hang(self):
+        """
+        A damaged file must not take the redraw with it.
+
+        The level is asked for every row on every refresh, so a cycle here
+        is a window that stops responding rather than a wrong number.
+        """
+        plan = self.project(None, '1', '2')
+        plan.get_task_by_id('1').parent_task_id = '3'
+
+        self.assertGreaterEqual(plan.outline_level('1'), 1)
+
+    def test_a_missing_parent_stops_the_count(self):
+        """An orphan is as deep as the chain that is actually there."""
+        plan = self.project(None, 'gone')
+
+        self.assertEqual(plan.outline_level('2'), 1)

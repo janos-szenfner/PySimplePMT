@@ -1813,6 +1813,107 @@ class Project:
             return self.get_task_by_id(task.parent_task_id)
         return None
     
+    #: Ceiling on the walk up a parent chain in outline_level. A plan cannot
+    #: nest deeper than this, and a file whose parents form a cycle should
+    #: cost a warning rather than a loop with no end.
+    MAX_OUTLINE_DEPTH = 100
+
+    def progress_on_track(self, task: Task, status_date: datetime) -> int:
+        """
+        The completion a task would have if it were exactly on schedule.
+
+        PARAMETERS:
+        -----------
+        task : Task
+            The task to measure.
+        status_date : datetime
+            The date the plan is being reported against. Today, unless the
+            reader names another.
+
+        RETURNS:
+        --------
+        int
+            0 for work that has not started, 100 for work whose finish has
+            passed, and the share of its working days that have elapsed for
+            anything in between.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Counted in working days against the task's own calendar rather than
+        in calendar days, which is the whole reason this is here rather than
+        a subtraction at the call site. A five-day task starting on a Friday
+        is not 40% done by Sunday; it is 20% done, because one of its five
+        days has been worked.
+
+        A milestone is a moment rather than a span, so it is done or it is
+        not - there is no proportion of a milestone.
+
+        The task's own dates are read, not the summary's. A container's
+        completion is rolled up from its children and would be overwritten
+        by the next reschedule; see roll_up_summaries.
+        """
+        start = as_date(task.start_date)
+        status = as_date(status_date)
+
+        if task.effective_milestone:
+            return 100 if start <= status else 0
+
+        finish = as_date(task.end_date) if task.end_date else start
+        if finish <= status:
+            return 100
+        if start > status:
+            return 0
+
+        calendar = self.calendar_for(task)
+        total = max(self.working_duration(task), 1)
+        elapsed = calendar.working_days_between(start, status)
+
+        return max(0, min(100, int(round(elapsed / total * 100))))
+
+    def outline_level(self, task_id: str) -> int:
+        """
+        How deep a task sits in the plan, counting from one.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task to measure.
+
+        RETURNS:
+        --------
+        int
+            1 for a task at the top of the plan, 2 for one under it, and so
+            on. 1 for a task that is not in the plan at all, which is what
+            an unknown row is drawn as.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Counted from one rather than zero because this is the number shown
+        in the Outline Level column, and it is the number Microsoft Project
+        shows there too - a reader comparing the two should not find them
+        off by one.
+
+        The walk is capped and remembers where it has been. A saved file
+        whose parent references form a cycle would otherwise hang the
+        redraw, and one damaged plan should not take the window with it.
+        """
+        level = 1
+        seen = {task_id}
+        task = self.get_task_by_id(task_id)
+
+        while task is not None and task.parent_task_id:
+            if task.parent_task_id in seen or level > self.MAX_OUTLINE_DEPTH:
+                logger.warning("Task %r sits in a parent cycle; showing it at "
+                               "level %d", task_id, level)
+                break
+            seen.add(task.parent_task_id)
+            task = self.get_task_by_id(task.parent_task_id)
+            if task is None:
+                break
+            level += 1
+
+        return level
+
     def get_root_tasks(self) -> List[Task]:
         """
         Get all root-level tasks (not subtasks).

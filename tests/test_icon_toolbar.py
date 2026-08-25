@@ -158,12 +158,12 @@ class TestIconToolbarCreation(unittest.TestCase):
         toolbar = IconToolbar(self.root, self.project)
 
         self.assertNotIn(toolbar.SEPARATOR, toolbar.icon_buttons)
-        # Seven: after the save actions, one on each side of the formatting
-        # group, one on each side of the critical path analysis - which
-        # belongs to neither group beside it - and one on each side of the
-        # search box, which is neither an action on the plan nor one of the
-        # settings it sits between.
-        self.assertEqual(len(toolbar.separators), 7)
+        # Eight: after the save actions, one on each side of the formatting
+        # group, one after the progress group beside it, one on each side of
+        # the critical path analysis - which belongs to neither group beside
+        # it - and one on each side of the search box, which is neither an
+        # action on the plan nor one of the settings it sits between.
+        self.assertEqual(len(toolbar.separators), 8)
         self.toolbar = toolbar
 
     def test_the_dividers_fall_between_the_groups(self):

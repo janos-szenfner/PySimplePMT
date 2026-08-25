@@ -393,13 +393,20 @@ class DragDropTaskList(ctk.CTkFrame):
         # branch away. The names used to be prefixed with '|--' to stand in
         # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
-            'ID', 'Name', 'Type', 'Duration', 'Start', 'End', 'Progress', 'Dependencies', 'Milestone'
+            'ID', 'Type', 'Duration', 'Start', 'End', 'Progress',
+            'Dependencies', 'Milestone', 'Outline'
         ), show='tree headings')
 
-        # Configure columns
-        self.tree.heading('#0', text='', anchor=tk.W)
+        # Configure columns.
+        #
+        # The name lives in the tree column rather than in one of its own,
+        # which is what makes the outline readable. Column #0 is the only
+        # one that draws the indentation and the expander, so a name in any
+        # other column sits flush left however deep the task is - the plan
+        # was nested and looked flat, with the whole hierarchy expressed in
+        # 34 pixels of empty space nobody could see.
+        self.tree.heading('#0', text='Task Name', anchor=tk.W)
         self.tree.heading('ID', text='ID', anchor=tk.W)
-        self.tree.heading('Name', text='Name', anchor=tk.W)
         self.tree.heading('Type', text='Type', anchor=tk.W)
         self.tree.heading('Duration', text='Duration (Days)', anchor=tk.W)
         self.tree.heading('Start', text='Start Date', anchor=tk.W)
@@ -407,6 +414,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Progress', text='Progress', anchor=tk.W)
         self.tree.heading('Dependencies', text='Dependencies', anchor=tk.W)
         self.tree.heading('Milestone', text='Milestone', anchor=tk.W)
+        self.tree.heading('Outline', text='Outline Level', anchor=tk.W)
         
         # Column widths. #0 holds only the expander, so it stays narrow.
         #
@@ -420,9 +428,9 @@ class DragDropTaskList(ctk.CTkFrame):
         # With fixed widths the columns are exactly what they are set to, a
         # drag sticks, and the horizontal scrollbar reaches anything that no
         # longer fits. minwidth keeps a column from being dragged shut.
-        self.tree.column('#0', width=34, minwidth=34, stretch=False)
+        # Wide, because it now holds the names as well as the indentation
+        self.tree.column('#0', width=300, minwidth=120, stretch=False)
         self.tree.column('ID', width=60, minwidth=40, stretch=False)
-        self.tree.column('Name', width=260, minwidth=80, stretch=False)
         self.tree.column('Type', width=90, minwidth=60, stretch=False)
         self.tree.column('Duration', width=110, minwidth=60, stretch=False)
         self.tree.column('Start', width=100, minwidth=80, stretch=False)
@@ -430,6 +438,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('Progress', width=80, minwidth=60, stretch=False)
         self.tree.column('Dependencies', width=150, minwidth=80, stretch=False)
         self.tree.column('Milestone', width=80, minwidth=60, stretch=False)
+        self.tree.column('Outline', width=95, minwidth=60, stretch=False)
         
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
@@ -1431,24 +1440,100 @@ class DragDropTaskList(ctk.CTkFrame):
     def update_task_list(self):
         """
         Update the task list display with all task information.
-        
+
         DEVELOPMENT NOTES:
         ------------------
         Displays tasks in a hierarchical structure where subtasks are indented
-        under their parent tasks. Uses tags to apply visual indentation.
+        under their parent tasks.
+
+        Every row is destroyed and rebuilt, so what the reader had done to
+        the list has to be carried across it - which row was selected, which
+        branches were folded away, and where the list was scrolled to.
+        Without that, every action that changed anything at all threw the
+        selection away: pressing Bold cleared it, and the formatting bar,
+        which is only live while something is selected, greyed itself out.
+        The row had to be clicked again between every single change.
+        
+        Folding had the same fault from the other side. Every rebuilt row is
+        inserted open, so a branch folded away sprang back open on the next
+        change anywhere in the plan.
         """
+        state = self._capture_view_state()
+
         # Clear existing items
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         self._populate_tree_hierarchical()
         self._paint_rows()
+        self._restore_view_state(state)
 
         # The rows are all new, so anything drawing from them - the Gantt
         # chart beside the list - is told once they are all in place. The
         # tree's own scroll callback fires part way through the rebuild,
         # when the answer to what is on show is still half of it.
         self._tell_row_watchers()
+
+    def _capture_view_state(self) -> dict:
+        """
+        What the reader has done to the list, before it is torn down.
+
+        RETURNS:
+        --------
+        dict
+            The selected rows, the focused one, which branches are folded,
+            and where the list is scrolled to. Empty when the tree cannot be
+            read, which happens while the widget is being destroyed.
+        """
+        try:
+            return {
+                'selection': tuple(self.tree.selection()),
+                'focus': self.tree.focus(),
+                'closed': {item for item in self._rows_in_display_order()
+                           if not self.tree.item(item, 'open')},
+                'scroll': self.tree.yview()[0],
+            }
+        except tk.TclError:
+            return {}
+
+    def _restore_view_state(self, state: dict) -> None:
+        """
+        Put the reader's selection, folds and scroll position back.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Rows that are gone are skipped rather than restored: a selection
+        that included a deleted task would otherwise raise, and the caller
+        of this is every refresh in the application.
+
+        The folds go back before the selection, so a selected row inside a
+        branch that is folded again is still selected - it is simply not on
+        screen, which is what folding means. The scroll position is restored
+        last for the same reason: reselecting can scroll the list, and where
+        the reader had it is the answer that should win.
+        """
+        if not state:
+            return
+
+        try:
+            for item in state.get('closed', ()):
+                if self.tree.exists(item):
+                    self.tree.item(item, open=False)
+
+            alive = [item for item in state.get('selection', ())
+                     if self.tree.exists(item)]
+            if alive:
+                self.tree.selection_set(*alive)
+
+            focused = state.get('focus')
+            if focused and self.tree.exists(focused):
+                self.tree.focus(focused)
+
+            scroll = state.get('scroll')
+            if scroll is not None:
+                self.tree.yview_moveto(scroll)
+        except tk.TclError:
+            logger.debug("Could not restore the task list view state")
     
     def _populate_tree_hierarchical(self):
         """
@@ -1563,23 +1648,22 @@ class DragDropTaskList(ctk.CTkFrame):
         # Format task type
         type_str = task.task_type
         
-        # Column #0 draws the indentation and the expander, so the name is
-        # no longer prefixed with '|--' to fake it
-        # Insert into tree
+        # The name goes in column #0, which is the one that draws the
+        # indentation and the expander beside it
         item_id = self.tree.insert(parent_item, tk.END,
                                  iid=task.id,
-                                 text='',
+                                 text=task.name,
                                  open=True,
                                  values=(
                                      task.id,  # IDs are short sequential numbers
-                                     task.name,
                                      type_str,
                                      duration_str,
                                      start_str,
                                      end_str,
                                      f"{task.progress}%",
                                      deps_str,
-                                     milestone_str
+                                     milestone_str,
+                                     str(self.project.outline_level(task.id)),
                                  ))
         
         # What the row is. How it is painted is decided afterwards, once

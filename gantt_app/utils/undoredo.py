@@ -997,7 +997,62 @@ class ProjectStateTracker:
         
         command = create_update_task_command(self.project, task_id, old_task, new_task)
         return self.manager.execute(command)
-    
+
+    def update_tasks(self, updates: Dict[str, dict],
+                     label: str = "Update Tasks") -> bool:
+        """
+        Change several tasks at once, as one entry in the undo history.
+
+        PARAMETERS:
+        -----------
+        updates : Dict[str, dict]
+            The properties to change, by task ID - the same keyword
+            arguments update_task takes, one set per task.
+        label : str
+            What to call the change in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            True when anything was changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This exists because calling update_task in a loop does not do what
+        it looks like it does. Each call executes its own command, so
+        marking forty rows produced forty entries and Undo put back one row
+        per press - the caller had written the loop, said in its own
+        comment that the result was a single entry, and been wrong.
+
+        The commands are built here rather than executed as they are made,
+        then run together as one; see CompoundCommand, which undoes them in
+        reverse.
+        """
+        commands = []
+        for task_id, changes in updates.items():
+            task = self.project.get_task_by_id(task_id)
+            if task is None:
+                continue
+
+            # The same copy update_task makes, and for the same reason: a
+            # shallow copy shares the very DependencyList the live task
+            # holds, so a later edit would rewrite this undo snapshot too
+            old_task = copy.copy(task)
+            old_task.dependencies = [copy.copy(d) for d in task.dependencies]
+
+            new_task = copy.copy(task)
+            new_task.dependencies = [copy.copy(d) for d in task.dependencies]
+            for name, value in changes.items():
+                setattr(new_task, name, value)
+
+            commands.append(create_update_task_command(
+                self.project, task_id, old_task, new_task))
+
+        if not commands:
+            return False
+
+        return self.manager.execute(create_compound_command(commands, label))
+
     def restructure_tasks(self, old_snapshot, new_snapshot,
                           label: str = "Restructure Tasks") -> bool:
         """

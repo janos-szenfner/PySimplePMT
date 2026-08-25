@@ -170,15 +170,21 @@ class TestHierarchyDisplay(TaskListTestCase):
     that draws the expander. A parent looked exactly like a leaf and there
     was nothing to click to fold a branch away, so the names were prefixed
     with '|--' to stand in for the indentation.
+
+    Showing #0 fixed the expander and only half the indentation: the names
+    were still in a column of their own, which sits flush left however deep
+    the task is, so a nested plan drew its whole hierarchy into 34 pixels of
+    empty space beside names that all started at the same place. The names
+    are in #0 now, where the indentation is.
     """
 
     def test_the_tree_column_is_shown(self):
         """Column #0 is displayed, which is what draws the expander."""
         self.assertIn('tree', str(self.task_list.tree.cget('show')))
 
-    def test_the_tree_column_is_narrow(self):
-        """It carries only the expander, so it does not eat the row."""
-        self.assertLessEqual(self.task_list.tree.column('#0', 'width'), 60)
+    def test_the_tree_column_is_wide_enough_for_the_names(self):
+        """It holds the name, the indentation and the expander together."""
+        self.assertGreaterEqual(self.task_list.tree.column('#0', 'width'), 200)
 
     def test_a_parent_reports_children(self):
         """The sub-tasks hang off their parent, so ttk draws an expander."""
@@ -190,10 +196,21 @@ class TestHierarchyDisplay(TaskListTestCase):
         self.assertEqual(list(self.task_list.tree.get_children("001")), [])
 
     def test_names_are_not_prefixed(self):
-        """The name column holds the name, with no drawn-in tree characters."""
-        values = self.task_list.tree.item("004", 'values')
+        """
+        The name is the name, with no drawn-in tree characters.
 
-        self.assertEqual(values[1], "Beta one")
+        The indentation is the widget's, so nothing is faked into the text.
+        """
+        self.assertEqual(self.task_list.tree.item("004", 'text'), "Beta one")
+
+    def test_the_name_is_in_the_column_that_indents_it(self):
+        """
+        Which is the whole point of putting it there.
+
+        A nested task drew flush left while column #0 carried the entire
+        hierarchy in 34 pixels of blank space nobody could read.
+        """
+        self.assertNotIn("Beta one", self.task_list.tree.item("004", 'values'))
 
     def test_selecting_a_subtask_works(self):
         """

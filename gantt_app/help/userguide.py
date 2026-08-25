@@ -462,6 +462,38 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Saying where the work has got to",
+        [
+            "The five buttons on the icon bar - 0%, 25%, 50%, 75%, 100% - "
+            "set the completion of every selected row in one press. Status "
+            "reporting is done to a list rather than to a row, so they take "
+            "a whole selection at once, and the whole press is one step in "
+            "the undo history.",
+
+            "Mark on Track works the percentage out from the dates instead: "
+            "work whose finish has gone by is set to 100%, work that has "
+            "not started stays at 0%, and work in the middle is set to the "
+            "share of its working days that have elapsed. A five-day task "
+            "starting on a Friday is a fifth done by Sunday, not two "
+            "fifths - the weekend is not worked, so it does not count.",
+
+            "It measures against today. The arrow beside the button chooses "
+            "what it applies to: the selected tasks, or the entire project. "
+            "Entire Project needs nothing selected, which is why that arrow "
+            "stays available when the rest of the group is greyed out.",
+
+            "Mark on Track is a statement about the schedule rather than "
+            "about the work. It fills in the rows nobody has had to think "
+            "about, and the ones that are genuinely ahead or behind are "
+            "still typed in.",
+
+            "Pressing a percentage on a phase marks the work underneath it. "
+            "A phase's own completion is rolled up from its children, so a "
+            "number written straight onto it would be replaced the next "
+            "time the plan is scheduled.",
+        ],
+    ),
+    (
         "Marking rows up",
         [
             "The task list is where the work happens, and a plan of any size "
@@ -508,6 +540,21 @@ GUIDE_SECTIONS = (
             "A row that has work under it is drawn in bold and carries the "
             "expander that folds its branch away. The work under it is "
             "indented one level per step down the plan.",
+
+            "The Outline Level column says the same thing as a number: the "
+            "top of the plan is 1, a row under it is 2, and so on. It is "
+            "the same number Microsoft Project shows in its own Outline "
+            "Level column.",
+
+            "Indent moves a row under the row above it and Outdent brings "
+            "it back out, and both move whole selections at once. A row "
+            "that is already the first thing under its parent cannot be "
+            "indented further - there is nothing above it at its own level "
+            "to go under.",
+
+            "Selecting a row and formatting it, indenting it or outdenting "
+            "it leaves it selected, so a run of changes needs one click "
+            "rather than one click each.",
 
             "That is true of any row with children, whatever the Type "
             "column says about it - a Task with sub-tasks is a summary of "

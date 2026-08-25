@@ -39,6 +39,7 @@ ICON_EMOJIS: Dict[str, str] = {
     'fill_color': '\U0001f58d',    # Highlighter: the row's background
     'style_preset': '\U0001f3a8',  # Palette: a whole look in one press
     'clear_style': '\U0000274c',   # Cross: back to the grid's own
+    'mark_on_track': '\U000023e9',  # Fast forward: caught up with today
     'edit': '\U0001f4dd',          # Memo/pencil (edit)
     'new_project': '\U0001f4dd',   # Memo (new document)
     'task': '\U0001f4d3',          # Notebook
@@ -72,6 +73,7 @@ SVG_PATHS: Dict[str, str] = {
     'fill_color': "M4 13l7-7 7 7-7 7zM19 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z",
     'style_preset': "M12 2a10 10 0 1 0 0 20 2 2 0 0 0 0-4 2 2 0 0 1 0-4h3a5 5 0 0 0 5-5 7 7 0 0 0-8-7z",
     'clear_style': "M18 6L6 18M6 6l12 12",
+    'mark_on_track': "M3 12h12M11 8l4 4-4 4M19 4v16",
     'edit': "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z",
     'new_project': "M12 2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2M12 18v-6M15 15h-6",
     'task': "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM12 18H8M16 16l-4-4-4 4",
@@ -104,6 +106,7 @@ ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'indent', 'outdent',
     'bold', 'italic', 'underline',
     'text_color', 'fill_color', 'style_preset', 'clear_style',
+    'mark_on_track',
     'critical_path',
     'cut', 'copy', 'paste', 'delete',
     'undo', 'redo'
@@ -257,6 +260,13 @@ ICON_STROKES: Dict[str, List[tuple]] = {
     'clear_style': [
         ('line', [(0.22, 0.22), (0.78, 0.78)]),
         ('line', [(0.78, 0.22), (0.22, 0.78)]),
+    ],
+    # Caught up with today: an arrow running into the status date, which is
+    # the line everything to the left of it has already passed.
+    'mark_on_track': [
+        ('line', [(0.08, 0.50), (0.62, 0.50)]),
+        ('line', [(0.44, 0.32), (0.62, 0.50), (0.44, 0.68)]),
+        ('line', [(0.80, 0.14), (0.80, 0.86)]),
     ],
     # Indent and outdent: the plan as four rows with the middle two moved,
     # and an arrow saying which way. Mirror images of each other, because

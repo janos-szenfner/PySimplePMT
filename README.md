@@ -16,8 +16,10 @@ This is a complete implementation of a project management tool with:
 - **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and today's column is tinted
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
+- **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
-- **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen
+- **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen. The task name lives in the tree column, so the indentation is drawn against the name itself, and an **Outline Level** column gives the same depth as a number (1 at the top, 2 under it), the way Microsoft Project does
+- **The list keeps its place**: Formatting, indenting or outdenting a row leaves it selected and leaves folded branches folded, so a run of changes takes one click rather than one click each
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
 - **File Import**: Import from GanttProject (.gan), MS Project (MSPDI .xml), Mermaid (.mmd), and Excel (.xlsx) files. Every reader is standard library or an already-bundled package, so no import needs anything installed
@@ -719,6 +721,9 @@ opening a menu, in groups divided by a hairline:
 - the formatting group — B, I, U, text colour, background fill, presets,
   clear — set apart by a hairline on each side, because it changes how the
   plan is *drawn* rather than what the plan says
+- the progress group beside it — 0/25/50/75/100% and Mark on Track — which is
+  the other thing done to a row already picked out: mark it up, then say
+  where it has got to
 - critical path, alone between two hairlines: it neither edits a row nor
   moves one about, so it belongs to neither group beside it
 - cut, copy, paste, delete, undo, redo
@@ -750,6 +755,31 @@ meant picking the same file twice and confirming the overwrite. It now writes
 to wherever the plan was last saved or loaded from, and only asks when there
 is nowhere to write yet. A new plan clears that path, so Save on a new plan
 asks rather than writing over the file the last one came from.
+
+### Progress Tracking (`views/progressgroup.py`)
+
+**Reporting is a weekly job over forty rows, and almost none of it involves
+choosing a number.** A task is not started, underway, or done — and the rest of
+the time what is wanted is "this is where it should be by now". Typing a
+percentage into a task editor one row at a time is the slowest possible way to
+say any of that.
+
+**Mark on Track counts working days, not calendar days**, and the difference
+shows up every weekend: a five-day task starting on a Friday is 20% through by
+Sunday, because one of its five days has been worked — not 40% because two
+nights have passed. Both halves of the fraction use the task's own calendar, so
+a holiday inside the span comes off the elapsed count and off the total alike.
+See `Project.progress_on_track`.
+
+**A summary is never written to directly.** Its completion is rolled up from
+its children and would be replaced by the next reschedule, so pressing a
+percentage on a phase marks the work underneath it instead — ignoring the press
+would be worse, since selecting a phase and pressing 100% has one obvious
+meaning.
+
+The status date is today. The specification allows for one named by the reader,
+and there is nowhere to name it yet, so the log and the messages say which date
+was used rather than leaving it to be guessed at.
 
 ### Row Formatting (`taskstyle.py`, `views/stylebar.py`)
 
@@ -1761,7 +1791,10 @@ Unit tests cover:
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Row Formatting**: What a default style serialises to, that a summary can be un-bolded on purpose and comes back bold when cleared, that an ordinary edit does not strip a row's formatting or its calendar, and that rows formatted alike share one tag
+- ✅ **Progress Tracking**: The five thresholds over a whole selection, that a phase marks the work under it, that past work goes to 100% and future work stays at 0%, that a weekend and a holiday both count correctly, that a milestone is done or not done, and that a whole press is one undo step
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
+- ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
+- ✅ **Outline Level**: Counting from one at the top, following an indent and an outdent, an unknown row, a missing parent, and a parent cycle that must not hang the redraw
 - ✅ **Visual Hierarchy**: That a row with children is bold whatever its Type says, that an empty Phase still reads as one, and that the greying of a cut row outranks the ink it was given
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it, which buttons the row holds, where the dividers fall, and that nothing on it is live without a plan open
 - ✅ **Hover Text**: That every button's caption reaches the canvas the pointer will actually be over - a CTkButton is a frame and the mouse is never on it - and that attaching does not bind the same handler twice

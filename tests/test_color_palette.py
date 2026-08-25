@@ -355,18 +355,24 @@ class TestColumnSizing(unittest.TestCase):
 
     def test_a_width_survives_a_refresh(self):
         """Repopulating the rows leaves the columns alone."""
-        self.task_list.tree.column('Name', width=420)
+        self.task_list.tree.column('#0', width=420)
 
         self.task_list.update_task_list()
 
-        self.assertEqual(self.task_list.tree.column('Name', 'width'), 420)
+        self.assertEqual(self.task_list.tree.column('#0', 'width'), 420)
 
     def test_the_name_column_is_the_widest_by_default(self):
-        """Names are the longest thing in the table."""
+        """
+        Names are the longest thing in the table.
+
+        The names live in #0, the tree column, because that is the only one
+        that draws the indentation and the expander beside them - a name in
+        any other column sits flush left however deep the task is.
+        """
         widths = {c: self.task_list.tree.column(c, 'width')
                   for c in self.columns()}
 
-        self.assertEqual(max(widths, key=widths.get), 'Name')
+        self.assertEqual(max(widths, key=widths.get), '#0')
 
 
 if __name__ == '__main__':
