@@ -703,21 +703,27 @@ class TestDoubleClick(TaskListTestCase):
         self.task_list.tree.identify_row = lambda y: item
         return self.task_list.on_double_click(SimpleNamespace(x=5, y=0))
 
-    def test_double_click_collapses_a_parent(self):
-        """An open parent closes."""
+    def test_double_click_does_not_fold_a_parent(self):
+        """
+        Folding is on the expander beside the row, not on this gesture.
+
+        It used to be on both, which meant a double-click on a parent's
+        name folded the branch away instead of letting the name be typed
+        over - and the name is what somebody double-clicking it wants.
+        """
         self.assertTrue(self.task_list.tree.item("002", 'open'))
 
         self.double_click("002")
 
-        self.assertFalse(self.task_list.tree.item("002", 'open'))
+        self.assertTrue(self.task_list.tree.item("002", 'open'))
 
-    def test_double_click_expands_a_closed_parent(self):
-        """A closed parent opens again."""
+    def test_a_closed_parent_stays_closed(self):
+        """The same, from the other side."""
         self.task_list.tree.item("002", open=False)
 
         self.double_click("002")
 
-        self.assertTrue(self.task_list.tree.item("002", 'open'))
+        self.assertFalse(self.task_list.tree.item("002", 'open'))
 
     def test_double_click_does_not_open_the_edit_dialog(self):
         """Editing moved to the context menu."""
@@ -729,8 +735,8 @@ class TestDoubleClick(TaskListTestCase):
 
         self.assertEqual(opened, [])
 
-    def test_double_click_on_a_leaf_does_nothing(self):
-        """A task without sub-tasks has nothing to fold."""
+    def test_double_click_leaves_the_rows_alone(self):
+        """It opens an editor over one; it does not reorder anything."""
         before = self.rows()
 
         self.double_click("001")

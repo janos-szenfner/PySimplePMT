@@ -372,6 +372,11 @@ class DragDropTaskList(ctk.CTkFrame):
         #: The grid's family and size, asked of Tk once; see _base_font.
         self._base_font_spec = None
 
+        #: The box open over a cell, and the row it belongs to. Set here so
+        #: everything that asks can ask plainly; see _open_cell_editor.
+        self._cell_editor = None
+        self._cell_editor_task = None
+
         # Create UI
         self._create_ui()
         
@@ -498,30 +503,32 @@ class DragDropTaskList(ctk.CTkFrame):
 
     def on_double_click(self, event):
         """
-        Fold a task's sub-tasks away, or open them up again.
+        Edit the cell that was double-clicked.
 
         DEVELOPMENT NOTES:
         ------------------
-        Double-click used to open the edit dialog. Editing is on the context
-        menu now, and the gesture does what it does in every other tree:
-        expands and collapses.
+        The name and the dependencies are the two things typed over far more
+        often than anything else is opened in a dialog, so double-clicking
+        either edits it in place.
+
+        Folding is not on this gesture any more. It is on the expander
+        beside the row, where it is in every other tree, and where it was
+        already - having it on both meant a double-click on a parent's name
+        folded the branch away instead of letting the name be typed over.
 
         'break' stops ttk's own double-click handler running afterwards,
-        which would toggle the row a second time and undo this.
+        which would toggle the row underneath the editor that has just been
+        placed over it.
         """
         item = self.tree.identify_row(event.y)
         if not item:
             return None
 
-        # The Dependencies cell is typed into rather than folded. It is the
-        # one column somebody edits far more often than they open a dialog
-        # for, which is what the whole grammar exists for.
-        if self._column_name(event.x) == 'Dependencies':
+        column = self._column_name(event.x)
+        if column == '#0':
+            self.edit_name_cell(item)
+        elif column == 'Dependencies':
             self.edit_dependencies_cell(item)
-            return 'break'
-
-        if self.tree.get_children(item):
-            self.tree.item(item, open=not self.tree.item(item, 'open'))
 
         return 'break'
 
@@ -557,48 +564,42 @@ class DragDropTaskList(ctk.CTkFrame):
         columns = self.tree.cget('columns')
         return columns[index] if 0 <= index < len(columns) else None
 
-    def edit_dependencies_cell(self, task_id: str):
+    def _open_cell_editor(self, task_id: str, column: str, current: str,
+                          commit):
         """
-        Type into the Dependencies cell of one row.
+        Put a typing box over one cell of one row.
 
         PARAMETERS:
         -----------
         task_id : str
             The row being edited.
+        column : str
+            Which cell to cover - a column name, or '#0' for the name.
+        current : str
+            What the cell holds now, selected so typing replaces it.
+        commit : callable
+            Called with no arguments by Enter and by the focus leaving. It
+            reads the box itself; see _editor_text.
 
         DEVELOPMENT NOTES:
         ------------------
         An entry placed over the cell rather than a dialog opened beside it.
-        The whole point of the column is that a run of links can be typed
-        down it without leaving the grid, and a window in the way defeats
-        that as thoroughly as the dialog it replaces.
+        The point of editing in the grid is that a column can be worked down
+        without leaving it, and a window in the way defeats that as
+        thoroughly as the dialog it replaces.
 
         The entry is a plain tkinter one. A CTkEntry is a frame holding an
         entry and draws its own border and corners, which at the height of a
-        grid row leaves the text clipped and the cell it is covering
-        showing round the edges.
+        grid row leaves the text clipped and the cell it is covering showing
+        round the edges.
         """
         if not self.tree.exists(task_id):
             return
         self._close_cell_editor()
 
-        try:
-            box = self.tree.bbox(task_id, 'Dependencies')
-        except tk.TclError:
-            box = None
-        if not box:
-            # The row is scrolled out of sight; bring it back and try again
-            self.tree.see(task_id)
-            self.tree.update_idletasks()
-            box = self.tree.bbox(task_id, 'Dependencies')
-            if not box:
-                return
-
-        task = self.project.get_task_by_id(task_id)
-        if task is None:
+        box = self._cell_box(task_id, column)
+        if box is None:
             return
-
-        current = format_links(task.dependencies, self.project.display_ids())
 
         x, y, width, height = box
         editor = tk.Entry(self.tree, borderwidth=1, relief='solid',
@@ -611,10 +612,155 @@ class DragDropTaskList(ctk.CTkFrame):
         self._cell_editor = editor
         self._cell_editor_task = task_id
 
-        editor.bind('<Return>', lambda _event: self._commit_dependencies())
-        editor.bind('<KP_Enter>', lambda _event: self._commit_dependencies())
+        editor.bind('<Return>', lambda _event: commit())
+        editor.bind('<KP_Enter>', lambda _event: commit())
         editor.bind('<Escape>', lambda _event: self._close_cell_editor())
-        editor.bind('<FocusOut>', lambda _event: self._commit_dependencies())
+        editor.bind('<FocusOut>', lambda _event: commit())
+
+    def _cell_box(self, task_id: str, column: str):
+        """
+        Where one cell is on screen, bringing the row into view if it is not.
+
+        RETURNS:
+        --------
+        Optional[tuple]
+            x, y, width and height, or None when the cell cannot be placed -
+            which happens while the widget is being torn down.
+        """
+        for attempt in (0, 1):
+            try:
+                box = self.tree.bbox(task_id, column)
+            except tk.TclError:
+                return None
+            if box:
+                return box
+            if attempt == 0:
+                # Scrolled out of sight; bring it back and ask again
+                self.tree.see(task_id)
+                self.tree.update_idletasks()
+        return None
+
+    def _editor_text(self):
+        """
+        What is in the open editor, and which row it belongs to.
+
+        RETURNS:
+        --------
+        tuple
+            The text and the task ID, or (None, None) when there is no
+            editor open or the row has gone from under it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The editor is taken away here, before the caller stores anything.
+        Storing redraws the list, which destroys the row the entry is
+        sitting on - and an entry left over a row that no longer exists is a
+        box floating over the wrong task.
+        """
+        editor = getattr(self, '_cell_editor', None)
+        task_id = getattr(self, '_cell_editor_task', None)
+        if editor is None or task_id is None:
+            return None, None
+
+        try:
+            text = editor.get()
+        except tk.TclError:
+            text = None
+        self._close_cell_editor()
+
+        if text is None or self.project.get_task_by_id(task_id) is None:
+            return None, None
+        return text, task_id
+
+    def edit_name_cell(self, task_id: str):
+        """
+        Type over a task's name in the grid.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The box covers the whole of the tree column, the expander included.
+        The alternative is working out where the text starts from the row's
+        depth and the theme's indent, which is a number the theme is free to
+        change - and a box that starts a few pixels off the text it is
+        replacing looks broken in a way that covering the arrow does not.
+        The arrow comes back the moment the edit ends.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+        self._open_cell_editor(task_id, '#0', task.name or '',
+                               self._commit_name)
+
+    def _commit_name(self):
+        """
+        Store what was typed over a task's name.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        An empty name puts the old one back rather than saying anything. A
+        row has to be called something, and a dialog thrown up because
+        somebody clicked away from a box they had cleared would be a
+        reprimand for a slip - the cell simply reverts, which says the same
+        thing and gets out of the way.
+        """
+        text, task_id = self._editor_text()
+        if task_id is None:
+            return
+
+        name = text.strip()
+        if not name:
+            logger.debug("Empty name typed over task %s; keeping the old one",
+                         task_id)
+            return
+
+        self.set_task_name(task_id, name)
+
+    def set_task_name(self, task_id: str, name: str):
+        """
+        Rename a task as one undoable step, and redraw.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being renamed.
+        name : str
+            What to call it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Through the tracker, so a rename typed into the grid is in the undo
+        history like one typed into the editor - and so the editor, which
+        reads the task, shows what the grid stored.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None or task.name == name:
+            return
+
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id, name=name)
+        else:
+            task.name = name
+
+        logger.info("Renamed task %s to %r", task_id, name)
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    def edit_dependencies_cell(self, task_id: str):
+        """
+        Type into the Dependencies cell of one row.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The grammar the cell takes is gantt_app.dependencysyntax's; what is
+        shown is what can be typed straight back in.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+        current = format_links(task.dependencies, self.project.display_ids())
+        self._open_cell_editor(task_id, 'Dependencies', current,
+                               self._commit_dependencies)
 
     def _close_cell_editor(self):
         """Take the entry away, if one is open."""
@@ -644,18 +790,8 @@ class DragDropTaskList(ctk.CTkFrame):
         reader would have to compare what they typed against what came back
         to notice.
         """
-        editor = getattr(self, '_cell_editor', None)
-        task_id = getattr(self, '_cell_editor_task', None)
-        if editor is None or task_id is None:
-            return
-
-        try:
-            text = editor.get()
-        except tk.TclError:
-            text = None
-        self._close_cell_editor()
-
-        if text is None or task_id not in {t.id for t in self.project.tasks}:
+        text, task_id = self._editor_text()
+        if task_id is None:
             return
 
         links, errors = self.project.parse_dependencies(task_id, text)

@@ -571,6 +571,15 @@ GUIDE_SECTIONS = (
             "The Predecessors column names what a task waits for by those "
             "same numbers, so the links renumber with the rows.",
 
+            "Double-click a task's name to type over it. Enter saves it, "
+            "clicking away saves it, and Escape leaves it alone. A name "
+            "typed here is the task's name - the editor shows it, and Undo "
+            "takes it back - and clearing the box puts the old name back, "
+            "because a row has to be called something.",
+
+            "Double-clicking no longer folds a branch away. The arrow "
+            "beside a row does that, as it always did.",
+
             "You can type the links straight into the Dependencies column. "
             "Double-click the cell and write the number of the task this "
             "one waits for: 3. Add the kind of link if it is not the usual "

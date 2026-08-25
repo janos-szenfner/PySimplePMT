@@ -20,6 +20,7 @@ This is a complete implementation of a project management tool with:
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
+- **Rename in the grid**: Double-click a task's name to type over it — Enter or clicking away saves, Escape cancels. The name goes on the task, so the editor shows it and Undo takes it back. Double-click no longer folds a branch; the arrow beside the row still does
 - **Type dependencies into the grid**: The Dependencies column takes the notation every planning tool uses — `3`, `3SS+1d`, `3FS-2d`, `3SF+50%`, several per cell. Double-click, type, Enter. It resolves the numbers, refuses a self-reference, an unknown task, a duplicate or anything that would run in a circle, reschedules, and writes the cell back in the same form
 - **Sequential IDs that keep up**: The ID column numbers rows 1..N down the list with no gaps, and follows every insert, delete, drag and indent. The number is a *position*; dependencies are held against the task itself, so a link never breaks when the numbers move — it just shows a different one
 - **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen. The task name lives in the tree column, so the indentation is drawn against the name itself, and an **Outline Level** column gives the same depth as a number (1 at the top, 2 under it), the way Microsoft Project does
@@ -907,6 +908,34 @@ keeps it early, and As Late As Possible pushes it up against the finish.
 `Project.apply_schedule` dispatches on the direction and is what every refresh
 now calls. A plan scheduled forward gets `reschedule` and nothing else, which
 is the whole of the previous behaviour.
+
+### Editing in the Grid (`views/task_list.py`)
+
+Two cells are typed over in place rather than through a dialog: the task's
+name and its dependencies. Both go through one editor — a plain `tk.Entry`
+placed over the cell, committed by Enter or by the focus leaving, abandoned by
+Escape.
+
+A plain entry rather than a `CTkEntry`, deliberately: a `CTkEntry` is a frame
+holding an entry and draws its own border and corners, which at the height of
+a grid row leaves the text clipped and the cell it is covering showing round
+the edges.
+
+**The editor is taken away before anything is stored.** Storing redraws the
+list, which destroys the row the entry is sitting on — and an entry left over a
+row that no longer exists is a box floating over the wrong task.
+
+**Double-click no longer folds a branch.** Folding is on the expander beside
+the row, where it is in every other tree, and where it already was — having it
+on both meant a double-click on a parent's *name* folded the branch away
+instead of letting the name be typed over, which is what somebody
+double-clicking a name wants.
+
+A name typed here goes onto the task through the undo tracker, so the editor
+reads it and one Undo takes it back. An empty name puts the old one back
+without saying anything: a row has to be called something, and a dialog thrown
+up because somebody clicked away from a box they had cleared would be a
+reprimand for a slip.
 
 ### The Dependencies Column (`dependencysyntax.py`)
 
@@ -1976,6 +2005,7 @@ Unit tests cover:
 - ✅ **Menu Dismissal**: That two watchers can coexist and removing one leaves the other, that the window's own bindings survive, that a menu closes on a click outside and not on one inside, that closing it stops the watch, and the exact two-menu sequence that used to leave one undismissable
 - ✅ **Project Settings**: That the settings survive a saved file and an older one opens with the defaults, that a priority out of range is clamped rather than refusing the plan, that moving the plan keeps every duration and gap and carries the earliest-begin floors with it, and that the panel refuses a backward schedule with no deadline
 - ✅ **Backward Scheduling**: That the plan ends on the deadline, that durations survive, that every link is still satisfied without a reschedule afterwards, that a task with float moves late rather than staying early, that a deadline in the past still moves the plan, and that a forward plan is settled byte for byte as it was before
+- ✅ **Inline Editing**: That a double-click opens an editor over the right cell and routes the name and the dependencies to their own, that Enter stores the name and Escape does not, that an empty name reverts, that a row deleted under the editor is not renamed, that it is one undo step, and that renaming does not disturb the rest of the task
 - ✅ **Dependency Grammar**: Every row of the specification's token table, commas and semicolons, case and spacing, a lag with no type and a type with no lag, and a round trip through every form the cell can hold
 - ✅ **The Dependencies Column**: That an unreadable cell stores nothing and says so, that the four guards refuse what they should, that the plan is left untouched by a check that fails, that a whole cell is one undo step, and that the task editor shows what the grid stored
 - ✅ **Exported IDs**: That the GanttProject and MSPDI files number tasks the way the list does, that the shared plan walk agrees with `display_ids` rather than counting for itself, that the spreadsheet's ID column holds numbers the plan shows, and that no identity reaches either file
