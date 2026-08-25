@@ -141,6 +141,13 @@ REGION_ORDER: Tuple[str, ...] = (
 #: region_of. The holidays package gains countries between releases, and one
 #: arriving in an odd group is a great deal better than one vanishing from a
 #: list somebody is choosing from.
+#:
+#: That is not a substitute for keeping this list current, and there is a test
+#: that fails when the package knows a country this does not. It found Kosovo
+#: that way: the package added XK in a release after the one this was written
+#: against, and on a machine with the newer version it was quietly filed under
+#: Other Territories at the bottom of the picker. Checked against 0.103, which
+#: is the newest release as of August 2026, and complete to there.
 COUNTRY_REGIONS: Dict[str, str] = {}
 
 COUNTRY_REGIONS.update(dict.fromkeys((
@@ -177,7 +184,7 @@ COUNTRY_REGIONS.update(dict.fromkeys((
     "CZ", "DE", "DK", "EE", "ES", "FI", "FO", "FR", "GB", "GE", "GG", "GI",
     "GR", "HR", "HU", "IE", "IM", "IS", "IT", "JE", "LI", "LT", "LU", "LV",
     "MC", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT", "RO", "RS", "RU",
-    "SE", "SI", "SJ", "SK", "SM", "TR", "UA", "VA",
+    "SE", "SI", "SJ", "SK", "SM", "TR", "UA", "VA", "XK",
 ), REGION_EUROPE))
 
 COUNTRY_REGIONS.update(dict.fromkeys((

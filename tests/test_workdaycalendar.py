@@ -1160,23 +1160,49 @@ class TestTheCountryRegions(unittest.TestCase):
     """
 
     def test_every_country_is_placed(self):
-        """Nothing falls through to the fallback by accident."""
-        from gantt_app.workdaycalendar import COUNTRY_REGIONS, supported_countries
+        """
+        Nothing falls through to the fallback by accident.
 
-        missing = sorted(code for code in supported_countries()
-                         if code not in COUNTRY_REGIONS)
-
-        self.assertEqual(missing, [])
-
-    def test_the_table_names_no_country_that_does_not_exist(self):
-        """A code the package does not know is a typo in the table."""
+        This is the test that fires when the holidays package adds a country
+        - it caught Kosovo on a machine with a newer version than the table
+        was written against. The fix is one line, and the message says which
+        one, because the failure otherwise reads as a mystery about a
+        two-letter code.
+        """
         from gantt_app.workdaycalendar import COUNTRY_REGIONS, supported_countries
 
         countries = supported_countries()
-        unknown = sorted(code for code in COUNTRY_REGIONS
-                         if code not in countries)
+        missing = sorted(code for code in countries
+                         if code not in COUNTRY_REGIONS)
 
-        self.assertEqual(unknown, [])
+        self.assertEqual(missing, [], (
+            "The holidays package knows countries this table does not, so "
+            "they are listed under Other Territories at the bottom of the "
+            "picker: "
+            + ', '.join(f"{code} ({countries[code]})" for code in missing)
+            + ". Add each to the right group in "
+              "gantt_app.workdaycalendar.COUNTRY_REGIONS."))
+
+    def test_every_code_in_the_table_is_shaped_like_one(self):
+        """
+        A guard against a typo, checked by shape rather than by lookup.
+
+        This used to assert that the installed holidays package knew every
+        code in the table, which sounds stronger and is the wrong
+        constraint: it stops the table ever being ahead of the package.
+        Kosovo had to be added for machines running a newer version than
+        this one, and that assertion failed on every machine running an
+        older one - so a correct fix could not be made until everybody's
+        dependency caught up.
+
+        Nothing is lost by dropping it. A mistyped code means some real
+        country is no longer named, and test_every_country_is_placed is
+        exactly the test that catches a country with no region.
+        """
+        from gantt_app.workdaycalendar import COUNTRY_REGIONS
+
+        for code in COUNTRY_REGIONS:
+            self.assertRegex(code, r'^[A-Z]{2}$')
 
     def test_every_region_named_is_one_of_the_regions_listed(self):
         """The order the picker walks has to reach all of them."""
