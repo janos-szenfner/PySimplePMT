@@ -40,6 +40,24 @@ FINISH_CONSTRAINED_TYPES = ('FF', 'SF')
 #: How strictly the constraint is applied.
 DEPENDENCY_HARDNESS = ('Hard', 'Rubber')
 
+#: Which end of the plan its dates are worked out from.
+#:
+#: 'start' schedules forward: everything begins as soon as its links allow,
+#: which is what a plan does unless somebody says otherwise. 'finish'
+#: schedules backward from a deadline: everything happens as late as it can
+#: without missing it, which is what a plan does when the date is the fixed
+#: thing and the work has to fit before it.
+SCHEDULE_FROM_START = 'start'
+SCHEDULE_FROM_FINISH = 'finish'
+SCHEDULE_FROM = (SCHEDULE_FROM_START, SCHEDULE_FROM_FINISH)
+
+#: What a project's priority may be, and what it is when nobody has said.
+#: The range is Microsoft Project's, so a plan moved between the two keeps
+#: its number rather than being rescaled.
+MIN_PROJECT_PRIORITY = 1
+MAX_PROJECT_PRIORITY = 1000
+DEFAULT_PROJECT_PRIORITY = 500
+
 #: What a lag is counted in.
 #:
 #: 'days' is a number of working days. 'percent' is a share of the
@@ -1116,6 +1134,21 @@ class Project:
     end_date: Optional[datetime] = None
     calendar: WorkingCalendar = field(default_factory=WorkingCalendar)
     calendars: CalendarRegistry = field(default_factory=default_registry)
+    #: Which end the dates are worked out from; see SCHEDULE_FROM.
+    schedule_from: str = SCHEDULE_FROM_START
+    #: The date the plan must be finished by, when it is scheduled backward.
+    #: Ignored while it is scheduled forward, where the finish is an answer
+    #: rather than a question.
+    deadline: Optional[datetime] = None
+    #: The date progress is reported against, when it is not today. None
+    #: means today, which is what a plan means until somebody freezes it for
+    #: a status meeting.
+    status_date: Optional[datetime] = None
+    #: What the plan is worth against other plans, for whoever is levelling
+    #: resources across them. Carried rather than used: nothing here levels
+    #: anything, and a number a reader typed should still be theirs when
+    #: they come back to it.
+    priority: int = DEFAULT_PROJECT_PRIORITY
 
     def calendar_for(self, task: Task) -> WorkingCalendar:
         """
@@ -1139,6 +1172,10 @@ class Project:
 
     def __post_init__(self):
         """Update project dates based on tasks if not set."""
+        direction = str(self.schedule_from or SCHEDULE_FROM_START).lower()
+        self.schedule_from = (direction if direction in SCHEDULE_FROM
+                              else SCHEDULE_FROM_START)
+        self.priority = self._clamped_priority(self.priority)
         #: The last schedule_analysis result, and the signature of the plan
         #: it was worked out from. Not dataclass fields: they are derived
         #: from the plan rather than part of it, so they are neither saved
@@ -1162,6 +1199,24 @@ class Project:
         if end_dates:
             self.end_date = max(end_dates)
     
+    @staticmethod
+    def _clamped_priority(value) -> int:
+        """
+        A priority inside the range, whatever arrived.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Clamped rather than refused. This arrives from a text box and from
+        saved files, and a plan that will not open because somebody typed
+        2000 would be a poor trade for a number nothing in the application
+        acts on yet.
+        """
+        try:
+            number = int(float(value))
+        except (TypeError, ValueError):
+            return DEFAULT_PROJECT_PRIORITY
+        return max(MIN_PROJECT_PRIORITY, min(MAX_PROJECT_PRIORITY, number))
+
     #: Width of a generated task ID, so numbering reads 001, 002, ...
     ID_WIDTH = 3
 
@@ -1879,6 +1934,63 @@ class Project:
     #: cost a warning rather than a loop with no end.
     MAX_OUTLINE_DEPTH = 100
 
+    def shift_to_start(self, new_start: datetime) -> bool:
+        """
+        Move the whole plan so it begins on a given date.
+
+        PARAMETERS:
+        -----------
+        new_start : datetime
+            The date the earliest task should begin on.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every task is moved by the same number of calendar days, which is
+        what preserves the plan: a task keeps its length, two tasks keep the
+        gap between them, and a link that was satisfied stays satisfied
+        because both ends moved together. Rescheduling from the new date
+        instead would collapse every gap somebody had put there on purpose.
+
+        The earliest begin dates move with it. They are floors somebody set
+        relative to the plan around them, and a plan shifted six months
+        later with its floors left behind is a plan full of constraints
+        nobody wrote.
+
+        The calendar is enforced afterwards, so a task whose new start lands
+        on a weekend is pushed to the next working day - which means the
+        shift is not uniform to the day for those tasks. That is the right
+        way round: a task cannot start on a day nobody works, and the
+        alternative is a plan that begins on a Sunday.
+        """
+        starts = [task.start_date for task in self.tasks
+                  if task.start_date is not None]
+        if not starts:
+            return False
+
+        delta = as_date(new_start) - as_date(min(starts))
+        if delta.days == 0:
+            return False
+
+        for task in self.tasks:
+            if task.start_date is not None:
+                task.start_date += delta
+            if task.end_date is not None:
+                task.end_date += delta
+            if task.earliest_begin is not None:
+                task.earliest_begin += delta
+
+        self.enforce_working_calendar()
+        self.reschedule()
+        self._update_dates()
+        logger.info("Moved %r by %d day(s) to start on %s",
+                    self.name, delta.days, as_date(new_start))
+        return True
+
     def lag_days(self, dependency) -> int:
         """
         A link's lag as a number of working days.
@@ -2264,8 +2376,35 @@ class Project:
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'calendar': self.calendar.to_dict(),
-            'calendars': self.calendars.to_dict()
+            'calendars': self.calendars.to_dict(),
+            'schedule_from': self.schedule_from,
+            'deadline': self.deadline.isoformat() if self.deadline else None,
+            'status_date': (self.status_date.isoformat()
+                            if self.status_date else None),
+            'priority': self.priority,
         }
+
+    @staticmethod
+    def _read_date(value) -> Optional[datetime]:
+        """
+        One saved date, or None where there is not a usable one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Unreadable becomes None rather than raising. These are settings on a
+        plan, and a plan that will not open because a date somebody typed
+        was malformed is a far worse answer than a setting coming back
+        empty.
+        """
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            logger.warning("Ignoring unreadable project date %r", value)
+            return None
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Project':
@@ -2301,7 +2440,14 @@ class Project:
             # wants some - which is a better answer than three calendars
             # appearing in a file nobody added them to. Only a brand new
             # project is seeded; see the field's default.
-            calendars=CalendarRegistry.from_dict(data.get('calendars'))
+            calendars=CalendarRegistry.from_dict(data.get('calendars')),
+            # Absent from every plan saved before the settings existed, and
+            # the defaults are what those plans meant: scheduled forward,
+            # no deadline, reported against today
+            schedule_from=data.get('schedule_from', SCHEDULE_FROM_START),
+            deadline=cls._read_date(data.get('deadline')),
+            status_date=cls._read_date(data.get('status_date')),
+            priority=data.get('priority', DEFAULT_PROJECT_PRIORITY),
         )
         
         # Add tasks manually
