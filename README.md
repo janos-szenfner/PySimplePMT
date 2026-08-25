@@ -842,6 +842,36 @@ of each letter are bound: Tk reports `<Control-B>` when caps lock is on, and a
 shortcut that stops working with caps lock is the kind of fault nobody reports
 and everybody notices.
 
+### Menus That Can Always Be Dismissed (`views/toolbar.py`)
+
+Menus were going behind the main window and leaving the application looking
+unresponsive, and the cause was a binding that removed more than it was asked
+to.
+
+Every popup bound `<Button-1>` on the main window to notice a click outside
+itself, and unbound it on close. **`tkinter`'s `unbind(sequence, funcid)` does
+not remove one binding** — it clears every binding for that sequence on the
+widget and then deletes the one command. With two popups open, the first to
+close took the second's dismissal with it. The second, being borderless and
+always-on-top, then had nothing able to close it: it stayed on screen and
+dropped behind the main window the next time that was raised. Recovering meant
+going out to the window manager, which is what breaks the deadlock.
+
+`watch_for_click_elsewhere` binds the window **once** and keeps a list of
+watchers. Registering and unregistering is list mutation, so nothing touches
+Tk's binding table after the first popup and no popup can disturb another's
+watch — nor the window's own bindings, the formatting shortcuts among them,
+which were being cleared too.
+
+Two other faults fell out of the same investigation. `CTkDropdownMenu` relied
+on `<FocusOut>` alone, and an `overrideredirect` window does not reliably take
+focus on macOS, so the event may never come — it watches for clicks now, and
+`lift()`s when it opens. And the menus opened from the formatting bar and the
+progress group had no dismissal of any kind; they inherit it now that the menu
+class carries its own.
+
+This is the third time this exact `unbind` has caused a bug in this codebase.
+
 ### Project Settings (`views/projectsettings.py`)
 
 Everything on this panel used to be either unreachable or spread across three
@@ -1943,6 +1973,7 @@ Unit tests cover:
 - ✅ **Progress Tracking**: The five thresholds over a whole selection, that a phase marks the work under it, that past work goes to 100% and future work stays at 0%, that a weekend and a holiday both count correctly, that a milestone is done or not done, and that a whole press is one undo step
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
 - ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
+- ✅ **Menu Dismissal**: That two watchers can coexist and removing one leaves the other, that the window's own bindings survive, that a menu closes on a click outside and not on one inside, that closing it stops the watch, and the exact two-menu sequence that used to leave one undismissable
 - ✅ **Project Settings**: That the settings survive a saved file and an older one opens with the defaults, that a priority out of range is clamped rather than refusing the plan, that moving the plan keeps every duration and gap and carries the earliest-begin floors with it, and that the panel refuses a backward schedule with no deadline
 - ✅ **Backward Scheduling**: That the plan ends on the deadline, that durations survive, that every link is still satisfied without a reschedule afterwards, that a task with float moves late rather than staying early, that a deadline in the past still moves the plan, and that a forward plan is settled byte for byte as it was before
 - ✅ **Dependency Grammar**: Every row of the specification's token table, commas and semicolons, case and spacing, a lag with no type and a type with no lag, and a round trip through every form the cell can hold

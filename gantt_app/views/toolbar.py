@@ -114,6 +114,81 @@ def highlight_on_hover(button, resting_text_color=WIN_MENU_TEXT):
     button.highlight_leave = leave
 
 
+#: Where a window keeps the list of things watching for a click outside
+#: themselves. An attribute on the window rather than a module-level map, so
+#: it goes when the window goes.
+DISMISS_WATCHERS = '_gantt_dismiss_watchers'
+
+
+def watch_for_click_elsewhere(window, handler) -> None:
+    """
+    Have a handler called when a click lands anywhere in a window.
+
+    PARAMETERS:
+    -----------
+    window : tkinter widget
+        Usually the main window, which is where clicks that should dismiss a
+        popup land.
+    handler : callable
+        Given the event. It decides for itself whether the click was outside
+        whatever it is guarding.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    One binding per window, however many popups are watching, and it is
+    never removed. That is the whole point.
+
+    Every popup used to bind <Button-1> on the window and unbind it on
+    close, and tkinter's unbind(sequence, funcid) does not remove one
+    binding - it clears every binding for that sequence on the widget and
+    then deletes the one command. Two popups open at once meant the first to
+    close took the second's dismissal with it, and the second could then
+    never be dismissed by clicking away from it. Being borderless and
+    always-on-top, it stayed on screen with nothing able to close it, and
+    dropped behind the main window the next time that was raised.
+
+    Registering and unregistering is list mutation now, so nothing touches
+    Tk's binding table after the first popup.
+    """
+    watchers = getattr(window, DISMISS_WATCHERS, None)
+    if watchers is None:
+        watchers = []
+        setattr(window, DISMISS_WATCHERS, watchers)
+
+        def dispatch(event):
+            """Give the click to everything currently watching."""
+            for watching in list(getattr(window, DISMISS_WATCHERS, ())):
+                try:
+                    watching(event)
+                except Exception:
+                    logger.exception("A dismissal handler failed")
+
+        try:
+            window.bind("<Button-1>", dispatch, add="+")
+        except tk.TclError:
+            logger.debug("Could not watch %s for clicks", window)
+            return
+
+    if handler not in watchers:
+        watchers.append(handler)
+
+
+def stop_watching_for_click_elsewhere(window, handler) -> None:
+    """
+    Stop calling a handler. Nothing is unbound; see the note above.
+
+    Safe to call for a handler that was never registered, and for a window
+    being torn down - both happen while a menu closes.
+    """
+    watchers = getattr(window, DISMISS_WATCHERS, None)
+    if not watchers:
+        return
+    try:
+        watchers.remove(handler)
+    except ValueError:
+        pass
+
+
 class CTkDropdownMenu(ctk.CTkToplevel):
     """Floating dropdown menu window for CustomTkinter with Windows-style appearance."""
     
@@ -136,13 +211,55 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self._submenu_row = None
         self._create_widgets()
         
-        # Bind global click to dismiss menu when clicking outside
         self.bind("<FocusOut>", lambda e: self._on_focus_out())
         self.bind("<Escape>", lambda e: self.destroy())
+
+        # A borderless always-on-top window with nothing able to close it is
+        # the fault this guards against: it stays on screen and drops behind
+        # the main window the next time that is raised. FocusOut is not
+        # enough on its own - an overrideredirect window does not reliably
+        # take focus on macOS, so the event never comes.
+        #
+        # Menus opened from the menu row and from a DropdownButton are also
+        # watched by those, which is harmless: closing an already-closed
+        # menu does nothing. The ones opened from the formatting bar and the
+        # progress group had no dismissal at all before this.
+        self._watched_window = None
+        try:
+            self._watched_window = master.winfo_toplevel()
+            watch_for_click_elsewhere(self._watched_window,
+                                      self._dismiss_if_outside)
+            self.lift()
+        except (AttributeError, tk.TclError):
+            logger.debug("Could not watch for clicks outside the menu")
         
         # Track if we're in a submenu operation to prevent premature closing
         self._in_submenu = False
         
+    def _dismiss_if_outside(self, event):
+        """Close when the click landed on something that is not this menu."""
+        widget = getattr(event, 'widget', None)
+        if widget is None:
+            return
+        for part in (self, self._submenu):
+            if part is None:
+                continue
+            path = str(widget)
+            if path == str(part) or path.startswith(f"{part}."):
+                return
+        self.destroy()
+
+    def destroy(self):
+        """Stop being watched, then go."""
+        watched, self._watched_window = getattr(self, '_watched_window', None), None
+        if watched is not None:
+            try:
+                stop_watching_for_click_elsewhere(watched,
+                                                  self._dismiss_if_outside)
+            except tk.TclError:
+                pass
+        super().destroy()
+
     def _create_widgets(self):
         container = ctk.CTkFrame(self, fg_color="transparent", corner_radius=8)
         container.pack(fill="both", expand=True, padx=self.MENU_PADDING, pady=self.MENU_PADDING)
@@ -386,7 +503,6 @@ class CustomMenuBar(ctk.CTkFrame):
         super().__init__(master, height=35, corner_radius=0, fg_color=WIN_MENU_BG, **kwargs)
         self.menu_config = menu_config
         self.active_dropdown: Optional[CTkDropdownMenu] = None
-        self._dismiss_binding = None
         
         # Store references to all menu buttons for state management
         self.menu_buttons = []
@@ -437,10 +553,16 @@ class CustomMenuBar(ctk.CTkFrame):
         # Store reference to the button that opened this menu
         self.active_dropdown.opener_button = button_widget
         
-        # Bind global click to dismiss menu when clicking outside
-        self._dismiss_binding = self.winfo_toplevel().bind(
-            "<Button-1>", self._on_click_elsewhere, add="+"
-        )
+        # A menu opened over another one must not fall behind it
+        try:
+            self.active_dropdown.lift()
+        except tk.TclError:
+            pass
+
+        # Watched rather than bound; see watch_for_click_elsewhere for why
+        # unbinding one of these used to take the other menu's with it
+        watch_for_click_elsewhere(self.winfo_toplevel(),
+                                  self._on_click_elsewhere)
         
     def _on_click_elsewhere(self, event):
         """
@@ -481,14 +603,12 @@ class CustomMenuBar(ctk.CTkFrame):
 
     def _close_all_dropdowns(self):
         """Close all open dropdown menus."""
-        # Clean up the dismiss binding
-        if hasattr(self, '_dismiss_binding') and self._dismiss_binding:
-            try:
-                self.winfo_toplevel().unbind("<Button-1>", self._dismiss_binding)
-            except tk.TclError:
-                pass
-            self._dismiss_binding = None
-            
+        try:
+            stop_watching_for_click_elsewhere(self.winfo_toplevel(),
+                                              self._on_click_elsewhere)
+        except tk.TclError:
+            pass
+
         if self.active_dropdown and self.active_dropdown.winfo_exists():
             try:
                 self.active_dropdown.destroy()
@@ -535,7 +655,6 @@ class DropdownButton(ctk.CTkButton):
         
         self.menu_items = menu_items
         self._popups = []
-        self._dismiss_binding = None
     
     #: The dropdown currently showing its menu, if any. Only one opens at a
     #: time, so clicking a second button dismisses the first.
@@ -569,10 +688,8 @@ class DropdownButton(ctk.CTkButton):
             y = self.winfo_rooty() + self.winfo_height()
             self._open_popup(self.menu_items, x, y, level=0)
 
-            toplevel = self.winfo_toplevel()
-            self._dismiss_binding = toplevel.bind(
-                "<Button-1>", self._on_click_elsewhere, add="+"
-            )
+            watch_for_click_elsewhere(self.winfo_toplevel(),
+                                      self._on_click_elsewhere)
         except Exception:
             logger.exception("Could not build the %r menu", self.cget("text"))
             self.close_menu()
@@ -673,13 +790,11 @@ class DropdownButton(ctk.CTkButton):
         Safe to call when no menu is open, and never raises: it runs from
         window teardown, where a half-destroyed widget tree is normal.
         """
-        binding = getattr(self, '_dismiss_binding', None)
-        if binding is not None:
-            try:
-                self.winfo_toplevel().unbind("<Button-1>", binding)
-            except tk.TclError:
-                pass
-            self._dismiss_binding = None
+        try:
+            stop_watching_for_click_elsewhere(self.winfo_toplevel(),
+                                              self._on_click_elsewhere)
+        except tk.TclError:
+            pass
 
         self._close_from_level(0)
 

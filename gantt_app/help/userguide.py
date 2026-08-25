@@ -678,6 +678,10 @@ GUIDE_SECTIONS = (
             "The window opens filling whatever screen you are on, so the "
             "task list and the chart get whatever room the desktop allows.",
 
+            "A menu closes when you click away from it, press Escape, or "
+            "choose something from it. If one ever seems stuck, clicking "
+            "anywhere else in the window will close it.",
+
             "Every button says what it is if you rest the pointer on it, "
             "which is the fastest way to learn the row.",
 
