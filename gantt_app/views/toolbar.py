@@ -2823,6 +2823,12 @@ class IconToolbar(ctk.CTkFrame):
     #: The name standing in for a divider rather than a button.
     SEPARATOR = 'separator'
 
+    #: How wide the day/night toggle is: a drawn sun or moon, then Day or
+    #: Night beside it. Enough for the longer of the two words and no more -
+    #: the slack in it was empty space between the search box and the right
+    #: edge, since everything here is packed against that edge.
+    THEME_BUTTON_WIDTH = 72
+
     #: What the ? keeps clear of the right edge, so it lands under the Log
     #: button on the row above.
     #:
@@ -2901,8 +2907,14 @@ class IconToolbar(ctk.CTkFrame):
         They are held apart from the actions by a divider, and against the
         right edge because none of them acts on the plan. The actions grow
         from the left as icons are added; these three do not move.
+
+        A divider between the ? and the day/night control as well: help is
+        not part of the appearance controls, and without a line between them
+        the sun, the caption and the question mark read as one group of
+        three.
         """
         self._create_help_button()
+        self._create_separator(side="right")
         self._create_theme_control()
         self._create_separator(side="right")
         self._create_search_box()
@@ -3081,7 +3093,8 @@ class IconToolbar(ctk.CTkFrame):
         permanent badge nobody reads after the first day.
         """
         self.theme_button = ctk.CTkButton(
-            self, text="", width=86, height=self.BUTTON_SIZE,
+            self, text="", width=self.THEME_BUTTON_WIDTH,
+            height=self.BUTTON_SIZE,
             fg_color="transparent", hover_color=WIN_MENU_HOVER,
             text_color=WIN_MENU_TEXT, corner_radius=4, anchor="w",
             command=self._toggle_theme,
@@ -3089,15 +3102,25 @@ class IconToolbar(ctk.CTkFrame):
         self.theme_button.pack(side="right", padx=2, pady=2)
 
         self.theme_sync_button = ctk.CTkButton(
-            self, text="Sync with system", width=124,
-            height=self.BUTTON_SIZE, fg_color="transparent",
-            hover_color=WIN_MENU_HOVER, text_color=theme.MUTED_TEXT,
-            corner_radius=4, command=self._sync_theme,
+            self, text="", width=self.BUTTON_SIZE, height=self.BUTTON_SIZE,
+            fg_color="transparent", hover_color=WIN_MENU_HOVER,
+            text_color=theme.MUTED_TEXT, corner_radius=4,
+            command=self._sync_theme,
         )
+        # A drawing rather than "Sync with system" written out. The caption
+        # was 124 pixels of text in a row of 36-pixel icons, and it was the
+        # widest thing on the right-hand side - so the search box beside it
+        # sat that much further from the edge, with the gap showing.
+        sync_icon = self._icon_image('sync')
+        if sync_icon is not None:
+            self.theme_sync_button.configure(image=sync_icon)
+            self.theme_sync_button.icon_image = sync_icon
+        else:
+            self.theme_sync_button.configure(text="S")
         # Packed by _refresh_theme_control when a manual choice is in force.
+        self.theme_sync_button.tooltip = "Sync with the System"
         self.theme_sync_button.tooltip_widget = attach_tooltip(
-            self.theme_sync_button,
-            "Follow the desktop's own light or dark setting again")
+            self.theme_sync_button, "Sync with the System")
 
         controller = self._theme_controller()
         if controller is not None:
@@ -3171,10 +3194,13 @@ class IconToolbar(ctk.CTkFrame):
         if controller.following_system:
             sync.pack_forget()
         elif not sync.winfo_manager():
-            # Right, like the control it belongs to. Packed left it would
-            # jump to the far end of the actions the moment a manual
-            # appearance was chosen.
-            sync.pack(side="right", padx=2, pady=2)
+            # Beside the toggle it belongs to, by naming it. side="right"
+            # alone appends to the end of the right-hand group, and this is
+            # packed when the user picks an appearance rather than when the
+            # row is built - so by then the end of that group is past the
+            # search box, and the button appeared at the far left of the
+            # row, against the undo and redo icons.
+            sync.pack(side="right", after=self.theme_button, padx=2, pady=2)
 
     def _create_separator(self, side: str = "left"):
         """

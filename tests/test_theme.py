@@ -718,9 +718,67 @@ class TestTheToolbarControl(unittest.TestCase):
 
         self.assertFalse(self.icons.theme_sync_button.winfo_manager())
 
+    def test_sync_is_an_icon_rather_than_a_sentence(self):
+        """
+        "Sync with system" written out was 124 pixels of text in a row of
+        36-pixel icons, and the widest thing on the right-hand side - so the
+        search box beside it sat that much further from the edge.
+        """
+        sync = self.icons.theme_sync_button
+
+        self.assertEqual(sync.cget('text'), '')
+        self.assertIsNotNone(getattr(sync, 'icon_image', None))
+
+    def test_sync_says_what_it_does_on_hover(self):
+        """Which is where the words went."""
+        self.assertEqual(self.icons.theme_sync_button.tooltip,
+                         "Sync with the System")
+
+    def test_sync_has_a_drawing_to_show(self):
+        """Without one the button would fall back to a letter."""
+        from gantt_app.resources.icons import ICON_STROKES, draw_icon
+
+        self.assertIn('sync', ICON_STROKES)
+        self.assertIsNotNone(draw_icon('sync', 20))
+
+    def test_sync_sits_beside_the_day_night_toggle(self):
+        """
+        Wherever in the session it is asked for.
+
+        It is packed when an appearance is chosen rather than when the row is
+        built, and side="right" alone appends to the end of the right-hand
+        group - which by then is past the search box. So it appeared at the
+        far left of the row, against undo and redo, a long way from the
+        control it belongs to.
+        """
+        self.toolbar.use_light_theme()
+        self.icons.update_idletasks()
+
+        right = [w for w in self.icons.pack_slaves()
+                 if w.pack_info().get('side') == 'right']
+        toggle = right.index(self.icons.theme_button)
+        sync = right.index(self.icons.theme_sync_button)
+
+        # Packed right to left, so the next one along is immediately left
+        self.assertEqual(sync, toggle + 1)
+
+    def test_the_help_button_is_the_far_right_of_the_row(self):
+        """With the divider between it and the appearance controls."""
+        right = [w for w in self.icons.pack_slaves()
+                 if w.pack_info().get('side') == 'right']
+
+        self.assertIs(right[0], self.icons.help_button)
+        self.assertIn(right[1], self.icons.separators)
+        self.assertIs(right[2], self.icons.theme_button)
+
     def test_the_control_is_set_apart_by_a_divider(self):
-        """It is a setting, not an action on the plan."""
-        self.assertEqual(len(self.icons.separators), 8)
+        """
+        On both sides. It is a setting, not an action on the plan, and it is
+        not help either - the ? beside it has a divider of its own now, so
+        the sun, its caption and the question mark stop reading as one group
+        of three.
+        """
+        self.assertEqual(len(self.icons.separators), 9)
 
     def test_a_destroyed_toolbar_does_not_break_the_theme(self):
         """

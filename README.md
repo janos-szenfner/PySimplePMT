@@ -894,6 +894,16 @@ opening a menu, in groups divided by a hairline:
   moves one about, so it belongs to neither group beside it
 - cut, copy, paste, delete, undo, redo
 
+Against the right edge, reading from the right: the **?**, a divider, the
+**day/night toggle** with the **sync** button beside it, a divider, the
+**search box**, and a divider. Sync is a drawing with "Sync with the System"
+on hover rather than the sentence written out - as a caption it was 124
+pixels of text in a row of 36-pixel icons, the widest thing on that side, and
+it pushed the search box that far in from the edge. It is also packed beside
+the toggle by name: packed only by side it landed at the end of the
+right-hand group, which by the time an appearance is chosen is past the
+search box, so it turned up at the far left of the row against undo and redo.
+
 Opening and creating a plan are on the **Project** menu rather than here, as
 are the five work item types, which are on **Actions → Create**. What is left
 on the bar is what gets used repeatedly while a plan is being built, which is
