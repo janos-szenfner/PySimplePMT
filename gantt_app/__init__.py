@@ -2,5 +2,5 @@
 Gantt Project Management Tool - A cross-platform desktop app for project management.
 """
 
-__version__ = "1.54.3"
+__version__ = "1.54.4"
 __author__ = "janosszenfner"
