@@ -1583,10 +1583,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             
-            # Clear undo/redo history when loading a new project
-            if self.undo_redo_manager:
-                self.undo_redo_manager.clear()
-                self.update_undo_redo_buttons()
+            self._forget_the_previous_plan()
             
             if self.on_project_changed:
                 self.on_project_changed()
@@ -1611,10 +1608,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = None
             self.project.end_date = None
             
-            # Clear undo/redo history for new project
-            if self.undo_redo_manager:
-                self.undo_redo_manager.clear()
-                self.update_undo_redo_buttons()
+            self._forget_the_previous_plan()
             
             if self.on_project_changed:
                 self.on_project_changed()
@@ -1706,6 +1700,43 @@ class Toolbar(ctk.CTkFrame):
         if hasattr(self.task_list, 'unlink_tasks'):
             self.task_list.unlink_tasks(self._selected_task_ids())
 
+    def _forget_the_previous_plan(self):
+        """
+        Let go of everything that belonged to the plan being replaced.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Six handlers replace the plan on screen - opening a file, starting a
+        new one, and the four importers - and every one of them cleared the
+        undo history, for the obvious reason that a history of edits to a
+        plan that is no longer open cannot be applied to the one that is.
+
+        The clipboard is the same argument and was not making it. A row cut
+        from the previous plan stayed on the clipboard, still marked as cut,
+        and the paste that followed looked its ID up in the plan now open -
+        where that number belongs to a different task. Cutting a row,
+        opening another plan and pasting therefore moved a row the user had
+        never touched:
+
+            cut 'A-second' from Plan A, not pasted yet
+            loaded Plan B into the same window
+            paste at row 001 -> moved 'B-second'
+
+        The clipboard is also pointed at the plan again. Nothing replaces
+        the Project object today - these handlers rewrite the one already
+        there - but ClipboardManager is a singleton whose __init__ returns
+        early the second time round, so the day something does replace it,
+        this is the line that stops the clipboard editing a plan nobody can
+        see.
+        """
+        if self.undo_redo_manager:
+            self.undo_redo_manager.clear()
+            self.update_undo_redo_buttons()
+
+        if self.clipboard_manager:
+            self.clipboard_manager.clear()
+            self.clipboard_manager.set_project(self.project)
+
     def import_gan(self):
         """Import a GanttProject (.gan) file."""
         # Ask for file path
@@ -1728,10 +1759,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             
-            # Clear undo/redo history when importing
-            if self.undo_redo_manager:
-                self.undo_redo_manager.clear()
-                self.update_undo_redo_buttons()
+            self._forget_the_previous_plan()
             
             if self.on_project_changed:
                 self.on_project_changed()
@@ -1783,10 +1811,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             
-            # Clear undo/redo history when importing
-            if self.undo_redo_manager:
-                self.undo_redo_manager.clear()
-                self.update_undo_redo_buttons()
+            self._forget_the_previous_plan()
             
             if self.on_project_changed:
                 self.on_project_changed()
@@ -1824,10 +1849,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             
-            # Clear undo/redo history when importing
-            if self.undo_redo_manager:
-                self.undo_redo_manager.clear()
-                self.update_undo_redo_buttons()
+            self._forget_the_previous_plan()
             
             if self.on_project_changed:
                 self.on_project_changed()
@@ -1858,10 +1880,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
 
-            # Clear undo/redo history when importing
-            if self.undo_redo_manager:
-                self.undo_redo_manager.clear()
-                self.update_undo_redo_buttons()
+            self._forget_the_previous_plan()
 
             if self.on_project_changed:
                 self.on_project_changed()

@@ -705,6 +705,13 @@ under everything else.
   earlier while the pasted one stayed
 - **Numbered like the rest**: nothing is renumbered, because the number beside
   a row is where it sits; see `Project.display_ids`
+- **Let go of when another plan is opened**: every handler that replaces the
+  plan on screen already cleared the undo history, for the obvious reason
+  that edits to a plan no longer open cannot be applied to the one that is.
+  The clipboard is the same argument and was not making it - a row cut from
+  the previous plan stayed on the clipboard, and the paste that followed
+  looked its ID up in the new plan, where that number belongs to a different
+  task. See `Toolbar._forget_the_previous_plan`
 - **Reaches the desktop clipboard**: through Tk's own, so it needs no extra
   package. What is written is a readable list of what was copied, then a
   marker, then the same thing as JSON - so it pastes into a mail as text and

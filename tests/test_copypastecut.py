@@ -15,6 +15,7 @@ import uuid
 import copy
 
 from gantt_app.models import Task, Project, Dependency
+from gantt_app.utils.undoredo import create_add_task_command
 from gantt_app.utils.copypastecut import (
     ClipboardService,
     ClipboardManager,
@@ -1694,6 +1695,129 @@ class TestAPasteIsOneUndoStep(unittest.TestCase):
 
         # The phase, not the paste, is what the one entry holds
         self.assertNotIn("Phase1", [name for _id, name in self.rows()])
+
+
+class TestOpeningAnotherPlanEmptiesTheClipboard(unittest.TestCase):
+    """
+    What was cut from a plan does not follow you into the next one.
+
+    WHY THESE EXIST:
+    ================
+    Every handler that replaces the plan on screen cleared the undo history,
+    because a history of edits to a plan that is no longer open cannot be
+    applied to the one that is. The clipboard is the same argument and was
+    not making it.
+
+    A row cut from the previous plan stayed on the clipboard, still marked
+    as cut, and the paste that followed looked its ID up in the plan now
+    open - where that number belongs to a different task. So cutting a row,
+    opening another plan and pasting moved a row the user had never touched:
+
+        cut 'A-second' from Plan A, not pasted yet
+        loaded Plan B into the same window
+        paste at row 001 -> moved 'B-second'
+    """
+
+    def setUp(self):
+        """A toolbar over a plan, with a row cut and waiting."""
+        import customtkinter as ctk
+        from gantt_app.utils.undoredo import UndoRedoManager
+        from gantt_app.views.toolbar import Toolbar
+
+        ClipboardManager._instance = None
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = Project(name="Plan A")
+        today = datetime(2026, 8, 19)
+        for task_id, name in (("001", "A-first"), ("002", "A-second")):
+            self.project.add_task(Task(
+                id=task_id, name=name, start_date=today,
+                end_date=today + timedelta(days=1), task_type="Task"))
+
+        self.clipboard = ClipboardManager(self.project)
+        self.manager = UndoRedoManager()
+        self.toolbar = Toolbar(self.root, self.project,
+                               undo_redo_manager=self.manager,
+                               clipboard_manager=self.clipboard)
+
+    def tearDown(self):
+        """Tear the window down and let go of the singleton."""
+        ClipboardManager._instance = None
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def open_another_plan(self):
+        """What every one of the six handlers does to the plan on screen."""
+        other = Project(name="Plan B")
+        today = datetime(2026, 8, 19)
+        for task_id, name in (("001", "B-first"), ("002", "B-second")):
+            other.add_task(Task(
+                id=task_id, name=name, start_date=today,
+                end_date=today + timedelta(days=1), task_type="Task"))
+
+        self.project.name = other.name
+        self.project.tasks = other.tasks
+        self.toolbar._forget_the_previous_plan()
+
+    def test_the_clipboard_is_emptied(self):
+        """Nothing from the previous plan is left to paste."""
+        self.clipboard.cut(["002"])
+
+        self.open_another_plan()
+
+        self.assertTrue(self.clipboard.is_empty())
+
+    def test_nothing_is_left_greyed_as_cut(self):
+        """The marking belonged to a row that is no longer on screen."""
+        self.clipboard.cut(["002"])
+        self.assertEqual(self.clipboard.cut_item_ids, {"002"})
+
+        self.open_another_plan()
+
+        self.assertEqual(self.clipboard.cut_item_ids, set())
+
+    def test_a_paste_afterwards_moves_nothing(self):
+        """The row it would have moved is one nobody touched."""
+        self.clipboard.cut(["002"])
+
+        self.open_another_plan()
+        self.clipboard.paste_at("001")
+
+        self.assertEqual([task.name for task in self.project.tasks],
+                         ["B-first", "B-second"])
+
+    def test_a_copy_does_not_survive_either(self):
+        """Same reasoning, and the same row numbers to be confused by."""
+        self.clipboard.copy(["002"])
+
+        self.open_another_plan()
+
+        self.assertTrue(self.clipboard.is_empty())
+
+    def test_the_undo_history_still_goes_too(self):
+        """What the handlers already did, kept by the same helper."""
+        self.manager.execute(
+            create_add_task_command(self.project, Task(
+                id="099", name="Late arrival", start_date=datetime(2026, 8, 19),
+                task_type="Task")))
+        self.assertTrue(self.manager.can_undo())
+
+        self.open_another_plan()
+
+        self.assertFalse(self.manager.can_undo())
+
+    def test_the_clipboard_is_pointed_at_the_plan_again(self):
+        """
+        Nothing replaces the Project object today, but ClipboardManager is a
+        singleton whose __init__ returns early the second time round.
+        """
+        self.open_another_plan()
+
+        self.assertIs(self.clipboard.service.project, self.project)
 
 
 class TestWhatReachesTheDesktopClipboard(unittest.TestCase):

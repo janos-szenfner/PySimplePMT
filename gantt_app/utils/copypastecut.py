@@ -940,11 +940,6 @@ class ClipboardManager:
                      inside: bool = False) -> bool:
         """Whether a paste at that row would be accepted."""
         return self.service.can_paste_at(focused_id, inside)
-
-    def resolve_target(self, focused_id: Optional[str],
-                       inside: bool = False) -> tuple:
-        """Where a paste asked for from a row would land."""
-        return self.service.resolve_target(focused_id, inside)
     
     def clear(self) -> None:
         """Clear the clipboard."""
