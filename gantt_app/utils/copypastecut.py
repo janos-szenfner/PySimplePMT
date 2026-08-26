@@ -246,6 +246,10 @@ class ClipboardService:
         The one place that answers "where does a paste go". Three routes ask
         it - the keyboard, the toolbar and the right-click menu - and each
         of them used to work it out for itself, in three different ways.
+
+        No row named is the end of the plan, at the top level: that is the
+        right-click menu opened over the empty space below the last row.
+
         Selecting a task and pressing the shortcut nested the copy inside it
         as a sub-task; the same paste from the toolbar did the same; the
         menu put it beside the row. None of that was intended by anybody.
@@ -287,16 +291,15 @@ class ClipboardService:
 
         DEVELOPMENT NOTES:
         ------------------
-        A paste with nothing selected is refused rather than guessed at. It
-        used to append at the end of the plan, which put the row somewhere
-        the user was not looking and had not asked for. The one exception is
-        a plan with no rows at all, where the end and the beginning are the
-        same place and there is nothing to be surprised by.
-        """
-        if not focused_id and self.project and self.project.tasks:
-            logger.info("Paste refused: no row is selected to paste at")
-            return []
+        None names no row, which is the end of the plan: it is what the
+        right-click menu passes when it was opened over the empty space
+        below the last row, the same gesture that creates a task there.
 
+        Whether the user meant that, or simply had nothing selected and
+        pressed the shortcut, is not something this can tell - only the
+        caller knows which gesture it was. The task list settles it before
+        calling; see DragDropTaskList.paste_tasks and FROM_CURSOR.
+        """
         container_id, before_id = self.resolve_target(focused_id, inside)
         return self.paste(container_id, before_task_id=before_id)
 
@@ -315,28 +318,22 @@ class ClipboardService:
         RETURNS:
         --------
         bool
-            True when the menu entry should be live.
+            True when the menu entry should be live. None names no row,
+            which is the end of the plan; see paste_at.
         """
-        if not focused_id and self.project and self.project.tasks:
-            return False
-
         container_id, _before_id = self.resolve_target(focused_id, inside)
         return self.can_paste(container_id)
 
     def paste(self, target_container_id: Optional[str] = None,
-              after_task_id: Optional[str] = None,
               before_task_id: Optional[str] = None) -> List[str]:
         """
         Paste items from the clipboard to the target container.
         
         Args:
             target_container_id: ID of the destination container (parent task ID)
-            after_task_id: The row the paste was asked for from. Rows that
-                land beside it are placed directly after it rather than at
-                the end of the branch - see _place_after.
             before_task_id: The row the pasted items should take the place
-                of, pushing it down - see _place_before. This is what a
-                paste from the task list uses; see resolve_target.
+                of, pushing it down - see _place_before. None puts them at
+                the end of whatever they were pasted into.
         
         Process:
             1. Retrieve payload from in-memory store (or fallback to system clipboard).
@@ -389,10 +386,7 @@ class ClipboardService:
                          payload.operation)
             return []
 
-        if before_task_id:
-            self._place_before(pasted, before_task_id)
-        else:
-            self._place_after(pasted, after_task_id)
+        self._place_before(pasted, before_task_id)
 
         logger.info("Pasted %s", pasted)
         return pasted
@@ -675,52 +669,6 @@ class ClipboardService:
         """Get the entity type from a Task object."""
         return task.task_type.lower()
     
-    def _place_after(self, pasted: List[str],
-                     anchor_id: Optional[str]) -> None:
-        """
-        Put the pasted rows directly after the row they were pasted from.
-
-        PARAMETERS:
-        -----------
-        pasted : List[str]
-            The rows that arrived, in the order they should read.
-        anchor_id : Optional[str]
-            The row the paste was asked for from. None means the paste came
-            from somewhere with no row behind it - the toolbar, a keyboard
-            shortcut over empty space - and the rows stay where they landed.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        Creating a task already works this way: choosing Create from a row's
-        menu puts the new task beside that row rather than at the end of the
-        plan - see DragDropTaskList._save_created, whose two lines these
-        are. Paste was the one action that still appended, so pasting from
-        the middle of a long phase put the rows at the bottom of it and left
-        the user to go and find them.
-
-        Only rows that end up beside the anchor are moved. Pasting a
-        sub-task into the task that was right-clicked makes it a child of
-        the anchor rather than its neighbour, and a child is already where
-        it belongs.
-
-        The anchor walks forward as the rows are placed, so three pasted
-        rows read in the order they were copied rather than backwards.
-        """
-        if not anchor_id or not pasted:
-            return
-
-        anchor = self._get_task_by_id(anchor_id)
-        if anchor is None:
-            return
-
-        for task_id in pasted:
-            task = self._get_task_by_id(task_id)
-            if task is None or task.parent_task_id != anchor.parent_task_id:
-                continue
-            if self.project.move_task_before(task_id, anchor.id):
-                self.project.move_task(task_id, 'down')
-                anchor = task
-
     def _place_before(self, pasted: List[str],
                       anchor_id: Optional[str]) -> None:
         """
@@ -739,10 +687,9 @@ class ClipboardService:
         reference tool's behaviour: the rows appear where you were standing
         and the row you were standing on moves down to make room.
 
-        The anchor does not walk forward as _place_after's does. Each row is
-        moved in front of the same anchor, and because the previous one is
-        now in front of it too, they come to rest in the order they were
-        copied.
+        Each row is moved in front of the same anchor, and because the
+        previous one is now in front of it too, they come to rest in the
+        order they were copied.
 
         Only rows that end up as siblings of the anchor are moved. A
         sub-task pasted into the row above it is already a child, and a
@@ -980,11 +927,9 @@ class ClipboardManager:
         self.service.cut(selected_ids)
     
     def paste(self, target_container_id: Optional[str] = None,
-              after_task_id: Optional[str] = None,
               before_task_id: Optional[str] = None) -> List[str]:
         """Paste from the clipboard, and say which rows arrived."""
-        return self.service.paste(target_container_id, after_task_id,
-                                  before_task_id)
+        return self.service.paste(target_container_id, before_task_id)
 
     def paste_at(self, focused_id: Optional[str] = None,
                  inside: bool = False) -> List[str]:

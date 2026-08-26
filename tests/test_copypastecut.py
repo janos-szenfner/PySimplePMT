@@ -902,7 +902,7 @@ class TestTheCutRowsAreMarked(unittest.TestCase):
 
 class TestWhereThePastedRowsLand(unittest.TestCase):
     """
-    They go beside the row the paste was asked for from.
+    The three placements, at the level below the rules that choose them.
 
     WHY THESE EXIST:
     ================
@@ -912,6 +912,14 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
     row beside the one it was created from - see
     DragDropTaskList._save_created - and paste was the one action that did
     not.
+
+    These name a container and an anchor directly. Which of the three a
+    gesture asks for is ClipboardService.resolve_target's business and is
+    covered by TestWhereAPasteLands; this is the placing itself:
+
+    - in front of an anchor, taking its position - a paste at a row
+    - at the end of a container - a paste inside a row
+    - at the end of the plan - a paste over the empty space below it
     """
 
     def setUp(self):
@@ -946,28 +954,29 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         return [task.name for task in self.project.tasks
                 if task.parent_task_id == phase.id]
 
-    def test_a_pasted_row_lands_after_the_row_it_came_from(self):
-        """Not at the bottom of the branch."""
+    def test_a_pasted_row_takes_the_anchor_s_place(self):
+        """Not the bottom of the branch, and not after the anchor either."""
         self.service.copy(["A"])
 
-        self.service.paste("P", after_task_id="B")
+        self.service.paste("P", before_task_id="B")
 
-        self.assertEqual(self.order(), ["Task A", "Task B", "Task A",
+        self.assertEqual(self.order(), ["Task A", "Task A", "Task B",
                                         "Task C", "Task D"])
 
     def test_several_pasted_rows_keep_their_order(self):
         """
-        A, B pasted after C read A, B - not backwards.
+        A, B pasted at C read A, B - not backwards.
 
-        Each row is placed after the one before it rather than all of them
-        after the anchor, which would reverse them.
+        Each row is moved in front of the same anchor, and the one before it
+        is already in front of that anchor, so they come to rest in the
+        order they were copied rather than reversed.
         """
         self.service.copy(["A", "B"])
 
-        self.service.paste("P", after_task_id="C")
+        self.service.paste("P", before_task_id="C")
 
         self.assertEqual(self.order(),
-                         ["Task A", "Task B", "Task C", "Task A", "Task B",
+                         ["Task A", "Task B", "Task A", "Task B", "Task C",
                           "Task D"])
 
     def test_without_an_anchor_they_land_at_the_end(self):
@@ -979,12 +988,12 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         self.assertEqual(self.order(), ["Task A", "Task B", "Task C",
                                         "Task D", "Task A"])
 
-    def test_a_row_pasted_under_the_anchor_is_left_where_it_is(self):
+    def test_a_row_pasted_inside_a_container_goes_to_the_end_of_it(self):
         """
-        A child of the anchor is already where it belongs.
+        A child has no position among its parent's siblings to take.
 
-        Pasting a sub-task into the task that was right-clicked makes it a
-        child of that row, not its neighbour, so there is nothing to move.
+        Pasting a sub-task into a task makes it a child of that task, not
+        its neighbour, so it lands after the children already there.
         """
         subtask = Task.create_task(name="Subtask", start_date=datetime(2024, 1, 1),
                                    end_date=datetime(2024, 1, 2), task_id="S")
@@ -993,7 +1002,7 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         self.project.add_task(subtask)
 
         self.service.copy(["S"])
-        self.service.paste("A", after_task_id="A")
+        self.service.paste("A")
 
         parent = next(t for t in self.project.tasks if t.name == "Task A")
         children = [task.name for task in self.project.tasks
@@ -1001,11 +1010,11 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
 
         self.assertEqual(children, ["Subtask", "Subtask"])
 
-    def test_a_cut_row_moves_to_beside_the_anchor(self):
+    def test_a_cut_row_takes_the_anchor_s_place_too(self):
         """The same placement applies to a move, not only to a copy."""
         self.service.cut(["D"])
 
-        self.service.paste("P", after_task_id="A")
+        self.service.paste("P", before_task_id="B")
 
         self.assertEqual(self.order(), ["Task A", "Task D", "Task B",
                                         "Task C"])
@@ -1014,7 +1023,7 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         """A stale row ID leaves the paste where it landed."""
         self.service.copy(["A"])
 
-        self.service.paste("P", after_task_id="nonexistent")
+        self.service.paste("P", before_task_id="nonexistent")
 
         self.assertEqual(self.order(), ["Task A", "Task B", "Task C",
                                         "Task D", "Task A"])
@@ -1336,6 +1345,106 @@ class TestTheSelectionReachesTheClipboard(unittest.TestCase):
         self.assertEqual(self.task_list.get_selected_task_ids(), [])
 
 
+class TestPastingAtTheEndOfThePlan(unittest.TestCase):
+    """
+    Pointing at the empty space below the last row and pasting there.
+
+    WHY THESE EXIST:
+    ================
+    The right-click menu passes no row when it was opened over the empty
+    space below the last row, and Create has always read that as "at the end
+    of the plan". Paste read it as "no row named" - which the task list then
+    helpfully filled in from the selection, so the rows landed beside
+    whatever happened to be selected halfway up the plan while the entry sat
+    there enabled, looking like it had worked.
+
+    The two meanings are told apart by DragDropTaskList.FROM_CURSOR: None is
+    the end of the plan, the sentinel is wherever the cursor is.
+    """
+
+    def setUp(self):
+        """A task list over a small plan, with the last row copied."""
+        import customtkinter as ctk
+        from gantt_app.views.task_list import DragDropTaskList
+        from gantt_app.utils.copypastecut import ClipboardService
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = Project(name="Test Project")
+        today = datetime(2024, 1, 1)
+        for number in ("001", "002", "003"):
+            self.project.add_task(Task.create_task(
+                name=f"Task {number}", start_date=today,
+                end_date=today + timedelta(days=2), task_id=number))
+
+        self.service = ClipboardService(self.project)
+        self.task_list = DragDropTaskList(self.root, self.project,
+                                          clipboard_manager=self.service)
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def names(self):
+        """Every row by name, in the order the list reads."""
+        return [task.name for task in self.project.tasks]
+
+    def test_no_row_pointed_at_puts_them_at_the_end(self):
+        """Where the user pointed, not where the cursor happened to be."""
+        self.task_list.tree.selection_set("001")
+        self.task_list.tree.focus("001")
+        self.task_list.copy_tasks(["001"])
+
+        self.task_list.paste_tasks(None)
+
+        self.assertEqual(self.names(),
+                         ["Task 001", "Task 002", "Task 003", "Task 001"])
+
+    def test_the_menu_entry_is_live_over_the_empty_space(self):
+        """It is a place a paste can go, so it is offered."""
+        self.task_list.copy_tasks(["001"])
+
+        self.assertTrue(self.task_list.can_paste(None))
+
+    def test_the_cursor_is_used_when_no_row_is_named_at_all(self):
+        """What the toolbar and the keyboard mean by asking for a paste."""
+        self.task_list.tree.selection_set("002")
+        self.task_list.tree.focus("002")
+        self.task_list.copy_tasks(["002"])
+
+        self.task_list.paste_tasks()
+
+        self.assertEqual(self.names(),
+                         ["Task 001", "Task 002", "Task 002", "Task 003"])
+
+    def test_a_paste_with_no_cursor_at_all_is_refused(self):
+        """
+        Rather than dropped at the end.
+
+        Nothing is selected and nothing was pointed at, so which row was
+        meant is not something to guess at.
+        """
+        self.task_list.copy_tasks(["001"])
+        self.task_list.tree.selection_remove(*self.task_list.tree.selection())
+        self.task_list.tree.focus('')
+
+        self.task_list.paste_tasks()
+
+        self.assertEqual(len(self.project.tasks), 3)
+
+    def test_it_is_refused_the_same_way_before_it_is_offered(self):
+        """The menu entry and the action have to agree."""
+        self.task_list.copy_tasks(["001"])
+        self.task_list.tree.selection_remove(*self.task_list.tree.selection())
+        self.task_list.tree.focus('')
+
+        self.assertFalse(self.task_list.can_paste())
+
+
 class TestWhereAPasteLands(unittest.TestCase):
     """
     A paste takes the place of the row the cursor is on.
@@ -1431,17 +1540,21 @@ class TestWhereAPasteLands(unittest.TestCase):
         self.assertEqual(
             self.project.get_task_by_id(pasted[0]).parent_task_id, "007")
 
-    def test_a_paste_with_nothing_selected_is_refused(self):
+    def test_no_row_named_is_the_end_of_the_plan(self):
         """
-        Rather than appended at the end of the plan.
+        Which is the gesture of pointing at the empty space below it.
 
-        Which is what it used to do, putting the row somewhere the user was
-        not looking and had not pointed at.
+        Whether the user meant that or simply had nothing selected is the
+        task list's to tell apart, not the clipboard's - see
+        DragDropTaskList.FROM_CURSOR.
         """
         self.service.copy(["007"])
 
-        self.assertEqual(self.service.paste_at(None), [])
-        self.assertEqual(len(self.project.tasks), 8)
+        pasted = self.service.paste_at(None)
+
+        self.assertEqual(len(pasted), 1)
+        self.assertEqual(self.names()[-1], "Testing")
+        self.assertIsNone(self.project.get_task_by_id(pasted[0]).parent_task_id)
 
     def test_a_paste_into_an_empty_plan_needs_no_row(self):
         """The one place where the end and the beginning are the same."""
@@ -1565,12 +1678,14 @@ class TestAPasteIsOneUndoStep(unittest.TestCase):
 
     def test_a_refused_paste_leaves_no_entry_behind(self):
         """Undo should not have to be pressed twice for nothing."""
-        self.service.copy(["001"])
+        # A phase does not go inside a task, so this one is refused
+        self.project.get_task_by_id("003").task_type = "Phase"
+        self.service.copy(["003"])
         pasted = []
 
         def apply():
             """A paste with nowhere to go."""
-            pasted.extend(self.service.paste_at(None))
+            pasted.extend(self.service.paste_at("001", inside=True))
             return bool(pasted)
 
         self.tracker.run_as_command(apply, "Paste Tasks")

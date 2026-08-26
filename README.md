@@ -54,7 +54,7 @@ This is a complete implementation of a project management tool with:
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
-- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a phase copies the phase row, not the work underneath it, but a task copied together with its sub-tasks keeps them, and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. A paste with nothing selected is refused and says so rather than dropping the row at the end of the plan. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
+- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a phase copies the phase row, not the work underneath it, but a task copied together with its sub-tasks keeps them, and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
@@ -675,10 +675,17 @@ under everything else.
   down, which is what the reference tool does
 - **Inside is a separate action**: `Paste as Sub-Task` on the right-click menu.
   A row is where you stand, not what you paste into
-- **Refused rather than guessed at**: a paste with nothing selected used to
-  append at the end of the plan, putting the row somewhere the user was not
-  looking. It now says what is wrong in the status bar, as does a paste into a
-  level that cannot hold it
+- **The end of the plan is a place you can point at**: the right-click menu
+  passes no row when it was opened over the empty space below the last row,
+  and that means the end of the plan - the same gesture that creates a task
+  there. It used to be filled in from the selection instead, so the rows
+  landed beside whatever happened to be selected halfway up the plan while
+  the entry sat there enabled, looking like it had worked. `FROM_CURSOR`
+  tells the two apart: `None` is the end of the plan, the sentinel is
+  wherever the cursor is
+- **Refused rather than guessed at**: a paste with nothing selected *and*
+  nothing pointed at says what is wrong in the status bar, as does a paste
+  into a level that cannot hold it
 - **What is selected is what is copied**: copying a phase copies the phase row.
   The work under it is not brought along and is not duplicated - but a
   sub-task copied *with* its own task lands under that task's copy
@@ -691,7 +698,8 @@ under everything else.
   belong, and a selection with one item that does not fit is refused whole.
   Pasting a task inside itself is refused
 - **One step in the undo history**: the paste is recorded as what the task list
-  looked like before it and after it - see `SnapshotCommand`. It used to reach
+  looked like before it and after it - including every row's dates, so an
+  action that reschedules can be undone whole; see `SnapshotCommand.FIELDS`. It used to reach
   the project directly and be recorded as nothing at all, so undo reached past
   it to whatever the user had done before, deleting a row they had made
   earlier while the pasted one stayed
@@ -725,7 +733,10 @@ under everything else.
   one the dates are supposed to obey, and a button that accepted a link and
   moved nothing would look like it had not worked
 - **One entry in the undo history** for the whole chain, however many pairs it
-  joined; see `SnapshotCommand`
+  joined - and the rescheduling runs inside that entry, so undoing a link puts
+  the dates back as well as the link. Taking the link out and leaving the row
+  where the link had pushed it left the column and the dates disagreeing; see
+  `SnapshotCommand.FIELDS`
 
 ### Gantt Chart View (`views/gantt_chart.py`)
 - **Drawn, not downloaded**: The chart on screen is painted with Pillow

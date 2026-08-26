@@ -465,13 +465,24 @@ class SnapshotCommand(Command):
 
     Both snapshots hold the live Task objects rather than copies, so a row
     that survives the action is the same object throughout and keeps
-    whatever else points at it. What is copied is the part the clipboard
-    rewrites - ID, parent, type and links - because those are set on the
-    objects themselves and restoring an ordering alone would leave them as
-    the paste left them. That is the same reason RestructureTasksCommand
-    captures parents rather than order alone; this one adds the ID, which
-    renumbering changes and nothing else in the history does.
+    whatever else points at it. What is copied is everything such an action
+    sets on the objects themselves - see FIELDS - because restoring an
+    ordering alone would leave all of it as the action left it. That is the
+    same reason RestructureTasksCommand captures parents rather than order
+    alone.
+
+    The dates are in there because linking reschedules. Without them, undoing
+    a link took the link out and left the row sitting where the link had
+    pushed it - a plan half reverted, which is worse than either end of it.
     """
+
+    #: What an action recorded this way can change about a row, and so what
+    #: has to be put back. Anything the scheduling passes write belongs here:
+    #: they run as part of the action, and undoing the action has to undo
+    #: what they did to every row the change reached, not only to the row the
+    #: user touched.
+    FIELDS = ('id', 'parent_task_id', 'task_type',
+              'start_date', 'end_date', 'duration')
     project: Project
     apply: Callable[[], bool]
     label: str = "Change Tasks"
@@ -506,7 +517,8 @@ class SnapshotCommand(Command):
     def _snapshot(self) -> list:
         """Every row, and the parts of it this kind of action rewrites."""
         return [
-            (task, task.id, task.parent_task_id, task.task_type,
+            (task,
+             {name: getattr(task, name) for name in self.FIELDS},
              [copy.copy(link) for link in task.dependencies])
             for task in self.project.tasks
         ]
@@ -514,10 +526,9 @@ class SnapshotCommand(Command):
     def _restore(self, snapshot: list) -> None:
         """Put back a snapshot taken by _snapshot."""
         self.project.tasks = [row[0] for row in snapshot]
-        for task, task_id, parent_id, task_type, links in snapshot:
-            task.id = task_id
-            task.parent_task_id = parent_id
-            task.task_type = task_type
+        for task, fields, links in snapshot:
+            for name, value in fields.items():
+                setattr(task, name, value)
             task.dependencies = [copy.copy(link) for link in links]
         self.project._update_dates()
 

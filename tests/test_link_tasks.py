@@ -171,6 +171,91 @@ class TestUnlinking(LinkingTestCase):
         self.assertEqual(self.links("002"), ["001"])
 
 
+class TestUndoPutsTheDatesBack(unittest.TestCase):
+    """
+    Undoing a link undoes what the link did to the schedule.
+
+    WHY THESE EXIST:
+    ================
+    Linking reschedules, and the reschedule was run after the undo entry had
+    been recorded - so undo took the link out and left the row sitting where
+    the link had pushed it. A plan half reverted is worse than either end of
+    it: the column says the rows are not linked and the dates say they are.
+
+    The dates are part of the snapshot now, and the rescheduling runs inside
+    the entry. See SnapshotCommand.FIELDS.
+    """
+
+    def setUp(self):
+        """Two tasks that do not yet wait for each other."""
+        from gantt_app.utils.undoredo import (
+            UndoRedoManager, ProjectStateTracker,
+        )
+
+        self.project = Project(name="Plan")
+        for task_id, name in (("001", "Alpha"), ("002", "Beta")):
+            self.project.add_task(Task(
+                id=task_id, name=name, start_date=BASE,
+                end_date=BASE + timedelta(days=2), task_type="Task"))
+
+        self.manager = UndoRedoManager()
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+
+    def dates(self):
+        """Every row's start and end."""
+        return [(t.id, t.start_date, t.end_date) for t in self.project.tasks]
+
+    def link(self):
+        """A link recorded the way the task list records it."""
+        def apply():
+            """The link, and the dates it moves."""
+            if not self.project.link_tasks(["001", "002"]):
+                return False
+            self.project.apply_schedule()
+            return True
+
+        self.tracker.run_as_command(apply, "Link Tasks")
+
+    def test_the_link_moves_the_row_it_pushes(self):
+        """Otherwise there would be nothing to put back."""
+        before = self.dates()
+
+        self.link()
+
+        self.assertNotEqual(self.dates(), before)
+
+    def test_undo_puts_the_dates_back_with_the_link(self):
+        """Not the link alone."""
+        before = self.dates()
+
+        self.link()
+        self.manager.undo()
+
+        self.assertEqual(self.dates(), before)
+        self.assertEqual(list(self.project.get_task_by_id("002").dependencies),
+                         [])
+
+    def test_redo_moves_them_again(self):
+        """The snapshot after the action carries the dates too."""
+        self.link()
+        after = self.dates()
+
+        self.manager.undo()
+        self.manager.redo()
+
+        self.assertEqual(self.dates(), after)
+
+    def test_the_snapshot_names_every_field_scheduling_writes(self):
+        """
+        A field the passes write and the snapshot does not hold is a field
+        undo cannot put back.
+        """
+        from gantt_app.utils.undoredo import SnapshotCommand
+
+        for name in ('start_date', 'end_date', 'duration'):
+            self.assertIn(name, SnapshotCommand.FIELDS)
+
+
 class TestTheButtonsAndTheirKeys(unittest.TestCase):
     """What the toolbar offers, and what answers to the keyboard."""
 

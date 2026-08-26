@@ -39,6 +39,18 @@ from gantt_app.utils.log import get_logger
 logger = get_logger(__name__)
 
 
+#: What paste_tasks is given by a caller with no row in mind, meaning "use
+#: whichever row the cursor is on".
+#:
+#: None cannot say that, because None already means something else and had to
+#: keep meaning it: no row at all, which is the end of the plan. That is the
+#: right-click menu opened over the empty space below the last row - the same
+#: gesture that creates a task there. Overloading None onto both left the menu
+#: pasting beside whatever happened to be selected halfway up the plan when
+#: the user had pointed at the bottom of it.
+FROM_CURSOR = object()
+
+
 class DragDropTaskList(ctk.CTkFrame):
     """
     Task list whose rows can be reordered by dragging or from a right-click
@@ -1096,16 +1108,18 @@ class DragDropTaskList(ctk.CTkFrame):
         selected = self.get_selected_task_ids()
         return selected[0] if selected else None
 
-    def paste_tasks(self, focused_id: Optional[str] = None,
-                    inside: bool = False):
+    def paste_tasks(self, focused_id=FROM_CURSOR, inside: bool = False):
         """
         Paste from the clipboard at the row the cursor is on.
 
         PARAMETERS:
         -----------
-        focused_id : Optional[str]
-            The row to paste at. None asks the list which row has the
-            cursor, which is what the toolbar and the keyboard do.
+        focused_id : str, None or FROM_CURSOR
+            The row to paste at. None is no row at all - the end of the
+            plan, which is what the right-click menu passes when it was
+            opened over the empty space below the last row. FROM_CURSOR, the
+            default, asks the list which row has the cursor, which is what
+            the toolbar and the keyboard do.
         inside : bool
             True for "Paste as Sub-Task", which puts the rows underneath the
             focused row. False - every other route - puts them beside it, in
@@ -1128,8 +1142,13 @@ class DragDropTaskList(ctk.CTkFrame):
         if not self.clipboard_manager:
             return
 
-        if focused_id is None:
+        if focused_id is FROM_CURSOR:
             focused_id = self.focused_task_id()
+            if focused_id is None:
+                # Nothing selected and no row pointed at: which row was
+                # meant is not something to guess at
+                self._say("Select the row to paste at first.")
+                return
 
         pasted = []
 
@@ -1241,8 +1260,8 @@ class DragDropTaskList(ctk.CTkFrame):
         if not self.clipboard_manager or self.clipboard_manager.is_empty():
             return "Nothing to paste: copy or cut some rows first."
 
-        if not focused_id:
-            return "Select the row to paste at first."
+        if focused_id is None:
+            return "Those rows cannot go at the end of the plan."
 
         target = self.project.get_task_by_id(focused_id)
         if target is None:
@@ -1253,16 +1272,15 @@ class DragDropTaskList(ctk.CTkFrame):
 
         return (f"Those rows cannot go beside '{target.name}'.")
 
-    def can_paste(self, focused_id: Optional[str] = None,
-                  inside: bool = False) -> bool:
+    def can_paste(self, focused_id=FROM_CURSOR, inside: bool = False) -> bool:
         """
-        Whether a paste at the row the cursor is on would be accepted.
+        Whether a paste would be accepted where it is aimed.
 
         PARAMETERS:
         -----------
-        focused_id : Optional[str]
-            The row to paste at. None asks the list which row has the
-            cursor.
+        focused_id : str, None or FROM_CURSOR
+            The row to paste at, as paste_tasks takes it: None is the end of
+            the plan, FROM_CURSOR is wherever the cursor is.
         inside : bool
             True for "Paste as Sub-Task".
 
@@ -1273,8 +1291,10 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         if not self.clipboard_manager:
             return False
-        if focused_id is None:
+        if focused_id is FROM_CURSOR:
             focused_id = self.focused_task_id()
+            if focused_id is None:
+                return False
         return self.clipboard_manager.can_paste_at(focused_id, inside)
 
 
@@ -1742,9 +1762,14 @@ class DragDropTaskList(ctk.CTkFrame):
         linked = []
 
         def apply() -> bool:
-            """The links themselves, run inside the undo command."""
+            """The links, and the dates they move, inside the undo command."""
             linked.extend(self.project.link_tasks(chosen))
-            return bool(linked)
+            if not linked:
+                return False
+            # Inside, not after: the dates the link moves are part of what
+            # the link did, and undo has to put those back too
+            self.project.apply_schedule()
+            return True
 
         if self.project_tracker:
             self.project_tracker.run_as_command(apply, "Link Tasks")
@@ -1755,7 +1780,6 @@ class DragDropTaskList(ctk.CTkFrame):
             self._say("Those rows are already linked.")
             return
 
-        self.project.apply_schedule()
         self._say(f"Linked {self._count(chosen)} Finish-to-Start.")
         self._after_links_changed(chosen)
 
@@ -1777,9 +1801,12 @@ class DragDropTaskList(ctk.CTkFrame):
         removed = []
 
         def apply() -> bool:
-            """The removals themselves, run inside the undo command."""
+            """The removals, and the dates they move, inside the command."""
             removed.extend(self.project.unlink_tasks(chosen))
-            return bool(removed)
+            if not removed:
+                return False
+            self.project.apply_schedule()
+            return True
 
         if self.project_tracker:
             self.project_tracker.run_as_command(apply, "Unlink Tasks")
@@ -1790,7 +1817,6 @@ class DragDropTaskList(ctk.CTkFrame):
             self._say("There were no links between those rows.")
             return
 
-        self.project.apply_schedule()
         self._say(f"Removed {len(removed)} link"
                   f"{'' if len(removed) == 1 else 's'}.")
         self._after_links_changed(chosen)
