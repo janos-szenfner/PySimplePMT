@@ -455,11 +455,10 @@ class TestTheToolbarOffersIt(unittest.TestCase):
 
     def test_the_icon_has_a_drawing_and_a_handler(self):
         """An icon with neither is a blank button that does nothing."""
-        from gantt_app.resources.icons import ICON_STROKES, ICON_EMOJIS
+        from gantt_app.resources.icons import ICON_STROKES
         from gantt_app.views.toolbar import Toolbar
 
         self.assertIn('critical_path', ICON_STROKES)
-        self.assertIn('critical_path', ICON_EMOJIS)
         self.assertTrue(callable(getattr(Toolbar, 'show_critical_path', None)))
 
     def test_it_is_on_the_actions_menu_too(self):

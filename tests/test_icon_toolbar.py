@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 from gantt_app.models import Project, Task
 from gantt_app.views.toolbar import IconToolbar, Toolbar
 from gantt_app.resources.icons import (
-    ICON_EMOJIS, ICON_NAMES, SVG_PATHS,
+    ICON_NAMES, ICON_STROKES, draw_icon,
     ALWAYS_ACTIVE, ACTIVE_WHEN_PROJECT_OPEN, WORK_ITEM_CREATION_ICONS
 )
 
@@ -25,43 +25,55 @@ from gantt_app.resources.icons import (
 class TestIconDefinitions(unittest.TestCase):
     """Test icon definitions and resources."""
 
-    def test_icon_emojis_exist(self):
-        """Test that all expected icon emojis are defined."""
+    def test_the_expected_icons_can_be_drawn(self):
+        """
+        The registry the toolbar paints from.
+
+        There used to be two more - an emoji per icon and an SVG path per
+        icon - and these assertions were made against those, which nothing
+        on screen ever read. An icon could be complete in both and still
+        come out as a bare letter.
+        """
         expected_icons = [
             'open', 'new_project', 'save', 'edit',
             'task', 'subtask', 'milestone', 'phase', 'deliverable',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_icons:
-            self.assertIn(icon_name, ICON_EMOJIS,
-                        f"Icon '{icon_name}' not found in ICON_EMOJIS")
+            self.assertIn(icon_name, ICON_STROKES,
+                          f"Icon '{icon_name}' has no drawing")
 
-    def test_icon_emojis_are_strings(self):
-        """Test that all icon emojis are valid strings."""
-        for icon_name, emoji in ICON_EMOJIS.items():
-            self.assertIsInstance(emoji, str, 
-                               f"Icon '{icon_name}' is not a string")
-            self.assertGreater(len(emoji), 0,
-                             f"Icon '{icon_name}' is empty")
+    def test_every_drawing_is_a_list_of_strokes(self):
+        """A name with an empty drawing is a blank button."""
+        for icon_name, strokes in ICON_STROKES.items():
+            self.assertIsInstance(strokes, list,
+                                  f"'{icon_name}' is not a list of strokes")
+            self.assertGreater(len(strokes), 0,
+                               f"'{icon_name}' has no strokes")
+            for kind, points in strokes:
+                self.assertIsInstance(kind, str)
+                self.assertGreater(len(points), 0,
+                                   f"'{icon_name}' has an empty {kind}")
 
-    def test_svg_paths_exist(self):
-        """Test that all expected SVG paths are defined."""
-        expected_icons = [
-            'open', 'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone', 'phase', 'deliverable',
-            'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
-        ]
-        for icon_name in expected_icons:
-            self.assertIn(icon_name, SVG_PATHS,
-                        f"SVG path for '{icon_name}' not found")
+    def test_every_icon_actually_paints(self):
+        """
+        Which is the thing worth checking: draw_icon answers None for a name
+        it cannot draw, and the button then shows the name's first letter.
+        """
+        for icon_name in ICON_NAMES:
+            self.assertIsNotNone(draw_icon(icon_name, 20),
+                                 f"'{icon_name}' did not paint")
 
-    def test_svg_paths_are_non_empty(self):
-        """Test that all SVG paths are non-empty strings."""
-        for icon_name, path in SVG_PATHS.items():
-            self.assertIsInstance(path, str,
-                               f"SVG path for '{icon_name}' is not a string")
-            self.assertGreater(len(path), 0,
-                             f"SVG path for '{icon_name}' is empty")
+    def test_every_icon_on_the_row_has_a_drawing(self):
+        """
+        The failure this guards against, stated directly: a button in the
+        toolbar with nothing to put on it.
+        """
+        for name, _tooltip, _action in IconToolbar.ICON_ACTIONS:
+            if name == IconToolbar.SEPARATOR:
+                continue
+            self.assertIn(name, ICON_STROKES,
+                          f"the {name} button has no drawing")
 
     def test_icon_groups(self):
         """Test icon group definitions."""
@@ -87,9 +99,9 @@ class TestIconDefinitions(unittest.TestCase):
                         f"'{icon_name}' should be in WORK_ITEM_CREATION_ICONS")
 
     def test_icon_names_list(self):
-        """Test that ICON_NAMES contains all defined icons."""
-        self.assertEqual(len(ICON_NAMES), len(ICON_EMOJIS))
-        for icon_name in ICON_EMOJIS.keys():
+        """ICON_NAMES is the drawings, so the two cannot drift apart."""
+        self.assertEqual(len(ICON_NAMES), len(ICON_STROKES))
+        for icon_name in ICON_STROKES.keys():
             self.assertIn(icon_name, ICON_NAMES)
 
 
@@ -503,47 +515,48 @@ class TestIconToolbarIntegration(unittest.TestCase):
         self.toolbar = toolbar
 
 
-class TestSVGIconGeneration(unittest.TestCase):
-    """Test SVG icon generation functionality."""
+class TestDrawingAnIcon(unittest.TestCase):
+    """
+    What draw_icon answers, which is what ends up on a button.
 
-    def test_get_icon_svg_returns_valid_svg(self):
-        """Test that get_icon_svg returns valid SVG XML."""
-        from gantt_app.resources.icons import get_icon_svg
-        
-        svg = get_icon_svg('edit')
-        self.assertIn('<svg', svg)
-        self.assertIn('xmlns="http://www.w3.org/2000/svg"', svg)
-        self.assertIn('<path', svg)
-        self.assertIn('</svg>', svg)
+    WHY THESE EXIST:
+    ================
+    This class tested get_icon_svg and get_icon_emoji, two readers of two
+    registries that nothing on screen used. The toolbar paints with Pillow
+    from ICON_STROKES and falls back to the name's first letter when there
+    is no drawing, so what mattered was never being tested and what was
+    being tested never mattered.
+    """
 
-    def test_get_icon_svg_with_custom_viewbox(self):
-        """Test that get_icon_svg respects custom viewbox."""
-        from gantt_app.resources.icons import get_icon_svg
-        
-        svg = get_icon_svg('edit', viewbox="0 0 48 48")
-        self.assertIn('viewBox="0 0 48 48"', svg)
+    def test_it_paints_a_square_of_the_size_asked_for(self):
+        """The row asks for one size; the app icon builder asks for others."""
+        for size in (16, 20, 32):
+            icon = draw_icon('edit', size)
+            self.assertEqual(icon.size, (size, size))
 
-    def test_get_icon_svg_returns_empty_for_unknown(self):
-        """Test that get_icon_svg returns empty string for unknown icon."""
-        from gantt_app.resources.icons import get_icon_svg
-        
-        svg = get_icon_svg('unknown_icon')
-        self.assertEqual(svg, '')
+    def test_it_paints_in_the_ink_asked_for(self):
+        """Two of them, in fact: the row draws light and dark separately."""
+        light = draw_icon('edit', 20, (28, 29, 31))
+        dark = draw_icon('edit', 20, (240, 240, 240))
 
-    def test_get_icon_emoji_returns_emoji(self):
-        """Test that get_icon_emoji returns emoji character."""
-        from gantt_app.resources.icons import get_icon_emoji
-        
-        emoji = get_icon_emoji('edit')
-        self.assertIsInstance(emoji, str)
-        self.assertGreater(len(emoji), 0)
+        self.assertIsNotNone(light)
+        self.assertIsNotNone(dark)
+        self.assertNotEqual(light.tobytes(), dark.tobytes())
 
-    def test_get_icon_emoji_returns_question_mark_for_unknown(self):
-        """Test that get_icon_emoji returns '?' for unknown icon."""
-        from gantt_app.resources.icons import get_icon_emoji
-        
-        emoji = get_icon_emoji('unknown_icon')
-        self.assertEqual(emoji, '?')
+    def test_it_answers_none_for_a_name_it_cannot_draw(self):
+        """Which is the button's signal to show the name's first letter."""
+        self.assertIsNone(draw_icon('unknown_icon', 20))
+
+    def test_the_same_icon_twice_is_the_same_object(self):
+        """Kept, because the row asks for one on every appearance change."""
+        self.assertIs(draw_icon('edit', 20), draw_icon('edit', 20))
+
+    def test_what_is_painted_is_not_blank(self):
+        """A drawing that puts no ink down is a blank button."""
+        icon = draw_icon('link', 20)
+
+        self.assertTrue(any(pixel[3] for pixel in icon.getdata()),
+                        "nothing was drawn")
 
 
 if __name__ == '__main__':

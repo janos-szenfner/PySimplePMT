@@ -2671,9 +2671,9 @@ class IconToolbar(ctk.CTkFrame):
     SEPARATOR_HEIGHT = 22
     SEPARATOR_PAD = 6
     
-    # Icon size in pixels
-    # Note: We use emoji icons as a cross-platform fallback
-    # The SVG paths are available in gantt_app.resources.icons for future use
+    # Every icon is drawn from strokes with Pillow; see
+    # gantt_app.resources.icons. A name with no drawing shows its initial
+    # letter instead, which is what _create_icon_button falls back to.
     
     def __init__(self, master, project: Project,
                  on_project_changed: Callable[[], None] = None,

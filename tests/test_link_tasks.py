@@ -269,13 +269,13 @@ class TestTheButtonsAndTheirKeys(unittest.TestCase):
         self.assertEqual(row[row.index('link') - 1], 'outdent')
         self.assertEqual(row[row.index('unlink') + 1], IconToolbar.SEPARATOR)
 
-    def test_both_icons_have_a_drawing_and_a_fallback(self):
-        """An icon with neither is a blank button that does nothing."""
-        from gantt_app.resources.icons import ICON_STROKES, ICON_EMOJIS
+    def test_both_icons_have_a_drawing(self):
+        """Without one the button shows the name's first letter instead."""
+        from gantt_app.resources.icons import ICON_STROKES, draw_icon
 
         for name in ('link', 'unlink'):
             self.assertIn(name, ICON_STROKES)
-            self.assertIn(name, ICON_EMOJIS)
+            self.assertIsNotNone(draw_icon(name, 20))
 
     def test_both_have_a_handler_on_the_toolbar(self):
         """The row names them; Toolbar has to answer to those names."""

@@ -745,6 +745,22 @@ under everything else.
   where the link had pushed it left the column and the dates disagreeing; see
   `SnapshotCommand.FIELDS`
 
+### One Registry Per Icon (`resources/icons.py`)
+- **An icon is a list of strokes in a unit square**, painted with Pillow at
+  whatever size and ink the row asks for; see `ICON_STROKES` and `draw_icon`
+- **There used to be three registries**: an emoji per icon, an SVG path per
+  icon, and the strokes. Both of the first two were complete, carefully kept
+  in step, and unreachable from the application - the toolbar paints from the
+  strokes and falls back to the name's first letter, never to an emoji. So
+  adding an icon meant editing three dictionaries, one of which changed
+  anything on screen
+- **The tests followed them**, asserting that the two unused dictionaries were
+  complete. They now assert that every icon on the toolbar row has a drawing
+  and that every drawing actually puts ink down, which is the failure worth
+  catching: a button with nothing on it
+- **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
+  its own, so the two cannot drift apart
+
 ### Reading XML From Elsewhere (`utils/safexml.py`)
 - **Entity declarations are refused**: the `.gan` and MSPDI importers read
   files that arrive from outside, and read them with `ElementTree` straight -
@@ -2101,6 +2117,7 @@ Unit tests cover:
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
+- ✅ **Icons**: That every icon on the toolbar row has a drawing, that every drawing paints at the sizes and inks asked for and is not blank, and that an unknown name answers None so the button can fall back to a letter
 - ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
