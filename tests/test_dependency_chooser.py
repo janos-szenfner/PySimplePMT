@@ -174,18 +174,27 @@ class TestChoosingACandidate(ChooserTestCase):
                                     f"{linked.name}")
 
     def test_a_label_that_names_nothing_adds_no_link(self):
-        """The dialog says to choose one rather than linking at random."""
+        """
+        The user is told to choose one rather than linked to something at
+        random.
+
+        The prompt is stood in for rather than shown. A test that opens a
+        real dialog stops and waits for somebody to click it, which is how
+        this one hung the macOS build and left the Ubuntu one printing
+        pages of after-script errors from the windows it never got to.
+        """
+        from unittest import mock
+
         self.editor.refresh(notify=False)
         self.editor.candidate_var.set("999 - Not a task in this plan")
 
-        try:
+        with mock.patch(
+                'gantt_app.views.dependency_editor.messagebox.showinfo'
+        ) as prompt:
             self.editor.add_selected()
-        except Exception:
-            # The dialog it raises has nowhere to appear in a withdrawn
-            # window; what matters is that no link was added
-            pass
 
         self.assertEqual(self.editor.links, [])
+        self.assertTrue(prompt.called, "the user was told nothing")
 
     def test_a_task_already_linked_leaves_the_candidates(self):
         """It cannot be depended on twice."""

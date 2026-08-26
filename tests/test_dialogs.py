@@ -14,6 +14,14 @@ from unittest import mock
 
 from gantt_app.views import dialogs
 
+import pytest
+
+#: This file is the dialog layer's own test, so the suite-wide stand-down in
+#: conftest is lifted for it. Everything here patches the internals - _show,
+#: _run, _chooser - rather than letting a real one open.
+pytestmark = pytest.mark.real_dialogs
+
+
 
 def _display_available() -> bool:
     """Whether a usable Tk display is present."""
