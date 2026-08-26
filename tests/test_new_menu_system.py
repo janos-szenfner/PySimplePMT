@@ -264,6 +264,149 @@ class TestMenuStructure(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestAWholeMenuRowAnswersToAClick(unittest.TestCase):
+    """
+    Every pixel of a row runs it, and a row runs on every click.
+
+    WHY THESE EXIST:
+    ================
+    Clicking a menu entry did nothing unless the click landed near the
+    middle of it, on every menu. Two separate reasons, both to do with where
+    in the row the pointer was:
+
+    A row is bigger than the button in it. The chevron on a row that opens a
+    submenu is a label with nothing bound to it, so the right-hand end of
+    those rows was dead, as was any padding around a button.
+
+    And CustomTkinter runs a button's command from <ButtonRelease-1>, but
+    only while _mouse_inside is set - and _on_release clears it before
+    running the command. A button that has been clicked once does not answer
+    again until the pointer has left it and come back, which in a menu that
+    appears under a barely-moving pointer means a row that ignores clicks.
+    """
+
+    def setUp(self):
+        """A menu with one row of each kind."""
+        import customtkinter as ctk
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.menu = CTkDropdownMenu(self.root, items=[
+            {"label": "Create", "type": "submenu", "items": [
+                {"label": "Phase...", "type": "action",
+                 "command": lambda: None}]},
+            {"label": "Help", "type": "action", "command": lambda: None},
+        ])
+        self.menu.withdraw()
+        self.menu.update_idletasks()
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def rows(self):
+        """The row frames, in order."""
+        return self.menu.winfo_children()[0].winfo_children()
+
+    @staticmethod
+    def clickable_parts(widget):
+        """
+        Everything under a widget that a click can actually land on.
+
+        A CustomTkinter widget is a frame with a canvas covering it and its
+        text on top, so the frames themselves are never what a pointer hits;
+        the leaves are. The frame's own canvas is not in its child list -
+        it is placed rather than packed - so it is asked for separately.
+        """
+        canvas = getattr(widget, '_canvas', None)
+        if canvas is not None:
+            yield canvas
+        for kid in widget.winfo_children():
+            if kid.winfo_children() or getattr(kid, '_canvas', None) is not None:
+                yield from TestAWholeMenuRowAnswersToAClick.clickable_parts(kid)
+            else:
+                yield kid
+
+    @staticmethod
+    def answers_to_a_click(widget) -> bool:
+        """Whether a release on this widget would run anything."""
+        try:
+            bindings = widget.bind()
+        except Exception:
+            return False
+        return bool(bindings) and '<ButtonRelease-1>' in bindings
+
+    def test_no_part_of_a_row_is_dead(self):
+        """A click that lands anywhere on the row has to run it."""
+        for row in self.rows():
+            parts = list(self.clickable_parts(row))
+            self.assertTrue(parts, "a row with nothing to click")
+            for widget in parts:
+                self.assertTrue(
+                    self.answers_to_a_click(widget),
+                    f"a {widget.winfo_class()} in a menu row answers to "
+                    f"nothing, so a click landing there does nothing")
+
+    def test_the_row_itself_answers_where_the_button_does_not_reach(self):
+        """The padding around the entry is part of the row, not a gap."""
+        for row in self.rows():
+            self.assertTrue(self.answers_to_a_click(row._canvas))
+
+    def test_the_chevron_runs_the_row_too(self):
+        """It is a label beside the button, and had nothing bound to it."""
+        chevron = self.rows()[0].winfo_children()[-1]
+
+        self.assertEqual(chevron.cget('text'), '>')
+        for widget in self.clickable_parts(chevron):
+            self.assertTrue(self.answers_to_a_click(widget))
+
+    def test_the_entry_still_carries_its_command(self):
+        """
+        Left in place rather than replaced, so invoke() still works and
+        CustomTkinter still draws the press.
+        """
+        for row in self.rows():
+            button = row.winfo_children()[0]
+            self.assertIsNotNone(button._command)
+
+    def test_a_press_on_the_entry_is_bound(self):
+        """
+        Which is what re-arms CustomTkinter's own gate; see
+        CTkDropdownMenu._answer_across_the_row.
+        """
+        for row in self.rows():
+            button = row.winfo_children()[0]
+            self.assertIn('<Button-1>', button._canvas.bind())
+            self.assertIn('<Button-1>', button._text_label.bind())
+
+    def test_the_gate_this_works_around_is_still_there(self):
+        """
+        CustomTkinter clears _mouse_inside while running the command, so the
+        next release over the same button does nothing on its own. If a
+        future version stops doing that, this fails and the press binding
+        can go.
+        """
+        import customtkinter as ctk
+
+        fired = []
+        button = ctk.CTkButton(self.root, text="Once",
+                               command=lambda: fired.append(1))
+        button.update_idletasks()
+
+        button._on_enter()
+        button._on_release()
+        self.assertEqual(len(fired), 1)
+        self.assertFalse(button._mouse_inside)
+
+        button._on_release()
+        self.assertEqual(len(fired), 1, "the second click should not have "
+                                        "fired without the press binding")
+
+
 class TestSubmenusOpen(unittest.TestCase):
     """
     Choosing a menu entry that has a submenu opens it.

@@ -293,6 +293,70 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         for item in self.items:
             self._create_menu_item(container, item)
             
+    def _answer_across_the_row(self, row, button, action):
+        """
+        Make every pixel of a menu row answer to a click.
+
+        PARAMETERS:
+        -----------
+        row : ctk.CTkFrame
+            The row holding the entry.
+        button : ctk.CTkButton
+            The entry itself.
+        action : callable
+            What the row does, taking no arguments.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Two things stopped a click on a menu row doing anything, and both of
+        them depended on where in the row it landed.
+
+        CustomTkinter runs a button's command from <ButtonRelease-1>, and
+        only if _mouse_inside is set - which _on_enter sets and _on_leave
+        clears. _on_release clears it as well, before running the command,
+        so a button that has been clicked once does not answer again until
+        the pointer has left it and come back:
+
+            after the pointer enters   : True
+            command fired              : 1
+            _mouse_inside after release: False
+            a second click fires       : False
+
+        In a menu, where the window arrives under a pointer that then barely
+        moves, that is a row which ignores clicks for no reason the user can
+        see. A press on the entry says the pointer is on the entry, whatever
+        the flag currently holds, so the press sets it and the release that
+        follows counts. The command is left in place rather than replaced,
+        so invoke() still works and CustomTkinter still draws the press.
+
+        The other half is that a row is bigger than the button in it. The
+        chevron on a row that opens a submenu is a label, with nothing bound
+        to it at all, so the right-hand end of every such row was dead - and
+        so is any padding around the button. Those parts carry the action
+        themselves. A click lands on exactly one widget, so nothing here can
+        fire twice.
+        """
+        def pressed(_event=None):
+            """A press on the entry is the pointer being on the entry."""
+            button._mouse_inside = True
+
+        button.bind("<Button-1>", pressed, add="+")
+
+        def released(_event=None):
+            """Run the row's action for a click that missed the entry."""
+            action()
+            return "break"
+
+        row.bind("<ButtonRelease-1>", released, add="+")
+        for part in row.winfo_children():
+            if part is button:
+                continue
+            for widget in (part, *part.winfo_children()):
+                try:
+                    widget.bind("<ButtonRelease-1>", released, add="+")
+                except tk.TclError:
+                    logger.debug("Could not make %s answer a click", widget)
+
     def _create_menu_item(self, container, item: Dict):
         """Create a single menu item based on its type."""
         # Determine item type - check if it has submenu/items first
@@ -338,6 +402,8 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             )
             highlight_on_hover(btn)
             btn.pack(fill="x", expand=True)
+            self._answer_across_the_row(row, btn,
+                                        make_toggle_handler(item, var))
 
         elif item_type == "action":
             # Create handler to avoid lambda scoping issues
@@ -357,6 +423,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             )
             highlight_on_hover(btn)
             btn.pack(fill="x", expand=True)
+            self._answer_across_the_row(row, btn, make_action_handler(item))
 
         elif item_type == "submenu":
             submenu_items = item.get("submenu", item.get("items", []))
@@ -392,6 +459,10 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             
             btn.bind("<Enter>", make_hover_handler(submenu_items, row, btn))
             row.bind("<Enter>", make_hover_handler(submenu_items, row, btn))
+            arrow.bind("<Enter>", make_hover_handler(submenu_items, row, btn))
+
+            self._answer_across_the_row(
+                row, btn, make_submenu_handler(item, submenu_items, row))
 
     def _handle_toggle(self, item: Dict, var: Optional[ctk.BooleanVar]):
         if var is not None:

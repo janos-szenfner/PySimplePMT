@@ -753,6 +753,20 @@ under everything else.
   `SnapshotCommand.FIELDS`
 
 ### Menus That Open Out Of Menus (`views/toolbar.py`)
+- **Every pixel of a row runs it.** A row is bigger than the button in it:
+  the chevron on a row that opens a submenu is a label with nothing bound to
+  it, so the right-hand end of those rows was dead, as was the padding around
+  any entry. The row, its own canvas and everything beside the button carry
+  the action now; see `CTkDropdownMenu._answer_across_the_row`
+- **And a row answers every click, not every other one.** CustomTkinter runs
+  a button's command from `<ButtonRelease-1>`, but only while `_mouse_inside`
+  is set - and `_on_release` clears it *before* running the command, so a
+  button that has been clicked once will not answer again until the pointer
+  has left it and come back. In a menu, which appears under a pointer that
+  then barely moves, that is a row ignoring clicks for no reason the user can
+  see. A press on the entry says the pointer is on the entry, so the press
+  re-arms it. The command is left in place rather than replaced, so `invoke()`
+  still works and the press still animates
 - **A menu knows what opened it.** A menu dismisses itself when a click
   lands outside it, and the click that opens one always does: the row or the
   button that brings a menu up is not part of the menu it brings up. The
@@ -2156,7 +2170,7 @@ Unit tests cover:
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
 - ✅ **No test opens a dialog**: importing `tests/__init__.py` stands every blocking dialog down for the whole suite, because one that opens waits for somebody to click it and there is nobody on a build machine. A test that means to exercise a prompt patches it and asserts on the call; the one file that tests the dialog layer itself puts the real ones back in `setUpModule`. In the package rather than in a `conftest.py`, because the build runs `run_tests.py`, which is unittest - a guard that only holds under a runner nobody uses is not a guard
-- ✅ **Menus**: That a submenu survives the click that opened it, that moving to another row or clicking outside still closes it, that a click inside it leaves it open, and that a menu naming no opener behaves as it always did
+- ✅ **Menus**: That no part of a menu row is dead - the padding, the chevron and the entry all run it - that CustomTkinter's own click gate is still the thing being worked around, that a submenu survives the click that opened it, that moving to another row or clicking outside still closes it, that a click inside it leaves it open, and that a menu naming no opener behaves as it always did
 - ✅ **Icons**: That every icon on the toolbar row has a drawing, that every drawing paints at the sizes and inks asked for and is not blank, and that an unknown name answers None so the button can fall back to a letter
 - ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
