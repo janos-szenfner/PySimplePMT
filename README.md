@@ -752,6 +752,21 @@ under everything else.
   where the link had pushed it left the column and the dates disagreeing; see
   `SnapshotCommand.FIELDS`
 
+### Menus That Open Out Of Menus (`views/toolbar.py`)
+- **A menu knows what opened it.** A menu dismisses itself when a click
+  lands outside it, and the click that opens one always does: the row or the
+  button that brings a menu up is not part of the menu it brings up. The
+  opener counts as inside; see `CTkDropdownMenu._opener`
+- **This is what broke Create, Import and Export.** A submenu is watched by
+  the window it is opened over, and for a menu that is the menu itself
+  rather than the application window - so the press on Create was delivered
+  straight to the submenu it had just built, landed on a row belonging to
+  the parent, and was read as a click somewhere else. The submenu destroyed
+  itself before it was ever drawn, with all of its rows already in it
+- **`CustomMenuBar` had the guard for the row of buttons along the top** and
+  nothing had it anywhere else, which is why the top-level menus opened and
+  the ones inside them did not
+
 ### One Registry Per Icon (`resources/icons.py`)
 - **An icon is a list of strokes in a unit square**, painted with Pillow at
   whatever size and ink the row asks for; see `ICON_STROKES` and `draw_icon`
@@ -2140,6 +2155,7 @@ Unit tests cover:
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
+- ✅ **Menus**: That a submenu survives the click that opened it, that moving to another row or clicking outside still closes it, that a click inside it leaves it open, and that a menu naming no opener behaves as it always did
 - ✅ **Icons**: That every icon on the toolbar row has a drawing, that every drawing paints at the sizes and inks asked for and is not blank, and that an unknown name answers None so the button can fall back to a letter
 - ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid

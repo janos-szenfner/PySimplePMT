@@ -196,8 +196,16 @@ class CTkDropdownMenu(ctk.CTkToplevel):
     ITEM_HEIGHT = 28
     MENU_PADDING = 4
     
-    def __init__(self, master, items: List[Dict], **kwargs):
+    def __init__(self, master, items: List[Dict], opener=None, **kwargs):
         super().__init__(master, **kwargs)
+
+        #: The widget whose click opened this menu, if it is known.
+        #:
+        #: A click dismisses a menu it landed outside of, and the click that
+        #: opens one lands outside it by definition - the button or the row
+        #: is not part of the menu it brings up. Without knowing what opened
+        #: it, a menu takes its own opening click as the signal to go.
+        self._opener = opener
         
         # Window setup for floating overlay
         self.overrideredirect(True)
@@ -238,11 +246,28 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self._in_submenu = False
         
     def _dismiss_if_outside(self, event):
-        """Close when the click landed on something that is not this menu."""
+        """
+        Close when the click landed on something that is not this menu.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The row that opened this menu counts as part of it. A submenu is
+        watched by the window it is opened over - master.winfo_toplevel() of
+        a menu is that menu, not the application window - so the press on
+        Create, Import or Export was delivered to the submenu it had just
+        brought up, landed on a row belonging to the parent menu rather than
+        to the submenu, and the submenu destroyed itself before it was ever
+        drawn. The options were built, all five of them, and thrown away
+        between one click and the next.
+
+        The same is true one level up, where CustomMenuBar guards its own
+        buttons in _on_click_elsewhere; this is that guard, for every menu
+        rather than for the row of them along the top.
+        """
         widget = getattr(event, 'widget', None)
         if widget is None:
             return
-        for part in (self, self._submenu):
+        for part in (self, self._submenu, self._opener):
             if part is None:
                 continue
             path = str(widget)
@@ -435,7 +460,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self._close_submenu()
 
         self._in_submenu = True
-        self._submenu = CTkDropdownMenu(self, items=submenu_items)
+        self._submenu = CTkDropdownMenu(self, items=submenu_items, opener=row)
         self._submenu_row = row
         self._submenu.geometry(f"+{x}+{y}")
         self._submenu.focus_set()
@@ -547,7 +572,8 @@ class CustomMenuBar(ctk.CTkFrame):
         x = button_widget.winfo_rootx()
         y = button_widget.winfo_rooty() + button_widget.winfo_height() + 2
         
-        self.active_dropdown = CTkDropdownMenu(self, items=items)
+        self.active_dropdown = CTkDropdownMenu(self, items=items,
+                                               opener=button_widget)
         self.active_dropdown.geometry(f"+{x}+{y}")
         self.active_dropdown.focus_set()
         

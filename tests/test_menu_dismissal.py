@@ -180,6 +180,128 @@ class TestTheWatchIsNotDestructive(WatchTestCase):
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTheClickThatOpensAMenuDoesNotCloseIt(WatchTestCase):
+    """
+    A menu is opened by a click that lands outside it.
+
+    WHY THESE EXIST:
+    ================
+    Clicking Create, Import or Export showed nothing at all. The submenu was
+    built - all five of its rows - and destroyed again before it was drawn.
+
+    A menu dismisses itself when a click lands outside it, and the click
+    that opens one always does: the row or the button that brings a menu up
+    is not part of the menu it brings up. A submenu is watched by the window
+    it is opened over, which for a menu is that menu rather than the
+    application window, so the press on Create was delivered straight to the
+    submenu it had just created, landed on a row belonging to the parent,
+    and was read as "somewhere else".
+
+    CustomMenuBar had this guard for the row of buttons along the top and
+    nothing had it for anything else.
+    """
+
+    def menu_with_a_submenu(self):
+        """A dropdown whose first row opens another."""
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        built = CTkDropdownMenu(self.root, items=[
+            {"label": "Create", "type": "submenu", "items": [
+                {"label": "Phase...", "type": "action",
+                 "command": lambda: None},
+                {"label": "Task...", "type": "action",
+                 "command": lambda: None},
+            ]},
+            {"label": "Something else", "type": "action",
+             "command": lambda: None},
+        ])
+        built.update_idletasks()
+        return built
+
+    @staticmethod
+    def row_button(menu, label):
+        """The button for a named row."""
+        import customtkinter as ctk
+
+        def walk(widget):
+            """Every button under a widget."""
+            for kid in widget.winfo_children():
+                if isinstance(kid, ctk.CTkButton):
+                    yield kid
+                yield from walk(kid)
+
+        return next(b for b in walk(menu) if label in b.cget('text'))
+
+    def test_the_submenu_survives_the_click_that_opened_it(self):
+        """The fault: it was built and thrown away between two clicks."""
+        menu = self.menu_with_a_submenu()
+        create = self.row_button(menu, 'Create')
+
+        create.invoke()
+        submenu = menu._submenu
+        self.assertIsNotNone(submenu)
+
+        # The press is delivered to the watchers after the row has acted
+        submenu._dismiss_if_outside(self.click(create))
+
+        self.assertTrue(submenu.winfo_exists())
+
+    def test_the_submenu_knows_what_opened_it(self):
+        """Which is the row, so a click anywhere on that row is inside."""
+        menu = self.menu_with_a_submenu()
+        create = self.row_button(menu, 'Create')
+
+        create.invoke()
+
+        self.assertIsNotNone(menu._submenu._opener)
+
+    def test_another_row_still_closes_it(self):
+        """Moving on to a different row is a click somewhere else."""
+        menu = self.menu_with_a_submenu()
+        create = self.row_button(menu, 'Create')
+        create.invoke()
+        submenu = menu._submenu
+
+        submenu._dismiss_if_outside(
+            self.click(self.row_button(menu, 'Something else')))
+
+        self.assertFalse(submenu.winfo_exists())
+
+    def test_a_click_outside_everything_still_closes_it(self):
+        """The guard is for the opener, not for the whole window."""
+        menu = self.menu_with_a_submenu()
+        self.row_button(menu, 'Create').invoke()
+        submenu = menu._submenu
+
+        submenu._dismiss_if_outside(self.click(self.root))
+
+        self.assertFalse(submenu.winfo_exists())
+
+    def test_a_click_inside_the_submenu_leaves_it_open(self):
+        """Or choosing one of its entries would close it before it ran."""
+        menu = self.menu_with_a_submenu()
+        create = self.row_button(menu, 'Create')
+        create.invoke()
+        submenu = menu._submenu
+
+        submenu._dismiss_if_outside(
+            self.click(self.row_button(submenu, 'Phase...')))
+
+        self.assertTrue(submenu.winfo_exists())
+
+    def test_a_menu_with_no_opener_behaves_as_before(self):
+        """The formatting bar and the progress group name none."""
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        menu = CTkDropdownMenu(self.root, items=[{"text": "One",
+                                                  "command": lambda: None}])
+        menu.update_idletasks()
+
+        menu._dismiss_if_outside(self.click(self.root))
+
+        self.assertFalse(menu.winfo_exists())
+
+
 class TestAMenuDismissesItself(WatchTestCase):
     """Every menu, including the ones that had no dismissal at all."""
 
