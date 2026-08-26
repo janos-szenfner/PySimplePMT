@@ -36,6 +36,8 @@ ICON_EMOJIS: Dict[str, str] = {
     'save_as': '\U0001f4be',       # Floppy disk: saving under a new name
     'indent': '\U000027a1',        # Right arrow: one level deeper
     'outdent': '\U00002b05',       # Left arrow: one level out
+    'link': '\U0001f517',          # Chain link: one task waits for another
+    'unlink': '\U000026d3',        # Chain: the one being broken
     'fill_color': '\U0001f58d',    # Highlighter: the row's background
     'style_preset': '\U0001f3a8',  # Palette: a whole look in one press
     'clear_style': '\U0000274c',   # Cross: back to the grid's own
@@ -70,6 +72,8 @@ SVG_PATHS: Dict[str, str] = {
     'save_as': "M13 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6zM19 15v6M22 18h-6",
     'indent': "M3 4h18M9 9h12M9 14h12M3 20h18M3 9l3 2.5L3 14",
     'outdent': "M3 4h18M9 9h12M9 14h12M3 20h18M6 9l-3 2.5L6 14",
+    'link': "M10 12H7a3 3 0 010-6h3M14 12h3a3 3 0 010 6h-3M9 12h6",
+    'unlink': "M9 12H7a3 3 0 010-6h2M15 12h2a3 3 0 010 6h-2M12 3v3M12 18v3",
     'fill_color': "M4 13l7-7 7 7-7 7zM19 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z",
     'style_preset': "M12 2a10 10 0 1 0 0 20 2 2 0 0 0 0-4 2 2 0 0 1 0-4h3a5 5 0 0 0 5-5 7 7 0 0 0-8-7z",
     'clear_style': "M18 6L6 18M6 6l12 12",
@@ -104,6 +108,7 @@ ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'new_project', 'save', 'save_as', 'edit',
     'task', 'subtask', 'milestone', 'phase', 'deliverable',
     'indent', 'outdent',
+    'link', 'unlink',
     'bold', 'italic', 'underline',
     'text_color', 'fill_color', 'style_preset', 'clear_style',
     'mark_on_track',
@@ -284,6 +289,24 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('line', [(0.42, 0.62), (0.90, 0.62)]),
         ('line', [(0.10, 0.86), (0.90, 0.86)]),
         ('line', [(0.28, 0.36), (0.10, 0.50), (0.28, 0.64)]),
+    ],
+    # Link and unlink: two rings of a chain, joined or pulled apart. Rings
+    # rather than the interlocking ovals the emoji uses, because at 20
+    # pixels two overlapping outlines become one grey blob - the bar between
+    # them, and its absence, is what carries the difference.
+    'link': [
+        ('ellipse', [(0.06, 0.34), (0.44, 0.66)]),
+        ('ellipse', [(0.56, 0.34), (0.94, 0.66)]),
+        ('line', [(0.40, 0.50), (0.60, 0.50)]),
+    ],
+    'unlink': [
+        ('ellipse', [(0.02, 0.34), (0.38, 0.66)]),
+        ('ellipse', [(0.62, 0.34), (0.98, 0.66)]),
+        ('line', [(0.36, 0.50), (0.44, 0.50)]),
+        ('line', [(0.56, 0.50), (0.64, 0.50)]),
+        # The snap: a mark above the gap and one below it
+        ('line', [(0.50, 0.14), (0.50, 0.28)]),
+        ('line', [(0.50, 0.72), (0.50, 0.86)]),
     ],
     'task': [
         ('shape', [(0.12, 0.34), (0.88, 0.34), (0.88, 0.66), (0.12, 0.66)]),

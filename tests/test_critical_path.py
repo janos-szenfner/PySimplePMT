@@ -448,7 +448,9 @@ class TestTheToolbarOffersIt(unittest.TestCase):
 
         self.assertEqual(row[index - 1], IconToolbar.SEPARATOR)
         self.assertEqual(row[index + 1], IconToolbar.SEPARATOR)
-        self.assertEqual(row[index - 2], 'outdent')
+        # The group before it ends with the linking pair; the one after it
+        # starts with the clipboard
+        self.assertEqual(row[index - 2], 'unlink')
         self.assertEqual(row[index + 2], 'cut')
 
     def test_the_icon_has_a_drawing_and_a_handler(self):

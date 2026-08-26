@@ -55,6 +55,7 @@ This is a complete implementation of a project management tool with:
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a phase copies the phase row, not the work underneath it, but a task copied together with its sub-tasks keeps them, and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. A paste with nothing selected is refused and says so rather than dropping the row at the end of the plan. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
+- **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
@@ -701,6 +702,31 @@ under everything else.
   marker, then the same thing as JSON - so it pastes into a mail as text and
   back into this application as tasks
 
+### Link and Unlink Tasks (`Project.link_tasks`, `Project.unlink_tasks`)
+- **Chains the selection Finish-to-Start**: one link per neighbouring pair,
+  top to bottom, with no lag - the first row becomes the predecessor of the
+  second, the second of the third. `⌘F2` on a Mac and `Ctrl+F2` elsewhere, or
+  the chain icon on the row
+- **In the order the rows are shown, not the order they were clicked**: a
+  Treeview reports a selection in the order rows were added to it, so
+  shift-clicking upwards from the bottom of a group hands them back
+  bottom-first and a chain built from that would run backwards through the
+  plan. `Project._in_display_order` is what settles it
+- **Adds rather than states**: a row goes on waiting for anything outside the
+  selection that it already waited for
+- **A pair that would close a loop is skipped**, and the rest of the chain is
+  still made. Refusing the whole thing would leave a selection with one
+  awkward pair in the middle of it doing nothing at all, with the reason
+  buried
+- **Unlink takes out what is between the chosen rows** and nothing else, so a
+  link to a row nobody pointed at survives. A single row has no "between", so
+  what goes is every link it is part of, in both directions
+- **The plan reschedules immediately**: a link that has just been stated is
+  one the dates are supposed to obey, and a button that accepted a link and
+  moved nothing would look like it had not worked
+- **One entry in the undo history** for the whole chain, however many pairs it
+  joined; see `SnapshotCommand`
+
 ### Gantt Chart View (`views/gantt_chart.py`)
 - **Drawn, not downloaded**: The chart on screen is painted with Pillow
   (`utils/chart_render.py`). Plotly is still used to build the interactive
@@ -754,6 +780,8 @@ opening a menu, in groups divided by a hairline:
 - the progress group beside it — 0/25/50/75/100% and Mark on Track — which is
   the other thing done to a row already picked out: mark it up, then say
   where it has got to
+- link and unlink, which chain the selected rows Finish-to-Start and break
+  those links again. They act on what is selected, like the three before them
 - critical path, alone between two hairlines: it neither edits a row nor
   moves one about, so it belongs to neither group beside it
 - cut, copy, paste, delete, undo, redo
@@ -2031,6 +2059,7 @@ Unit tests cover:
 - ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, and the whole cascade from a ticked sub-task to the phase above it
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
+- ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Row Formatting**: What a default style serialises to, that a summary can be un-bolded on purpose and comes back bold when cleared, that an ordinary edit does not strip a row's formatting or its calendar, and that rows formatted alike share one tag

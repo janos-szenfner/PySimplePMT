@@ -1680,6 +1680,34 @@ class Toolbar(ctk.CTkFrame):
             return
         self.task_list.outdent_task(selected)
 
+    def link_selected(self):
+        """
+        Chain the selected rows Finish-to-Start, top to bottom.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The selection is handed over as the task list reports it and put
+        into reading order by the plan, not here: which row comes first is a
+        fact about where the rows sit, and the plan is what knows that. See
+        Project._in_display_order.
+        """
+        selected = self._selected_task_ids()
+        if len(selected) < 2:
+            messagebox.showinfo(
+                "Link Tasks",
+                "Select two or more tasks to link, in the order they run.")
+            return
+        self.task_list.link_tasks(selected)
+
+    def unlink_selected(self):
+        """Break the links between the selected rows."""
+        selected = self._selected_task_ids()
+        if not selected:
+            messagebox.showinfo("Unlink Tasks",
+                                "Select the tasks to unlink first.")
+            return
+        self.task_list.unlink_tasks(selected)
+
     def import_gan(self):
         """Import a GanttProject (.gan) file."""
         # Ask for file path
@@ -2283,6 +2311,22 @@ class Toolbar(ctk.CTkFrame):
             bind_shortcut(window, key,
                           lambda _event, kind=name: self._hotkey_style(kind))
 
+        # Linking, on the same window and for the same reason. F2 with the
+        # platform's modifier, and Shift with it to break the links again -
+        # the pair the reference tool uses
+        bind_shortcut(window, 'F2', self._hotkey_link)
+        bind_shortcut(window, 'F2', self._hotkey_unlink, shift=True)
+
+    def _hotkey_link(self, _event=None):
+        """Link the selected rows from the keyboard."""
+        self.link_selected()
+        return 'break'
+
+    def _hotkey_unlink(self, _event=None):
+        """Unlink the selected rows from the keyboard."""
+        self.unlink_selected()
+        return 'break'
+
     def _hotkey_style(self, kind: str):
         """Toggle one emphasis from the keyboard, if anything is selected."""
         bar = getattr(getattr(self, 'icon_toolbar', None), 'style_bar', None)
@@ -2687,6 +2731,14 @@ class IconToolbar(ctk.CTkFrame):
         ('edit', 'Edit Task...', 'edit_selected_task'),
         ('indent', 'Indent Task', 'indent_selected'),
         ('outdent', 'Outdent Task', 'outdent_selected'),
+        # After the formatting group, which is placed here by
+        # STYLE_GROUP_AFTER and closes with a divider of its own - so these
+        # two sit in the gap between that divider and the next one. They act
+        # on the selected rows like indent and outdent do, and belong with
+        # them rather than with the clipboard
+        ('link', f"Link Tasks  ({accelerator('F2')})", 'link_selected'),
+        ('unlink', f"Unlink Tasks  ({accelerator('F2', shift=True)})",
+         'unlink_selected'),
         (SEPARATOR, '', ''),
         # Set apart on both sides: it neither creates anything nor moves
         # anything about, so it belongs to neither group it sits between

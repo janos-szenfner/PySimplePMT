@@ -179,7 +179,8 @@ class TestIconToolbarCreation(unittest.TestCase):
 
         self.assertEqual(names.index(toolbar.SEPARATOR),
                          names.index('save_as') + 1)
-        self.assertEqual(names[names.index('outdent') + 1],
+        # The group acting on the selected row ends with the linking pair
+        self.assertEqual(names[names.index('unlink') + 1],
                          toolbar.SEPARATOR)
         self.toolbar = toolbar
 
@@ -392,6 +393,7 @@ class TestIconToolbarActions(unittest.TestCase):
         self.assertEqual(actions, [
             'save_project', 'save_project_as',
             'edit_selected_task', 'indent_selected', 'outdent_selected',
+            'link_selected', 'unlink_selected',
             'show_critical_path',
             'cut_tasks', 'copy_tasks', 'paste_tasks', 'delete_selected',
             'undo', 'redo',

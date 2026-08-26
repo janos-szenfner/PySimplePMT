@@ -2375,6 +2375,150 @@ class Project:
         finally:
             task.dependencies = original
 
+    def _in_display_order(self, task_ids) -> List[Task]:
+        """
+        The named tasks, in the order the list shows them.
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str]
+            The rows to put in order. Names that are in no plan are left
+            out, and a row named twice is taken once.
+
+        RETURNS:
+        --------
+        List[Task]
+            Top to bottom, whatever order they were named in.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Linking is order-sensitive and the order that matters is the one on
+        screen, not the one the selection happens to be held in. A Treeview
+        reports a selection in the order rows were added to it, so
+        shift-clicking upwards from the bottom of a group hands back the
+        rows bottom-first - and a chain built from that would run backwards
+        through the plan.
+        """
+        places = {task.id: number
+                  for number, task in enumerate(self.display_order())}
+
+        chosen = {}
+        for task_id in task_ids or []:
+            task = self.get_task_by_id(task_id)
+            if task is not None:
+                chosen[task.id] = task
+
+        return sorted(chosen.values(),
+                      key=lambda task: places.get(task.id, len(places)))
+
+    def link_tasks(self, task_ids) -> List[tuple]:
+        """
+        Chain the named tasks Finish-to-Start, down the list.
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str]
+            The rows to link. Fewer than two of them is nothing to do.
+
+        RETURNS:
+        --------
+        List[tuple]
+            (predecessor id, successor id) for each link made. Empty when
+            nothing was: the rows were already chained, or every link the
+            chain wanted would have closed a loop.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        One link per neighbouring pair, top to bottom: the first row becomes
+        the predecessor of the second, the second of the third, and so on.
+        Finish-to-Start with no lag, which is what a plain link means and
+        what the reference tool gives you.
+
+        Links a row already holds are left alone. Linking is something added
+        to a plan rather than a statement of everything a row waits for, so
+        a task that already waits for something outside the selection goes
+        on waiting for it.
+
+        A pair that would close a loop is skipped and the rest of the chain
+        is still made. Refusing the whole thing would mean a selection with
+        one awkward pair in the middle of it doing nothing at all, with the
+        reason buried; skipping is what the user can see, because the rows
+        that did link say so in their own column.
+        """
+        chosen = self._in_display_order(task_ids)
+        if len(chosen) < 2:
+            return []
+
+        linked = []
+        for predecessor, successor in zip(chosen, chosen[1:]):
+            if successor.get_dependency(predecessor.id) is not None:
+                continue
+            if self.would_create_dependency_cycle(successor.id,
+                                                  predecessor.id):
+                logger.info("Not linking %s to %s: it would run in a circle",
+                            predecessor.id, successor.id)
+                continue
+
+            successor.add_dependency(predecessor.id, 'FS', 'Hard', 0)
+            linked.append((predecessor.id, successor.id))
+
+        if linked:
+            logger.info("Linked %d pair(s): %s", len(linked), linked)
+        return linked
+
+    def unlink_tasks(self, task_ids) -> List[tuple]:
+        """
+        Break the links between the named tasks.
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str]
+            The rows to unlink.
+
+        RETURNS:
+        --------
+        List[tuple]
+            (predecessor id, successor id) for each link removed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        With several rows named, the links *between them* go and nothing
+        else: a row in the selection that waits for something outside it
+        goes on waiting, because the user pointed at these rows and not at
+        that one.
+
+        With a single row named there is no "between", so what goes is every
+        link that row is part of - the ones it holds and the ones held on
+        it. That is the reference tool's answer and the only useful one:
+        unlinking one row otherwise does nothing at all.
+        """
+        chosen = self._in_display_order(task_ids)
+        if not chosen:
+            return []
+
+        removed = []
+        if len(chosen) == 1:
+            alone = chosen[0]
+            for link in list(alone.dependencies):
+                if alone.remove_dependency(link.task_id):
+                    removed.append((link.task_id, alone.id))
+            for task in self.tasks:
+                if task is alone:
+                    continue
+                if task.remove_dependency(alone.id):
+                    removed.append((alone.id, task.id))
+        else:
+            within = {task.id for task in chosen}
+            for task in chosen:
+                for link in list(task.dependencies):
+                    if link.task_id in within and \
+                            task.remove_dependency(link.task_id):
+                        removed.append((link.task_id, task.id))
+
+        if removed:
+            logger.info("Unlinked %d link(s): %s", len(removed), removed)
+        return removed
+
     def display_order(self) -> List[Task]:
         """
         Every task in the order the list shows them.

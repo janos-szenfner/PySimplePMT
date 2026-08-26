@@ -1189,11 +1189,29 @@ class DragDropTaskList(ctk.CTkFrame):
         return f"{total} row" if total == 1 else f"{total} rows"
 
     def _say(self, message: str) -> None:
-        """Put a line of text where the reader will see it."""
+        """
+        Put a line of text where the reader will see it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        After the pending events rather than straight away. Selecting rows
+        makes Tk queue a <<TreeviewSelect>>, and the window answers that one
+        by writing what the selected task is into the same status bar - so a
+        message written first was overwritten a moment later by the very
+        selection the action had just made. Everything that reports on an
+        action here ends by selecting its rows, so all of them were losing
+        the message they had just written.
+        """
         if not message:
             return
         logger.info("%s", message)
-        if self.on_status:
+        if not self.on_status:
+            return
+
+        try:
+            self.after_idle(self.on_status, message)
+        except tk.TclError:
+            # No event loop to wait for - say it now
             self.on_status(message)
 
     def _why_not_pasted(self, focused_id: Optional[str],
@@ -1695,6 +1713,103 @@ class DragDropTaskList(ctk.CTkFrame):
         label = "Outdent Tasks" if len(chosen) > 1 else "Outdent Task"
         self._apply_restructure(lambda: self.project.outdent_tasks(chosen),
                                 chosen, label)
+
+    def link_tasks(self, task_ids):
+        """
+        Chain the chosen rows Finish-to-Start, down the list.
+
+        PARAMETERS:
+        -----------
+        task_ids : str or Sequence[str]
+            The rows to link. One row is nothing to chain.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The plan is rescheduled afterwards rather than the dates being left
+        as they were: a link that has just been stated is one the dates are
+        supposed to obey, and a button that accepted a link and moved
+        nothing would look like it had not worked. See set_dependencies,
+        which does the same for a link typed into the column.
+
+        One entry in the undo history however many pairs were joined: the
+        user pressed Link once.
+        """
+        chosen = self._as_ids(task_ids)
+        if len(chosen) < 2:
+            self._say("Select two or more rows to link.")
+            return
+
+        linked = []
+
+        def apply() -> bool:
+            """The links themselves, run inside the undo command."""
+            linked.extend(self.project.link_tasks(chosen))
+            return bool(linked)
+
+        if self.project_tracker:
+            self.project_tracker.run_as_command(apply, "Link Tasks")
+        else:
+            apply()
+
+        if not linked:
+            self._say("Those rows are already linked.")
+            return
+
+        self.project.apply_schedule()
+        self._say(f"Linked {self._count(chosen)} Finish-to-Start.")
+        self._after_links_changed(chosen)
+
+    def unlink_tasks(self, task_ids):
+        """
+        Break the links between the chosen rows.
+
+        PARAMETERS:
+        -----------
+        task_ids : str or Sequence[str]
+            The rows to unlink. A single row loses every link it is part
+            of; see Project.unlink_tasks.
+        """
+        chosen = self._as_ids(task_ids)
+        if not chosen:
+            self._say("Select the rows to unlink first.")
+            return
+
+        removed = []
+
+        def apply() -> bool:
+            """The removals themselves, run inside the undo command."""
+            removed.extend(self.project.unlink_tasks(chosen))
+            return bool(removed)
+
+        if self.project_tracker:
+            self.project_tracker.run_as_command(apply, "Unlink Tasks")
+        else:
+            apply()
+
+        if not removed:
+            self._say("There were no links between those rows.")
+            return
+
+        self.project.apply_schedule()
+        self._say(f"Removed {len(removed)} link"
+                  f"{'' if len(removed) == 1 else 's'}.")
+        self._after_links_changed(chosen)
+
+    def _after_links_changed(self, chosen):
+        """Redraw, keep the rows selected, and tell the rest of the window."""
+        self.update_task_list()
+        try:
+            live = [task_id for task_id in chosen
+                    if self.project.get_task_by_id(task_id) is not None]
+            if live:
+                self.tree.selection_set(*live)
+                self.tree.focus(live[0])
+                self.tree.see(live[0])
+        except tk.TclError:
+            pass
+
+        if self.on_project_changed:
+            self.on_project_changed()
 
     @staticmethod
     def _as_ids(task_ids) -> List[str]:
