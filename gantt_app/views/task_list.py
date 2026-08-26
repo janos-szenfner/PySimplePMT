@@ -338,7 +338,8 @@ class DragDropTaskList(ctk.CTkFrame):
                  on_task_edit: Callable[[Task], None] = None,
                  on_project_changed: Callable[[], None] = None,
                  project_tracker: ProjectStateTracker = None,
-                 clipboard_manager=None):
+                 clipboard_manager=None,
+                 on_status: Callable[[str], None] = None):
         super().__init__(master)
         
         self.master = master
@@ -348,6 +349,11 @@ class DragDropTaskList(ctk.CTkFrame):
         self.on_project_changed = on_project_changed
         self.project_tracker = project_tracker
         self.clipboard_manager = clipboard_manager
+        #: Where to put a line of text for the reader - the status bar, when
+        #: the application supplies one. A refused paste is the reason this
+        #: exists: from the keyboard it did nothing and said nothing, which
+        #: reads as the shortcut being broken rather than as an answer
+        self.on_status = on_status
         
         # Track dragged task
         self.dragged_task_id = None
@@ -1045,6 +1051,7 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.clipboard_manager:
             self.clipboard_manager.copy(selected_ids)
             self.update_task_list()
+            self._say(f"Copied {self._count(selected_ids)}.")
 
     def cut_tasks(self, selected_ids: List[str]):
         """
@@ -1058,27 +1065,91 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.clipboard_manager:
             self.clipboard_manager.cut(selected_ids)
             self.update_task_list()
+            self._say(f"Cut {self._count(selected_ids)}. "
+                      f"Select where they go and paste.")
 
-    def paste_tasks(self, target_container_id: Optional[str],
-                    anchor_id: Optional[str] = None):
+    def focused_task_id(self) -> Optional[str]:
         """
-        Paste tasks from the clipboard into a container.
+        The row the cursor is on, or None when the list has no cursor.
+
+        RETURNS:
+        --------
+        Optional[str]
+            The focused row's task ID, falling back to the first selected
+            row, and None when nothing is selected at all.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Focus and selection are not the same thing in a Treeview: clicking
+        sets both, but extending a selection with shift moves the focus to
+        the end of the range while the first row stays selected. A paste
+        goes where the cursor is, so focus is asked first.
+        """
+        try:
+            focused = self.tree.focus()
+        except tk.TclError:
+            return None
+
+        if focused and self.project.get_task_by_id(focused) is not None:
+            return focused
+
+        selected = self.get_selected_task_ids()
+        return selected[0] if selected else None
+
+    def paste_tasks(self, focused_id: Optional[str] = None,
+                    inside: bool = False):
+        """
+        Paste from the clipboard at the row the cursor is on.
 
         PARAMETERS:
         -----------
-        target_container_id : Optional[str]
-            ID of the target container (parent task ID), or None for root
-            level.
-        anchor_id : Optional[str]
-            The row the paste was asked for from. Rows that land beside it
-            are placed directly after it rather than at the end of the
-            branch. None - from the toolbar, or a shortcut over empty space
-            - leaves them where they land.
+        focused_id : Optional[str]
+            The row to paste at. None asks the list which row has the
+            cursor, which is what the toolbar and the keyboard do.
+        inside : bool
+            True for "Paste as Sub-Task", which puts the rows underneath the
+            focused row. False - every other route - puts them beside it, in
+            its place, pushing it down.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every route into a paste ends up here: the keyboard, the toolbar,
+        the menu bar and the right-click menu. They differ only in which row
+        they name, and none of them decides any more where the rows land -
+        see ClipboardService.resolve_target.
+
+        The whole paste is one entry in the undo history. It has to be: it
+        adds rows, positions them, rewrites their links and renumbers the
+        plan, and a user who presses undo means all of that. Before this it
+        was recorded as nothing at all, and undo reached past the paste to
+        whatever the user had done before it - deleting a row they had made
+        earlier and leaving the pasted one in place.
         """
         if not self.clipboard_manager:
             return
 
-        pasted = self.clipboard_manager.paste(target_container_id, anchor_id)
+        if focused_id is None:
+            focused_id = self.focused_task_id()
+
+        pasted = []
+
+        def apply() -> bool:
+            """The paste itself, run inside the undo command."""
+            pasted.extend(
+                self.clipboard_manager.paste_at(focused_id, inside))
+            return bool(pasted)
+
+        if self.project_tracker:
+            self.project_tracker.run_as_command(apply, "Paste Tasks")
+        else:
+            apply()
+
+        if not pasted:
+            self._say(self._why_not_pasted(focused_id, inside))
+            return
+
+        self._say(f"Pasted {self._count(pasted)}.")
+
         self.update_task_list()
 
         # What has just arrived is what the user is about to move, rename or
@@ -1111,23 +1182,82 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         return len(selected_ids) > 0
 
-    def can_paste(self, target_container_id: Optional[str]) -> bool:
+    @staticmethod
+    def _count(rows) -> str:
+        """How many rows, said in a way that reads in a sentence."""
+        total = len(rows)
+        return f"{total} row" if total == 1 else f"{total} rows"
+
+    def _say(self, message: str) -> None:
+        """Put a line of text where the reader will see it."""
+        if not message:
+            return
+        logger.info("%s", message)
+        if self.on_status:
+            self.on_status(message)
+
+    def _why_not_pasted(self, focused_id: Optional[str],
+                        inside: bool) -> str:
         """
-        Check if paste operation is possible for the target container.
-        
+        Why a paste did nothing, in a line the reader can act on.
+
         PARAMETERS:
         -----------
-        target_container_id : Optional[str]
-            ID of the target container
-            
+        focused_id : Optional[str]
+            The row the paste was aimed at.
+        inside : bool
+            True for "Paste as Sub-Task".
+
+        RETURNS:
+        --------
+        str
+            What to tell the reader.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every one of these used to be silence. The clipboard logged its
+        reason and returned an empty list, the shortcut did nothing visible,
+        and the reader was left to work out whether they had copied
+        anything, aimed at the wrong row, or found a bug.
+        """
+        if not self.clipboard_manager or self.clipboard_manager.is_empty():
+            return "Nothing to paste: copy or cut some rows first."
+
+        if not focused_id:
+            return "Select the row to paste at first."
+
+        target = self.project.get_task_by_id(focused_id)
+        if target is None:
+            return "Select the row to paste at first."
+
+        if inside:
+            return (f"Those rows cannot go inside '{target.name}'.")
+
+        return (f"Those rows cannot go beside '{target.name}'.")
+
+    def can_paste(self, focused_id: Optional[str] = None,
+                  inside: bool = False) -> bool:
+        """
+        Whether a paste at the row the cursor is on would be accepted.
+
+        PARAMETERS:
+        -----------
+        focused_id : Optional[str]
+            The row to paste at. None asks the list which row has the
+            cursor.
+        inside : bool
+            True for "Paste as Sub-Task".
+
         RETURNS:
         --------
         bool
-            True if paste is possible
+            True when the menu entry should be live.
         """
         if not self.clipboard_manager:
             return False
-        return self.clipboard_manager.can_paste(target_container_id)
+        if focused_id is None:
+            focused_id = self.focused_task_id()
+        return self.clipboard_manager.can_paste_at(focused_id, inside)
 
 
     def on_select(self, event):
@@ -1475,25 +1605,29 @@ class DragDropTaskList(ctk.CTkFrame):
         was created from. A sub-task needs no move: rebuilding from the
         hierarchy already places it under its parent.
         """
-        before = self.project.structure_snapshot()
+        def apply() -> bool:
+            """Place the new row, then renew the numbering it changed."""
+            task.parent_task_id = parent_id
+            # Only set task_type to Subtask if it's not already set to a
+            # specific type and has a parent
+            if parent_id and task.task_type not in ("Phase", "Deliverable",
+                                                    "Milestone"):
+                task.task_type = "Subtask"
 
-        task.parent_task_id = parent_id
-        # Only set task_type to Subtask if it's not already set to a specific type and has a parent
-        if parent_id and task.task_type not in ("Phase", "Deliverable", "Milestone"):
-            task.task_type = "Subtask"
+            self.project.add_task(task)
+            anchor = self.project.get_task_by_id(anchor_id)
 
-        self.project.add_task(task)
-        anchor = self.project.get_task_by_id(anchor_id)
+            if anchor is not None and task.parent_task_id == anchor.parent_task_id:
+                # A sibling: slot it in directly after the row it came from
+                self.project.move_task_before(task.id, anchor_id)
+                self.project.move_task(task.id, 'down')
 
-        if anchor is not None and task.parent_task_id == anchor.parent_task_id:
-            # A sibling: slot it in directly after the row it came from
-            self.project.move_task_before(task.id, anchor_id)
-            self.project.move_task(task.id, 'down')
+            return True
 
         if self.project_tracker:
-            self.project_tracker.restructure_tasks(
-                before, self.project.structure_snapshot(), "Create Task"
-            )
+            self.project_tracker.run_as_command(apply, "Create Task")
+        else:
+            apply()
 
         self.update_task_list()
         try:

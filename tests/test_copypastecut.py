@@ -198,10 +198,11 @@ class TestClipboardService(unittest.TestCase):
         # Should have one more task
         self.assertEqual(len(self.project.tasks), initial_task_count + 1)
         
-        # The new task should have a different ID
-        new_task = self.project.tasks[-1]
-        self.assertNotEqual(new_task.id, "001")
-        self.assertEqual(new_task.name, "Task 1 (Copy)")
+        # The copy is a task of its own, with its own key
+        copy_row = next(t for t in self.project.tasks
+                        if t.name == "Task 1" and t is not self.task1)
+        self.assertNotEqual(copy_row.id, self.task1.id)
+        self.assertEqual(copy_row.name, "Task 1")
 
     def test_paste_cut_moves_tasks(self):
         """Test that pasting cut tasks moves them to new container."""
@@ -526,37 +527,74 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
     def test_copy_preserves_parent_child_relationship(self):
         """Test that copying a task preserves parent-child relationships."""
         self.service.copy(["T001"])
-        
-        # Paste into phase
-        self.service.paste("P001")
-        
-        # New task should have phase as parent
-        new_task = self.project.tasks[-1]
-        self.assertEqual(new_task.parent_task_id, "P001")
 
-    def test_paste_into_same_container_appends_copy_suffix(self):
-        """Test that pasting into same container appends (Copy) suffix."""
+        pasted = self.service.paste("P001")
+
+        # The phase wears whatever number the renumbering gave it
+        self.assertEqual(self.project.get_task_by_id(pasted[0]).parent_task_id,
+                         self.phase.id)
+
+    def test_a_copy_keeps_the_name_it_was_copied_from(self):
+        """
+        Whatever it is pasted into.
+
+        The suffix this used to add appeared only for a paste into the
+        container the row came from, so the same operation named the row
+        two different ways depending on where it was aimed.
+        """
         self.service.copy(["T001"])
         source_container = self.task.parent_task_id
-        
-        self.service.paste(source_container)
-        
-        new_task = self.project.tasks[-1]
-        self.assertEqual(new_task.name, "Task 1 (Copy)")
 
-    def test_copy_task_with_dependencies(self):
-        """Test copying a task with dependencies."""
+        pasted = self.service.paste(source_container)
+
+        self.assertEqual(self.project.get_task_by_id(pasted[0]).name,
+                         "Task 1")
+
+    def test_a_link_to_something_not_copied_is_dropped(self):
+        """A copy does not arrive already waiting on work nobody copied."""
         self.task.add_dependency("P001")
-        
+
         self.service.copy(["T001"])
-        
-        # Paste
         self.service.paste("P001")
-        
-        # New task should have the same dependencies
+
         new_task = self.project.tasks[-1]
-        self.assertEqual(len(new_task.dependencies), 1)
-        self.assertEqual(new_task.dependencies[0].task_id, "P001")
+        self.assertEqual(list(new_task.dependencies), [])
+
+    def test_a_link_within_the_selection_follows_the_copies(self):
+        """Two tasks copied together stay linked to each other, not to the
+        originals."""
+        second = Task.create_task(
+            name="Task 2", start_date=datetime(2024, 1, 1),
+            end_date=datetime(2024, 1, 6), task_id="T002")
+        second.parent_task_id = "P001"
+        self.project.add_task(second)
+        second.add_dependency("T001")
+
+        self.service.copy(["T001", "T002"])
+        pasted = self.service.paste("P001")
+
+        follower = self.project.get_task_by_id(pasted[1])
+        self.assertEqual([d.task_id for d in follower.dependencies],
+                         [pasted[0]])
+
+    def test_a_parent_copied_with_its_child_keeps_the_child(self):
+        """
+        Copying both halves of a parentage reproduces it.
+
+        The sub-task lands under the copy of its own task, not beside it and
+        not in the container the paste named - which is also why a selection
+        like this one is no longer refused for holding a sub-task that a
+        phase could not have taken on its own.
+        """
+        self.service.copy(["T001", "ST001"])
+        pasted = self.service.paste("P001")
+
+        self.assertEqual(len(pasted), 2)
+        self.assertEqual(
+            self.project.get_task_by_id(pasted[0]).parent_task_id,
+            self.phase.id)
+        self.assertEqual(
+            self.project.get_task_by_id(pasted[1]).parent_task_id, pasted[0])
 
     def test_paste_multiple_tasks_into_container(self):
         """Test pasting multiple tasks into a container."""
@@ -574,14 +612,17 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         # Should have 2 new tasks
         self.assertEqual(len(self.project.tasks), initial_count + 2)
 
-    def test_a_mixed_selection_is_refused_where_one_does_not_belong(self):
+    def test_a_selection_is_refused_where_one_does_not_belong(self):
         """
-        A subtask does not go into a phase, so neither does the pair.
+        A sub-task on its own does not go into a phase, so neither does the
+        selection holding it.
 
         Pasting only the half that fits would leave the user with some of
-        what they picked out and no word about the rest.
+        what they picked out and no word about the rest. A sub-task whose
+        own task was copied with it is a different case, and is allowed -
+        see test_a_parent_copied_with_its_child_keeps_the_child.
         """
-        self.service.copy(["T001", "ST001"])
+        self.service.copy(["ST001"])
 
         initial_count = len(self.project.tasks)
         self.service.paste("P001")
@@ -657,8 +698,10 @@ class TestOnlyWhatIsSelected(unittest.TestCase):
         self.service.copy(["P001"])
         self.service.paste(None)
 
-        self.assertEqual(self.task.parent_task_id, "P001")
-        self.assertEqual(self.subtask.parent_task_id, "T001")
+        # Compared against the live rows: a paste renumbers the plan, and
+        # these are the same task objects throughout
+        self.assertEqual(self.task.parent_task_id, self.phase.id)
+        self.assertEqual(self.subtask.parent_task_id, self.task.id)
 
     def test_two_selected_rows_give_two_items(self):
         """A parent and its child picked out together are exactly those two."""
@@ -801,12 +844,19 @@ class TestSayingWhatWasPasted(unittest.TestCase):
         self.assertIsNotNone(self.project.get_task_by_id(pasted[0]))
 
     def test_a_cut_answers_with_the_rows_it_moved(self):
-        """Those keep their IDs, having moved rather than been remade."""
-        self.service.cut(["T"])
+        """
+        The same rows, having moved rather than been remade.
 
+        They answer to the number the plan gives them once the move has
+        renumbered it, which is the number the caller has to select.
+        """
+        moved = self.project.get_task_by_id("T")
+
+        self.service.cut(["T"])
         pasted = self.service.paste(None)
 
-        self.assertEqual(pasted, ["T"])
+        self.assertEqual(pasted, [moved.id])
+        self.assertIs(self.project.get_task_by_id(pasted[0]), moved)
 
     def test_a_refused_paste_answers_with_nothing(self):
         """Nothing arrived, so there is nothing to select."""
@@ -884,17 +934,26 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
             self.project.add_task(task)
 
     def order(self):
-        """The IDs of the phase's children, in the order they read."""
-        return [task.id for task in self.project.tasks
-                if task.parent_task_id == "P"]
+        """
+        The names of the phase's children, in the order they read.
+
+        By name rather than by ID: a paste renumbers the plan, so the IDs
+        these rows were built with are gone by the time the assertion runs.
+        A copy carries its original's name, so a duplicate name in the list
+        is the pasted row - which is what these tests are placing.
+        """
+        phase = next(t for t in self.project.tasks if t.name == "Phase")
+        return [task.name for task in self.project.tasks
+                if task.parent_task_id == phase.id]
 
     def test_a_pasted_row_lands_after_the_row_it_came_from(self):
         """Not at the bottom of the branch."""
         self.service.copy(["A"])
 
-        pasted = self.service.paste("P", after_task_id="B")
+        self.service.paste("P", after_task_id="B")
 
-        self.assertEqual(self.order(), ["A", "B", pasted[0], "C", "D"])
+        self.assertEqual(self.order(), ["Task A", "Task B", "Task A",
+                                        "Task C", "Task D"])
 
     def test_several_pasted_rows_keep_their_order(self):
         """
@@ -905,18 +964,20 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         """
         self.service.copy(["A", "B"])
 
-        pasted = self.service.paste("P", after_task_id="C")
+        self.service.paste("P", after_task_id="C")
 
         self.assertEqual(self.order(),
-                         ["A", "B", "C", pasted[0], pasted[1], "D"])
+                         ["Task A", "Task B", "Task C", "Task A", "Task B",
+                          "Task D"])
 
     def test_without_an_anchor_they_land_at_the_end(self):
         """A paste from the toolbar has no row behind it."""
         self.service.copy(["A"])
 
-        pasted = self.service.paste("P")
+        self.service.paste("P")
 
-        self.assertEqual(self.order(), ["A", "B", "C", "D", pasted[0]])
+        self.assertEqual(self.order(), ["Task A", "Task B", "Task C",
+                                        "Task D", "Task A"])
 
     def test_a_row_pasted_under_the_anchor_is_left_where_it_is(self):
         """
@@ -932,12 +993,13 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         self.project.add_task(subtask)
 
         self.service.copy(["S"])
-        pasted = self.service.paste("A", after_task_id="A")
+        self.service.paste("A", after_task_id="A")
 
-        children = [task.id for task in self.project.tasks
-                    if task.parent_task_id == "A"]
+        parent = next(t for t in self.project.tasks if t.name == "Task A")
+        children = [task.name for task in self.project.tasks
+                    if task.parent_task_id == parent.id]
 
-        self.assertEqual(children, ["S", pasted[0]])
+        self.assertEqual(children, ["Subtask", "Subtask"])
 
     def test_a_cut_row_moves_to_beside_the_anchor(self):
         """The same placement applies to a move, not only to a copy."""
@@ -945,15 +1007,17 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
 
         self.service.paste("P", after_task_id="A")
 
-        self.assertEqual(self.order(), ["A", "D", "B", "C"])
+        self.assertEqual(self.order(), ["Task A", "Task D", "Task B",
+                                        "Task C"])
 
     def test_an_anchor_that_has_gone_is_ignored(self):
         """A stale row ID leaves the paste where it landed."""
         self.service.copy(["A"])
 
-        pasted = self.service.paste("P", after_task_id="nonexistent")
+        self.service.paste("P", after_task_id="nonexistent")
 
-        self.assertEqual(self.order(), ["A", "B", "C", "D", pasted[0]])
+        self.assertEqual(self.order(), ["Task A", "Task B", "Task C",
+                                        "Task D", "Task A"])
 
 
 class TestPastingIntoItself(unittest.TestCase):
@@ -1024,7 +1088,7 @@ class TestPastingIntoItself(unittest.TestCase):
         self.service.cut(["T001"])
         self.service.paste("P002")
 
-        self.assertEqual(self.task.parent_task_id, "P002")
+        self.assertEqual(self.task.parent_task_id, other.id)
 
 
 class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
@@ -1119,10 +1183,11 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         self.service.copy(["T001"])
         
         initial_count = len(self.project.tasks)
-        self.service.paste("P001")
-        
-        new_task = self.project.tasks[-1]
-        self.assertEqual(new_task.parent_task_id, "P001")
+        pasted = self.service.paste("P001")
+
+        # The copy reads inside the phase, so it is no longer the last row
+        new_task = self.project.get_task_by_id(pasted[0])
+        self.assertEqual(new_task.parent_task_id, self.phase.id)
         self.assertEqual(len(self.project.tasks), initial_count + 1)
 
 
@@ -1269,6 +1334,399 @@ class TestTheSelectionReachesTheClipboard(unittest.TestCase):
         self.project.remove_task("002")
 
         self.assertEqual(self.task_list.get_selected_task_ids(), [])
+
+
+class TestWhereAPasteLands(unittest.TestCase):
+    """
+    A paste takes the place of the row the cursor is on.
+
+    WHY THESE EXIST:
+    ================
+    A tester copied a task, selected the row below it and pressed paste. The
+    copy arrived indented underneath that row as a sub-task, which is not
+    what he had asked for and not what the reference tool does. Three routes
+    into a paste - the keyboard, the toolbar and the right-click menu - each
+    worked out the destination for themselves, and all three of them read a
+    selected row as "paste into this" rather than "paste here".
+
+    See ClipboardService.resolve_target, which is now the only thing that
+    answers the question.
+    """
+
+    def setUp(self):
+        """The plan from the tester's screenshots."""
+        self.project = Project(name="Plan")
+        self.service = ClipboardService(self.project)
+
+        base = datetime(2026, 8, 19)
+        rows = [
+            ("001", "Elokeszites", "Task", None),
+            ("002", "Kovetelmenyek", "Subtask", "001"),
+            ("003", "Design Phase", "Task", None),
+            ("004", "UI Mockups", "Subtask", "003"),
+            ("005", "Implementation", "Task", None),
+            ("006", "Design Review", "Milestone", None),
+            ("007", "Testing", "Task", None),
+            ("008", "Deployment", "Task", None),
+        ]
+        for task_id, name, task_type, parent in rows:
+            self.project.add_task(Task(
+                id=task_id, name=name, start_date=base, end_date=base,
+                task_type=task_type, parent_task_id=parent))
+
+    def names(self):
+        """Every row by name, in the order the list reads."""
+        return [task.name for task in self.project.tasks]
+
+    def test_a_copy_lands_beside_the_row_not_inside_it(self):
+        """The fault the tester hit: the copy arrived as a sub-task."""
+        self.service.copy(["007"])
+
+        pasted = self.service.paste_at("007")
+
+        self.assertIsNone(
+            self.project.get_task_by_id(pasted[0]).parent_task_id)
+
+    def test_a_copy_takes_the_place_of_the_row_it_was_pasted_at(self):
+        """As the reference tool does: the row it lands on moves down."""
+        self.service.copy(["007"])
+
+        pasted = self.service.paste_at("007")
+
+        self.assertEqual(self.names()[6:], ["Testing", "Testing",
+                                            "Deployment"])
+        self.assertEqual(self.project.display_id(pasted[0]), "007")
+
+    def test_the_numbering_stays_a_sequence(self):
+        """
+        The tester's other requirement: the rows are renumbered.
+
+        The number beside a row is where it sits, worked out rather than
+        stored - see Project.display_ids - so a paste renumbers the plan by
+        putting the row somewhere, and nothing is rewritten to do it.
+        """
+        self.service.copy(["007"])
+        self.service.paste_at("007")
+
+        self.assertEqual(
+            [self.project.display_id(task.id) for task in self.project.tasks],
+            ["001", "002", "003", "004", "005", "006", "007", "008", "009"])
+
+    def test_a_paste_at_a_subtask_stays_at_that_level(self):
+        """Beside the sub-task, under the same task - not at the top."""
+        self.service.copy(["002"])
+
+        pasted = self.service.paste_at("004")
+
+        parent = self.project.get_task_by_id(pasted[0]).parent_task_id
+        self.assertEqual(self.project.get_task_by_id(parent).name,
+                         "Design Phase")
+
+    def test_pasting_inside_is_a_separate_answer(self):
+        """What the shortcut used to do is still available, by asking."""
+        self.service.copy(["005"])
+
+        pasted = self.service.paste_at("007", inside=True)
+
+        self.assertEqual(
+            self.project.get_task_by_id(pasted[0]).parent_task_id, "007")
+
+    def test_a_paste_with_nothing_selected_is_refused(self):
+        """
+        Rather than appended at the end of the plan.
+
+        Which is what it used to do, putting the row somewhere the user was
+        not looking and had not pointed at.
+        """
+        self.service.copy(["007"])
+
+        self.assertEqual(self.service.paste_at(None), [])
+        self.assertEqual(len(self.project.tasks), 8)
+
+    def test_a_paste_into_an_empty_plan_needs_no_row(self):
+        """The one place where the end and the beginning are the same."""
+        self.service.copy(["007"])
+        self.project.tasks = []
+
+        self.assertEqual(len(self.service.paste_at(None)), 1)
+
+    def test_several_rows_keep_the_order_they_were_copied_in(self):
+        """Not reversed by each one taking the same place in turn."""
+        self.service.copy(["005", "006"])
+
+        self.service.paste_at("001")
+
+        self.assertEqual(self.names()[:2], ["Implementation",
+                                            "Design Review"])
+
+    def test_a_cut_lands_the_same_way_a_copy_does(self):
+        """One rule for both; the tester found cut no better than copy."""
+        self.service.cut(["008"])
+
+        self.service.paste_at("005")
+
+        self.assertEqual(self.names()[4], "Deployment")
+        self.assertIsNone(self.project.get_task_by_id("005").parent_task_id)
+
+
+class TestAPasteIsOneUndoStep(unittest.TestCase):
+    """
+    Undo takes back the paste, and nothing else.
+
+    WHY THESE EXIST:
+    ================
+    A paste reached the project directly and was never recorded, so the
+    history did not know it had happened. The tester pressed undo to take
+    back a paste and it deleted a phase he had created earlier - the last
+    thing the history did know about - while the pasted row stayed.
+    """
+
+    def setUp(self):
+        """Two tasks, then a phase created through the history."""
+        from gantt_app.utils.undoredo import (
+            UndoRedoManager, ProjectStateTracker,
+        )
+
+        self.project = Project(name="Plan")
+        base = datetime(2026, 8, 19)
+        for task_id, name in (("001", "Testing"), ("002", "Deployment")):
+            self.project.add_task(Task(id=task_id, name=name,
+                                       start_date=base, end_date=base,
+                                       task_type="Task"))
+
+        self.manager = UndoRedoManager()
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+        self.service = ClipboardService(self.project)
+
+        self.tracker.add_task(Task(id="003", name="Phase1", start_date=base,
+                                   end_date=base, task_type="Phase"))
+        self.before = [(t.id, t.name) for t in self.project.tasks]
+
+    def rows(self):
+        """Every row as (number, name)."""
+        return [(task.id, task.name) for task in self.project.tasks]
+
+    def paste(self):
+        """A paste recorded the way the task list records it."""
+        pasted = []
+
+        def apply():
+            """The paste itself."""
+            pasted.extend(self.service.paste_at("001"))
+            return bool(pasted)
+
+        self.tracker.run_as_command(apply, "Paste Tasks")
+        return pasted
+
+    def test_undo_takes_back_the_paste(self):
+        """Not the action before it."""
+        self.service.copy(["001"])
+        self.paste()
+
+        self.manager.undo()
+
+        self.assertEqual(self.rows(), self.before)
+
+    def test_the_phase_created_before_it_survives(self):
+        """The row the tester lost."""
+        self.service.copy(["001"])
+        self.paste()
+
+        self.manager.undo()
+
+        self.assertIn("Phase1", [name for _id, name in self.rows()])
+
+    def test_the_numbering_comes_back_with_the_rows(self):
+        """The numbers follow the rows, because they are the rows' places."""
+        self.service.copy(["001"])
+        self.paste()
+        self.assertEqual(
+            [self.project.display_id(task.id) for task in self.project.tasks],
+            ["001", "002", "003", "004"])
+
+        self.manager.undo()
+
+        self.assertEqual(self.rows(), self.before)
+        self.assertEqual(
+            [self.project.display_id(task.id) for task in self.project.tasks],
+            ["001", "002", "003"])
+
+    def test_redo_puts_it_back(self):
+        """And undo takes it away again."""
+        self.service.copy(["001"])
+        self.paste()
+        self.manager.undo()
+
+        self.manager.redo()
+        self.assertEqual(len(self.project.tasks), 4)
+
+        self.manager.undo()
+        self.assertEqual(self.rows(), self.before)
+
+    def test_a_refused_paste_leaves_no_entry_behind(self):
+        """Undo should not have to be pressed twice for nothing."""
+        self.service.copy(["001"])
+        pasted = []
+
+        def apply():
+            """A paste with nowhere to go."""
+            pasted.extend(self.service.paste_at(None))
+            return bool(pasted)
+
+        self.tracker.run_as_command(apply, "Paste Tasks")
+
+        self.manager.undo()
+
+        # The phase, not the paste, is what the one entry holds
+        self.assertNotIn("Phase1", [name for _id, name in self.rows()])
+
+
+class TestWhatReachesTheDesktopClipboard(unittest.TestCase):
+    """
+    What is copied can be written out as text.
+
+    WHY THESE EXIST:
+    ================
+    The payload was built straight from the task's attributes, so it carried
+    a TaskStyle object - which cannot be written as JSON. Writing to the
+    desktop clipboard raised for every task that had one, which is every
+    task. The failure was caught and logged, so copying went on working
+    inside the application while nothing it copied ever left it.
+    """
+
+    def setUp(self):
+        """One formatted task."""
+        from gantt_app.taskstyle import TaskStyle
+
+        self.project = Project(name="Plan")
+        self.service = ClipboardService(self.project)
+        base = datetime(2026, 8, 19)
+        task = Task(id="001", name="Testing", start_date=base, end_date=base,
+                    task_type="Task")
+        task.style = TaskStyle(bold=True)
+        self.project.add_task(task)
+
+    def test_the_payload_can_be_written_as_json(self):
+        """Which is what the desktop clipboard is given."""
+        import json
+
+        self.service.copy(["001"])
+
+        json.dumps(self.service._clipboard_text())
+
+    def test_the_formatting_comes_back_on_the_copy(self):
+        """Not lost on the way through the clipboard."""
+        self.service.copy(["001"])
+
+        pasted = self.service.paste_at("001")
+
+        self.assertTrue(self.project.get_task_by_id(pasted[0]).style.bold)
+
+
+class TestTheClipboardShortcuts(unittest.TestCase):
+    """
+    Cmd on a Mac, Ctrl everywhere else, in both letter cases.
+
+    WHY THESE EXIST:
+    ================
+    These three were the only shortcuts in the application written out by
+    hand instead of going through gantt_app.shortcuts. They bound Control as
+    well as Command on macOS, where Control+C is not copy, and they bound
+    only the lower-case letter - so all three stopped working with caps lock
+    on.
+    """
+
+    class FakeWidget:
+        """Records what is bound to it."""
+
+        def __init__(self):
+            self.bindings = {}
+
+        def bind(self, sequence, handler, add=None):
+            """Remember the sequence, as Tk would."""
+            self.bindings.setdefault(sequence, []).append(handler)
+
+        def focus_get(self):
+            """Nothing has the focus, so nothing swallows the keystroke."""
+            return None
+
+    def bind(self):
+        """Bind the clipboard shortcuts to a widget that records them."""
+        from gantt_app.utils.copypastecut import setup_keyboard_bindings
+
+        self.called = []
+        widget = self.FakeWidget()
+        setup_keyboard_bindings(
+            widget,
+            lambda: self.called.append('copy'),
+            lambda: self.called.append('cut'),
+            lambda: self.called.append('paste'),
+        )
+        return widget
+
+    def test_it_binds_this_platform_s_modifier(self):
+        """Command on a Mac, Control elsewhere."""
+        from gantt_app.shortcuts import sequences
+
+        widget = self.bind()
+
+        for key in ('c', 'x', 'v'):
+            for sequence in sequences(key):
+                self.assertIn(sequence, widget.bindings)
+
+    def test_it_binds_both_letter_cases(self):
+        """A shortcut that stops working with caps lock on is a fault."""
+        from gantt_app.shortcuts import MODIFIER
+
+        widget = self.bind()
+
+        self.assertIn(f"<{MODIFIER}-C>", widget.bindings)
+        self.assertIn(f"<{MODIFIER}-X>", widget.bindings)
+        self.assertIn(f"<{MODIFIER}-V>", widget.bindings)
+
+    def test_it_does_not_bind_control_on_a_mac(self):
+        """Control+C is not copy on macOS and never has been."""
+        from gantt_app.shortcuts import IS_MACOS
+
+        widget = self.bind()
+
+        if IS_MACOS:
+            self.assertNotIn("<Control-c>", widget.bindings)
+        else:
+            self.assertIn("<Control-c>", widget.bindings)
+
+    def test_the_handler_consumes_the_keystroke(self):
+        """
+        So a menu accelerator cannot handle the same press again.
+
+        A paste handled twice inserts the rows twice.
+        """
+        from gantt_app.shortcuts import sequences
+
+        widget = self.bind()
+        handler = widget.bindings[sequences('v')[0]][0]
+
+        self.assertEqual(handler(None), "break")
+        self.assertEqual(self.called, ['paste'])
+
+    def test_a_text_field_keeps_its_own_clipboard(self):
+        """Editing a cell means copying text, not rows."""
+        from gantt_app.shortcuts import sequences
+
+        widget = self.bind()
+
+        class Entry:
+            """Something Tk would report as an entry."""
+
+            def winfo_class(self):
+                """As ttk.Entry reports itself."""
+                return 'TEntry'
+
+        widget.focus_get = lambda: Entry()
+        handler = widget.bindings[sequences('c')[0]][0]
+
+        self.assertIsNone(handler(None))
+        self.assertEqual(self.called, [])
 
 
 if __name__ == '__main__':

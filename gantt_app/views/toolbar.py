@@ -28,6 +28,7 @@ from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.gan_exporter import export_project_to_gan
 from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
+from gantt_app.shortcuts import accelerator
 from gantt_app.shortcuts import bind_all as bind_shortcut
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.tooltip import attach as attach_tooltip
@@ -1089,9 +1090,15 @@ class Toolbar(ctk.CTkFrame):
                 'items': [
                     {"text": "Undo", "command": self.undo},
                     {"text": "Redo", "command": self.redo},
-                    {"text": "Cut", "command": self.cut_tasks},
-                    {"text": "Copy", "command": self.copy_tasks},
-                    {"text": "Paste", "command": self.paste_tasks},
+                    # The key each one answers to, written the way this
+                    # platform writes it: Cmd on a Mac, Ctrl elsewhere. See
+                    # gantt_app.shortcuts, which also binds them
+                    {"text": f"Cut  ({accelerator('X')})",
+                     "command": self.cut_tasks},
+                    {"text": f"Copy  ({accelerator('C')})",
+                     "command": self.copy_tasks},
+                    {"text": f"Paste  ({accelerator('V')})",
+                     "command": self.paste_tasks},
                 ],
             },
             {
@@ -2209,21 +2216,20 @@ class Toolbar(ctk.CTkFrame):
                 logger.info("Cut %d tasks to clipboard", len(selected_ids))
         
     def paste_tasks(self):
-        """Paste tasks from clipboard."""
-        if self.clipboard_manager and self.clipboard_manager.can_paste():
-            # Get the target container - for now, paste to root (None)
-            target_container_id = None
-            if hasattr(self.task_list, 'get_selected_task_ids'):
-                selected_ids = self.task_list.get_selected_task_ids()
-                if selected_ids:
-                    # Paste as child of selected task if one is selected
-                    target_container_id = selected_ids[0]
-            
-            self.clipboard_manager.paste(target_container_id)
-            logger.info("Pasted tasks from clipboard")
-            
-            if self.on_project_changed:
-                self.on_project_changed()
+        """
+        Paste from the clipboard at the row the cursor is on.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The task list is asked to do it rather than the clipboard directly,
+        because the paste has to be one entry in the undo history and has to
+        land in the same place it would from any other route. This used to
+        pass the selected row as the container, so a paste from the toolbar
+        nested the copy inside the selected task as a sub-task.
+        """
+        if hasattr(self.task_list, 'paste_tasks'):
+            self.task_list.paste_tasks()
+            logger.info("Pasted from the toolbar")
         
     def set_task_list(self, task_list):
         """

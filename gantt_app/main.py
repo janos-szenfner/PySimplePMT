@@ -409,7 +409,8 @@ class GanttApp(ctk.CTk):
             on_task_edit=self.edit_task,
             on_project_changed=self.update_all,
             project_tracker=self.project_tracker,
-            clipboard_manager=self.clipboard_manager
+            clipboard_manager=self.clipboard_manager,
+            on_status=self._show_status,
         )
         self.content_panes.add(self.task_list, weight=2)
         
@@ -470,46 +471,54 @@ class GanttApp(ctk.CTk):
 
     def _setup_clipboard_bindings(self):
         """
-        Set up keyboard bindings for copy, cut, and paste operations.
-        
+        Bind the clipboard shortcuts to the task list's own actions.
+
         DEVELOPMENT NOTES:
         ------------------
-        This sets up Ctrl/Cmd+C, Ctrl/Cmd+X, and Ctrl/Cmd+V keyboard shortcuts
-        for copy, cut, and paste operations on tasks.
+        The shortcuts do exactly what the toolbar and the right-click menu
+        do, by calling the same methods, so the three cannot drift apart.
+        They used to reach the clipboard service directly and work out for
+        themselves where a paste should land, which is how pressing the
+        shortcut came to nest the copy inside the selected task while the
+        menu put it beside that task.
+
+        Which modifier this binds - Command on a Mac, Control elsewhere -
+        is settled by gantt_app.shortcuts; see setup_keyboard_bindings.
         """
-        def get_selected_ids():
-            """Get currently selected task IDs from the task list."""
-            if hasattr(self, 'task_list') and self.task_list:
-                selection = self.task_list.tree.selection()
-                return list(selection) if selection else []
-            return []
-        
-        def get_target_container():
-            """
-            Get the target container ID for paste operations.
-            
-            For now, this returns None (root level) as the default.
-            In a more sophisticated implementation, this could determine
-            the container based on the current focus or selection context.
-            """
-            # Check if there's a selected task that can be a container
-            selected_ids = get_selected_ids()
-            if selected_ids:
-                first_task = self.project.get_task_by_id(selected_ids[0])
-                if first_task and first_task.can_have_children:
-                    return first_task.id
-            return None
-        
-        def on_clipboard_change():
-            """Callback when clipboard state changes."""
-            # Update the UI to reflect clipboard state changes
-            self.update_all()
-        
-        # Set up the keyboard bindings
-        setup_keyboard_bindings(
-            self, self.clipboard_manager,
-            get_selected_ids, get_target_container, on_clipboard_change
-        )
+        def on_copy():
+            """Copy the selected rows."""
+            if not self._task_list_ready():
+                return
+            selected = self.task_list.get_selected_task_ids()
+            if selected:
+                self.task_list.copy_tasks(selected)
+
+        def on_cut():
+            """Cut the selected rows."""
+            if not self._task_list_ready():
+                return
+            selected = self.task_list.get_selected_task_ids()
+            if selected:
+                self.task_list.cut_tasks(selected)
+
+        def on_paste():
+            """Paste at the row the cursor is on."""
+            if not self._task_list_ready():
+                return
+            self.task_list.paste_tasks()
+
+        setup_keyboard_bindings(self, on_copy, on_cut, on_paste)
+
+    def _task_list_ready(self) -> bool:
+        """Whether there is a task list for a shortcut to act on."""
+        return bool(getattr(self, 'task_list', None))
+
+    def _show_status(self, message: str):
+        """Put a line from the task list into the status bar."""
+        try:
+            self.status_bar.configure(text=message)
+        except (AttributeError, tk.TclError):
+            logger.debug("No status bar to show %r on", message)
 
     def _set_initial_sash(self):
         """Put the divider at a sensible starting position."""

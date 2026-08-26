@@ -947,6 +947,7 @@ class TestContextMenu(TaskListTestCase):
                                   "Indent", "Outdent",
                                   "Create", "Edit", "Delete",
                                   "Copy", "Cut", "Paste",
+                                  "Paste as Sub-Task",
                                   "Undo", "Redo"])
 
     def test_undo_and_redo_come_last(self):

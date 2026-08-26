@@ -421,14 +421,26 @@ class TaskContextMenu:
             command=lambda: self._invoke_cut(selected_ids),
         )
         
-        # For paste, check if we can paste into the clicked task (as container) or root
-        target_container_id = task_id if (has_task and self._can_accept_paste(task_id)) else None
-        can_paste = (self._can_paste and self._can_paste(target_container_id)) if self._can_paste else False
-        
+        # A paste takes the place of the clicked row, at its own level.
+        # Putting the rows inside it is the separate entry below, which says
+        # so - see ClipboardService.resolve_target.
+        anchor_id = task_id if has_task else None
+        can_paste = (self._can_paste and self._can_paste(anchor_id)) if self._can_paste else False
+        can_paste_inside = (
+            has_task and self._can_accept_paste(task_id)
+            and self._can_paste and self._can_paste(task_id, True)
+        ) if self._can_paste else False
+
         menu.add_command(
             label="Paste",
             state=tk.NORMAL if (can_paste and self._on_paste) else tk.DISABLED,
-            command=lambda: self._invoke_paste(target_container_id, task_id),
+            command=lambda: self._invoke_paste(anchor_id),
+        )
+        menu.add_command(
+            label="Paste as Sub-Task",
+            state=tk.NORMAL if (can_paste_inside and self._on_paste)
+            else tk.DISABLED,
+            command=lambda: self._invoke_paste(task_id, True),
         )
 
         menu.add_separator()
@@ -589,27 +601,26 @@ class TaskContextMenu:
         except Exception:
             logger.exception("Could not cut tasks %s", selected_ids)
 
-    def _invoke_paste(self, target_container_id, anchor_id=None):
+    def _invoke_paste(self, focused_id, inside=False):
         """
-        Paste from the clipboard into the target container.
+        Paste from the clipboard at the row the menu was opened over.
 
         PARAMETERS:
         -----------
-        target_container_id : Optional[str]
-            The row the pasted items go under, or None for the top level.
-        anchor_id : Optional[str]
-            The row the menu was opened over. Rows that land beside it are
-            placed after it rather than at the end of the branch, which is
-            what Create already does from this menu.
+        focused_id : Optional[str]
+            The row the menu was opened over, or None for empty space.
+        inside : bool
+            True for "Paste as Sub-Task", which puts the rows underneath
+            that row instead of in its place.
         """
         if not self._on_paste:
             return
-        logger.info("Context menu: paste to container %s, after %s",
-                    target_container_id, anchor_id)
+        logger.info("Context menu: paste at %s, %s", focused_id,
+                    "inside it" if inside else "beside it")
         try:
-            self._on_paste(target_container_id, anchor_id)
+            self._on_paste(focused_id, inside)
         except Exception:
-            logger.exception("Could not paste to container %s", target_container_id)
+            logger.exception("Could not paste at %s", focused_id)
 
     def _can_accept_paste(self, task_id: str) -> bool:
         """

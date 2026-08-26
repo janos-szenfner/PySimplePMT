@@ -435,6 +435,94 @@ class ReorderTasksCommand(Command):
 
 
 @dataclass
+class SnapshotCommand(Command):
+    """
+    Command that records whatever one action did to the task list.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project the action changes.
+    apply : Callable[[], bool]
+        The action itself. Run once, by execute; it returns False when it
+        turned out to change nothing, and the command is then discarded
+        rather than left on the history as an entry that undoes nothing.
+    label : str
+        What to call the change in the undo history.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The other commands each know the shape of their own edit - one task
+    added, one moved, one property changed. A paste has no such shape: it
+    adds rows, re-parents them, positions them among their new siblings,
+    rewrites their links and renumbers every ID in the plan. Spelling that
+    out as a CompoundCommand of smaller commands means keeping the two
+    descriptions of one operation in step forever.
+
+    So this records the state instead of the steps: what every row was
+    before, and what every row is after. Undo puts the first back, redo puts
+    the second back, and neither needs to know what the action did.
+
+    Both snapshots hold the live Task objects rather than copies, so a row
+    that survives the action is the same object throughout and keeps
+    whatever else points at it. What is copied is the part the clipboard
+    rewrites - ID, parent, type and links - because those are set on the
+    objects themselves and restoring an ordering alone would leave them as
+    the paste left them. That is the same reason RestructureTasksCommand
+    captures parents rather than order alone; this one adds the ID, which
+    renumbering changes and nothing else in the history does.
+    """
+    project: Project
+    apply: Callable[[], bool]
+    label: str = "Change Tasks"
+    name: str = field(default="", init=False)
+    _before: Optional[list] = field(default=None, init=False, repr=False)
+    _after: Optional[list] = field(default=None, init=False, repr=False)
+
+    def __post_init__(self):
+        self.name = self.label
+
+    def execute(self) -> bool:
+        """Run the action the first time; put its result back on a redo."""
+        if self._after is not None:
+            self._restore(self._after)
+            return True
+
+        before = self._snapshot()
+        if not self.apply():
+            return False
+
+        self._before = before
+        self._after = self._snapshot()
+        return True
+
+    def undo(self) -> bool:
+        """Put the task list back as it was before the action."""
+        if self._before is None:
+            return False
+        self._restore(self._before)
+        return True
+
+    def _snapshot(self) -> list:
+        """Every row, and the parts of it this kind of action rewrites."""
+        return [
+            (task, task.id, task.parent_task_id, task.task_type,
+             [copy.copy(link) for link in task.dependencies])
+            for task in self.project.tasks
+        ]
+
+    def _restore(self, snapshot: list) -> None:
+        """Put back a snapshot taken by _snapshot."""
+        self.project.tasks = [row[0] for row in snapshot]
+        for task, task_id, parent_id, task_type, links in snapshot:
+            task.id = task_id
+            task.parent_task_id = parent_id
+            task.task_type = task_type
+            task.dependencies = [copy.copy(link) for link in links]
+        self.project._update_dates()
+
+
+@dataclass
 class CompoundCommand(Command):
     """
     A command that combines multiple commands into one.
@@ -837,6 +925,28 @@ def create_update_project_name_command(project: Project, old_name: str, new_name
     return UpdateProjectNameCommand(project=project, old_name=old_name, new_name=new_name)
 
 
+def create_snapshot_command(project: Project, apply: Callable[[], bool],
+                            label: str = "Change Tasks") -> SnapshotCommand:
+    """
+    Create a command that records whatever an action did to the task list.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project the action changes.
+    apply : Callable[[], bool]
+        The action. Returns False when it changed nothing.
+    label : str
+        What to call it in the undo history.
+
+    RETURNS:
+    --------
+    SnapshotCommand
+        The command, not yet executed.
+    """
+    return SnapshotCommand(project, apply, label)
+
+
 def create_compound_command(commands: List[Command], name: str = "Compound Command") -> CompoundCommand:
     """
     Create a compound command from multiple commands.
@@ -1052,6 +1162,33 @@ class ProjectStateTracker:
             return False
 
         return self.manager.execute(create_compound_command(commands, label))
+
+    def run_as_command(self, apply: Callable[[], bool],
+                       label: str = "Change Tasks") -> bool:
+        """
+        Run an action that rewrites the task list, as one undoable step.
+
+        PARAMETERS:
+        -----------
+        apply : Callable[[], bool]
+            The action. Returns False when it changed nothing, in which case
+            nothing is added to the history.
+        label : str
+            What to call the change in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            What apply returned: True when the action did something.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        For actions too broad to describe as a list of smaller commands -
+        a paste, a cut, a renumbering - where the state before and after is
+        the only honest description. See SnapshotCommand.
+        """
+        return self.manager.execute(
+            create_snapshot_command(self.project, apply, label))
 
     def restructure_tasks(self, old_snapshot, new_snapshot,
                           label: str = "Restructure Tasks") -> bool:

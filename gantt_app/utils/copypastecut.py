@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 import copy
 import json
 
+from gantt_app.shortcuts import bind_all
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -220,8 +221,111 @@ class ClipboardService:
         
         self._write_to_system_clipboard()
     
+    def resolve_target(self, focused_id: Optional[str],
+                       inside: bool = False) -> tuple:
+        """
+        Where a paste asked for from a row should land.
+
+        PARAMETERS:
+        -----------
+        focused_id : Optional[str]
+            The row the cursor is on. None when nothing is selected.
+        inside : bool
+            True for the explicit "paste as sub-task" action, which puts the
+            rows underneath the focused row instead of beside it.
+
+        RETURNS:
+        --------
+        tuple
+            (container_id, before_id): the row the pasted items go under,
+            and the row they go in front of. Either may be None - the first
+            for the top level, the second to land at the end of the branch.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The one place that answers "where does a paste go". Three routes ask
+        it - the keyboard, the toolbar and the right-click menu - and each
+        of them used to work it out for itself, in three different ways.
+        Selecting a task and pressing the shortcut nested the copy inside it
+        as a sub-task; the same paste from the toolbar did the same; the
+        menu put it beside the row. None of that was intended by anybody.
+
+        The rule is the one the reference tool uses: a paste takes the
+        position of the row the cursor is on, at that row's own level, and
+        pushes that row and everything below it down. A row is where you
+        stand, not what you paste into - putting things inside a row is a
+        separate action that says so.
+        """
+        if not focused_id:
+            return (None, None)
+
+        task = self._get_task_by_id(focused_id)
+        if task is None:
+            return (None, None)
+
+        if inside:
+            return (focused_id, None)
+
+        return (task.parent_task_id, focused_id)
+
+    def paste_at(self, focused_id: Optional[str] = None,
+                 inside: bool = False) -> List[str]:
+        """
+        Paste from the clipboard at the row the cursor is on.
+
+        PARAMETERS:
+        -----------
+        focused_id : Optional[str]
+            The row the cursor is on. None when nothing is selected.
+        inside : bool
+            True to paste underneath the focused row rather than beside it.
+
+        RETURNS:
+        --------
+        List[str]
+            The IDs of the rows that arrived, empty when nothing was pasted.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A paste with nothing selected is refused rather than guessed at. It
+        used to append at the end of the plan, which put the row somewhere
+        the user was not looking and had not asked for. The one exception is
+        a plan with no rows at all, where the end and the beginning are the
+        same place and there is nothing to be surprised by.
+        """
+        if not focused_id and self.project and self.project.tasks:
+            logger.info("Paste refused: no row is selected to paste at")
+            return []
+
+        container_id, before_id = self.resolve_target(focused_id, inside)
+        return self.paste(container_id, before_task_id=before_id)
+
+    def can_paste_at(self, focused_id: Optional[str] = None,
+                     inside: bool = False) -> bool:
+        """
+        Whether a paste at the row the cursor is on would be accepted.
+
+        PARAMETERS:
+        -----------
+        focused_id : Optional[str]
+            The row the cursor is on.
+        inside : bool
+            True for the "paste as sub-task" action.
+
+        RETURNS:
+        --------
+        bool
+            True when the menu entry should be live.
+        """
+        if not focused_id and self.project and self.project.tasks:
+            return False
+
+        container_id, _before_id = self.resolve_target(focused_id, inside)
+        return self.can_paste(container_id)
+
     def paste(self, target_container_id: Optional[str] = None,
-              after_task_id: Optional[str] = None) -> List[str]:
+              after_task_id: Optional[str] = None,
+              before_task_id: Optional[str] = None) -> List[str]:
         """
         Paste items from the clipboard to the target container.
         
@@ -230,6 +334,9 @@ class ClipboardService:
             after_task_id: The row the paste was asked for from. Rows that
                 land beside it are placed directly after it rather than at
                 the end of the branch - see _place_after.
+            before_task_id: The row the pasted items should take the place
+                of, pushing it down - see _place_before. This is what a
+                paste from the task list uses; see resolve_target.
         
         Process:
             1. Retrieve payload from in-memory store (or fallback to system clipboard).
@@ -249,7 +356,13 @@ class ClipboardService:
             logger.info("Paste did nothing: the clipboard is empty")
             return []
 
-        entity_types = [item.type for item in payload.items]
+        # Only the rows that actually land in the target are judged against
+        # it. A row whose parent was copied too lands under that parent's
+        # copy, wherever that ends up, so a sub-task copied along with its
+        # task is no reason to refuse the paste - see _rewire
+        selected = {item.id for item in payload.items}
+        entity_types = [item.type for item in payload.items
+                        if item.payload.get('parent_task_id') not in selected]
         if not self._can_accept_types(target_container_id, entity_types):
             logger.info("Refused to paste %s into %s: it does not belong there",
                         entity_types, target_container_id or "the top level")
@@ -276,7 +389,10 @@ class ClipboardService:
                          payload.operation)
             return []
 
-        self._place_after(pasted, after_task_id)
+        if before_task_id:
+            self._place_before(pasted, before_task_id)
+        else:
+            self._place_after(pasted, after_task_id)
 
         logger.info("Pasted %s", pasted)
         return pasted
@@ -297,26 +413,82 @@ class ClipboardService:
         The new tasks are numbered from the project's own sequence rather
         than given a UUID. The ID is a column in the task list, and a plan
         that reads 001, 002, 4f3c8a91-... in the same table does not.
+
+        A copy keeps the name it was copied from. It used to be given a
+        "(Copy)" suffix, but only when it landed in the container it came
+        from, so the same paste produced two different names depending on
+        where it was aimed - and a name the user then had to edit on every
+        row they had duplicated on purpose. The reference tool does not
+        rename what it pastes either.
+
+        What was copied together stays together. A link or a parentage
+        pointing at another row in the same selection is re-pointed at that
+        row's copy, so copying two tasks that run one after the other gives
+        two copies that run one after the other. One pointing outside the
+        selection is dropped: the copy would otherwise be wired into the
+        plan the moment it appeared, waiting on work the user did not copy
+        and never said it depended on.
         """
         if not self.project:
             return []
 
         new_tasks = []
+        mapping = {}
         for item in payload.items:
             new_task_data = copy.deepcopy(item.payload)
             new_task_data['id'] = self._next_id(new_tasks)
             new_task_data['parent_task_id'] = target_container_id
-            
-            if payload.source_container_id == target_container_id:
-                name = new_task_data.get('name', 'Untitled')
-                new_task_data['name'] = f"{name} (Copy)"
-            
+
             new_task = self._dict_to_task(new_task_data)
+            mapping[item.id] = new_task.id
             new_tasks.append(new_task)
-        
+
+        for item, new_task in zip(payload.items, new_tasks):
+            self._rewire(item, new_task, mapping)
+
         for task in new_tasks:
             self.project.add_task(task)
         return [task.id for task in new_tasks]
+
+    def _rewire(self, item: ClipboardItem, new_task: 'Task',
+                mapping: Dict[str, str]) -> None:
+        """
+        Point a copy's parentage and links at the rest of its own selection.
+
+        PARAMETERS:
+        -----------
+        item : ClipboardItem
+            What was copied, still carrying the original's parent and links.
+        new_task : Task
+            The copy, to be re-pointed.
+        mapping : Dict[str, str]
+            The ID each copied row was given, by the ID it was copied from.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Copying a parent and its child together used to produce two rows
+        side by side: every copy was given the paste target as its parent,
+        so the child came out at the same level as the parent it belongs
+        to. A parent that was itself copied is the copy's parent instead.
+
+        Links are the same question and get the same answer, one level
+        down. A predecessor that was copied too becomes the copy of that
+        predecessor; a predecessor that was not is dropped rather than left
+        pointing into the plan the copy came from.
+        """
+        original_parent = item.payload.get('parent_task_id')
+        if original_parent in mapping:
+            new_task.parent_task_id = mapping[original_parent]
+
+        kept = []
+        for link in new_task.dependencies:
+            if link.task_id in mapping:
+                link.task_id = mapping[link.task_id]
+                kept.append(link)
+            else:
+                logger.debug("Dropped %s's link to %s: it was not copied",
+                             new_task.id, link.task_id)
+        new_task.dependencies = kept
     
     def _paste_cut(self, payload: ClipboardPayload,
                    target_container_id: Optional[str]) -> List[str]:
@@ -498,7 +670,7 @@ class ClipboardService:
         if self.project:
             return self.project.get_task_by_id(task_id)
         return None
-    
+
     def _get_entity_type(self, task: 'Task') -> str:
         """Get the entity type from a Task object."""
         return task.task_type.lower()
@@ -548,6 +720,46 @@ class ClipboardService:
             if self.project.move_task_before(task_id, anchor.id):
                 self.project.move_task(task_id, 'down')
                 anchor = task
+
+    def _place_before(self, pasted: List[str],
+                      anchor_id: Optional[str]) -> None:
+        """
+        Put the pasted rows where the anchor is, pushing it down.
+
+        PARAMETERS:
+        -----------
+        pasted : List[str]
+            The rows that arrived, in the order they should read.
+        anchor_id : Optional[str]
+            The row the cursor was on. The pasted rows take its position.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is what a paste from the task list does, and it is the
+        reference tool's behaviour: the rows appear where you were standing
+        and the row you were standing on moves down to make room.
+
+        The anchor does not walk forward as _place_after's does. Each row is
+        moved in front of the same anchor, and because the previous one is
+        now in front of it too, they come to rest in the order they were
+        copied.
+
+        Only rows that end up as siblings of the anchor are moved. A
+        sub-task pasted into the row above it is already a child, and a
+        child does not have a position among its parent's siblings to take.
+        """
+        if not anchor_id or not pasted:
+            return
+
+        anchor = self._get_task_by_id(anchor_id)
+        if anchor is None:
+            return
+
+        for task_id in pasted:
+            task = self._get_task_by_id(task_id)
+            if task is None or task.parent_task_id != anchor.parent_task_id:
+                continue
+            self.project.move_task_before(task_id, anchor.id)
 
     def _next_id(self, pending: List['Task']) -> str:
         """
@@ -655,10 +867,20 @@ class ClipboardService:
                 task_dict[key] = value.isoformat() if value else None
             elif key == 'dependencies':
                 task_dict[key] = [
-                    {'task_id': dep.task_id, 'dep_type': dep.dep_type, 
-                     'hardness': dep.hardness, 'lag': dep.lag}
+                    {'task_id': dep.task_id, 'dep_type': dep.dep_type,
+                     'hardness': dep.hardness, 'lag': dep.lag,
+                     'lag_unit': dep.lag_unit}
                     for dep in value
                 ]
+            elif key == 'style':
+                # As a dictionary, like everything else here. A TaskStyle
+                # object cannot be written as JSON, and writing the payload
+                # to the desktop clipboard raised every single time a task
+                # carried one - which every task does. The failure was
+                # caught and logged, so copying went on working inside the
+                # application while nothing it copied ever reached the
+                # desktop clipboard; see _write_to_system_clipboard
+                task_dict[key] = value.to_dict() if value else None
             else:
                 task_dict[key] = value
         return task_dict
@@ -675,6 +897,10 @@ class ClipboardService:
         if 'earliest_begin' in task_dict and task_dict['earliest_begin']:
             task_dict['earliest_begin'] = datetime.fromisoformat(task_dict['earliest_begin'])
         
+        if 'style' in task_dict:
+            from gantt_app.taskstyle import TaskStyle
+            task_dict['style'] = TaskStyle.from_any(task_dict['style'])
+
         if 'dependencies' in task_dict:
             deps = []
             for dep_dict in task_dict['dependencies']:
@@ -754,9 +980,26 @@ class ClipboardManager:
         self.service.cut(selected_ids)
     
     def paste(self, target_container_id: Optional[str] = None,
-              after_task_id: Optional[str] = None) -> List[str]:
+              after_task_id: Optional[str] = None,
+              before_task_id: Optional[str] = None) -> List[str]:
         """Paste from the clipboard, and say which rows arrived."""
-        return self.service.paste(target_container_id, after_task_id)
+        return self.service.paste(target_container_id, after_task_id,
+                                  before_task_id)
+
+    def paste_at(self, focused_id: Optional[str] = None,
+                 inside: bool = False) -> List[str]:
+        """Paste at the row the cursor is on; see ClipboardService.paste_at."""
+        return self.service.paste_at(focused_id, inside)
+
+    def can_paste_at(self, focused_id: Optional[str] = None,
+                     inside: bool = False) -> bool:
+        """Whether a paste at that row would be accepted."""
+        return self.service.can_paste_at(focused_id, inside)
+
+    def resolve_target(self, focused_id: Optional[str],
+                       inside: bool = False) -> tuple:
+        """Where a paste asked for from a row would land."""
+        return self.service.resolve_target(focused_id, inside)
     
     def clear(self) -> None:
         """Clear the clipboard."""
@@ -775,60 +1018,60 @@ class ClipboardManager:
         return self.service.can_copy_or_cut(selected_ids)
 
 
-def setup_keyboard_bindings(root: Any, clipboard_manager: ClipboardManager, 
-                            get_selected_ids: callable, 
-                            get_target_container: callable,
-                            on_clipboard_change: callable = None) -> None:
+#: Widget classes that handle the clipboard themselves. A shortcut pressed
+#: while one of these has the focus is left alone: the user is editing text
+#: in a cell or a dialog field and means to copy the text, not the row.
+TEXT_ENTRY_CLASSES = ('Entry', 'TEntry', 'Text', 'Spinbox', 'TSpinbox',
+                      'TCombobox')
+
+
+def setup_keyboard_bindings(root: Any, on_copy: callable, on_cut: callable,
+                            on_paste: callable) -> None:
     """
-    Set up keyboard shortcut bindings for copy, cut, and paste.
-    
-    Args:
-        root: The root Tk window
-        clipboard_manager: The ClipboardManager instance
-        get_selected_ids: Function that returns the currently selected task IDs
-        get_target_container: Function that returns the target container ID for paste
-        on_clipboard_change: Optional callback when clipboard state changes
+    Bind the clipboard shortcuts for this platform.
+
+    PARAMETERS:
+    -----------
+    root : tkinter widget
+        The window to bind on, so the shortcuts work wherever the focus is.
+    on_copy, on_cut, on_paste : callable
+        Called with no arguments when the shortcut fires.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Through gantt_app.shortcuts, like every other shortcut in the
+    application, rather than with sequences written out here. What was
+    written out here was wrong in three ways at once: it bound Control as
+    well as Command on macOS, where Control+C is not copy and never has
+    been; it bound only the lower-case letter, so every one of these
+    shortcuts stopped working with caps lock on, which is exactly the fault
+    shortcuts.sequences exists to prevent; and it then re-tested the
+    modifier bits of the event by hand, which the binding had already
+    guaranteed and which spells the modifiers differently on each platform.
+
+    The handlers return 'break'. Without it the key carries on to whatever
+    else is listening - a menu accelerator, most of all - and a paste that
+    is handled twice inserts the rows twice.
     """
-    def handle_key_press(event: Any) -> None:
-        """Handle keyboard shortcuts."""
-        focused = root.focus_get()
-        if focused and hasattr(focused, 'winfo_class'):
-            widget_class = focused.winfo_class()
-            if widget_class in ('Entry', 'Text', 'Spinbox', 'TEntry'):
-                return
-        
-        ctrl_pressed = (event.state & 0x4) != 0
-        cmd_pressed = (event.state & 0x8) != 0
-        
-        if not (ctrl_pressed or cmd_pressed):
-            return
-        
-        key = event.keysym.lower()
-        
-        if key == 'c':
-            selected_ids = get_selected_ids()
-            if clipboard_manager.can_copy_or_cut(selected_ids):
-                clipboard_manager.copy(selected_ids)
-                if on_clipboard_change:
-                    on_clipboard_change()
-        
-        elif key == 'x':
-            selected_ids = get_selected_ids()
-            if clipboard_manager.can_copy_or_cut(selected_ids):
-                clipboard_manager.cut(selected_ids)
-                if on_clipboard_change:
-                    on_clipboard_change()
-        
-        elif key == 'v':
-            target_container_id = get_target_container()
-            if clipboard_manager.can_paste(target_container_id):
-                clipboard_manager.paste(target_container_id)
-                if on_clipboard_change:
-                    on_clipboard_change()
-    
-    root.bind('<Control-Key-c>', handle_key_press, add='+')
-    root.bind('<Control-Key-x>', handle_key_press, add='+')
-    root.bind('<Control-Key-v>', handle_key_press, add='+')
-    root.bind('<Command-Key-c>', handle_key_press, add='+')
-    root.bind('<Command-Key-x>', handle_key_press, add='+')
-    root.bind('<Command-Key-v>', handle_key_press, add='+')
+    def guarded(action: callable):
+        """Run action, unless a text field wants the keystroke instead."""
+        def handler(event: Any):
+            try:
+                focused = root.focus_get()
+            except Exception:
+                focused = None
+
+            if focused is not None:
+                try:
+                    if focused.winfo_class() in TEXT_ENTRY_CLASSES:
+                        return None
+                except Exception:
+                    pass
+
+            action()
+            return "break"
+        return handler
+
+    bind_all(root, 'c', guarded(on_copy))
+    bind_all(root, 'x', guarded(on_cut))
+    bind_all(root, 'v', guarded(on_paste))

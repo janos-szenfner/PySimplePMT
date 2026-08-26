@@ -54,7 +54,7 @@ This is a complete implementation of a project management tool with:
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
-- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Ctrl/Cmd+C, X and V. Copying a phase copies the phase row, not the work underneath it; cut rows are greyed until they are pasted, and what arrives lands beside the row you pasted from and is left selected. Paste is offered only where the item belongs - a phase does not go inside a task. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
+- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a phase copies the phase row, not the work underneath it, but a task copied together with its sub-tasks keeps them, and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. A paste with nothing selected is refused and says so rather than dropping the row at the end of the plan. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
@@ -612,7 +612,7 @@ cannot pull its parent outside it either.
 
 ### Task List View (`views/task_list.py`)
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
-- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Deliverable, Task, Subtask, Milestone), Edit and Delete, Copy, Cut and Paste, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
+- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Deliverable, Task, Subtask, Milestone), Edit and Delete, Copy, Cut, Paste and Paste as Sub-Task, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
 - **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. It keeps its own type wherever the new parent can hold it - a `Task` indented under a `Deliverable` stays a `Task` - and only takes a new one where the old is not a level that parent can hold; see *The Levels, and Moving Between Them* above. **Both act on every selected row**, as Copy and Cut do, and land them side by side rather than in a staircase: indent runs top to bottom so each row goes under the same sibling, outdent runs bottom to top so the rows keep their order. Selecting a parent and its children moves the branch once, not twice. A branch moves as a whole, one press is one undo, and the moved rows stay selected
 - **EditTaskDialog** (`views/taskdialogs.py`): The task form over an existing task. Buttons read Help and Delete (set apart), then Close, Save & Close, Save & New
@@ -663,18 +663,39 @@ under everything else.
 
 ### Copy, Cut and Paste (`utils/copypastecut.py`)
 - **Acts on the selection**: from the right-click menu, the Edit menu, or
-  Ctrl/Cmd+C, X and V. Shortcuts stand aside while the focus is in a text box,
-  so editing text behaves normally
+  Cmd/Ctrl+C, X and V - the modifier is the platform's; see
+  `gantt_app.shortcuts`. Shortcuts stand aside while the focus is in a text
+  box, so editing text behaves normally
+- **One answer to where a paste goes**: `ClipboardService.resolve_target`.
+  Three routes ask - the keyboard, the toolbar and the right-click menu - and
+  each of them used to work it out for itself, in three different ways, so the
+  same paste landed in three different places. A paste **takes the position of
+  the row the cursor is on, at that row's own level**, and pushes that row
+  down, which is what the reference tool does
+- **Inside is a separate action**: `Paste as Sub-Task` on the right-click menu.
+  A row is where you stand, not what you paste into
+- **Refused rather than guessed at**: a paste with nothing selected used to
+  append at the end of the plan, putting the row somewhere the user was not
+  looking. It now says what is wrong in the status bar, as does a paste into a
+  level that cannot hold it
 - **What is selected is what is copied**: copying a phase copies the phase row.
-  The work under it is not brought along and is not duplicated
+  The work under it is not brought along and is not duplicated - but a
+  sub-task copied *with* its own task lands under that task's copy
+- **Links follow what was copied**: a dependency between two rows in the same
+  selection is re-pointed at their copies; one pointing outside the selection
+  is dropped, rather than wiring the new row into the plan the moment it
+  appears. A cut keeps its links, having moved rather than been remade
 - **Held to the levels of the plan**: a phase belongs at the top, a deliverable
   in a phase, a sub-task in a task. Paste is greyed out where an item does not
-  belong, and a selection with one item that does not fit is refused whole
-- **Lands where it was asked for**: pasted rows go directly after the row the
-  menu was opened over, and are left selected. Pasting a task inside itself is
-  refused
-- **Numbered like the rest**: a pasted copy takes the next ID in the project's
-  own sequence
+  belong, and a selection with one item that does not fit is refused whole.
+  Pasting a task inside itself is refused
+- **One step in the undo history**: the paste is recorded as what the task list
+  looked like before it and after it - see `SnapshotCommand`. It used to reach
+  the project directly and be recorded as nothing at all, so undo reached past
+  it to whatever the user had done before, deleting a row they had made
+  earlier while the pasted one stayed
+- **Numbered like the rest**: nothing is renumbered, because the number beside
+  a row is where it sits; see `Project.display_ids`
 - **Reaches the desktop clipboard**: through Tk's own, so it needs no extra
   package. What is written is a readable list of what was copied, then a
   marker, then the same thing as JSON - so it pastes into a mail as text and
@@ -716,7 +737,9 @@ on any desktop does:
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
 - **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
   Project Title, Calendar Settings, and Critical Path
-- **Edit**: Undo, Redo, Cut, Copy, Paste
+- **Edit**: Undo, Redo, Cut, Copy, Paste - the clipboard three carry the key
+  they answer to, written the way this platform writes it (`⌘X` on a Mac,
+  `Ctrl+X` elsewhere)
 - **View**: Toggle Theme, Settings
 - **Log**: Opens the application log window, at the end of the row
 
@@ -1585,12 +1608,17 @@ pysimplepmt --log-file      # print the log file path
    - Help opens a reference on what each field means
 
 7. **Copy, Cut and Paste**
-   - From a row's right-click menu, the Edit menu, or Ctrl/Cmd+C, X and V
+   - From a row's right-click menu, the Edit menu, or Cmd/Ctrl+C, X and V
    - Acts on every row selected, and copies only those rows - copying a phase
-     does not duplicate the work under it
-   - Pasted rows land after the row the menu was opened over, and stay selected
+     does not duplicate the work under it, though a task copied with its
+     sub-tasks keeps them
+   - What you paste takes the place of the row the cursor is on and pushes it
+     down; the pasted rows are left selected
+   - **Paste as Sub-Task** on the right-click menu puts them inside that row
+     instead
    - Paste is offered only where the item belongs: a phase does not go inside
-     a task
+     a task, and a paste that cannot land says why in the status bar
+   - One press of Undo takes the whole paste back
 
 8. **Save Project**
    - Choose **Project -> Save Project...** or the save icon
@@ -2002,7 +2030,7 @@ Unit tests cover:
 - ✅ **Utilities**: Project utilities, validation, edge cases
 - ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, and the whole cascade from a ticked sub-task to the phase above it
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
-- ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, where pasted rows land, that a task cannot be pasted inside itself, and that the selection reaches the clipboard at all
+- ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Row Formatting**: What a default style serialises to, that a summary can be un-bolded on purpose and comes back bold when cleared, that an ordinary edit does not strip a row's formatting or its calendar, and that rows formatted alike share one tag

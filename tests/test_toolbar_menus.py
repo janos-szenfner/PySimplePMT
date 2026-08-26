@@ -162,9 +162,19 @@ class TestMenuContents(unittest.TestCase):
                           'Always Night (dark)'])
 
     def test_edit_menu(self):
-        """Undo, Redo, Cut, Copy, and Paste are available under Edit."""
+        """
+        Undo, Redo, Cut, Copy, and Paste are available under Edit.
+
+        The clipboard entries name the key they answer to, in this
+        platform's notation - see gantt_app.shortcuts.
+        """
+        from gantt_app.shortcuts import accelerator
+
         self.assertEqual(labels(find(self.tree, 'Edit')['items']),
-                         ['Undo', 'Redo', 'Cut', 'Copy', 'Paste'])
+                         ['Undo', 'Redo',
+                          f"Cut  ({accelerator('X')})",
+                          f"Copy  ({accelerator('C')})",
+                          f"Paste  ({accelerator('V')})"])
 
 
 class TestMenuCommands(unittest.TestCase):

@@ -184,9 +184,16 @@ class TestMenuStructure(unittest.TestCase):
         
         edit_items = [item['text'] for item in edit_menu['items']]
         
-        self.assertIn('Cut', edit_items, "Cut not found in Edit menu")
-        self.assertIn('Copy', edit_items, "Copy not found in Edit menu")
-        self.assertIn('Paste', edit_items, "Paste not found in Edit menu")
+        # The clipboard entries carry the key they answer to; see
+        # gantt_app.shortcuts
+        self.assertTrue(any(label.startswith('Cut') for label in edit_items),
+                        "Cut not found in Edit menu")
+        self.assertTrue(any(entry.startswith('Copy')
+                            for entry in edit_items),
+                        "Copy not found in Edit menu")
+        self.assertTrue(any(entry.startswith('Paste')
+                            for entry in edit_items),
+                        "Paste not found in Edit menu")
         self.assertIn('Undo', edit_items, "Undo not found in Edit menu")
         self.assertIn('Redo', edit_items, "Redo not found in Edit menu")
 
@@ -249,9 +256,11 @@ class TestMenuStructure(unittest.TestCase):
         edit_items = [item.get('label', item.get('text', '')) for item in converted['Edit']]
         self.assertIn('Undo', edit_items)
         self.assertIn('Redo', edit_items)
-        self.assertIn('Cut', edit_items)
-        self.assertIn('Copy', edit_items)
-        self.assertIn('Paste', edit_items)
+        self.assertTrue(any(label.startswith('Cut') for label in edit_items))
+        self.assertTrue(any(entry.startswith('Copy')
+                            for entry in edit_items))
+        self.assertTrue(any(entry.startswith('Paste')
+                            for entry in edit_items))
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
