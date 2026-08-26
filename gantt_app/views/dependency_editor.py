@@ -77,6 +77,9 @@ class DependencyEditor(ctk.CTkFrame):
         self.project = project
         self.task = task
         self.on_changed = on_changed
+        #: The task behind each entry in the add row's dropdown, by the label
+        #: shown for it. Filled by refresh; see add_selected.
+        self._candidate_by_label = {}
 
         # Work on a copy so cancelling the dialog changes nothing
         self.links: List[Dependency] = [
@@ -230,15 +233,37 @@ class DependencyEditor(ctk.CTkFrame):
             candidates.append(other)
         return sorted(candidates, key=lambda t: t.start_date)
 
-    def _label_for(self, task: Task) -> str:
+    def _label_for(self, task: Task, numbers: dict) -> str:
         """
         Format a task for the chooser.
 
+        PARAMETERS:
+        -----------
+        task : Task
+            The row to name.
+        numbers : dict
+            Project.display_ids(), worked out once by the caller.
+
+        RETURNS:
+        --------
+        str
+            The number the list shows it as, then its name.
+
+        DEVELOPMENT NOTES:
+        ------------------
         The number the list shows it as, not its identity: the reader is
         picking a row they can see, and the two stopped being the same thing
         when the number became a position - see Project.display_ids.
+
+        The numbering is handed in rather than asked for here. This used to
+        call Project.display_id, which builds the whole map to answer for one
+        task, and it is called once per candidate - so drawing the chooser
+        walked the plan's hierarchy once per row in it. A plan of two hundred
+        tasks walked it a hundred and ninety-nine times to fill one dropdown.
         """
-        return f"{self.project.display_id(task.id)} - {task.name}"
+        number = numbers.get(task.id)
+        shown = '' if number is None else str(number).zfill(self.project.ID_WIDTH)
+        return f"{shown} - {task.name}"
 
     def refresh(self, notify: bool = True):
         """
@@ -254,9 +279,13 @@ class DependencyEditor(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        # Once for the whole redraw: every label below is numbered from this
+        numbers = self.project.display_ids()
+
         for index, link in enumerate(self.links):
             predecessor = self.project.get_task_by_id(link.task_id)
-            name = self._label_for(predecessor) if predecessor else link.task_id
+            name = (self._label_for(predecessor, numbers) if predecessor
+                    else link.task_id)
             self.tree.insert(
                 '', tk.END, iid=str(index),
                 values=(name, link.type_label, link.lag, link.hardness),
@@ -269,9 +298,15 @@ class DependencyEditor(ctk.CTkFrame):
         self.tree.tag_configure('oddrow', background=theme.now(theme.GRID_ROW_ALT))
         self.tree.tag_configure('evenrow', background=theme.now(theme.GRID_ROW_BG))
 
-        candidates = self.candidate_tasks()
-        if candidates:
-            values = [self._label_for(t) for t in candidates]
+        # What each entry in the dropdown stands for, kept rather than worked
+        # out again from the label when one is chosen; see add_selected
+        self._candidate_by_label = {
+            self._label_for(task, numbers): task
+            for task in self.candidate_tasks()
+        }
+
+        if self._candidate_by_label:
+            values = list(self._candidate_by_label)
             self.candidate_menu.configure(values=values, state=tk.NORMAL)
             if self.candidate_var.get() not in values:
                 self.candidate_var.set(values[0])
@@ -290,8 +325,10 @@ class DependencyEditor(ctk.CTkFrame):
     def add_selected(self):
         """Add a link to the task chosen in the add row."""
         label = self.candidate_var.get()
-        match = next((t for t in self.candidate_tasks()
-                      if self._label_for(t) == label), None)
+        # What the dropdown was built from, rather than the candidate list
+        # worked out again and every label formatted again to find the one
+        # that matches the string in it
+        match = self._candidate_by_label.get(label)
         if match is None:
             messagebox.showinfo("No Task Selected",
                                 "Choose a task to depend on first.",

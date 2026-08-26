@@ -768,6 +768,21 @@ under everything else.
 - **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
   its own, so the two cannot drift apart
 
+### The Dependency Chooser (`views/dependency_editor.py`)
+- **Names a task by its number and its name**, because the number is what the
+  reader is looking at in the ID column; see `Project.display_ids`
+- **Walks the plan once per redraw.** It used to call `Project.display_id`
+  per row, which builds the whole map to answer for one task - so drawing the
+  dropdown walked the hierarchy once per row it was about to draw. A plan of
+  eight hundred tasks walked its own hierarchy 799 times and took 0.175s to
+  open the dialog; it now walks it once and takes 0.020s
+- **Reads the choice from what the dropdown was built from**, not by
+  formatting every candidate's label again and matching the string. The
+  labels were never ambiguous - two rows cannot share a number, so two tasks
+  with the same name are still told apart - but re-deriving the list to read
+  a choice out of it means the answer depends on nothing having changed in
+  between
+
 ### Reading XML From Elsewhere (`utils/safexml.py`)
 - **Entity declarations are refused**: the `.gan` and MSPDI importers read
   files that arrive from outside, and read them with `ElementTree` straight -
@@ -2124,6 +2139,7 @@ Unit tests cover:
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
+- ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
 - ✅ **Icons**: That every icon on the toolbar row has a drawing, that every drawing paints at the sizes and inks asked for and is not blank, and that an unknown name answers None so the button can fall back to a letter
 - ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
