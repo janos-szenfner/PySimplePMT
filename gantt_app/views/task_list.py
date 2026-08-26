@@ -366,6 +366,9 @@ class DragDropTaskList(ctk.CTkFrame):
         #: exists: from the keyboard it did nothing and said nothing, which
         #: reads as the shortcut being broken rather than as an answer
         self.on_status = on_status
+        #: The message waiting on the idle queue, so it can be called off.
+        #: See _say, and _cancel_pending_say for why it has to be.
+        self._pending_say = None
         
         # Track dragged task
         self.dragged_task_id = None
@@ -1227,11 +1230,52 @@ class DragDropTaskList(ctk.CTkFrame):
         if not self.on_status:
             return
 
+        # Only the last one matters: they are written to the same one line,
+        # so an earlier one would be overwritten before it could be read
+        self._cancel_pending_say()
+
         try:
-            self.after_idle(self.on_status, message)
+            self._pending_say = self.after_idle(self._now_say, message)
         except tk.TclError:
             # No event loop to wait for - say it now
             self.on_status(message)
+
+    def _now_say(self, message: str) -> None:
+        """Write the message, once the queued events have been through."""
+        self._pending_say = None
+        self.on_status(message)
+
+    def _cancel_pending_say(self) -> None:
+        """
+        Call off a message that has not been written yet.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Tk deletes a widget's callback commands when the widget is
+        destroyed, but leaves anything already on the after queue pointing
+        at them. Closing the window with a message still waiting therefore
+        printed
+
+            invalid command name "4386744064_now_say"
+                while executing
+            "4386744064_now_say" ("after" script)
+
+        to the terminal on the way out - harmless, since Tk reports it and
+        carries on, but it is an error message for something nobody did
+        wrong, and it lands in whatever log the user is watching.
+        """
+        pending, self._pending_say = self._pending_say, None
+        if pending is None:
+            return
+        try:
+            self.after_cancel(pending)
+        except (tk.TclError, ValueError):
+            pass
+
+    def destroy(self):
+        """Take any waiting message off the queue before going away."""
+        self._cancel_pending_say()
+        super().destroy()
 
     def _why_not_pasted(self, focused_id: Optional[str],
                         inside: bool) -> str:
@@ -1756,7 +1800,8 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         chosen = self._as_ids(task_ids)
         if len(chosen) < 2:
-            self._say("Select two or more rows to link.")
+            self._say("Select two or more rows to link, "
+                      "in the order they run.")
             return
 
         linked = []

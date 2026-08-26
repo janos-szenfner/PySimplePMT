@@ -738,6 +738,29 @@ under everything else.
   where the link had pushed it left the column and the dates disagreeing; see
   `SnapshotCommand.FIELDS`
 
+### Reading XML From Elsewhere (`utils/safexml.py`)
+- **Entity declarations are refused**: the `.gan` and MSPDI importers read
+  files that arrive from outside, and read them with `ElementTree` straight -
+  which the standard library's own documentation lists as vulnerable to entity
+  expansion. Measured against this application's own parser, a 700-byte file
+  expanded to three million characters and a 150-kilobyte one to a hundred
+  megabytes; each further level of nesting multiplies by ten. Nothing in a
+  plan needs an entity of its own, so none is allowed
+- **Refused before anything is expanded**: expat parses the document once with
+  a single handler registered, one that raises the moment an entity is
+  declared. Declarations come before the references that use them, so a
+  hostile file is stopped at the DOCTYPE - the measurements above become
+  fractions of a millisecond
+- **External entities were never a risk**: `ElementTree` does not resolve
+  them and raises on an undefined entity instead. That was checked rather
+  than assumed
+- **No new package**: the guard is one expat handler saying no, and the
+  standard library already has expat. `defusedxml` is the usual answer and
+  would work, but this application bundles what it ships - see
+  `requirements.txt` and the note there about what is deliberately left out
+- **The refusal is a `ParseError`**, which is what it means to an importer:
+  a file that will not be read. Both already turn one into a logged failure
+
 ### Gantt Chart View (`views/gantt_chart.py`)
 - **Drawn, not downloaded**: The chart on screen is painted with Pillow
   (`utils/chart_render.py`). Plotly is still used to build the interactive
@@ -2071,6 +2094,7 @@ Unit tests cover:
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
+- ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged
 - ✅ **Chart Alignment**: That the chart draws the rows the list is showing, in its order, at its row height, and drops its label column beside a grid
 - ✅ **Scroll Frame**: The scrolling container the task form is built in
 - ✅ **Row Formatting**: What a default style serialises to, that a summary can be un-bolded on purpose and comes back bold when cleared, that an ordinary edit does not strip a row's formatting or its calendar, and that rows formatted alike share one tag

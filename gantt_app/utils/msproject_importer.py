@@ -44,6 +44,8 @@ Three details of the format are easy to read wrongly:
 """
 
 import xml.etree.ElementTree as ET
+
+from gantt_app.utils import safexml
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -570,7 +572,7 @@ def import_msproject_file(filepath: str) -> Optional[Project]:
             logger.warning("File not found: %s", filepath)
             return None
 
-        root = ET.parse(filepath).getroot()
+        root = safexml.parse(filepath).getroot()
         project = parse_msproject(root)
         logger.info("Imported %d task(s) from the MS Project file %s",
                     len(project.tasks), filepath)

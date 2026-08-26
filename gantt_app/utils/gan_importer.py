@@ -1,7 +1,9 @@
 """
 GAN file importer for the Gantt Project Management Tool.
 
-Parses GanttProject's XML-based .gan files using xml.etree.ElementTree.
+Parses GanttProject's XML-based .gan files. The file comes from
+somewhere else, so it is read through gantt_app.utils.safexml rather
+than through ElementTree straight; see the note on that module.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -28,6 +30,8 @@ mirror image of these: the same two details, read from the other side.
 
 import re
 import xml.etree.ElementTree as ET
+
+from gantt_app.utils import safexml
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple, Set
 from pathlib import Path
@@ -565,7 +569,7 @@ class GANImporter:
                 logger.warning(f"File not found: {filepath}")
                 return None
 
-            tree = ET.parse(filepath)
+            tree = safexml.parse(filepath)
             root = strip_namespaces(tree.getroot())
 
             project_name = root.get('name') or 'Imported Project'

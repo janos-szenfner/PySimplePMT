@@ -1690,23 +1690,21 @@ class Toolbar(ctk.CTkFrame):
         into reading order by the plan, not here: which row comes first is a
         fact about where the rows sit, and the plan is what knows that. See
         Project._in_display_order.
+
+        Whether there is enough of a selection to link is the task list's
+        answer too. This asked first, and answered in a dialog box, while
+        the task list asked again and answered in the status bar - two
+        messages for one condition, of which only the dialog was ever
+        reachable. The clipboard actions beside these already report in the
+        status bar, so that is the one kept.
         """
-        selected = self._selected_task_ids()
-        if len(selected) < 2:
-            messagebox.showinfo(
-                "Link Tasks",
-                "Select two or more tasks to link, in the order they run.")
-            return
-        self.task_list.link_tasks(selected)
+        if hasattr(self.task_list, 'link_tasks'):
+            self.task_list.link_tasks(self._selected_task_ids())
 
     def unlink_selected(self):
         """Break the links between the selected rows."""
-        selected = self._selected_task_ids()
-        if not selected:
-            messagebox.showinfo("Unlink Tasks",
-                                "Select the tasks to unlink first.")
-            return
-        self.task_list.unlink_tasks(selected)
+        if hasattr(self.task_list, 'unlink_tasks'):
+            self.task_list.unlink_tasks(self._selected_task_ids())
 
     def import_gan(self):
         """Import a GanttProject (.gan) file."""
