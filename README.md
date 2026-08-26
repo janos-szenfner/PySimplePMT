@@ -705,6 +705,13 @@ under everything else.
   earlier while the pasted one stayed
 - **Numbered like the rest**: nothing is renumbered, because the number beside
   a row is where it sits; see `Project.display_ids`
+- **One place answers each question**: whether Copy and Cut apply was answered
+  on the task list, on `ClipboardService` and on `ClipboardManager`, and only
+  the task list's was ever asked - so the one deciding what the user sees was
+  the one with no test. None of the three consulted the clipboard either,
+  because the clipboard is not what decides: copying needs a selection, and
+  the selection is the task list's to report. The manager's surface is now
+  what the application actually calls
 - **Let go of when another plan is opened**: every handler that replaces the
   plan on screen already cleared the undo history, for the obvious reason
   that edits to a plan no longer open cannot be applied to the one that is.

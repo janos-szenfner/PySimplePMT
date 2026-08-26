@@ -536,10 +536,6 @@ class ClipboardService:
         entity_types = [item.type for item in payload.items]
         return self._can_accept_types(target_container_id, entity_types)
     
-    def can_copy_or_cut(self, selected_ids: Optional[List[str]] = None) -> bool:
-        """Check if copy or cut operations are possible."""
-        return bool(selected_ids)
-    
     def _resolve_payload(self) -> Optional[ClipboardPayload]:
         """
         The clipboard to paste from: this window's, or the desktop's.
@@ -926,11 +922,6 @@ class ClipboardManager:
         """Cut selected items to clipboard."""
         self.service.cut(selected_ids)
     
-    def paste(self, target_container_id: Optional[str] = None,
-              before_task_id: Optional[str] = None) -> List[str]:
-        """Paste from the clipboard, and say which rows arrived."""
-        return self.service.paste(target_container_id, before_task_id)
-
     def paste_at(self, focused_id: Optional[str] = None,
                  inside: bool = False) -> List[str]:
         """Paste at the row the cursor is on; see ClipboardService.paste_at."""
@@ -949,13 +940,6 @@ class ClipboardManager:
         """Check if clipboard is empty."""
         return self.service.is_clipboard_empty()
     
-    def can_paste(self, target_container_id: Optional[str] = None) -> bool:
-        """Check if paste is possible for target container."""
-        return self.service.can_paste(target_container_id)
-    
-    def can_copy_or_cut(self, selected_ids: Optional[List[str]] = None) -> bool:
-        """Check if copy or cut is possible."""
-        return self.service.can_copy_or_cut(selected_ids)
 
 
 #: Widget classes that handle the clipboard themselves. A shortcut pressed

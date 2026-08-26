@@ -1190,17 +1190,26 @@ class DragDropTaskList(ctk.CTkFrame):
 
     def can_copy_or_cut(self, selected_ids: List[str]) -> bool:
         """
-        Check if copy or cut operations are possible.
-        
+        Whether Copy and Cut should be offered for these rows.
+
         PARAMETERS:
         -----------
         selected_ids : List[str]
-            List of task IDs to check
-            
+            The rows the menu was opened over.
+
         RETURNS:
         --------
         bool
-            True if copy/cut is possible
+            True when there is something to put on the clipboard.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The only one of these left. The same question was answered in three
+        places - here, on ClipboardService and on ClipboardManager - and the
+        two on the clipboard side were reachable from nothing but their own
+        tests. Neither of them consulted the clipboard to answer it either,
+        because the clipboard is not what decides: copying needs a
+        selection, and the selection is this list's to report.
         """
         return len(selected_ids) > 0
 

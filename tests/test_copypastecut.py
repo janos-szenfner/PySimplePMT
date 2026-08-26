@@ -271,14 +271,6 @@ class TestClipboardService(unittest.TestCase):
         self.service.clear_clipboard()
         self.assertTrue(self.service.is_clipboard_empty())
 
-    def test_can_copy_or_cut(self):
-        """Test checking if copy or cut is possible."""
-        # With no selection
-        self.assertFalse(self.service.can_copy_or_cut([]))
-        
-        # With selection
-        self.assertTrue(self.service.can_copy_or_cut(["001"]))
-
     def test_can_paste(self):
         """Test checking if paste is possible."""
         # With empty clipboard
@@ -459,13 +451,19 @@ class TestClipboardManager(unittest.TestCase):
         self.assertFalse(manager.is_empty())
 
     def test_paste_through_manager(self):
-        """Test paste operation through manager."""
+        """
+        Paste operation through manager.
+
+        Through paste_at, which is how the application reaches it: the
+        manager used to carry a paste() of its own as well, naming a
+        container and an anchor, and nothing but this test ever called it.
+        """
         manager = ClipboardManager(self.project)
         manager.copy(["001"])
         initial_count = len(self.project.tasks)
-        
-        manager.paste(None)
-        
+
+        manager.paste_at("001")
+
         self.assertEqual(len(self.project.tasks), initial_count + 1)
 
     def test_clear_through_manager(self):
@@ -1344,6 +1342,78 @@ class TestTheSelectionReachesTheClipboard(unittest.TestCase):
         self.project.remove_task("002")
 
         self.assertEqual(self.task_list.get_selected_task_ids(), [])
+
+
+class TestTheMenuOffersCopyAndCutWhenItCan(unittest.TestCase):
+    """
+    Copy and Cut are live over a row and greyed over empty space.
+
+    WHY THESE EXIST:
+    ================
+    Whether Copy and Cut apply was answered in three places - on the task
+    list, on ClipboardService and on ClipboardManager - and only the task
+    list's was ever asked. The other two were reachable from nothing but
+    their own tests, so the one that decided what the user sees was the one
+    with no test at all, and deleting the spares would have left it that way.
+
+    None of the three consulted the clipboard, either. The clipboard is not
+    what decides: copying needs a selection, and the selection is the task
+    list's to report.
+    """
+
+    def setUp(self):
+        """A task list with a context menu over a small plan."""
+        import customtkinter as ctk
+        from gantt_app.views.task_list import DragDropTaskList
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = Project(name="Test Project")
+        today = datetime(2024, 1, 1)
+        for number in ("001", "002"):
+            self.project.add_task(Task.create_task(
+                name=f"Task {number}", start_date=today,
+                end_date=today + timedelta(days=2), task_id=number))
+
+        self.task_list = DragDropTaskList(self.root, self.project)
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def states(self, task_id):
+        """The state of each clipboard entry on the menu for a row."""
+        menu = self.task_list.context_menu._build(self.project, task_id)
+        found = {}
+        for index in range(menu.index('end') + 1):
+            if menu.type(index) == 'separator':
+                continue
+            label = menu.entrycget(index, 'label')
+            if label in ('Copy', 'Cut'):
+                found[label] = str(menu.entrycget(index, 'state'))
+        return found
+
+    def test_they_are_offered_over_a_selected_row(self):
+        """There is something to put on the clipboard."""
+        self.task_list.tree.selection_set("001")
+
+        self.assertEqual(self.states("001"), {'Copy': 'normal', 'Cut': 'normal'})
+
+    def test_they_are_greyed_over_the_empty_space(self):
+        """No row was pointed at, so there is nothing to copy."""
+        self.task_list.tree.selection_set("001")
+
+        self.assertEqual(self.states(None),
+                         {'Copy': 'disabled', 'Cut': 'disabled'})
+
+    def test_the_task_list_answers_for_them(self):
+        """The one implementation left, and the one the menu holds."""
+        self.assertFalse(self.task_list.can_copy_or_cut([]))
+        self.assertTrue(self.task_list.can_copy_or_cut(["001"]))
 
 
 class TestPastingAtTheEndOfThePlan(unittest.TestCase):
