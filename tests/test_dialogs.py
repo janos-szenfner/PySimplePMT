@@ -14,12 +14,23 @@ from unittest import mock
 
 from gantt_app.views import dialogs
 
-import pytest
+from tests import restore_dialogs, stand_dialogs_down
 
-#: This file is the dialog layer's own test, so the suite-wide stand-down in
-#: conftest is lifted for it. Everything here patches the internals - _show,
-#: _run, _chooser - rather than letting a real one open.
-pytestmark = pytest.mark.real_dialogs
+
+def setUpModule():
+    """
+    Put the real dialog functions back for this file.
+
+    This is the dialog layer's own test, and the suite stands those functions
+    down on import - see tests/__init__.py. Everything here patches the
+    internals instead: _show, _run and _chooser, so nothing opens.
+    """
+    restore_dialogs()
+
+
+def tearDownModule():
+    """Stand them down again for whatever runs next."""
+    stand_dialogs_down()
 
 
 
