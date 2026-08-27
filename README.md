@@ -53,7 +53,7 @@ This is a complete implementation of a project management tool with:
 - **Manual Date Overrides**: Actions → Calendar Settings... → Manual Overrides rules on one named date at a time, and **outranks everything else** — a Saturday named as a make-up day is worked, and an ordinary Tuesday named as a company shutdown is not, whatever the weekend and holiday rules say. Each carries an optional reason, and deleting one puts the date back under the ordinary rules. Saved with the project
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
-- **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
+- **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask carries its own percentage; a Task averages its sub-tasks' percentages evenly, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a row copies everything under it - a phase brings its deliverables, tasks and sub-tasks, nested as they were - and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
@@ -601,8 +601,8 @@ Each level counts what is under it in the way that suits what that level is:
 
 | Level | How its completion is worked out |
 | --- | --- |
-| **Subtask** | A tick box: done or not, nothing in between. The editor offers a checkbox rather than a percentage |
-| **Task** | With sub-tasks, how many are ticked - counted, not weighted, a checklist being a checklist. Without, the percentage typed on it |
+| **Subtask** | Its own percentage, like every other row. It was a tick box until the Task above it learned to average percentages |
+| **Task** | With sub-tasks, the even average of their percentages - counted, not weighted, a checklist being a checklist. Without, the percentage typed on it |
 | **Deliverable** | Its tasks weighted by how long they run, so a fortnight counts for more than an afternoon. With nothing to weight by - all milestones, say - a plain average |
 | **Phase** | Its deliverables averaged evenly. One being longer is not a reason for it to count for more |
 | **Empty container** | 0%. No work under it, none of it done |
@@ -654,7 +654,7 @@ under everything else.
   is checked too
 - **Help**: a Help button beside Delete opens a reference on the form's own
   fields (`help/editorhelp.py`)
-- **Progress**: a percentage for most rows, a tick box for a sub-task, and
+- **Progress**: a percentage on every row that carries its own, and
   nothing to fill in on a container that takes its own from its children
 - **Built to be quick**: the form is built in a scrolling frame of the
   application's own (`views/scrollframe.py`) rather than CustomTkinter's, whose
@@ -825,16 +825,25 @@ under everything else.
 - **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
   its own, so the two cannot drift apart
 
-### Which Completion Control A Row Gets (`views/taskform.py`)
-- **A tick for a sub-task, a percentage for everything else.** A sub-task is
-  done or not, and the task above it reads how many of its sub-tasks are
-  ticked. Offering a percentage box for one invites a 60% that would then
-  count as not done, with nothing on the form saying so
-- **Nothing about it depends on the machine.** It was reported as "the
-  progress bar is not viewable on a different Mac", with two editors side by
-  side - one showing `Progress (%)` and one showing `Completed`. They were a
-  Task and a Sub-task. See `tests/test_progress_field.py`, which says so and
-  fails if the choice ever starts asking the platform
+### How Far Along A Row Is (`views/taskform.py`)
+- **Every row carries a percentage**, including a sub-task. It was a tick
+  box - done or not - because the Task above it counted how many of its
+  sub-tasks were ticked, so a 60% would have been a number the form took and
+  the plan ignored
+- **A Task averages its sub-tasks' percentages**, evenly. That is what
+  counting ticks was all along: a checklist holds nothing but 0 and 100, and
+  the average of those is the proportion ticked. Two of four ticked was 50
+  and still is, so every plan written before this reads exactly as it did -
+  what is new is that a sub-task half done now says so instead of counting
+  for nothing
+- **Still counted rather than weighted.** Four sub-tasks of an hour each are
+  four entries like any other four; how long a thing runs is the
+  Deliverable's business, one level up
+- **Nothing about the form asks the machine.** This began as "the progress
+  bar is not viewable on a different Mac", with two editors side by side -
+  one showing `Progress (%)` and one showing `Completed`. They were a Task
+  and a Sub-task. `tests/test_progress_field.py` fails if the choice ever
+  starts asking the platform
 
 ### The Dependency Chooser (`views/dependency_editor.py`)
 - **Names a task by its number and its name**, because the number is what the
@@ -2213,7 +2222,7 @@ Unit tests cover:
 - ✅ **Gantt Export**: PNG and PDF rendering
 - ✅ **Undo/Redo**: Command stack behaviour
 - ✅ **Utilities**: Project utilities, validation, edge cases
-- ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, and the whole cascade from a ticked sub-task to the phase above it
+- ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, the whole cascade from a part-finished sub-task to the phase above it, and that a plan of ticks and empty boxes reads exactly what counting ticks used to give
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key

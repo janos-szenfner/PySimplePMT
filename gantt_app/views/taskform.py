@@ -893,10 +893,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         the user sees, which tells them what Python was doing rather than
         what they should type.
         """
-        if self.progress_done_var is not None:
-            # A sub-task is ticked or it is not
-            return 100 if self.progress_done_var.get() else 0
-
         text = self.progress_entry.get().strip()
         if not text:
             return 0
@@ -1143,29 +1139,21 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_progress(self, frame):
         """
-        How far along this is: a tick for a sub-task, a percentage for the
-        rest, and nothing to fill in on a task that takes its own from the
-        work underneath it.
+        How far along this is: a percentage on every row that carries its
+        own, and nothing to fill in on one that takes it from the work
+        underneath.
 
         DEVELOPMENT NOTES:
         ------------------
-        A sub-task is a tick on a checklist - done or not - and the task
-        above it reads how many of its sub-tasks are ticked. Offering a
-        percentage box for one invited a 60% that would then count as not
-        done, with nothing on the form saying so.
+        A sub-task was a tick here - done or not - because the task above it
+        counted how many of its sub-tasks were ticked, and a 60% that then
+        counted as not done would have been a number the form accepted and
+        the plan ignored.
+
+        The task above averages its sub-tasks' percentages now, so a 60%
+        counts for 60%, and there is no longer anything for a tick to
+        protect. A sub-task that is half done can say so.
         """
-        self.progress_done_var = None
-        self.progress_entry = None
-
-        if self.template.task_type == 'Subtask':
-            self.progress_done_var = ctk.BooleanVar(
-                value=self.template.is_completed)
-            self.progress_check = ctk.CTkCheckBox(
-                frame, text="", variable=self.progress_done_var)
-            self._field(frame, "Completed:", self.progress_check,
-                        sticky=tk.W)
-            return
-
         self.progress_entry = ctk.CTkEntry(frame)
         self.progress_entry.insert(0, str(self.template.progress))
         self._field(frame, "Progress (%):", self.progress_entry)

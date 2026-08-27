@@ -193,13 +193,18 @@ def rolled_up_progress(parent, children) -> int:
     Each level of the plan counts what is under it in the way that suits
     what that level is.
 
-    A Subtask is a tick on a checklist: done or not, nothing in between.
-    See Task.is_completed.
+A Subtask carries a percentage of its own, like every other row.
 
-    A Task with sub-tasks reads how many of them are ticked. It is a
-    checklist, and a checklist is counted, not weighted - four sub-tasks of
-    an hour each are four boxes like any other four. A Task without
-    sub-tasks keeps the percentage the user typed on it.
+    A Task with sub-tasks averages their percentages, evenly. It is a
+    checklist, and a checklist is counted rather than weighted - four
+    sub-tasks of an hour each are four entries like any other four. A Task
+    without sub-tasks keeps the percentage the user typed on it.
+
+    Evenly averaging percentages is what counting ticks was, generalised: a
+    checklist of ticks holds nothing but 0 and 100, and the average of those
+    is the proportion ticked. Two of four ticked was 50 and still is; what
+    is new is that a sub-task half done now says so instead of counting for
+    nothing.
 
     A Deliverable weights its tasks by how long they run, so a fortnight's
     work counts for more towards it than an afternoon's. Where nothing under
@@ -225,8 +230,7 @@ def rolled_up_progress(parent, children) -> int:
     percentages = [max(0, min(100, child.progress)) for child in children]
 
     if parent.task_type == 'Task':
-        finished = sum(1 for child in children if child.is_completed)
-        return int(round(finished / len(children) * 100))
+        return int(round(sum(percentages) / len(percentages)))
 
     if parent.task_type == 'Phase':
         return int(round(sum(percentages) / len(percentages)))
@@ -629,18 +633,18 @@ class Task:
     @property
     def is_completed(self) -> bool:
         """
-        Whether this counts as finished when its parent totals its children.
+        Whether this row is finished.
 
         DEVELOPMENT NOTES:
         ------------------
-        A sub-task is a tick on a checklist: done or not. The editor offers
-        it as a tick box rather than a percentage, so a sub-task entered here
-        holds 0 or 100 and nothing else.
+        Anything short of 100 is unfinished: a job that is half done is not
+        a job that is done.
 
-        Anything short of 100 is unfinished, which is what decides a
-        sub-task that arrived from an imported file at some middling
-        percentage. It is not rewritten - the number is the source file's to
-        state - but a job that is half done is not a job that is done.
+        This decided what a parent counted, when a sub-task was a tick and a
+        Task above it counted how many were ticked. Sub-tasks carry a
+        percentage now and the Task averages those instead, so this is left
+        as what it says on the face of it - a question anything may ask of
+        any row - rather than a rule about roll-up.
         """
         return self.progress >= 100
 

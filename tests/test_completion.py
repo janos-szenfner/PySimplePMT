@@ -4,7 +4,7 @@ Tests for the completion a parent takes from the work under it.
 WHY THIS MODULE EXISTS:
 ======================
 Each level of the plan counts what is under it differently - a Task counts
-ticked sub-tasks, a Deliverable weights its tasks by how long they run, a
+its sub-tasks' percentages, a Deliverable weights its tasks by how long they run, a
 Phase averages its deliverables evenly - and which rule is applied to what is
 the sort of thing that is quietly wrong for a long time. The rules are set
 out in models.rolled_up_progress; these are the same rules, written as
@@ -54,7 +54,13 @@ class TestASubtaskIsATick(unittest.TestCase):
 
 
 class TestATaskCountsItsSubtasks(unittest.TestCase):
-    """A Task with sub-tasks reads how many are ticked."""
+    """
+    A Task with sub-tasks averages their percentages.
+
+    Which is what counting ticks was: these all hold 0 or 100, and the
+    average of those is the proportion ticked. They read the same answers
+    now as they did then, which is the point of them.
+    """
 
     def test_none_done(self):
         """Nothing ticked is nothing done."""
