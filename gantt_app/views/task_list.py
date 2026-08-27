@@ -28,7 +28,7 @@ from typing import Callable, Optional, List
 import customtkinter as ctk
 
 from gantt_app import theme
-from gantt_app.models import Task, Project
+from gantt_app.models import TASK_TYPES, Task, Project
 from gantt_app.dependencysyntax import format_links
 from gantt_app.taskstyle import resolve as resolve_style
 from gantt_app.utils.undoredo import ProjectStateTracker
@@ -568,9 +568,11 @@ class DragDropTaskList(ctk.CTkFrame):
         that reached the editor at all and no way to rename in place without
         the dialog appearing instead half the time.
 
-        Dependencies keep their own cell editor. Typing "3FS+2d" over a cell
-        is not something the form does better, and the form is one click
-        away on any other column.
+        Two columns keep their own cell editor. Typing "3FS+2d" over a
+        Dependencies cell is not something the form does better, and the
+        Type cell offers its four answers in a dropdown, which is faster
+        than the form for the one field most often changed after a row is
+        made. The form is one click away on any other column.
 
         Any rename this click has already set going is called off first: the
         first of these two clicks landed on a row that was probably already
@@ -586,8 +588,11 @@ class DragDropTaskList(ctk.CTkFrame):
         if not item:
             return None
 
-        if self._column_name(event.x) == 'Dependencies':
+        cell = self._column_name(event.x)
+        if cell == 'Dependencies':
             self.edit_dependencies_cell(item)
+        elif cell == 'Type':
+            self.edit_type_cell(item)
         else:
             self.edit_task(item)
 
@@ -843,6 +848,147 @@ class DragDropTaskList(ctk.CTkFrame):
         self.update_task_list()
         if self.on_project_changed:
             self.on_project_changed()
+
+    # ------------------------------------------------------------------
+    # The Type column
+    # ------------------------------------------------------------------
+
+    def edit_type_cell(self, task_id: str):
+        """
+        Choose a task's type from a dropdown over the Type cell.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A list rather than a typing box, because the answer is one of four
+        and typing one is a chance to misspell it. Choosing stores it: there
+        is nothing to confirm about picking from a list of the only valid
+        answers, and a second gesture to commit a one-click choice is a
+        gesture that gets forgotten.
+
+        Changing a type used to mean opening the editor - and for a nested
+        row, not even that: the editor's menu was greyed out for anything
+        with a parent. This is the fast way, and it is undoable like every
+        other edit.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+        self._open_cell_chooser(
+            task_id, 'Type', task.task_type, list(TASK_TYPES),
+            lambda chosen: self.set_task_type(task_id, chosen))
+
+    def set_task_type(self, task_id: str, task_type: str):
+        """
+        Retype a task as one undoable step, and redraw.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being retyped.
+        task_type : str
+            One of TASK_TYPES.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The milestone flag is written with the type, in both directions.
+        The two say the same thing - Task.effective_milestone is true for
+        either - so a row typed Milestone here and opened in the editor has
+        to show the milestone switch on, and one typed back to a Task has to
+        show it off. Setting only the type left the flag behind, and a Task
+        still carrying it drew as a diamond and lost its end date.
+
+        Through the tracker, so it is one step in the undo history and the
+        editor reads what the column stored.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None or task_type not in TASK_TYPES:
+            return
+        if task.task_type == task_type:
+            return
+
+        milestone = task_type == 'Milestone'
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id, task_type=task_type,
+                                             is_milestone=milestone)
+        else:
+            task.task_type = task_type
+            task.is_milestone = milestone
+
+        logger.info("Task %s is now a %s", task_id, task_type)
+        self.project.reschedule()
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    def _open_cell_chooser(self, task_id: str, column: str, current: str,
+                           choices, commit):
+        """
+        Put a dropdown over one cell, and store what is picked from it.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The row being edited.
+        column : str
+            Which cell to cover.
+        current : str
+            What the cell holds now, shown as the selection.
+        choices : list
+            Everything the cell may be set to.
+        commit : callable
+            Called with the chosen value.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A read-only ttk.Combobox: a plain one is an entry with a list
+        attached, and typing into a cell whose only valid answers are in the
+        list is a way to store an invalid one.
+
+        It opens its own list straight away. The double-click that got here
+        has already been spent asking for the choice, and a dropdown that
+        then has to be clicked a third time to show what it offers reads as
+        not having opened.
+        """
+        if not self.tree.exists(task_id):
+            return
+        self._close_cell_editor()
+
+        box = self._cell_box(task_id, column)
+        if box is None:
+            return
+
+        x, y, width, height = box
+        chooser = ttk.Combobox(self.tree, values=list(choices),
+                               state='readonly')
+        chooser.set(current)
+        chooser.place(x=x, y=y, width=width, height=height)
+        chooser.focus_set()
+
+        self._cell_editor = chooser
+        self._cell_editor_task = task_id
+
+        def chosen(_event=None):
+            """Store the pick and take the dropdown away."""
+            value = chooser.get()
+            self._close_cell_editor()
+            commit(value)
+
+        chooser.bind('<<ComboboxSelected>>', chosen)
+        chooser.bind('<Return>', chosen)
+        chooser.bind('<KP_Enter>', chosen)
+        chooser.bind('<Escape>', lambda _event: self._close_cell_editor())
+        # Not <FocusOut>: opening the list moves the focus to it, so
+        # committing on focus leaving would store the value and close the
+        # dropdown the instant it was opened
+        self.after_idle(lambda: self._drop_the_list(chooser))
+
+    def _drop_the_list(self, chooser):
+        """Open a combobox's list, if it is still there to open."""
+        try:
+            if chooser.winfo_exists():
+                chooser.event_generate('<Button-1>')
+        except tk.TclError:
+            pass
 
     def edit_dependencies_cell(self, task_id: str):
         """
@@ -1783,6 +1929,25 @@ class DragDropTaskList(ctk.CTkFrame):
             on_save=lambda task: self._save_created(task, anchor_id, parent_id),
             project_tracker=self.project_tracker,
         )
+
+    def create_task_at_cursor(self):
+        """
+        Make a task where the cursor is, and open its editor.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        What the keyboard shortcut does; see Toolbar._bind_style_hotkeys.
+        Creating a row was a menu or a right-click away, which for the
+        commonest thing anybody does to a plan is two gestures too many -
+        and the right-click needs a row to open on, so the first row of a
+        plan could only be made from the menu.
+
+        It goes beside the focused row and drops in below it, as the
+        right-click Create does; with no cursor - a list nobody has clicked
+        in yet - it goes at the end of the plan at the top level, which is
+        where a row made without pointing at anything belongs.
+        """
+        self.create_task('Task', self.focused_task_id())
 
     def _save_created(self, task: Task, anchor_id: str, parent_id):
         """

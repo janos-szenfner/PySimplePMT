@@ -43,8 +43,36 @@ MODIFIER_LABEL = '⌘' if IS_MACOS else 'Ctrl'
 SHIFT = 'Shift'
 SHIFT_LABEL = '⇧' if IS_MACOS else 'Shift'
 
+#: The Option key on a Mac, the Alt key everywhere else.
+#:
+#: Tk spells it Option on macOS - an alias for Alt, which it also accepts -
+#: and Alt elsewhere. Written the way each platform's own documentation
+#: writes it, so a binding read here matches what a reader would look up.
+ALT = 'Option' if IS_MACOS else 'Alt'
+ALT_LABEL = '⌥' if IS_MACOS else 'Alt'
 
-def accelerator(key: str, shift: bool = False) -> str:
+
+def _held(shift: bool, alt: bool) -> list:
+    """
+    The modifiers a shortcut holds besides the key itself.
+
+    The platform's own modifier first, then the extras. Tk does not mind
+    the order within a sequence, so this is only a convention - but it is
+    the one the sequences already bound were written in, and respelling a
+    working binding to tidy it is a change with a risk and no gain.
+
+    Note that this is not the order they are *written* in for the reader:
+    see accelerator, where a Mac's fixed ⌥⌘ order applies.
+    """
+    parts = [MODIFIER]
+    if shift:
+        parts.append(SHIFT)
+    if alt:
+        parts.append(ALT)
+    return parts
+
+
+def accelerator(key: str, shift: bool = False, alt: bool = False) -> str:
     """
     How a shortcut is written for the reader.
 
@@ -54,6 +82,8 @@ def accelerator(key: str, shift: bool = False) -> str:
         The key itself - 'B', 'F2', 'Enter', 'Return'.
     shift : bool
         True when the shortcut also holds Shift.
+    alt : bool
+        True when it also holds Option on a Mac, Alt elsewhere.
 
     RETURNS:
     --------
@@ -67,15 +97,25 @@ def accelerator(key: str, shift: bool = False) -> str:
     'Ctrl+B'
     >>> accelerator('F2', shift=True)   # on Windows or Linux
     'Ctrl+Shift+F2'
+    >>> accelerator('I', alt=True)      # on Windows or Linux
+    'Ctrl+Alt+I'
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A Mac writes the modifiers as symbols with nothing between them and in
+    a fixed order - ⌥ before ⌘, so Option+Command+I is written ⌥⌘I however
+    it is said out loud.
     """
     name = 'Enter' if key in ('Return', 'KP_Enter') else key
     if IS_MACOS:
-        return f"{SHIFT_LABEL if shift else ''}{MODIFIER_LABEL}{name}"
-    parts = [MODIFIER_LABEL] + ([SHIFT_LABEL] if shift else []) + [name]
+        return (f"{SHIFT_LABEL if shift else ''}"
+                f"{ALT_LABEL if alt else ''}{MODIFIER_LABEL}{name}")
+    parts = ([MODIFIER_LABEL] + ([SHIFT_LABEL] if shift else [])
+             + ([ALT_LABEL] if alt else []) + [name])
     return '+'.join(parts)
 
 
-def sequences(key: str, shift: bool = False) -> tuple:
+def sequences(key: str, shift: bool = False, alt: bool = False) -> tuple:
     """
     Every Tk sequence one shortcut has to be bound to.
 
@@ -85,6 +125,8 @@ def sequences(key: str, shift: bool = False) -> tuple:
         A single letter, or a key name such as 'Return' or 'F2'.
     shift : bool
         True when the shortcut also holds Shift.
+    alt : bool
+        True when it also holds Option on a Mac, Alt elsewhere.
 
     RETURNS:
     --------
@@ -98,6 +140,8 @@ def sequences(key: str, shift: bool = False) -> tuple:
     ('<Command-b>', '<Command-B>')
     >>> sequences('F2', shift=True)     # on macOS
     ('<Command-Shift-F2>',)
+    >>> sequences('i', alt=True)        # on macOS
+    ('<Command-Option-i>', '<Command-Option-I>')
 
     DEVELOPMENT NOTES:
     ------------------
@@ -107,13 +151,14 @@ def sequences(key: str, shift: bool = False) -> tuple:
     'B' with the Shift bit set, so a shortcut that means to include Shift
     has to say so.
     """
-    held = f"{MODIFIER}-{SHIFT}" if shift else MODIFIER
+    held = '-'.join(_held(shift, alt))
     if len(key) == 1 and key.isalpha():
         return (f"<{held}-{key.lower()}>", f"<{held}-{key.upper()}>")
     return (f"<{held}-{key}>",)
 
 
-def bind_all(widget, key: str, handler, shift: bool = False) -> None:
+def bind_all(widget, key: str, handler, shift: bool = False,
+             alt: bool = False) -> None:
     """
     Bind one shortcut, in every form this platform needs.
 
@@ -127,11 +172,13 @@ def bind_all(widget, key: str, handler, shift: bool = False) -> None:
         Given the event, as any Tk binding is.
     shift : bool
         True when the shortcut also holds Shift.
+    alt : bool
+        True when it also holds Option on a Mac, Alt elsewhere.
 
     DEVELOPMENT NOTES:
     ------------------
     add='+' throughout: these go onto windows that already have bindings of
     their own, and replacing them would take the dialog's own keys with it.
     """
-    for sequence in sequences(key, shift):
+    for sequence in sequences(key, shift, alt):
         widget.bind(sequence, handler, add='+')

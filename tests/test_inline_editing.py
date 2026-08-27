@@ -487,3 +487,287 @@ class TestItReachesTheRestOfTheApplication(InlineEditingTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestChoosingTheTypeInTheGrid(InlineEditingTestCase):
+    """
+    The Type cell offers its four answers in a dropdown.
+
+    WHY THESE EXIST:
+    ================
+    Changing a type meant opening the editor, and for a nested row not even
+    that: the editor's Type menu was greyed out for anything with a parent.
+    The column is the fast way, and the type is the one field most often
+    changed after a row is made.
+    """
+
+    def open_chooser(self, task_id='u1'):
+        """Double-click the Type cell of one row."""
+        self.task_list.tree.identify_row = lambda _y: task_id
+        self.task_list._column_name = lambda _x: 'Type'
+        self.task_list.on_double_click(SimpleNamespace(x=5, y=0))
+        return self.task_list._cell_editor
+
+    def type_of(self, task_id='u1'):
+        """What the plan says the row is."""
+        return self.project.get_task_by_id(task_id).task_type
+
+    def test_a_double_click_on_the_type_cell_opens_a_list(self):
+        """Not a typing box: the answer is one of four."""
+        from tkinter import ttk
+
+        chooser = self.open_chooser()
+
+        self.assertIsInstance(chooser, ttk.Combobox)
+
+    def test_it_offers_every_type_in_the_system(self):
+        """All of them, so none has to be reached another way."""
+        from gantt_app.models import TASK_TYPES
+
+        chooser = self.open_chooser()
+
+        self.assertEqual(list(chooser.cget('values')), list(TASK_TYPES))
+
+    def test_it_opens_showing_what_the_row_is(self):
+        """Or picking the current type would look like a change."""
+        self.assertEqual(self.open_chooser().get(), 'Task')
+
+    def test_it_cannot_be_typed_into(self):
+        """A cell whose only valid answers are listed takes no others."""
+        self.assertEqual(str(self.open_chooser().cget('state')), 'readonly')
+
+    def test_a_nested_row_gets_the_same_list(self):
+        """
+        Which the editor used to refuse.
+
+        A sub-task could not change type without being moved first, so a
+        row nested by mistake had no way to say what it was.
+        """
+        from gantt_app.models import TASK_TYPES
+
+        chooser = self.open_chooser('u2')
+
+        self.assertEqual(list(chooser.cget('values')), list(TASK_TYPES))
+
+    def test_choosing_stores_it(self):
+        """There is nothing to confirm about picking from a list."""
+        self.task_list.set_task_type('u1', 'Phase')
+
+        self.assertEqual(self.type_of(), 'Phase')
+
+    def test_the_column_shows_it(self):
+        """The grid and the plan agree."""
+        self.task_list.set_task_type('u1', 'Phase')
+
+        self.assertEqual(self.task_list.tree.set('u1', 'Type'), 'Phase')
+
+    def test_the_editor_shows_it(self):
+        """A change stored in the grid is the task's, not the column's."""
+        self.task_list.set_task_type('u2', 'Task')
+
+        self.assertEqual(
+            self.project.get_task_by_id('u2').task_type, 'Task')
+
+    def test_it_is_one_step_in_the_undo_history(self):
+        """Like every other edit."""
+        self.task_list.set_task_type('u1', 'Phase')
+
+        self.assertTrue(self.manager.can_undo())
+
+    def test_undo_puts_the_old_type_back(self):
+        """And redo brings the new one again."""
+        self.task_list.set_task_type('u1', 'Phase')
+
+        self.manager.undo()
+        self.assertEqual(self.type_of(), 'Task')
+
+        self.manager.redo()
+        self.assertEqual(self.type_of(), 'Phase')
+
+    def test_choosing_the_type_it_already_is_costs_nothing(self):
+        """No undo step for a change that changed nothing."""
+        self.task_list.set_task_type('u1', 'Task')
+
+        self.assertFalse(self.manager.can_undo())
+
+    def test_a_type_that_is_not_one_is_refused(self):
+        """The list cannot offer one, but the method is callable."""
+        self.task_list.set_task_type('u1', 'Deliverable')
+
+        self.assertEqual(self.type_of(), 'Task')
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTheMilestoneFlagFollowsTheType(InlineEditingTestCase):
+    """
+    Typing a row Milestone in the grid ticks the editor's milestone box.
+
+    WHY THESE EXIST:
+    ================
+    Task.effective_milestone is true for either the type or the flag, so the
+    two say the same thing and have to be written together. Setting only the
+    type left the flag behind: a row typed back from Milestone to Task still
+    carried it, drew as a diamond and had no end date.
+    """
+
+    def task(self, task_id='u1'):
+        """The row itself."""
+        return self.project.get_task_by_id(task_id)
+
+    def test_choosing_milestone_sets_the_flag(self):
+        """So the editor opens with the switch on."""
+        self.task_list.set_task_type('u1', 'Milestone')
+
+        self.assertTrue(self.task().is_milestone)
+        self.assertTrue(self.task().effective_milestone)
+
+    def test_choosing_anything_else_clears_it(self):
+        """Or a Task would go on drawing as a diamond."""
+        self.task_list.set_task_type('u1', 'Milestone')
+
+        self.task_list.set_task_type('u1', 'Task')
+
+        self.assertFalse(self.task().is_milestone)
+        self.assertFalse(self.task().effective_milestone)
+
+    def test_undo_takes_the_flag_back_with_the_type(self):
+        """Both were written in one step, so both come back in one."""
+        self.task_list.set_task_type('u1', 'Milestone')
+
+        self.manager.undo()
+
+        self.assertEqual(self.task().task_type, 'Task')
+        self.assertFalse(self.task().is_milestone)
+
+    def test_the_editor_opens_with_the_box_ticked(self):
+        """Which is what the request asked to be able to see."""
+        from unittest import mock
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        self.task_list.set_task_type('u1', 'Milestone')
+
+        dialog = EditTaskDialog(self.root, self.task(), self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        dialog.withdraw()
+        try:
+            self.assertTrue(dialog.is_milestone_var.get())
+            self.assertEqual(dialog.task_type_var.get(), 'Milestone')
+        finally:
+            dialog.destroy()
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTheEditorCanRetypeAnyRow(InlineEditingTestCase):
+    """
+    The Type menu is live for every row, nested or not.
+
+    WHY THESE EXIST:
+    ================
+    It was greyed out for anything with a parent, and the save skipped the
+    field for the same rows - so a sub-task's type was decided by where it
+    sat and could not be stated. The type is the user's; where the row sits
+    is a separate statement.
+    """
+
+    def dialog(self, task_id):
+        """An edit dialog over one row."""
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.project.get_task_by_id(task_id),
+                                self.project, on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        dialog.withdraw()
+        dialog.update_idletasks()
+        return dialog
+
+    def test_a_nested_row_can_be_retyped_from_the_editor(self):
+        """The menu is not greyed out any more."""
+        import tkinter as tk
+
+        dialog = self.dialog('u2')
+        try:
+            self.assertNotEqual(str(dialog.task_type_menu.cget('state')),
+                                tk.DISABLED)
+        finally:
+            dialog.destroy()
+
+    def test_saving_a_nested_row_writes_the_type(self):
+        """Which the save used to skip for a row with a parent."""
+        dialog = self.dialog('u2')
+        try:
+            dialog.task_type_var.set('Task')
+            dialog.save()
+        finally:
+            if dialog.winfo_exists():
+                dialog.destroy()
+
+        self.assertEqual(self.project.get_task_by_id('u2').task_type, 'Task')
+
+    def test_the_row_keeps_its_parent(self):
+        """Retyping says what a row is, not where it sits."""
+        dialog = self.dialog('u2')
+        try:
+            dialog.task_type_var.set('Task')
+            dialog.save()
+        finally:
+            if dialog.winfo_exists():
+                dialog.destroy()
+
+        self.assertEqual(self.project.get_task_by_id('u2').parent_task_id,
+                         'u1')
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
+    """
+    Option+Command+I on a Mac, Ctrl+Alt+I elsewhere.
+
+    WHY THESE EXIST:
+    ================
+    Creating a row was a menu or a right-click away, and the right-click
+    needs a row to open on - so the first row of a plan could only be made
+    from the menu.
+    """
+
+    def test_it_creates_beside_the_focused_row(self):
+        """Where the cursor is, which is where the reader is looking."""
+        from unittest import mock
+
+        self.task_list.tree.selection_set('u2')
+        self.task_list.tree.focus('u2')
+
+        with mock.patch.object(self.task_list, 'create_task') as made:
+            self.task_list.create_task_at_cursor()
+
+        made.assert_called_once_with('Task', 'u2')
+
+    def test_it_goes_at_the_end_with_no_cursor(self):
+        """A list nobody has clicked in yet still makes a row."""
+        from unittest import mock
+
+        self.task_list.tree.selection_remove(*self.task_list.tree.selection())
+        self.task_list.tree.focus('')
+
+        with mock.patch.object(self.task_list, 'create_task') as made:
+            self.task_list.create_task_at_cursor()
+
+        made.assert_called_once_with('Task', None)
+
+    def test_the_key_is_the_platform_s(self):
+        """Option on a Mac, Alt elsewhere, with the usual modifier."""
+        from gantt_app.shortcuts import (
+            ALT, IS_MACOS, MODIFIER, accelerator, sequences,
+        )
+
+        self.assertEqual(sequences('i', alt=True),
+                         (f"<{MODIFIER}-{ALT}-i>", f"<{MODIFIER}-{ALT}-I>"))
+        self.assertEqual(accelerator('I', alt=True),
+                         '⌥⌘I' if IS_MACOS else 'Ctrl+Alt+I')
+
+    def test_it_does_not_collide_with_italic(self):
+        """Plain Cmd+I is already bound to italic, so this one holds Option."""
+        from gantt_app.shortcuts import sequences
+
+        self.assertNotEqual(set(sequences('i')), set(sequences('i', alt=True)))

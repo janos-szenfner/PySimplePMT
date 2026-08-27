@@ -81,18 +81,25 @@ GUIDE_SECTIONS = (
     (
         "Moving work between levels",
         [
-            "Indent and outdent change a row's parent. A row keeps its own "
-            "type wherever the new parent can hold it: a Task indented under "
-            "a Phase stays a Task, and so can still hold subtasks of its "
-            "own.",
+            "Indent and outdent change a row's parent, and nothing else. "
+            "A row keeps its type wherever it lands: a Task indented under "
+            "another Task is still a Task, and can still hold sub-tasks of "
+            "its own.",
 
-            "Only a type the new parent cannot hold is changed. A Task under "
-            "another Task becomes a Subtask; a Subtask lifted into a Phase "
-            "becomes a Task. A Milestone stays a Milestone wherever it "
-            "lands.",
+            "The type is yours to set, and only you set it. It used to "
+            "follow the tree - a Task indented under a Task came back a "
+            "Subtask, dropping a level and losing the sub-tasks it had been "
+            "built to hold. Where a row sits and what it is are two "
+            "separate statements, and moving it makes only the first.",
 
-            "Creating a row under a parent settles its type the same way, so "
-            "indenting and creating always agree.",
+            "Change a type in the Type column - double-click the cell and "
+            "pick from the list - or in the task editor. Both accept an "
+            "answer for any row, nested or not.",
+
+            "Creating a row under a parent still settles its type from what "
+            "that parent holds, since a row created from a parent's Create "
+            "menu has no type anybody has chosen yet. A sub-task created as "
+            "a sub-task is one until you say otherwise.",
 
             "Indenting and outdenting act on every selected row, not only "
             "the one under the pointer.",
@@ -107,9 +114,9 @@ GUIDE_SECTIONS = (
             "ID - assigned by the application and shown for reference. It is "
             "what dependencies and calendars point at internally.",
 
-            "Type - Phase, Task, Subtask or Milestone. See the "
-            "levels above. A sub-task cannot change its type or its parent "
-            "from the editor; move it in the list instead.",
+            "Type - Phase, Task, Subtask or Milestone. See the levels "
+            "above. Any row can be retyped, wherever it sits, and choosing "
+            "Milestone here or in the Type column marks it as one.",
 
             "Parent - the row this one sits under. Empty for a top-level "
             "row.",
@@ -597,6 +604,12 @@ GUIDE_SECTIONS = (
             "Neither gesture folds a branch away. The arrow beside a row "
             "does that, as it always did.",
 
+            "Double-click the Type cell to change what a row is. The four "
+            "types are offered in a list, and picking one stores it - there "
+            "is nothing to confirm about choosing from a list of the only "
+            "valid answers. It is one step in the undo history, the editor "
+            "shows it, and choosing Milestone marks the row as one.",
+
             "You can type the links straight into the Dependencies column. "
             "Double-click the cell and write the number of the task this "
             "one waits for: 3. Add the kind of link if it is not the usual "
@@ -719,6 +732,11 @@ GUIDE_SECTIONS = (
 
             "Every button says what it is if you rest the pointer on it, "
             "which is the fastest way to learn the row.",
+
+            "Option+Command+I on a Mac, Ctrl+Alt+I elsewhere, makes a new "
+            "task and opens its editor. It goes beside the row the cursor "
+            "is on; in a list nobody has clicked in yet it goes at the end "
+            "of the plan.",
 
             "The search box, the Day / Night control and the ? sit together "
             "against the right-hand end. None of them acts on the plan, and "

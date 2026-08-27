@@ -246,3 +246,27 @@ class TestMenuCommands(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestTheNewTaskHotkeyIsWired(unittest.TestCase):
+    """The keyboard reaches the task list's own create action."""
+
+    def test_the_toolbar_has_a_handler(self):
+        """Bound in _bind_style_hotkeys, beside the other window hotkeys."""
+        from gantt_app.views.toolbar import Toolbar
+
+        self.assertTrue(callable(getattr(Toolbar, '_hotkey_new_task', None)))
+
+    def test_it_asks_the_task_list_to_create_one(self):
+        """And does nothing at all before the list exists."""
+        from unittest import mock
+
+        from gantt_app.views.toolbar import Toolbar
+
+        stub = Toolbar.__new__(Toolbar)
+        stub.task_list = None
+        self.assertEqual(Toolbar._hotkey_new_task(stub), 'break')
+
+        stub.task_list = mock.Mock(spec=['create_task_at_cursor'])
+        Toolbar._hotkey_new_task(stub)
+        stub.task_list.create_task_at_cursor.assert_called_once_with()

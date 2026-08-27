@@ -2510,6 +2510,11 @@ class Toolbar(ctk.CTkFrame):
         bind_shortcut(window, 'F2', self._hotkey_link)
         bind_shortcut(window, 'F2', self._hotkey_unlink, shift=True)
 
+        # A new task where the cursor is, editor and all. Option+Command+I
+        # on a Mac, Ctrl+Alt+I elsewhere: plain Cmd+I is italic, which is
+        # already bound above
+        bind_shortcut(window, 'I', self._hotkey_new_task, alt=True)
+
     def _hotkey_link(self, _event=None):
         """Link the selected rows from the keyboard."""
         self.link_selected()
@@ -2518,6 +2523,14 @@ class Toolbar(ctk.CTkFrame):
     def _hotkey_unlink(self, _event=None):
         """Unlink the selected rows from the keyboard."""
         self.unlink_selected()
+        return 'break'
+
+    def _hotkey_new_task(self, _event=None):
+        """Create a task at the cursor from the keyboard."""
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'create_task_at_cursor'):
+            return 'break'
+        task_list.create_task_at_cursor()
         return 'break'
 
     def _hotkey_style(self, kind: str):
