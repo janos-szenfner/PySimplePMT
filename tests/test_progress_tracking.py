@@ -326,20 +326,84 @@ class TestMarkOnTrack(ProgressGroupTestCase):
 
         self.assertEqual(self.progress('past'), 100)
 
-    def test_future_work_is_left_at_nothing(self):
-        """It has not started, so there is nothing to report."""
+    def test_future_work_with_nothing_reported_stays_at_nothing(self):
+        """It has not started, so there is nothing to bring forward."""
+        from unittest import mock
+
         self.select('future')
-        self.project.get_task_by_id('future').progress = 40
+
+        with mock.patch('gantt_app.views.toolbar.messagebox.showinfo'):
+            self.toolbar.mark_on_track('selected')
+
+        self.assertEqual(self.progress('future'), 0)
+
+    def test_what_was_reported_on_future_work_is_not_wiped(self):
+        """
+        The fault this replaced.
+
+        A project manager reported a morning's progress against work whose
+        dates were still ahead, pressed Mark on Track over the whole
+        project, and watched 25% and 75% become 0% - because the calendar
+        expects nothing of work that has not started, and this wrote that
+        expectation over the report.
+
+            before   004 25%   005 75%
+            after    004  0%   005  0%
+
+        A figure on a row is something somebody reported; the on-track
+        figure is what the calendar expects. Where they disagree and the
+        report is higher, the report is the one that knows something.
+        """
+        from unittest import mock
+
+        self.select('future')
+        self.project.get_task_by_id('future').progress = 75
+
+        with mock.patch('gantt_app.views.toolbar.messagebox.showinfo'):
+            self.toolbar.mark_on_track('selected')
+
+        self.assertEqual(self.progress('future'), 75)
+
+    def test_work_reported_ahead_of_its_dates_is_left_alone(self):
+        """Being ahead of schedule is not a fault to correct."""
+        from unittest import mock
+
+        self.select('past')
+        self.project.get_task_by_id('past').progress = 100
+
+        with mock.patch('gantt_app.views.toolbar.messagebox.showinfo') as told:
+            self.toolbar.mark_on_track('selected')
+
+        self.assertEqual(self.progress('past'), 100)
+        self.assertTrue(told.called, "nothing to do, so it should say so")
+
+    def test_work_that_is_behind_is_still_brought_forward(self):
+        """Which is what the button is for."""
+        self.select('past')
+        self.project.get_task_by_id('past').progress = 10
 
         self.toolbar.mark_on_track('selected')
 
-        self.assertEqual(self.progress('future'), 0)
+        self.assertEqual(self.progress('past'), 100)
+
+    def test_a_run_over_the_whole_project_raises_and_never_lowers(self):
+        """The scope the report was destroyed from."""
+        from unittest import mock
+
+        self.project.get_task_by_id('future').progress = 75
+        self.project.get_task_by_id('past').progress = 10
+
+        with mock.patch('gantt_app.views.toolbar.messagebox.showinfo'):
+            self.toolbar.mark_on_track('project')
+
+        self.assertEqual(self.progress('future'), 75)
+        self.assertEqual(self.progress('past'), 100)
 
     def test_the_whole_project_can_be_marked_at_once(self):
         """Which is the scope behind the arrow, and needs no selection."""
         self.select()
 
-        self.toolbar.mark_on_track('project')
+        self.toolbar.mark_on_track('project')  # noqa: nothing reported yet
 
         self.assertEqual(self.progress('past'), 100)
         self.assertEqual(self.progress('future'), 0)

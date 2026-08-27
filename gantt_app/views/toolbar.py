@@ -2677,6 +2677,19 @@ class Toolbar(ctk.CTkFrame):
 
         Which date was used is said in the log and in the message either
         way, rather than leaving somebody to guess.
+
+        It only ever brings a row forward. A figure on a row is something
+        somebody reported; the on-track figure is what the calendar expects
+        of it. Where the two disagree and the report is the higher, the
+        report is the one that knows something - and this used to overwrite
+        it anyway, so a run over the whole project took work reported at 75%
+        and set it to 0 because its dates were still in the future:
+
+            before   004 25%   005 75%
+            after    004  0%   005  0%
+
+        Which is a morning's reporting destroyed by one press of a button,
+        and no way back but Undo. Nothing is lowered now.
         """
         from gantt_app.views.progressgroup import SCOPE_PROJECT
 
@@ -2696,22 +2709,28 @@ class Toolbar(ctk.CTkFrame):
             return
 
         updates = {}
+        ahead = 0
         for task_id in targets:
             task = self.project.get_task_by_id(task_id)
             expected = self.project.progress_on_track(task, status_date)
-            if task.progress != expected:
+            if expected > task.progress:
                 updates[task_id] = {'progress': expected}
+            elif expected < task.progress:
+                ahead += 1
 
         if not updates:
             messagebox.showinfo(
                 "Mark on Track",
-                f"Everything is already where {status_date:%d %b %Y} says "
-                f"it should be.")
+                f"Nothing is behind where {status_date:%d %b %Y} says it "
+                f"should be."
+                + (f"\n\n{ahead} row(s) are further along than that, and "
+                   f"were left as they are." if ahead else ""))
             return
 
         self._apply_updates(updates, f"Mark {len(updates)} Task(s) on Track")
-        logger.info("Marked %d task(s) on track against %s",
-                    len(updates), status_date.date())
+        logger.info("Marked %d task(s) on track against %s; left %d further "
+                    "along than that alone", len(updates),
+                    status_date.date(), ahead)
         self.refresh_style_bar()
 
     def apply_task_style(self, kind: str, value):

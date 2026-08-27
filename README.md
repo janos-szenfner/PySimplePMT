@@ -838,6 +838,22 @@ under everything else.
 - **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
   its own, so the two cannot drift apart
 
+### Mark On Track Only Ever Brings A Row Forward (`Toolbar.mark_on_track`)
+A figure on a row is something somebody reported. The on-track figure is what
+the calendar expects of it. Where the two disagree and the report is higher,
+the report is the one that knows something - so a row further along than its
+dates suggest is left exactly as it is.
+
+It used to write the expectation over the report either way. A project
+manager reported a morning's progress against work whose dates were still
+ahead, pressed the button with **Entire Project** chosen, and watched 25% and
+75% become 0%, because the calendar expects nothing of work that has not
+started. A morning's reporting gone on one press, with nothing but Undo to
+get it back.
+
+When nothing is behind, it says so, and says how many rows it left alone for
+being further along than that.
+
 ### A Summary's Length Is Its Span (`Project.roll_up_summaries`)
 A row with children brackets them: its dates are rolled up from below on
 every scheduling pass. Its stored `duration` was not, so it kept the number
@@ -2250,6 +2266,7 @@ Unit tests cover:
 - ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, the whole cascade from a part-finished sub-task to the phase above it, and that a plan of ticks and empty boxes reads exactly what counting ticks used to give
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
+- ✅ **Mark on Track**: That work behind its dates is brought forward, that a figure already reported is never lowered - over a selection or over the whole project - and that being ahead of schedule is reported rather than corrected
 - ✅ **Linking rows that hold work**: That a row is never linked to what it holds, that a selection is chained at its top level, that a collector and everything in it move together when it is linked, that the plan settles, that the dates stop moving, and that a collector stops claiming a length it does not have
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
