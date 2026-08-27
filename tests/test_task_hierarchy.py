@@ -530,3 +530,82 @@ class TestTheOutlineLevel(unittest.TestCase):
         plan = self.project(None, 'gone')
 
         self.assertEqual(plan.outline_level('2'), 1)
+
+
+class TestATaskCanAnswerItsOwnLength(unittest.TestCase):
+    """
+    working_calendar has to hand back a calendar, on every Python.
+
+    WHY THESE EXIST:
+    ================
+    It was written as @classmethod above @property - a spelling of "class
+    property" that Python supported for exactly two releases. It was
+    deprecated in 3.11 and removed in 3.13, and what it does on 3.13 is not
+    raise: the attribute hands back the property object itself. Every caller
+    then fails with
+
+        AttributeError: 'property' object has no attribute
+                        'working_days_between'
+
+    and the callers are drawing a row, opening a form and rendering a page -
+    so on 3.13 the application could not show a task list at all, while the
+    tests passed on the 3.9 it was developed against.
+
+    The local interpreter is not the only one this ships on. These check the
+    behaviour rather than the decorator, so they fail on whichever version
+    actually breaks it.
+    """
+
+    def task(self):
+        """A five working day task."""
+        from datetime import datetime
+        from gantt_app.models import Task
+
+        return Task(id="T", name="T", task_type="Task",
+                    start_date=datetime(2026, 1, 5),
+                    end_date=datetime(2026, 1, 9))
+
+    def test_it_hands_back_a_calendar(self):
+        """Not a property object, which is what 3.13 gave."""
+        from gantt_app.workdaycalendar import WorkingCalendar
+
+        self.assertIsInstance(self.task().working_calendar, WorkingCalendar)
+
+    def test_a_task_can_be_asked_how_long_it_is(self):
+        """The thing every row, form and page needs."""
+        self.assertEqual(self.task().duration_days, 5)
+
+    def test_a_task_can_be_asked_how_far_it_reaches(self):
+        """The other measurement, over the same calendar."""
+        self.assertEqual(self.task().total_elapsed_days, 5)
+
+    def test_a_task_can_settle_its_own_start(self):
+        """The third caller, and the one that runs while scheduling."""
+        from datetime import datetime
+
+        self.assertEqual(self.task().effective_start_date,
+                         datetime(2026, 1, 5))
+
+    def test_no_property_is_stacked_under_a_classmethod(self):
+        """
+        The general guard, since the specific one only covers this property.
+
+        Reading the source rather than the objects: on the versions where
+        the chain still works there is nothing wrong to observe, and this is
+        meant to fail on those versions too - before the code reaches a
+        Python that has removed it.
+        """
+        import pathlib
+
+        import gantt_app
+
+        stacked = []
+        for path in pathlib.Path(gantt_app.__file__).parent.rglob('*.py'):
+            lines = path.read_text(encoding='utf-8').splitlines()
+            for number, line in enumerate(lines[:-1], start=1):
+                if (line.strip() == '@classmethod'
+                        and lines[number].strip() == '@property'):
+                    stacked.append(f"{path.name}:{number}")
+
+        self.assertEqual(stacked, [],
+                         "classmethod(property) was removed in Python 3.13")

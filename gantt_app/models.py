@@ -882,7 +882,6 @@ class Task:
             parent_task_id=None
         )
     
-    @classmethod
     @property
     def working_calendar(self) -> WorkingCalendar:
         """
@@ -895,6 +894,21 @@ class Task:
         passes it to everything that schedules. What a task can answer on its
         own - how long it is - is answered against the standard week, which is
         what every project has unless a file said otherwise.
+
+        A plain property. This carried @classmethod above @property as well,
+        which is a spelling of "class property" that Python supported for two
+        releases: it was deprecated in 3.11 and removed in 3.13. On 3.13 the
+        chain stops working silently in the worst possible way - the attribute
+        hands back the property object itself rather than a calendar, so every
+        caller fails with
+
+            AttributeError: 'property' object has no attribute
+                            'working_days_between'
+
+        and every one of them is somewhere that only wanted a task's length:
+        drawing a row, opening a form, rendering a page. It is reached on
+        instances everywhere it is reached at all, so the classmethod bought
+        nothing even while it worked.
         """
         return default_calendar()
 

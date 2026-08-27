@@ -1769,7 +1769,20 @@ and task switchers each get the size they want rather than scaling one down.
 ## Installation
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.8 or higher. CI runs the suite on 3.11, 3.12 and 3.13; the macOS
+  and Debian packages are built against 3.11
+
+**One trap worth knowing about if you develop on an older interpreter.**
+`classmethod` stacked on `property` — the old spelling of a "class property" —
+was deprecated in 3.11 and **removed in 3.13**, and what it does on 3.13 is
+not raise: the attribute hands back the `property` object itself. `Task`
+carried one on `working_calendar`, so on 3.13 every caller that wanted a
+task's length failed with `AttributeError: 'property' object has no attribute
+'working_days_between'` — while drawing a row, opening a form or rendering a
+page. The suite passed on 3.9 and the application could not show a task list
+on 3.13. `tests/test_task_hierarchy.py` now reads the source for that stacking
+on *every* version, so it fails before the code reaches a Python that has
+removed it.
 - pip (Python package manager)
 
 ### Required Dependencies
