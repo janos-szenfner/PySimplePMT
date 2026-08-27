@@ -929,12 +929,12 @@ class TestWhereTheFieldsSit(DialogTestCase):
                     self.assertEqual(len(texts), 1,
                                      f"{text} shares row {row}")
 
-    def test_the_last_two_sections_are_ruled_off(self):
+    def test_every_section_after_the_first_is_ruled_off(self):
         """
-        Calendar and Display each open under a separator.
+        Schedule, Calendar and Display each open under a separator.
 
-        Basic Information opens the tab and Schedule follows it directly, so
-        a line between those two would divide nothing the headings do not.
+        Basic Information opens the tab, where the top of the panel already
+        does the dividing.
         """
         import customtkinter as ctk
         from tkinter import ttk
@@ -949,9 +949,9 @@ class TestWhereTheFieldsSit(DialogTestCase):
                   for child in grid.grid_slaves()
                   if isinstance(child, ctk.CTkLabel)}
 
-        self.assertIn(titles["Calendar"] - 1, rules)
-        self.assertIn(titles["Display"] - 1, rules)
-        self.assertNotIn(titles["Schedule"] - 1, rules)
+        for section in ("Schedule", "Calendar", "Display"):
+            self.assertIn(titles[section] - 1, rules, section)
+        self.assertNotIn(titles["Basic Information"] - 1, rules)
 
     def test_short_fields_sit_two_to_a_row(self):
         """
@@ -1020,6 +1020,53 @@ class TestWhereTheFieldsSit(DialogTestCase):
             return
 
         self.assertNotIn("Calendar", self.sections(dialog))
+
+    def test_the_long_dropdowns_are_held_to_one_width(self):
+        """
+        A menu stretched across the form is several times wider than the
+        longest thing it can say, and it grew with the window.
+        """
+        dialog = self.dialog()
+
+        for menu in (dialog.scheduling_options_menu, dialog.shape_menu):
+            self.assertEqual(int(menu.cget('width')), dialog.MENU_WIDTH)
+
+    def test_they_do_not_stretch_when_the_window_grows(self):
+        """Which is the half of it a width alone would not settle."""
+        dialog = self.dialog()
+        dialog.geometry('900x800')
+        dialog.update_idletasks()
+        narrow = dialog.shape_menu.winfo_width()
+
+        dialog.geometry('1600x800')
+        dialog.update_idletasks()
+
+        self.assertEqual(dialog.shape_menu.winfo_width(), narrow)
+
+    def test_they_are_anchored_left_rather_than_filling_the_column(self):
+        """A field that fills its column is a field that stretches."""
+        import tkinter as tk
+
+        dialog = self.dialog()
+
+        self.assertEqual(str(dialog.shape_menu.grid_info()['sticky']),
+                         tk.W)
+
+    def test_a_full_width_field_still_fills_the_form(self):
+        """
+        The cap is for the dropdowns, not for the name box.
+
+        Measured by how it is placed rather than by its width: a name box
+        asked for its size before the form is laid out reports whatever
+        CTkEntry defaults to, which is not what it will be drawn at.
+        """
+        import tkinter as tk
+
+        dialog = self.dialog()
+        placed = dialog.name_entry.grid_info()
+
+        self.assertEqual(str(placed['sticky']), tk.EW)
+        self.assertGreater(int(placed['columnspan']), 1)
 
     def test_the_notes_have_a_tab_of_their_own(self):
         """Between the fields and the links, which is where they belong."""

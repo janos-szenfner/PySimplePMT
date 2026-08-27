@@ -639,6 +639,17 @@ cannot pull its parent outside it either.
 The form both dialogs show, across three tabs: **General**, **Notes** and
 **Dependency**.
 
+Every section but the first opens under a rule; Basic Information opens the
+tab, where the top of the panel already does the dividing.
+
+The three long dropdowns — Scheduling options, Working calendar and Shape —
+are held to `MENU_WIDTH` and anchored left rather than filling their column.
+Stretched across the form a menu is several times wider than the longest thing
+it can say, and it grew with the window, so the mismatch got worse the more
+room there was. One width for all three: they sit in three different sections,
+and a ragged right edge down the form reads worse than a little slack after
+"Rounded".
+
 The fields run down the General tab in reading order, and the **Scheduling
 options** menu sits directly above **Start Date** because it says which of the
 three boxes under it — start, end, duration — the form fills in for you. Read
@@ -2350,10 +2361,10 @@ Unit tests cover:
 - ✅ **Inline Editing (behaviour)**: That a double-click opens an editor over the right cell and routes the name and the dependencies to their own, that Enter stores the name and Escape does not, that an empty name reverts, that a row deleted under the editor is not renamed, that it is one undo step, and that renaming does not disturb the rest of the task
 - ✅ **The Type column**: That a double-click opens a read-only dropdown of every type, that a nested row gets the same list, that choosing stores it as one undo step, that choosing the type it already is costs nothing, and that the milestone flag is written and cleared with the type in both directions
 - ✅ **A row keeps its type when it moves**: That indent and outdent leave every type alone, including the cases the older rule retyped, and that an indent/outdent round trip lands where it started
-- ✅ **New task from the keyboard**: That it creates beside the focused row, at the end of the plan with no cursor, and that the key is the platform's and does not collide with italic
+- ✅ **New task from the keyboard**: That it creates beside the focused row, at the end of the plan with no cursor, that the key is the platform's and does not collide with italic, and that the I key is recognised from its keysym, its character or — on macOS — its physical keycode, so the Option compose key cannot hide it
 - ✅ **The two speeds of clicking**: That the first click on an unselected row schedules no rename, that a click on one already selected does, that a quick second click calls it off and opens the editor instead, that the rename stands down if the selection moved or the row has gone, and that a pending one does not outlive the list
 - ✅ **The critical path painted into the list**: That the critical rows go light red and a row with float does not, that the highlight beats a fill the row was given, that it survives the list being rebuilt, that clearing it puts the banding back, and that no window is opened
-- ✅ **Where the fields sit**: That the four sections read Basic Information, Schedule, Calendar, Display; that each title has its row to itself and the last two open under a rule; that short fields sit two to a row and one with nothing beside it keeps the left; that the Scheduling options menu is immediately above Start Date, that the calculated box is shaded from the moment the form opens, that the tabs read General / Notes / Dependency, that the notes box is on its own tab and still opens holding and saves what the task says
+- ✅ **Where the fields sit**: That the four sections read Basic Information, Schedule, Calendar, Display; that each title has its row to itself and every section after the first opens under a rule; that the three long dropdowns are held to one width and do not stretch when the window grows; that short fields sit two to a row and one with nothing beside it keeps the left; that the Scheduling options menu is immediately above Start Date, that the calculated box is shaded from the moment the form opens, that the tabs read General / Notes / Dependency, that the notes box is on its own tab and still opens holding and saves what the task says
 - ✅ **Dependency Grammar**: Every row of the specification's token table, commas and semicolons, case and spacing, a lag with no type and a type with no lag, and a round trip through every form the cell can hold
 - ✅ **The Dependencies Column**: That an unreadable cell stores nothing and says so, that the four guards refuse what they should, that the plan is left untouched by a check that fails, that a whole cell is one undo step, and that the task editor shows what the grid stored
 - ✅ **Exported IDs**: That the GanttProject and MSPDI files number tasks the way the list does, that the shared plan walk agrees with `display_ids` rather than counting for itself, that the spreadsheet's ID column holds numbers the plan shows, and that no identity reaches either file

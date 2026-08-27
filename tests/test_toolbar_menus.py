@@ -270,3 +270,90 @@ class TestTheNewTaskHotkeyIsWired(unittest.TestCase):
         stub.task_list = mock.Mock(spec=['create_task_at_cursor'])
         Toolbar._hotkey_new_task(stub)
         stub.task_list.create_task_at_cursor.assert_called_once_with()
+
+
+class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
+    """
+    Option is a compose key on macOS, so the keysym cannot be relied on.
+
+    WHY THESE EXIST:
+    ================
+    Option+I on a US layout is the dead key for a circumflex. The event can
+    arrive carrying keysym 'dead_circumflex' and a char of 'ˆ', so a binding
+    written <Command-Option-i> never matches - there is no 'i' left in the
+    event by the time Tk looks. Which of those a given Tk hands over differs
+    by version, so the key is identified from any of the three things that
+    can name it.
+    """
+
+    def event(self, **fields):
+        """A stand-in key event."""
+        from types import SimpleNamespace
+
+        fields.setdefault('keysym', '')
+        fields.setdefault('char', '')
+        fields.setdefault('keycode', 0)
+        return SimpleNamespace(**fields)
+
+    def test_the_plain_keysym_is_accepted(self):
+        """What a Tk that leaves the keystroke alone reports."""
+        from gantt_app.shortcuts import is_key
+
+        self.assertTrue(is_key(self.event(keysym='i', char='i'), 'I'))
+        self.assertTrue(is_key(self.event(keysym='I', char='I'), 'I'))
+
+    def test_the_character_is_accepted(self):
+        """Where the keysym is something else but the char survives."""
+        from gantt_app.shortcuts import is_key
+
+        self.assertTrue(is_key(self.event(keysym='Key-34', char='i'), 'I'))
+
+    def test_the_composed_dead_key_is_still_the_i_key(self):
+        """
+        The case that was failing: neither keysym nor char says 'i'.
+
+        The keycode names the physical key, which is the one thing Option
+        cannot change.
+        """
+        from gantt_app.shortcuts import MAC_KEYCODES, is_key, IS_MACOS
+
+        if not IS_MACOS:
+            self.skipTest("the keycode fallback is macOS only")
+
+        self.assertTrue(is_key(
+            self.event(keysym='dead_circumflex', char='ˆ',
+                       keycode=MAC_KEYCODES['i']), 'I'))
+
+    def test_another_key_held_with_option_is_not_it(self):
+        """Or every Option shortcut would make a task."""
+        from gantt_app.shortcuts import is_key
+
+        self.assertFalse(is_key(self.event(keysym='j', char='∆',
+                                           keycode=38), 'I'))
+
+    def test_the_catch_all_names_the_modifiers(self):
+        """Tk matches those itself; only the key is left to us."""
+        from gantt_app.shortcuts import ALT, MODIFIER, any_key_with
+
+        self.assertEqual(any_key_with(alt=True),
+                         f"<{MODIFIER}-{ALT}-KeyPress>")
+
+    def test_the_toolbar_routes_the_i_key_through(self):
+        """And leaves every other Option keystroke alone."""
+        from unittest import mock
+
+        from gantt_app.views.toolbar import Toolbar
+
+        stub = Toolbar.__new__(Toolbar)
+        stub.task_list = mock.Mock(spec=['create_task_at_cursor'])
+
+        self.assertEqual(
+            Toolbar._alt_key_pressed(stub, self.event(keysym='i', char='i')),
+            'break')
+        stub.task_list.create_task_at_cursor.assert_called_once_with()
+
+        stub.task_list.reset_mock()
+        self.assertIsNone(
+            Toolbar._alt_key_pressed(stub, self.event(keysym='j', char='j',
+                                                      keycode=38)))
+        stub.task_list.create_task_at_cursor.assert_not_called()

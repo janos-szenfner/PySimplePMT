@@ -29,6 +29,7 @@ from gantt_app.utils.gan_exporter import export_project_to_gan
 from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.shortcuts import accelerator
+from gantt_app.shortcuts import any_key_with, is_key
 from gantt_app.shortcuts import bind_all as bind_shortcut
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views import tooltip as tooltips
@@ -2512,8 +2513,15 @@ class Toolbar(ctk.CTkFrame):
 
         # A new task where the cursor is, editor and all. Option+Command+I
         # on a Mac, Ctrl+Alt+I elsewhere: plain Cmd+I is italic, which is
-        # already bound above
+        # already bound above.
+        #
+        # Bound twice. The plain sequence is what works wherever Option
+        # leaves the keystroke alone; the catch-all is for macOS, where it
+        # does not - see shortcuts.is_key. Tk matches the modifiers on the
+        # catch-all and _hotkey_new_task decides whether the key was I, so
+        # a keystroke that arrives as a dead circumflex still lands.
         bind_shortcut(window, 'I', self._hotkey_new_task, alt=True)
+        window.bind(any_key_with(alt=True), self._alt_key_pressed, add='+')
 
     def _hotkey_link(self, _event=None):
         """Link the selected rows from the keyboard."""
@@ -2524,6 +2532,27 @@ class Toolbar(ctk.CTkFrame):
         """Unlink the selected rows from the keyboard."""
         self.unlink_selected()
         return 'break'
+
+    def _alt_key_pressed(self, event):
+        """
+        Sort the one Option shortcut out of every key held with Option.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every miss is logged with what actually arrived. If this shortcut
+        ever fails on a machine, the log names the keysym, the character and
+        the keycode that machine sent - which is the thing that cannot be
+        worked out from here, and the thing shortcuts.is_key needs to know.
+        """
+        if is_key(event, 'I'):
+            return self._hotkey_new_task(event)
+
+        logger.debug("Option held with keysym=%r char=%r keycode=%r; "
+                     "not the new-task shortcut",
+                     getattr(event, 'keysym', None),
+                     getattr(event, 'char', None),
+                     getattr(event, 'keycode', None))
+        return None
 
     def _hotkey_new_task(self, _event=None):
         """Create a task at the cursor from the keyboard."""

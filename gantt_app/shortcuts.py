@@ -157,6 +157,76 @@ def sequences(key: str, shift: bool = False, alt: bool = False) -> tuple:
     return (f"<{held}-{key}>",)
 
 
+#: Where each letter sits on a Mac keyboard, by macOS virtual keycode.
+#:
+#: Only the letters this application binds. macOS virtual keycodes name a
+#: physical position rather than a character, so they are the same whatever
+#: the keyboard layout produces - which is the point of having them here.
+MAC_KEYCODES = {'b': 11, 'i': 34, 'u': 32}
+
+
+def any_key_with(shift: bool = False, alt: bool = False) -> str:
+    """
+    The sequence matching any key pressed while these modifiers are held.
+
+    RETURNS:
+    --------
+    str
+        A Tk sequence such as '<Command-Option-KeyPress>'.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    For shortcuts that hold Option. Tk matches the modifiers itself here,
+    which is the half that works; identifying the key is left to is_key,
+    which is the half that does not - see there.
+    """
+    return f"<{'-'.join(_held(shift, alt))}-KeyPress>"
+
+
+def is_key(event, key: str) -> bool:
+    """
+    Whether a key event is the given key, however it reached us.
+
+    PARAMETERS:
+    -----------
+    event : tkinter.Event
+        A KeyPress.
+    key : str
+        The key meant, as a single letter.
+
+    RETURNS:
+    --------
+    bool
+        True when the event is that key.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Option is a compose key on macOS: it does not modify a keystroke so much
+    as replace it. Option+I on a US layout is the dead key for a circumflex,
+    so the event can arrive carrying keysym 'dead_circumflex' and a char of
+    'ˆ' - and a binding written <Command-Option-i> never matches, because by
+    the time Tk looks there is no 'i' in the event to match against.
+
+    Which of those a given Tk hands over differs by version, so all three
+    are accepted: the keysym, the character, and - on a Mac - the physical
+    key the keycode names, which is the one thing Option cannot change.
+    """
+    wanted = key.lower()
+    for reported in (getattr(event, 'keysym', ''), getattr(event, 'char', '')):
+        if isinstance(reported, str) and reported.lower() == wanted:
+            return True
+
+    if IS_MACOS and wanted in MAC_KEYCODES:
+        keycode = getattr(event, 'keycode', None)
+        if isinstance(keycode, int):
+            # Tk has reported this as the bare virtual keycode and, in other
+            # versions, packed into the high bytes with the keysym below it
+            return keycode in (MAC_KEYCODES[wanted],
+                               MAC_KEYCODES[wanted] << 16,
+                               MAC_KEYCODES[wanted] << 24)
+    return False
+
+
 def bind_all(widget, key: str, handler, shift: bool = False,
              alt: bool = False) -> None:
     """

@@ -140,7 +140,28 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     #: so a field that is not built - a milestone has no end date - leaves
     #: the half beside it empty rather than pulling the next field up into
     #: a row it does not belong on.
-    LEFT, RIGHT, FULL = 'left', 'right', 'full'
+    #:
+    #: HALF takes a whole row and puts the widget in the left field column
+    #: alone, anchored west at MENU_WIDTH rather than stretched. For a
+    #: dropdown: a menu stretched across the form is a control several times
+    #: wider than the longest thing it can say, and it grew with the window,
+    #: so the mismatch got worse the more room there was. Unlike LEFT it
+    #: does not open the row for a RIGHT to fill - nothing belongs beside
+    #: these - so the half beside it stays empty.
+    LEFT, RIGHT, FULL, HALF = 'left', 'right', 'full', 'half'
+
+    #: How wide a HALF dropdown is drawn, whatever the window does.
+    #:
+    #: Enough for the longest thing any of the three says - "Start date is
+    #: calculated", "Project Default (Mon-Fri)" - and no more. One width for
+    #: all three rather than each sized to its own longest option: they sit
+    #: in three different sections and a ragged right edge down the form
+    #: reads worse than a little slack after "Rounded".
+    #:
+    #: A named calendar can of course be called something longer than this.
+    #: The menu keeps its width and the label is what gives, which is the
+    #: trade this makes deliberately.
+    MENU_WIDTH = 260
 
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
@@ -326,8 +347,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             return row, 0, 1
 
         self._open_row = None
-        if where == self.RIGHT:
-            return row, 2, 1
+        if where in (self.RIGHT, self.HALF):
+            return row, 2 if where == self.RIGHT else 0, 1
         return row, 0, self.FIELD_COLUMNS - 1
 
     def _field(self, parent, label: str, widget=None,
@@ -338,13 +359,23 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         PARAMETERS:
         -----------
         where : str
-            LEFT, RIGHT or FULL; see those constants. FULL by default, which
-            is what a field with nothing to sit beside wants.
+            LEFT, RIGHT, FULL or HALF; see those constants. FULL by default,
+            which is what a field with nothing to sit beside wants.
 
         The label is remembered against its widget, so that greying a field
         out can grey what it is called as well - see _set_field_enabled.
         """
-        row, column, span = self._cell(where or self.FULL)
+        where = where or self.FULL
+        row, column, span = self._cell(where)
+
+        if where == self.HALF:
+            # Held to its own width rather than filling the column, so the
+            # window growing does not stretch it; see MENU_WIDTH
+            sticky = tk.W
+            try:
+                widget.configure(width=self.MENU_WIDTH)
+            except (AttributeError, tk.TclError, ValueError):
+                logger.debug("Could not set the width of %s", label)
 
         caption = ctk.CTkLabel(parent, text=label)
         caption.grid(row=row, column=column, sticky=label_sticky, pady=5,
@@ -504,10 +535,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         is, when it happens, which week it is scheduled against, and how it
         is drawn. The notes are not here - they have a tab of their own.
 
-        Only the last two carry a rule above the title. Basic Information
-        opens the tab and Schedule follows it directly, and a line between
-        two adjacent headings divides nothing that the headings do not
-        already divide.
+        Every section but the first is ruled off. Basic Information opens
+        the tab, where the top of the panel already does the dividing.
 
         The scheduling menu comes first in its section, above the start
         date, because it says which of the three boxes under it the form
@@ -524,7 +553,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_progress(frame)
         self._build_priority(frame)
 
-        self._heading(frame, "Schedule")
+        self._heading(frame, "Schedule", rule=True)
         self._build_scheduling_options(frame)
         self._build_dates(frame)
         self._build_duration(frame)
@@ -655,7 +684,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             frame, variable=self.scheduling_options_var,
             values=["Start date is calculated", "End date is calculated", "Duration is calculated"]
         )
-        self._field(frame, "Scheduling options:", self.scheduling_options_menu)
+        self._field(frame, "Scheduling options:",
+                    self.scheduling_options_menu, where=self.HALF)
         
         # Trace the variable to update field states when changed
         self.scheduling_options_var.trace_add("write", self._on_scheduling_mode_changed)
@@ -783,7 +813,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.calendar_menu = ctk.CTkOptionMenu(frame, variable=self.calendar_var,
                                                values=labels)
         self._heading(frame, "Calendar", rule=True)
-        self._field(frame, "Working calendar:", self.calendar_menu)
+        self._field(frame, "Working calendar:", self.calendar_menu,
+                    where=self.HALF)
 
         # The dates follow the moment the calendar changes, without waiting
         # for Save: picking a weekend-only calendar for a task starting on a
@@ -1213,7 +1244,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             frame, variable=self.shape_var,
             values=["Default", "Rectangle", "Rounded"]
         )
-        self._field(frame, "Shape:", self.shape_menu)
+        self._field(frame, "Shape:", self.shape_menu, where=self.HALF)
 
     def _build_progress(self, frame):
         """
