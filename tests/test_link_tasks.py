@@ -14,6 +14,7 @@ order - a Treeview hands back the rows in the order they were added to the
 selection, so shift-clicking upwards gives them bottom-first.
 """
 
+import logging
 import unittest
 from datetime import datetime, timedelta
 
@@ -323,3 +324,127 @@ class TestTheButtonsAndTheirKeys(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestLinkingRowsThatHoldWork(LinkingTestCase):
+    """
+    A collector is linked by moving what is inside it, and never to its own
+    contents.
+
+    WHY THESE EXIST:
+    ================
+    A project manager linked a selection that included collectors:
+
+        T2: Ez meg nem az igazi, a kotes gomb valahogy mukodik, de a
+        gyujtokon az idoket es az egymasutanisagot total szetzilalja.
+        Olyannyira, hogy varazsutesre 2027 lett, pedig ilyet tuti nem
+        allitottam be. A mogotte levo meg nem ugrott utana, csak szepen oda
+        van pirospottyel kotve.
+
+    Three faults, and each of these covers one of them: a chain built in
+    reading order tied every collector to the first row inside it, which is
+    a contradiction rather than a chain; the plan then never settled, so
+    every action moved the dates further out; and a link to a collector was
+    drawn and never obeyed.
+    """
+
+    def setUp(self):
+        """Two branches, each a row holding one row."""
+        super().setUp()
+        self.project = Project(name="Plan")
+        rows = (
+            ("001", "Project Planning", "Task", None),
+            ("002", "Scoping", "Subtask", "001"),
+            ("003", "Design Phase", "Task", None),
+            ("004", "UI Mockups", "Subtask", "003"),
+        )
+        for task_id, name, task_type, parent in rows:
+            self.project.add_task(Task(
+                id=task_id, name=name, start_date=BASE,
+                end_date=BASE + timedelta(days=2), duration=2,
+                task_type=task_type, parent_task_id=parent))
+        self.project.apply_schedule()
+
+    def test_a_row_is_never_linked_to_what_it_holds(self):
+        """
+        Its dates are rolled up from that row, so it would be waiting for a
+        date computed from itself.
+        """
+        made = self.project.link_tasks(["001", "002"])
+
+        self.assertEqual(made, [])
+        self.assertEqual(list(self.project.get_task_by_id("002").dependencies),
+                         [])
+
+    def test_a_selection_is_chained_at_its_top_level(self):
+        """
+        Selecting a branch and the rows in it is one thing running after
+        another, not four.
+        """
+        made = self.project.link_tasks([t.id for t in self.project.tasks])
+
+        self.assertEqual(made, [("001", "003")])
+
+    def test_a_collector_moves_when_it_is_linked(self):
+        """The red dot with nothing behind it."""
+        self.project.link_tasks(["001", "003"])
+        self.project.apply_schedule()
+
+        self.assertGreater(self.project.get_task_by_id("003").start_date,
+                           self.project.get_task_by_id("001").end_date)
+
+    def test_what_it_holds_moves_with_it(self):
+        """Otherwise the collector stops bracketing its own rows."""
+        self.project.link_tasks(["001", "003"])
+        self.project.apply_schedule()
+
+        collector = self.project.get_task_by_id("003")
+        held = self.project.get_task_by_id("004")
+        self.assertEqual(held.start_date, collector.start_date)
+        self.assertEqual(held.end_date, collector.end_date)
+
+    def test_the_plan_settles(self):
+        """
+        A plan that never settles is left wherever the last pass put it, and
+        every action runs the pass again - which is how one starting in
+        August came to start the following January.
+        """
+        self.project.link_tasks(["001", "003"])
+
+        with self.assertLogs('gantt_app.models', level='WARNING') as caught:
+            self.project.apply_schedule()
+            logging.getLogger('gantt_app.models').warning("settled")
+
+        self.assertEqual([r for r in caught.output if 'did not settle' in r],
+                         [])
+
+    def test_the_dates_stop_moving(self):
+        """Doing it again changes nothing."""
+        self.project.link_tasks(["001", "003"])
+        self.project.apply_schedule()
+
+        settled = {t.id: (t.start_date, t.end_date) for t in self.project.tasks}
+        for _ in range(4):
+            self.project.apply_schedule()
+
+        self.assertEqual(
+            {t.id: (t.start_date, t.end_date) for t in self.project.tasks},
+            settled)
+
+    def test_a_collector_stops_claiming_a_length_it_does_not_have(self):
+        """
+        The fault underneath the drift: a summary kept the duration it was
+        created with, the working-calendar pass rebuilt its finish from that
+        number, and the roll-up rebuilt it from the children. The two took
+        turns for all twelve passes.
+        """
+        collector = self.project.get_task_by_id("001")
+        collector.duration = 9
+
+        self.project.apply_schedule()
+
+        calendar = self.project.calendar_for(collector)
+        self.assertEqual(
+            collector.duration,
+            calendar.working_days_between(collector.start_date,
+                                          collector.end_date))

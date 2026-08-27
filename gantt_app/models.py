@@ -2519,14 +2519,34 @@ class Project:
         one awkward pair in the middle of it doing nothing at all, with the
         reason buried; skipping is what the user can see, because the rows
         that did link say so in their own column.
+
+        A chain is built from the topmost rows of the selection. A row that
+        holds work is bracketed by that work, so a selection of a row and
+        the rows inside it is one thing running one after another, not four,
+        and chaining every row of it in reading order linked each container
+        to the first thing inside it. That is a contradiction rather than a
+        long chain: the container's dates are rolled up from its children,
+        so a child made to wait for its own parent waits for a date that is
+        computed from it. The plan then never settled - each pass moved it
+        further out - which is how a plan starting in August came to start
+        the following January.
         """
-        chosen = self._in_display_order(task_ids)
+        chosen = [self.get_task_by_id(task_id)
+                  for task_id in self.topmost_of(task_ids)]
         if len(chosen) < 2:
             return []
 
         linked = []
         for predecessor, successor in zip(chosen, chosen[1:]):
             if successor.get_dependency(predecessor.id) is not None:
+                continue
+            if (self.is_descendant(successor.id, predecessor.id)
+                    or self.is_descendant(predecessor.id, successor.id)):
+                # Belt and braces: topmost_of has already dropped these, but
+                # a caller reaching the plan directly must not be able to
+                # write a link the scheduler cannot honour
+                logger.info("Not linking %s to %s: one holds the other",
+                            predecessor.id, successor.id)
                 continue
             if self.would_create_dependency_cycle(successor.id,
                                                   predecessor.id):
@@ -3202,6 +3222,75 @@ class Project:
         self._update_dates()
         return True
 
+    def _pull_branch_after_its_links(self, summary: Task) -> bool:
+        """
+        Move a row that holds work, and the work with it, to obey its links.
+
+        PARAMETERS:
+        -----------
+        summary : Task
+            A row with children, which is therefore bracketing them.
+
+        RETURNS:
+        --------
+        bool
+            True when the branch moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A row that holds work has no dates of its own: it spans its
+        children, and roll_up_summaries writes it from them on every pass.
+        The link pass therefore skipped such rows altogether, which meant a
+        link *to* one was made, drawn on the chart, and never obeyed - "the
+        one behind it didn't jump after it, it's just nicely tied there with
+        a red dot".
+
+        The link is answered where the dates actually live. What the links
+        require of the summary is asked of constrained_dates, which reads
+        without writing, and the whole branch is then moved by that many
+        calendar days - the uniform shift shift_to_start uses on a whole
+        plan, for the same reason: every row keeps its length, two rows keep
+        the gap between them, and a link inside the branch that was
+        satisfied stays satisfied because both of its ends moved together.
+
+        The summary's own dates are moved with the rest so the plan is never
+        momentarily inconsistent, and roll_up_summaries rebuilds them from
+        the children later in the same pass.
+
+        Only ever later, like the rest of the pass - see forward_only on
+        apply_dependency_constraints. A branch dragged backwards by a link
+        would undo dates somebody set on purpose.
+
+        The working calendar is enforced afterwards, inside the same loop,
+        so a child landing on a Saturday is pushed to the Monday. That makes
+        the shift not quite uniform for those rows, which is the right way
+        round: work does not happen on a day nobody works.
+        """
+        required_start, _required_end = self.constrained_dates(summary)
+        if required_start is None or summary.start_date is None:
+            return False
+
+        delta = as_date(required_start) - as_date(summary.start_date)
+        if delta.days <= 0:
+            return False
+
+        branch = self._descendant_ids(summary.id) | {summary.id}
+        for task_id in branch:
+            task = self.get_task_by_id(task_id)
+            if task is None:
+                continue
+            if task.start_date is not None:
+                task.start_date += delta
+            if task.end_date is not None:
+                task.end_date += delta
+            if task.earliest_begin is not None:
+                task.earliest_begin += delta
+
+        logger.info("Moved %r and the %d row(s) it holds %d day(s), to follow "
+                    "what it waits for", summary.name, len(branch) - 1,
+                    delta.days)
+        return True
+
     #: Cap on the reschedule fixed-point loop. Auto-scheduling and roll-up
     #: feed each other - moving a leaf resizes its parent, which can move a
     #: task linked to that parent - so the pass repeats until nothing changes.
@@ -3588,11 +3677,30 @@ class Project:
             # every parent the importers build - a Mermaid section, a
             # spreadsheet phase, a nested GanttProject task all arrive as
             # ordinary Tasks. Which progress rule applies still goes by type.
+            # The span a row holds is what it now says it holds. A summary
+            # that kept the duration it was created with had two answers for
+            # its own length, and the working-calendar pass believed the
+            # stored one: it rebuilt the finish from the number while this
+            # rebuilt it from the children, and the two took turns for all
+            # twelve passes of the reschedule loop, which then reported a
+            # cycle in links that had none and left the dates wherever the
+            # last pass happened to put them. Every action ran the loop
+            # again and left them somewhere else - which is what a project
+            # manager saw as a plan that "totally scrambles the dates" on
+            # its collectors.
+            new_duration = max(
+                self.calendar_for(task).working_days_between(
+                    new_start, new_end), 1)
+
             if (task.start_date != new_start or task.end_date != new_end
-                    or task.progress != new_progress):
+                    or task.progress != new_progress
+                    or (task.duration is not None
+                        and task.duration != new_duration)):
                 task.start_date = new_start
                 task.end_date = new_end
                 task.progress = new_progress
+                if task.duration is not None:
+                    task.duration = new_duration
                 changed = True
 
         return changed
@@ -3680,9 +3788,10 @@ class Project:
 
         Order matters. Links are applied to the leaves in predecessor-first
         order so a chain settles in one sweep, then summaries are rolled up
-        from their children. Summaries are skipped by the link pass because
-        their dates come from below; letting a link move one would put it out
-        of step with the children it is supposed to bracket.
+        from their children. A summary's own dates are not written by the
+        link pass, because they come from below and writing them would put
+        the row out of step with the children it brackets - it is moved by
+        moving those children instead; see _pull_branch_after_its_links.
 
         The pass only ever moves a task later - see forward_only on
         apply_dependency_constraints. Choosing a predecessor in the dialog
@@ -3710,6 +3819,8 @@ class Project:
             moved = False
             for task in self._schedule_order():
                 if task.id in summary_ids:
+                    if self._pull_branch_after_its_links(task):
+                        moved = True
                     continue
                 if self.apply_dependency_constraints(task, forward_only=True):
                     moved = True

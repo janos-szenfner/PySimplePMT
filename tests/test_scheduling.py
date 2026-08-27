@@ -16,6 +16,7 @@ duration rather than its calendar span. The fixture runs from Thursday 1
 January 2026, which puts a weekend inside the first chain deliberately.
 """
 
+import logging
 import unittest
 from datetime import datetime, timedelta
 
@@ -728,12 +729,17 @@ class TestSummaryRollUp(unittest.TestCase):
         self.assertEqual(self.project.get_task_by_id("C1").start_date,
                          datetime(2026, 1, 1))
 
-    def test_a_link_does_not_move_a_summary(self):
+    def test_a_link_moves_a_summary_by_moving_what_is_in_it(self):
         """
-        A summary's dates come from its children, not from its links.
+        A summary's dates come from its children, so it is moved by moving
+        them.
 
-        Letting a link move one would put it out of step with the sub-tasks
-        it is supposed to bracket.
+        The link pass used to skip a summary altogether on the reasoning
+        that writing its dates would put it out of step with the sub-tasks
+        it brackets. That was true of writing them; it left a link to a
+        summary drawn on the chart and never obeyed - which is what a
+        project manager reported as "it didn't jump after it, it's just
+        nicely tied there with a red dot".
         """
         other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
                      end_date=datetime(2026, 9, 5))
@@ -742,7 +748,104 @@ class TestSummaryRollUp(unittest.TestCase):
 
         self.project.reschedule()
 
-        self.assertEqual(self.parent().start_date, datetime(2026, 1, 1))
+        self.assertGreater(self.parent().start_date, other.end_date)
+
+    def test_the_children_move_with_it(self):
+        """Which is what keeps the summary bracketing them."""
+        before = {task_id: self.project.get_task_by_id(task_id).start_date
+                  for task_id in ("C1", "C2")}
+        other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
+                     end_date=datetime(2026, 9, 5))
+        self.project.add_task(other)
+        self.parent().add_dependency("Z", 'FS', 'Hard')
+
+        self.project.reschedule()
+
+        for task_id, was in before.items():
+            self.assertGreater(self.project.get_task_by_id(task_id).start_date,
+                               was, f"{task_id} was left behind")
+
+    def test_it_still_spans_them_afterwards(self):
+        """The whole point of moving the branch rather than the row."""
+        other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
+                     end_date=datetime(2026, 9, 5))
+        self.project.add_task(other)
+        self.parent().add_dependency("Z", 'FS', 'Hard')
+
+        self.project.reschedule()
+
+        children = [self.project.get_task_by_id(i) for i in ("C1", "C2")]
+        self.assertEqual(self.parent().start_date,
+                         min(c.start_date for c in children))
+        self.assertEqual(self.parent().end_date,
+                         max(c.end_date for c in children))
+
+    def test_the_children_keep_their_order(self):
+        """
+        The branch is moved, not rescheduled.
+
+        Every row moves by the same number of calendar days, so what
+        somebody set up inside the branch survives. The working calendar is
+        then enforced, which can push a row that landed on a Saturday to the
+        Monday and so move it a day further than its neighbour - the right
+        way round, since work does not happen on a day nobody works, but it
+        means an internal gap is preserved in spirit rather than to the day.
+        """
+        other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
+                     end_date=datetime(2026, 9, 5))
+        self.project.add_task(other)
+        self.parent().add_dependency("Z", 'FS', 'Hard')
+
+        self.project.reschedule()
+
+        first = self.project.get_task_by_id("C1")
+        second = self.project.get_task_by_id("C2")
+        self.assertLess(first.start_date, second.start_date)
+        self.assertLess(first.end_date, second.end_date)
+
+    def test_a_plan_linked_through_a_summary_settles(self):
+        """
+        Which is what a project manager saw when it did not.
+
+        The pass repeats until nothing moves, capped so a cycle cannot spin
+        forever, and warns when it hits the cap. Hitting it means the dates
+        are wherever the last pass left them - and every later action ran
+        the pass again and moved them further, which is how a plan starting
+        in August came to start the following January.
+        """
+        other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
+                     end_date=datetime(2026, 9, 5))
+        self.project.add_task(other)
+        self.parent().add_dependency("Z", 'FS', 'Hard')
+
+        with self.assertLogs('gantt_app.models', level='WARNING') as caught:
+            self.project.reschedule()
+            # assertLogs insists on at least one record
+            logging.getLogger('gantt_app.models').warning("settled")
+
+        self.assertEqual([r for r in caught.output if 'did not settle' in r],
+                         [])
+
+    def test_it_stays_where_it_landed(self):
+        """
+        Rescheduling again moves nothing.
+
+        A plan that creeps on every pass is the fault being guarded against
+        here: the dates were different every time anything touched them.
+        """
+        other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
+                     end_date=datetime(2026, 9, 5))
+        self.project.add_task(other)
+        self.parent().add_dependency("Z", 'FS', 'Hard')
+        self.project.reschedule()
+
+        settled = {t.id: (t.start_date, t.end_date) for t in self.project.tasks}
+        for _ in range(3):
+            self.project.reschedule()
+
+        self.assertEqual(
+            {t.id: (t.start_date, t.end_date) for t in self.project.tasks},
+            settled)
 
 
 class TestMilestoneRules(unittest.TestCase):

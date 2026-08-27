@@ -739,6 +739,19 @@ under everything else.
   top to bottom, with no lag - the first row becomes the predecessor of the
   second, the second of the third. `⌘F2` on a Mac and `Ctrl+F2` elsewhere, or
   the chain icon on the row
+- **Chained at the level you are working at**: the topmost rows of the
+  selection. A row that holds work is bracketed by that work, so selecting a
+  branch and the rows inside it is one thing running after another, not four
+  - and chaining every row in reading order tied each container to the first
+  row inside it, which is a contradiction rather than a chain: the
+  container's dates are rolled up from its children, so a child made to wait
+  for its own parent waits for a date computed from itself. The plan then
+  never settled, and every action moved it further out
+- **A collector is moved by moving what is inside it**: a link *to* a row
+  that holds work used to be drawn on the chart and never obeyed, because
+  the scheduling pass skipped such rows - their dates come from below. The
+  whole branch is shifted instead, by the same number of days, so the row
+  goes on bracketing its own work; see `Project._pull_branch_after_its_links`
 - **In the order the rows are shown, not the order they were clicked**: a
   Treeview reports a selection in the order rows were added to it, so
   shift-clicking upwards from the bottom of a group hands them back
@@ -824,6 +837,18 @@ under everything else.
   catching: a button with nothing on it
 - **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
   its own, so the two cannot drift apart
+
+### A Summary's Length Is Its Span (`Project.roll_up_summaries`)
+A row with children brackets them: its dates are rolled up from below on
+every scheduling pass. Its stored `duration` was not, so it kept the number
+it was created with - and the working-calendar pass believed that number,
+rebuilding the finish from it while the roll-up rebuilt the finish from the
+children. The two took turns for all twelve passes of the reschedule loop,
+which then reported a cycle in links that had none and left the dates
+wherever the last pass happened to put them. Every later action ran the loop
+again and left them somewhere else, which is what a plan "scrambling" its
+collectors looks like from the outside. The roll-up writes the duration too
+now, so the two agree and the loop settles.
 
 ### How Far Along A Row Is (`views/taskform.py`)
 - **Every row carries a percentage**, including a sub-task. It was a tick
@@ -2225,6 +2250,7 @@ Unit tests cover:
 - ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, the whole cascade from a part-finished sub-task to the phase above it, and that a plan of ticks and empty boxes reads exactly what counting ticks used to give
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
+- ✅ **Linking rows that hold work**: That a row is never linked to what it holds, that a selection is chained at its top level, that a collector and everything in it move together when it is linked, that the plan settles, that the dates stop moving, and that a collector stops claiming a length it does not have
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
 - ✅ **No test opens a dialog**: importing `tests/__init__.py` stands every blocking dialog down for the whole suite, because one that opens waits for somebody to click it and there is nobody on a build machine. A test that means to exercise a prompt patches it and asserts on the call; the one file that tests the dialog layer itself puts the real ones back in `setUpModule`. In the package rather than in a `conftest.py`, because the build runs `run_tests.py`, which is unittest - a guard that only holds under a runner nobody uses is not a guard
