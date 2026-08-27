@@ -54,7 +54,7 @@ This is a complete implementation of a project management tool with:
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
 - **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask is a tick box; a Task reads how many of its sub-tasks are ticked, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
-- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a phase copies the phase row, not the work underneath it, but a task copied together with its sub-tasks keeps them, and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
+- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a row copies everything under it - a phase brings its deliverables, tasks and sub-tasks, nested as they were - and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
@@ -686,9 +686,19 @@ under everything else.
 - **Refused rather than guessed at**: a paste with nothing selected *and*
   nothing pointed at says what is wrong in the status bar, as does a paste
   into a level that cannot hold it
-- **What is selected is what is copied**: copying a phase copies the phase row.
-  The work under it is not brought along and is not duplicated - but a
-  sub-task copied *with* its own task lands under that task's copy
+- **A row stands for the work under it**: copying a phase copies the phase,
+  its deliverables, its tasks and their sub-tasks, nested as they were. This
+  was the other way round on purpose - a plan is a tree, and duplicating a
+  branch is not what picking one row means - until the project manager using
+  it pointed out that there is no insert key, so copy and paste is how a plan
+  gets filled in, and a copy that empties every container it touches makes
+  you rebuild by hand exactly what you were copying to avoid rebuilding by
+  hand
+- **A cut moves the branch by moving its top**: the rows under it go on
+  pointing at it, so they travel with it without being named. Naming a child
+  as well as its parent would move that child in its own right, out of the
+  parent it is meant to be travelling inside - so what goes on the clipboard
+  is the topmost row of each branch, while the greying covers all of it
 - **Links follow what was copied**: a dependency between two rows in the same
   selection is re-pointed at their copies; one pointing outside the selection
   is dropped, rather than wiring the new row into the plan the moment it
@@ -752,7 +762,25 @@ under everything else.
   where the link had pushed it left the column and the dates disagreeing; see
   `SnapshotCommand.FIELDS`
 
+### What Is On Which Menu (`views/toolbar.py`)
+- **Project**: opening, creating and saving a plan
+- **File**: import and export, each a submenu of formats
+- **Actions**: the settings that belong to the plan - Project, Calendar and
+  **Gantt Settings**, which came from View because how the chart is drawn is
+  a setting of the plan rather than of this window - and Critical Path
+- **Edit**: **Create** first, because everything under it acts on a row that
+  has to exist already, then Undo, Redo, Cut, Copy and Paste
+- **View**: what is about this window - the day/night mode and Help
+
 ### Menus That Open Out Of Menus (`views/toolbar.py`)
+- **Hover text is held back while a menu is open.** It is scheduled on a
+  delay and shown by a timer, so one started by the pointer passing over a
+  toolbar button on its way to a menu arrived after the menu had opened and
+  drew itself on top - an always-on-top window over another one. Opening
+  Actions showed "Bold  (Cmd B)" written across its entries. Held back
+  rather than switched off: the pointer is still where it was, so the text
+  comes back when the menu goes. Counted rather than flagged, because a
+  submenu is open while its parent is; see `tooltip.hold_back`
 - **Every pixel of a row runs it.** A row is bigger than the button in it:
   the chevron on a row that opens a submenu is a label with nothing bound to
   it, so the right-hand end of those rows was dead, as was the padding around
@@ -796,6 +824,17 @@ under everything else.
   catching: a button with nothing on it
 - **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
   its own, so the two cannot drift apart
+
+### Which Completion Control A Row Gets (`views/taskform.py`)
+- **A tick for a sub-task, a percentage for everything else.** A sub-task is
+  done or not, and the task above it reads how many of its sub-tasks are
+  ticked. Offering a percentage box for one invites a 60% that would then
+  count as not done, with nothing on the form saying so
+- **Nothing about it depends on the machine.** It was reported as "the
+  progress bar is not viewable on a different Mac", with two editors side by
+  side - one showing `Progress (%)` and one showing `Completed`. They were a
+  Task and a Sub-task. See `tests/test_progress_field.py`, which says so and
+  fails if the choice ever starts asking the platform
 
 ### The Dependency Chooser (`views/dependency_editor.py`)
 - **Names a task by its number and its name**, because the number is what the
@@ -2180,6 +2219,7 @@ Unit tests cover:
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
 - ✅ **No test opens a dialog**: importing `tests/__init__.py` stands every blocking dialog down for the whole suite, because one that opens waits for somebody to click it and there is nobody on a build machine. A test that means to exercise a prompt patches it and asserts on the call; the one file that tests the dialog layer itself puts the real ones back in `setUpModule`. In the package rather than in a `conftest.py`, because the build runs `run_tests.py`, which is unittest - a guard that only holds under a runner nobody uses is not a guard
+- ✅ **Completion control**: That a Task, a Phase, a Deliverable and a Milestone are offered a percentage and a Sub-task a tick, and that the choice is made from the type and nothing else
 - ✅ **Menus**: That no part of a menu row is dead - the padding, the chevron and the entry all run it - that CustomTkinter's own click gate is still the thing being worked around, that a submenu survives the click that opened it, that moving to another row or clicking outside still closes it, that a click inside it leaves it open, and that a menu naming no opener behaves as it always did
 - ✅ **Icons**: That every icon on the toolbar row has a drawing, that every drawing paints at the sizes and inks asked for and is not blank, and that an unknown name answers None so the button can fall back to a letter
 - ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged

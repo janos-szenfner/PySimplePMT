@@ -31,6 +31,7 @@ from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.shortcuts import accelerator
 from gantt_app.shortcuts import bind_all as bind_shortcut
 from gantt_app.views.modal import grab_when_visible
+from gantt_app.views import tooltip as tooltips
 from gantt_app.views.tooltip import attach as attach_tooltip
 from gantt_app import theme
 from gantt_app.utils.log import get_logger
@@ -218,6 +219,12 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         #: See _handle_submenu.
         self._submenu = None
         self._submenu_row = None
+
+        #: Hover text is held back while this menu is open, and let through
+        #: once - however many times destroy is called. See tooltip.hold_back
+        #: for what was being read across the Actions menu.
+        self._holding_tooltips_back = True
+        tooltips.hold_back()
         self._create_widgets()
         
         self.bind("<FocusOut>", lambda e: self._on_focus_out())
@@ -276,7 +283,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         self.destroy()
 
     def destroy(self):
-        """Stop being watched, then go."""
+        """Stop being watched, let hover text through again, then go."""
         watched, self._watched_window = getattr(self, '_watched_window', None), None
         if watched is not None:
             try:
@@ -284,6 +291,13 @@ class CTkDropdownMenu(ctk.CTkToplevel):
                                                   self._dismiss_if_outside)
             except tk.TclError:
                 pass
+
+        # Once, whatever route got here: close_menu, the click watcher and
+        # the parent tearing its child down all call this
+        if getattr(self, '_holding_tooltips_back', False):
+            self._holding_tooltips_back = False
+            tooltips.let_through()
+
         super().destroy()
 
     def _create_widgets(self):
@@ -1168,6 +1182,22 @@ class Toolbar(ctk.CTkFrame):
             {
                 'text': 'Actions',
                 'items': [
+                    {"text": "Project Settings...", "command": self.edit_project_info},
+                    {"text": "Calendar Settings...", "command": self.edit_holidays},
+                    # How the chart is drawn is a setting of the plan like
+                    # the two above it, rather than something about this
+                    # window - which is what View is for
+                    {"text": "Gantt Settings...",
+                     "command": self.open_gantt_chart_settings},
+                    {"text": "Critical Path...", "command": self.show_critical_path},
+                ],
+            },
+            {
+                'text': 'Edit',
+                'items': [
+                    # Creating a row is an edit to the plan, and it sits
+                    # first because everything under it acts on a row that
+                    # has to exist already
                     {"text": "Create", "submenu": [
                         {"text": "Phase...", "command": self.add_phase},
                         {"text": "Deliverable...", "command": self.add_deliverable},
@@ -1175,16 +1205,6 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Subtask...", "command": self.add_subtask},
                         {"text": "Milestone...", "command": self.add_milestone},
                     ]},
-                    # Renaming the project is not a create action, so it sits
-                    # beside Create rather than inside it
-                    {"text": "Project Settings...", "command": self.edit_project_info},
-                    {"text": "Calendar Settings...", "command": self.edit_holidays},
-                    {"text": "Critical Path...", "command": self.show_critical_path},
-                ],
-            },
-            {
-                'text': 'Edit',
-                'items': [
                     {"text": "Undo", "command": self.undo},
                     {"text": "Redo", "command": self.redo},
                     # The key each one answers to, written the way this
@@ -1209,7 +1229,6 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Always Night (dark)",
                          "command": self.use_dark_theme},
                     ]},
-                    {"text": "Settings...", "command": self.open_gantt_chart_settings},
                     {"text": "Help", "command": self.show_help},
                 ],
             },

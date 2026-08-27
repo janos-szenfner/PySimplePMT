@@ -381,3 +381,119 @@ class TestAMenuDismissesItself(WatchTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestHoverTextStaysOffAnOpenMenu(WatchTestCase):
+    """
+    Hover text does not appear over a menu, or under one.
+
+    WHY THESE EXIST:
+    ================
+    Opening Actions showed "Bold  (CmdB)" written across its entries. Hover
+    text is scheduled on a delay and shown by a timer, so one started by the
+    pointer passing over a toolbar button on its way to the menu arrived
+    after the menu had opened - and drew itself on top, being an
+    always-on-top window like the menu is.
+    """
+
+    def setUp(self):
+        """A window with a button that has hover text."""
+        super().setUp()
+        import customtkinter as ctk
+        from gantt_app.views import tooltip
+
+        self.button = ctk.CTkButton(self.root, text="Bold")
+        self.tip = tooltip.attach(self.button, "Bold  (CmdB)")
+
+    def tearDown(self):
+        """Let hover text through again, whatever this test did."""
+        from gantt_app.views import tooltip
+
+        while tooltip.held_back():
+            tooltip.let_through()
+        super().tearDown()
+
+    def menu(self, master=None):
+        """A dropdown, which holds hover text back while it is open."""
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        built = CTkDropdownMenu(master or self.root, items=[
+            {"label": "Create", "type": "action", "command": lambda: None}])
+        built.update_idletasks()
+        return built
+
+    def test_hover_text_is_held_back_while_a_menu_is_open(self):
+        """Nothing new appears over it."""
+        from gantt_app.views import tooltip
+
+        self.assertFalse(tooltip.held_back())
+        menu = self.menu()
+
+        self.assertTrue(tooltip.held_back())
+        menu.destroy()
+        self.assertFalse(tooltip.held_back())
+
+    def test_one_already_on_its_way_does_not_arrive(self):
+        """The case that put it across the Actions menu."""
+        menu = self.menu()
+
+        # What the timer would have done, had the menu not opened first
+        self.tip._show()
+
+        self.assertIsNone(self.tip.window)
+        menu.destroy()
+
+    def test_one_already_showing_is_taken_down(self):
+        """The pointer may have been resting when the menu opened."""
+        self.tip._show()
+        self.assertIsNotNone(self.tip.window)
+
+        menu = self.menu()
+
+        self.assertIsNone(self.tip.window)
+        menu.destroy()
+
+    def test_a_submenu_keeps_it_held_back_after_its_parent_goes(self):
+        """
+        Counted rather than flagged.
+
+        A submenu is open while its parent is, and both ask; the first to
+        close must not let hover text through while the other is showing.
+        """
+        from gantt_app.views import tooltip
+
+        parent = self.menu()
+        child = self.menu(parent)
+
+        child.destroy()
+        self.assertTrue(tooltip.held_back())
+
+        parent.destroy()
+        self.assertFalse(tooltip.held_back())
+
+    def test_hover_text_works_again_once_the_menu_goes(self):
+        """It is held back, not switched off."""
+        menu = self.menu()
+        menu.destroy()
+
+        self.tip._show()
+
+        self.assertIsNotNone(self.tip.window)
+
+    def test_closing_a_menu_twice_lets_it_through_once(self):
+        """
+        destroy is reached by several routes - the click watcher, the
+        parent, close_menu - and a menu that released twice would let hover
+        text through while another menu was still open.
+        """
+        from gantt_app.views import tooltip
+
+        first = self.menu()
+        second = self.menu()
+
+        first.destroy()
+        first.destroy()
+
+        self.assertTrue(tooltip.held_back())
+        second.destroy()
+        self.assertFalse(tooltip.held_back())

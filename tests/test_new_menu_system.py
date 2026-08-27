@@ -197,26 +197,31 @@ class TestMenuStructure(unittest.TestCase):
         self.assertIn('Undo', edit_items, "Undo not found in Edit menu")
         self.assertIn('Redo', edit_items, "Redo not found in Edit menu")
 
-    def test_actions_menu_has_create_submenu(self):
-        """Test that Actions menu has Create submenu with work item types."""
+    def test_edit_menu_has_create_submenu(self):
+        """
+        Create is an edit to the plan, so it sits with the other edits.
+
+        It was under Actions, beside the settings dialogs, which are not
+        edits to a row at all.
+        """
         menu_tree = Toolbar._menu_definitions(self.stub)
-        
-        actions_menu = None
+
+        edit_menu = None
         for menu in menu_tree:
-            if menu['text'] == 'Actions':
-                actions_menu = menu
+            if menu['text'] == 'Edit':
+                edit_menu = menu
                 break
-        
-        self.assertIsNotNone(actions_menu, "Actions menu not found")
-        
+
+        self.assertIsNotNone(edit_menu, "Edit menu not found")
+
         # Find Create submenu
         create_item = None
-        for item in actions_menu['items']:
+        for item in edit_menu['items']:
             if item['text'] == 'Create':
                 create_item = item
                 break
-        
-        self.assertIsNotNone(create_item, "Create item not found in Actions menu")
+
+        self.assertIsNotNone(create_item, "Create item not found in Edit menu")
         self.assertIn('submenu', create_item, "Create should be a submenu")
         
         # Check work item types in Create submenu
@@ -485,9 +490,9 @@ class TestSubmenusOpen(unittest.TestCase):
         self.assertIsNotNone(dropdown._submenu)
         self.assertTrue(dropdown._submenu.winfo_exists())
 
-    def test_the_actions_create_submenu_opens(self):
-        """Actions holds Create, which is where the work items are made."""
-        dropdown = self.open_menu('Actions')
+    def test_the_edit_create_submenu_opens(self):
+        """Edit holds Create, which is where the work items are made."""
+        dropdown = self.open_menu('Edit')
         rows = self.submenu_rows(dropdown)
 
         self.assertEqual([str(w.cget('text')).strip() for w in rows],
@@ -611,7 +616,7 @@ class TestOpeningASubmenuTwice(unittest.TestCase):
     """
 
     def setUp(self):
-        """A toolbar with the Actions menu open."""
+        """A toolbar with the Edit menu open, which is where Create is."""
         import customtkinter as ctk
 
         self.root = ctk.CTk()
@@ -622,7 +627,7 @@ class TestOpeningASubmenuTwice(unittest.TestCase):
 
         bar = self.toolbar.menu_bar
         button = next(b for b in bar.menu_buttons
-                      if str(b.cget('text')) == 'Actions')
+                      if str(b.cget('text')) == 'Edit')
         button.invoke()
         self.root.update_idletasks()
         self.dropdown = bar.active_dropdown
@@ -646,7 +651,7 @@ class TestOpeningASubmenuTwice(unittest.TestCase):
                     if (isinstance(widget, ctk.CTkButton)
                             and getattr(widget, 'submenu_items', None)):
                         return widget, row
-        raise AssertionError("Actions has no submenu row")
+        raise AssertionError("Edit has no submenu row")
 
     def test_clicking_twice_keeps_the_same_submenu(self):
         """The second press is not a fresh window."""

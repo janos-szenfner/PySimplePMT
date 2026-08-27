@@ -1461,6 +1461,68 @@ class Project:
                     stack.append(child.id)
         return found
 
+    def with_descendants(self, task_ids) -> List[str]:
+        """
+        The named rows and everything beneath them, in reading order.
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str]
+            The rows picked out.
+
+        RETURNS:
+        --------
+        List[str]
+            Those rows and all of their descendants, top to bottom, each
+            once.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        What a reader means by picking out a phase. A row that holds work
+        stands for that work: copying the row alone gave an empty container
+        and left the reader to rebuild what was under it by hand, which is
+        the opposite of why anybody copies a branch of a plan.
+        """
+        wanted = set()
+        for task_id in task_ids or []:
+            if self.get_task_by_id(task_id) is None:
+                continue
+            wanted.add(task_id)
+            wanted |= self._descendant_ids(task_id)
+
+        return [task.id for task in self.display_order() if task.id in wanted]
+
+    def topmost_of(self, task_ids) -> List[str]:
+        """
+        The named rows with any that sit under another one left out.
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str]
+            The rows picked out.
+
+        RETURNS:
+        --------
+        List[str]
+            Only the highest of each branch, in reading order.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        For a move, where a row carries its own descendants with it because
+        they go on pointing at it. Naming a child as well as its parent
+        would move the child in its own right - out of the parent it is
+        supposed to be travelling inside - so a selection of a task and its
+        sub-task cut and pasted came out as two rows side by side.
+        """
+        named = {task_id for task_id in task_ids or []
+                 if self.get_task_by_id(task_id) is not None}
+
+        return [task.id for task in self.display_order()
+                if task.id in named
+                and not any(other != task.id
+                            and self.is_descendant(task.id, other)
+                            for other in named)]
+
     def is_descendant(self, task_id: str, ancestor_id: str) -> bool:
         """
         Whether a task sits at or below another in the hierarchy.
@@ -1831,6 +1893,15 @@ class Project:
         target_index = siblings.index(target)
         if index == target_index:
             return False
+
+        # Taking the task out first shifts everything after it up one, so a
+        # task moving down the list has to be put back one place earlier
+        # than the index the target had. Without this it landed after the
+        # target rather than at its position - which is what the drop line
+        # promises and what this is named for - and only when moving down,
+        # so dragging a row upwards behaved and dragging it down did not.
+        if index < target_index:
+            target_index -= 1
 
         siblings.insert(target_index, siblings.pop(index))
         self.tasks = self._flatten(children)

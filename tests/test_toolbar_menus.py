@@ -94,14 +94,21 @@ class TestMenuContents(unittest.TestCase):
                          ['GAN...', 'MS Project...', 'Mermaid...', 'HTML...',
                           'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
 
-    def test_actions_nests_create(self):
-        """Actions carries Create as a submenu, then the project-wide entries."""
+    def test_actions_holds_the_settings_for_the_plan(self):
+        """
+        What is set about the plan as a whole, and the analysis of it.
+
+        Create moved to Edit - making a row is an edit - and how the chart
+        is drawn came here from View, because that is a setting of the plan
+        rather than of this window.
+        """
         items = find(self.tree, 'Actions')['items']
 
         self.assertEqual(labels(items),
-                         ['Create', 'Project Settings...',
-                          'Calendar Settings...', 'Critical Path...'])
-        self.assertIn('submenu', items[0])
+                         ['Project Settings...', 'Calendar Settings...',
+                          'Gantt Settings...', 'Critical Path...'])
+        for item in items:
+            self.assertNotIn('submenu', item)
 
     def test_calendar_settings_sits_directly_under_actions(self):
         """
@@ -117,8 +124,8 @@ class TestMenuContents(unittest.TestCase):
         self.assertTrue(callable(entry['command']))
 
     def test_create_submenu_holds_only_the_create_actions(self):
-        """Create offers the three things that can be created, nothing else."""
-        create = find(self.tree, 'Actions')['items'][0]
+        """Create offers the things that can be created, nothing else."""
+        create = find(self.tree, 'Edit')['items'][0]
 
         self.assertEqual(labels(create['submenu']),
                          ['Phase...', 'Deliverable...', 'Task...',
@@ -143,7 +150,9 @@ class TestMenuContents(unittest.TestCase):
         """View no longer offers Project Info."""
         view = labels(find(self.tree, 'View')['items'])
 
-        self.assertEqual(view, ['System UI mode', 'Settings...', 'Help'])
+        # The chart's settings went to Actions, beside the plan's other
+        # settings; what is left here is about this window
+        self.assertEqual(view, ['System UI mode', 'Help'])
         self.assertNotIn('Project Info', view)
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):
@@ -163,15 +172,16 @@ class TestMenuContents(unittest.TestCase):
 
     def test_edit_menu(self):
         """
-        Undo, Redo, Cut, Copy, and Paste are available under Edit.
+        Create, Undo, Redo, Cut, Copy, and Paste are available under Edit.
 
-        The clipboard entries name the key they answer to, in this
-        platform's notation - see gantt_app.shortcuts.
+        Create leads, because everything under it acts on a row that has to
+        exist already. The clipboard entries name the key they answer to, in
+        this platform's notation - see gantt_app.shortcuts.
         """
         from gantt_app.shortcuts import accelerator
 
         self.assertEqual(labels(find(self.tree, 'Edit')['items']),
-                         ['Undo', 'Redo',
+                         ['Create', 'Undo', 'Redo',
                           f"Cut  ({accelerator('X')})",
                           f"Copy  ({accelerator('C')})",
                           f"Paste  ({accelerator('V')})"])

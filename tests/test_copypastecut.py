@@ -572,9 +572,12 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         self.service.copy(["T001", "T002"])
         pasted = self.service.paste("P001")
 
-        follower = self.project.get_task_by_id(pasted[1])
+        # By name, because T001 brings its own sub-task along and so the
+        # copies are not simply the two rows named
+        copies = {self.project.get_task_by_id(i).name: i for i in pasted}
+        follower = self.project.get_task_by_id(copies["Task 2"])
         self.assertEqual([d.task_id for d in follower.dependencies],
-                         [pasted[0]])
+                         [copies["Task 1"]])
 
     def test_a_parent_copied_with_its_child_keeps_the_child(self):
         """
@@ -608,8 +611,8 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         initial_count = len(self.project.tasks)
         self.service.paste("P001")
 
-        # Should have 2 new tasks
-        self.assertEqual(len(self.project.tasks), initial_count + 2)
+        # Three: the two named, and the sub-task the first of them holds
+        self.assertEqual(len(self.project.tasks), initial_count + 3)
 
     def test_a_selection_is_refused_where_one_does_not_belong(self):
         """
@@ -629,15 +632,27 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         self.assertEqual(len(self.project.tasks), initial_count)
 
 
-class TestOnlyWhatIsSelected(unittest.TestCase):
+class TestTheBranchTravelsWithTheRow(unittest.TestCase):
     """
-    The clipboard carries the rows picked out, and nothing else.
+    Picking out a row picks out the work under it.
 
     WHY THESE EXIST:
     ================
-    Copying a phase copies the phase. The work under it is not brought along
-    and is not duplicated: a plan is a tree, and duplicating a branch of it
-    because its top row was picked out is not what picking out one row means.
+    This used to be the other way round, deliberately: copying a phase
+    copied the phase row and left its work behind, on the reasoning that a
+    plan is a tree and duplicating a branch is not what picking out one row
+    means.
+
+    A project manager using it disagreed, and gave the reason:
+
+        COPY csak felso szintu taskokat hajlando masolni, pedig az insert
+        gomb hianyaban a cmd-c es cmd-v a leggyorsabb uj task populalasi
+        megoldas.
+
+    There is no insert key, so copy and paste is how a plan gets filled in -
+    and a copy that empties every container it touches makes the reader
+    rebuild by hand exactly what they were copying to avoid rebuilding by
+    hand. A row that holds work stands for that work.
     """
 
     def setUp(self):
@@ -665,32 +680,36 @@ class TestOnlyWhatIsSelected(unittest.TestCase):
         self.subtask.parent_task_id = "T001"
         self.project.add_task(self.subtask)
 
-    def test_copying_a_phase_puts_one_item_on_the_clipboard(self):
-        """Its task and sub-task are not picked up with it."""
+    def test_copying_a_phase_takes_the_branch_with_it(self):
+        """Its task and its sub-task come too, in reading order."""
         self.service.copy(["P001"])
 
         self.assertEqual([item.id for item in self.service.active_payload.items],
-                         ["P001"])
+                         ["P001", "T001", "ST001"])
 
-    def test_pasting_a_copied_phase_adds_one_task(self):
-        """One new row, not a duplicate of the branch."""
+    def test_pasting_a_copied_phase_reproduces_the_branch(self):
+        """Three rows in, three rows out."""
         before = len(self.project.tasks)
 
         self.service.copy(["P001"])
-        self.service.paste(None)
+        self.service.paste_at(None)
 
-        self.assertEqual(len(self.project.tasks), before + 1)
+        self.assertEqual(len(self.project.tasks), before + 3)
 
-    def test_the_copy_has_no_children(self):
-        """Nothing was reparented onto the new phase."""
+    def test_the_copy_holds_the_copies(self):
+        """
+        Nested as they were, and under the copies rather than the originals.
+
+        See ClipboardService._rewire: a link or a parentage pointing at
+        another row in the same selection is re-pointed at that row's copy.
+        """
         self.service.copy(["P001"])
-        self.service.paste(None)
+        pasted = self.service.paste_at(None)
 
-        new_phase = self.project.tasks[-1]
-        children = [t for t in self.project.tasks
-                    if t.parent_task_id == new_phase.id]
-
-        self.assertEqual(children, [])
+        phase, task, subtask = (self.project.get_task_by_id(i) for i in pasted)
+        self.assertEqual(task.parent_task_id, phase.id)
+        self.assertEqual(subtask.parent_task_id, task.id)
+        self.assertIsNone(phase.parent_task_id)
 
     def test_the_original_keeps_its_children(self):
         """Copying takes nothing away from what was copied."""
@@ -702,12 +721,17 @@ class TestOnlyWhatIsSelected(unittest.TestCase):
         self.assertEqual(self.task.parent_task_id, self.phase.id)
         self.assertEqual(self.subtask.parent_task_id, self.task.id)
 
-    def test_two_selected_rows_give_two_items(self):
-        """A parent and its child picked out together are exactly those two."""
+    def test_a_row_named_twice_is_taken_once(self):
+        """
+        Naming a parent and a child of it is the same as naming the parent.
+
+        The branch is already coming; saying so twice must not copy the
+        child twice.
+        """
         self.service.copy(["P001", "T001"])
 
         self.assertEqual([item.id for item in self.service.active_payload.items],
-                         ["P001", "T001"])
+                         ["P001", "T001", "ST001"])
 
     def test_a_pasted_copy_is_numbered_like_the_rest(self):
         """

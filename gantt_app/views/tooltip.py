@@ -23,6 +23,7 @@ handler twice.
 """
 
 import tkinter as tk
+import weakref
 from typing import Optional
 
 from gantt_app import theme
@@ -42,6 +43,56 @@ OFFSET_Y = 6
 
 #: Padding inside the tooltip.
 PAD_X, PAD_Y = 8, 4
+
+
+#: How many things are currently asking for hover text to be held back.
+#:
+#: A count rather than a flag: a submenu is open while its parent is, and
+#: both ask, so the first one to close must not let tooltips through again
+#: while the other is still showing.
+_HELD_BACK = 0
+
+#: Every tooltip that exists, weakly, so held_back can take down whichever
+#: of them happens to be on screen. Weak, because a tooltip belongs to the
+#: widget it decorates and must not be kept alive by this.
+_LIVE = weakref.WeakSet()
+
+
+def hold_back() -> None:
+    """
+    Stop hover text appearing, and take down anything already showing.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Menus ask for this while they are open. Hover text is scheduled on a
+    delay and shown by a timer, so a tooltip started by the pointer passing
+    over a toolbar button on its way to a menu arrived after the menu had
+    opened - and drew itself over the menu, being an always-on-top window
+    like the menu is. What the reader saw was "Bold  (CmdB)" written across
+    the entries of the Actions menu.
+
+    Holding them back rather than destroying them, because the pointer is
+    still over whatever it was over; the tooltip should come back when the
+    menu goes, if the pointer is still resting there.
+    """
+    global _HELD_BACK
+    _HELD_BACK += 1
+    for tip in list(_LIVE):
+        try:
+            tip.hide_for_now()
+        except Exception:
+            logger.debug("Could not take down a tooltip")
+
+
+def let_through() -> None:
+    """Allow hover text again, once nothing is asking otherwise."""
+    global _HELD_BACK
+    _HELD_BACK = max(0, _HELD_BACK - 1)
+
+
+def held_back() -> bool:
+    """Whether hover text is currently being kept off the screen."""
+    return _HELD_BACK > 0
 
 
 class Tooltip:
@@ -70,6 +121,7 @@ class Tooltip:
         self.text = str(text or '')
         self.window: Optional[tk.Toplevel] = None
         self._after_id = None
+        _LIVE.add(self)
 
         if not self.text:
             return
@@ -110,9 +162,16 @@ class Tooltip:
         if not self.text:
             self._on_leave()
 
+    def hide_for_now(self) -> None:
+        """Take the text off screen and forget any that was on its way."""
+        self._cancel()
+        self._hide()
+
     def _on_enter(self, _event=None):
         """Start the clock; the text appears if the pointer stays."""
         self._cancel()
+        if held_back():
+            return
         try:
             self._after_id = self.widget.after(DELAY_MS, self._show)
         except tk.TclError:
@@ -137,6 +196,11 @@ class Tooltip:
         """Put the text on screen just below the widget."""
         self._after_id = None
         if self.window is not None or not self.text:
+            return
+        # Asked again here as well as when the clock started: a menu can
+        # open during the delay, which is exactly the case that put hover
+        # text across an open menu
+        if held_back():
             return
 
         try:

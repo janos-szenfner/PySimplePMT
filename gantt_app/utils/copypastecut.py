@@ -121,17 +121,23 @@ class ClipboardService:
         
     def copy(self, selected_ids: Optional[List[str]] = None) -> None:
         """
-        Copy selected items to the clipboard.
-        
+        Copy the selected rows, and everything beneath them, to the clipboard.
+
         Args:
             selected_ids: Array of entity IDs to copy.
-        
-        Process:
-            1. Fetch full entity objects for all selected IDs.
-            2. Clear any prior cut visual state on existing elements.
-            3. Instantiate a ClipboardPayload with operation='copy'.
-            4. Write the payload to the in-memory application clipboard store.
-            5. Serialize to system clipboard (if available).
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A row that holds work stands for that work. Copying took the rows
+        picked out and nothing else, so copying a phase gave an empty phase
+        and copying a task with six sub-tasks gave a task with none - and
+        the reader, who had reached for copy and paste because there is no
+        insert key, had to rebuild by hand exactly what they were copying to
+        avoid rebuilding by hand.
+
+        The branch is taken in reading order, so the copies come out in the
+        order they went in, and _rewire re-points each copy's parentage at
+        the copy of its own parent rather than at the paste target.
         """
         if not self.project:
             logger.warning("Cannot copy: no plan is open")
@@ -141,6 +147,7 @@ class ClipboardService:
             return
 
         self.clear_cut_state()
+        selected_ids = self.project.with_descendants(selected_ids)
         
         items = []
         for entity_id in selected_ids:
@@ -171,17 +178,23 @@ class ClipboardService:
     
     def cut(self, selected_ids: Optional[List[str]] = None) -> None:
         """
-        Cut selected items to the clipboard.
-        
+        Cut the selected rows, and everything beneath them, to the clipboard.
+
         Args:
             selected_ids: Array of entity IDs to cut.
-        
-        Process:
-            1. Fetch full entity objects for selected IDs.
-            2. Instantiate a ClipboardPayload with operation='cut'.
-            3. Write the payload to the in-memory application clipboard store.
-            4. Apply visual feedback to cut items (e.g., reduce opacity).
-            5. Write serialized JSON to system clipboard.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A branch moves by its top being moved: the rows under it go on
+        pointing at it, so they travel with it without being named. What is
+        put on the clipboard is therefore the topmost row of each branch and
+        not the rows beneath it - naming a child as well as its parent would
+        move that child in its own right, out of the parent it is supposed
+        to be travelling inside, and a task cut with its sub-task came out
+        as two rows side by side.
+
+        The greying is the whole branch even so, because the whole branch is
+        what will move; see cut_item_ids.
         """
         if not self.project:
             logger.warning("Cannot cut: no plan is open")
@@ -191,6 +204,8 @@ class ClipboardService:
             return
 
         self.clear_cut_state()
+        greyed = self.project.with_descendants(selected_ids)
+        selected_ids = self.project.topmost_of(selected_ids)
         
         items = []
         for entity_id in selected_ids:
@@ -217,7 +232,7 @@ class ClipboardService:
             items=items
         )
         
-        self.cut_item_ids = set(selected_ids)
+        self.cut_item_ids = set(greyed)
         
         self._write_to_system_clipboard()
     
