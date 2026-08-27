@@ -163,6 +163,8 @@ class EditTaskDialog(TaskFormDialog):
             if not self.task.is_container:
                 self.task.duration = duration
             self.task.priority = self.priority_var.get()
+            self.task.status = self.status_var.get()
+            logger.debug("Task '%s' status updated to: %s", self.task.name, self.task.status)
             self.task.shape = self.shape_var.get()
             self.task.show_in_timeline = self.show_in_timeline_var.get()
             self.task.earliest_begin = earliest_begin
@@ -189,6 +191,7 @@ class EditTaskDialog(TaskFormDialog):
                     parent_task_id=new_task.parent_task_id,
                     duration=new_task.duration,
                     priority=new_task.priority,
+                    status=new_task.status,
                     shape=new_task.shape,
                     show_in_timeline=new_task.show_in_timeline,
                     earliest_begin=new_task.earliest_begin,
@@ -196,8 +199,11 @@ class EditTaskDialog(TaskFormDialog):
                     calendar_id=new_task.calendar_id,
                     details=new_task.details,
                 ):
-                    logger.info("Edited task %s %r", new_task.id,
-                                new_task.name)
+                    logger.info("Edited task %s %r", new_task.id, new_task.name)
+                    logger.debug(
+                        "Recorded status change for task '%s': %s -> %s",
+                        old_task.id, old_task.status, new_task.status
+                    )
                     if self.on_save:
                         self.on_save(new_task)
                     return True
@@ -408,6 +414,7 @@ class CreateTaskDialog(TaskFormDialog):
                 parent_task_id=parent_task_id,
                 duration=duration,
                 priority=self.priority_var.get(),
+                status=self.status_var.get(),
                 shape=self.shape_var.get(),
                 show_in_timeline=self.show_in_timeline_var.get(),
                 earliest_begin=earliest_begin,
@@ -416,6 +423,7 @@ class CreateTaskDialog(TaskFormDialog):
                 details=details,
             )
             task.__post_init__()
+            logger.debug("Created task '%s' with status: %s", task.name, task.status)
 
             if self.on_save:
                 self.on_save(task)

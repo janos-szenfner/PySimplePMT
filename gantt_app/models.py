@@ -83,6 +83,9 @@ DEPENDENCY_HARDNESS_LABELS = {
 #: Task types in the new hierarchy
 TASK_TYPES = ('Phase', 'Task', 'Subtask', 'Milestone')
 
+#: Available status values for tasks
+TASK_STATUSES = ('Draft', 'Active')
+
 #: Task type display labels
 TASK_TYPE_LABELS = {
     'Phase': 'Phase',
@@ -540,6 +543,7 @@ class Task:
     scheduling_options: str = "End date is calculated"
     details: str = ""
     is_milestone: bool = False
+    status: str = "Active"
     #: Which named calendar this task follows, or None to follow the plan's
     #: own - see gantt_app.calendarregistry. An id naming a calendar that has
     #: since been deleted falls back to the plan's own too, so removing a
@@ -586,6 +590,14 @@ class Task:
         
         # For container types, ensure they don't have end_date if they shouldn't
         # Actually, containers CAN have end dates as they roll up from children
+        
+        # Validate status
+        if self.status not in TASK_STATUSES:
+            logger.warning(
+                "Invalid status '%s' for task '%s', defaulting to 'Active'",
+                self.status, self.name
+            )
+            self.status = 'Active'
         
         self.dependencies = DependencyList(self.dependencies or [])
 
@@ -1007,6 +1019,7 @@ class Task:
             'parent_task_id': self.parent_task_id,
             'duration': self.duration,
             'priority': self.priority,
+            'status': self.status,
             'shape': self.shape,
             'show_in_timeline': self.show_in_timeline,
             'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
@@ -1072,6 +1085,15 @@ class Task:
         }
         scheduling_options = old_to_new.get(scheduling_options, scheduling_options)
         
+        # Validate status and provide default for backward compatibility
+        status = data.get('status', 'Active')
+        if status not in TASK_STATUSES:
+            logger.info(
+                "Task '%s' has invalid status '%s' in file, defaulting to 'Active'",
+                data.get('name', 'unknown'), status
+            )
+            status = 'Active'
+        
         return cls(
             id=data['id'],
             name=data['name'],
@@ -1085,6 +1107,7 @@ class Task:
             parent_task_id=data.get('parent_task_id', None),
             duration=data.get('duration', None),
             priority=data.get('priority', DEFAULT_PRIORITY),
+            status=status,
             shape=data.get('shape', 'Default'),
             show_in_timeline=data.get('show_in_timeline', True),
             earliest_begin=earliest_begin,

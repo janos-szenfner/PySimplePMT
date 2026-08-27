@@ -228,6 +228,82 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task.color, '#3498db')
         self.assertFalse(task.is_milestone)
 
+    def test_task_status_default(self):
+        """Test that tasks default to 'Active' status."""
+        task = Task(id="test", name="Test", start_date=self.start_date)
+        self.assertEqual(task.status, "Active")
+
+    def test_task_status_valid_values(self):
+        """Test that valid status values are accepted."""
+        for status in ("Draft", "Active"):
+            task = Task(id="test", name="Test", start_date=self.start_date, status=status)
+            self.assertEqual(task.status, status)
+
+    def test_task_status_invalid_defaults_to_active(self):
+        """Test that invalid status values default to 'Active'."""
+        task = Task(id="test", name="Test", start_date=self.start_date, status="Invalid")
+        self.assertEqual(task.status, "Active")
+
+    def test_task_to_dict_includes_status(self):
+        """Test that to_dict includes status field."""
+        task = Task(id="test", name="Test", start_date=self.start_date, status="Draft")
+        task_dict = task.to_dict()
+        self.assertIn('status', task_dict)
+        self.assertEqual(task_dict['status'], "Draft")
+
+    def test_task_from_dict_with_status(self):
+        """Test that from_dict reads status field correctly."""
+        data = {
+            'id': 'test',
+            'name': 'Test',
+            'start_date': self.start_date.isoformat(),
+            'end_date': None,
+            'progress': 0,
+            'dependencies': [],
+            'color': '#1f6aa5',
+            'is_milestone': False,
+            'task_type': 'Task',
+            'parent_task_id': None,
+            'duration': None,
+            'priority': 'Normal',
+            'status': 'Draft',
+            'shape': 'Default',
+            'show_in_timeline': True,
+            'earliest_begin': None,
+            'scheduling_options': 'End date is calculated',
+            'details': '',
+            'calendar_id': None,
+            'style': None
+        }
+        task = Task.from_dict(data)
+        self.assertEqual(task.status, "Draft")
+
+    def test_task_from_dict_without_status_defaults_to_active(self):
+        """Test that from_dict defaults to 'Active' when status is missing."""
+        data = {
+            'id': 'test',
+            'name': 'Test',
+            'start_date': self.start_date.isoformat(),
+            'end_date': None,
+            'progress': 0,
+            'dependencies': [],
+            'color': '#1f6aa5',
+            'is_milestone': False,
+            'task_type': 'Task',
+            'parent_task_id': None,
+            'duration': None,
+            'priority': 'Normal',
+            'shape': 'Default',
+            'show_in_timeline': True,
+            'earliest_begin': None,
+            'scheduling_options': 'End date is calculated',
+            'details': '',
+            'calendar_id': None,
+            'style': None
+        }
+        task = Task.from_dict(data)
+        self.assertEqual(task.status, "Active")
+
 
 class TestProject(unittest.TestCase):
     """Test cases for the Project class."""

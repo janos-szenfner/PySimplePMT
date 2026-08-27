@@ -10,8 +10,8 @@ person's initials in a detail line - and until now the only way to find it was
 to read the list.
 
 So the box searches everything a work item carries: its name and id, its type,
-its notes, both its dates, its duration and progress, its priority, what it
-depends on, and which calendar it follows. One box, no field to choose first,
+its notes, both its dates, its duration and progress, its priority, its status,
+what it depends on, and which calendar it follows. One box, no field to choose first,
 because a reader who knew which field it was in would not need to search.
 
 DEVELOPMENT NOTES:
@@ -92,6 +92,7 @@ def task_haystack(task, project=None) -> str:
         str(task.task_type or ''),
         str(task.details or ''),
         str(task.priority or ''),
+        str(task.status or ''),
         str(task.shape or ''),
     ]
 

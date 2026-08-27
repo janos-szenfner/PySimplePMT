@@ -323,6 +323,9 @@ def _metadata_line(project: Project, tasks: List[Task],
             entry['color'] = task.color
         if task.priority:
             entry['priority'] = task.priority
+        if task.status:
+            entry['status'] = task.status
+        logger.debug("Exporting task '%s' with status: %s to Mermaid", task.name, task.status)
 
         links = [[reference(link.task_id), link.dep_type, link.hardness,
                   link.lag]

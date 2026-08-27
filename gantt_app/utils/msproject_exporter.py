@@ -304,6 +304,8 @@ def _write_task(tasks: ET.Element, row: PlanRow, project: Project,
     _text(element, 'OutlineNumber', row.outline_number)
     _text(element, 'OutlineLevel', row.level)
     _text(element, 'Priority', PRIORITY_SCORES.get(task.priority, '500'))
+    _text(element, 'Status', task.status)
+    logger.debug("Exporting status '%s' for task '%s'", task.status, task.name)
     _text(element, 'Start', _moment(task.start_date, DAY_START))
     _text(element, 'Finish', _moment(finish, DAY_START if milestone else DAY_END))
     _text(element, 'Duration', _duration(days))

@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple, Set
 from pathlib import Path
 
-from gantt_app.models import Project, Task
+from gantt_app.models import Project, Task, TASK_STATUSES
 from gantt_app.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
@@ -414,6 +414,12 @@ class GANImporter:
                 if explicit_end is not None:
                     end_date = explicit_end
 
+            # Parse status attribute with backward compatibility
+            status = task_elem.get('status', 'Active')
+            if status not in TASK_STATUSES:
+                logger.info("Task '%s' has invalid status '%s' in GAN file, defaulting to 'Active'", name, status)
+                status = 'Active'
+
             task = Task(
                 id=task_id,
                 name=name,
@@ -424,7 +430,8 @@ class GANImporter:
                 color=self._task_color(task_elem, color_map, is_milestone),
                 is_milestone=is_milestone,
                 task_type="Subtask" if parent_id else "Task",
-                parent_task_id=parent_id
+                parent_task_id=parent_id,
+                status=status,
             )
 
             tasks = [task]

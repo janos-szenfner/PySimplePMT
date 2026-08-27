@@ -356,6 +356,16 @@ def _parse_priority(text: Optional[str]) -> str:
     return PRIORITY_SCORES[min(PRIORITY_SCORES, key=lambda k: abs(k - score))]
 
 
+def _parse_status(text: Optional[str]) -> str:
+    """Parse status, defaulting to Active if invalid."""
+    from gantt_app.models import TASK_STATUSES
+    if text in TASK_STATUSES:
+        return text
+    if text is not None:
+        logger.info("Invalid status value '%s' in MS Project file, defaulting to 'Active'", text)
+    return 'Active'
+
+
 def _parse_dependencies(element: ET.Element,
                         by_uid: Dict[str, str]) -> List[dict]:
     """
@@ -473,6 +483,7 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
             task_type=_task_type(is_milestone, is_summary, level),
             parent_task_id=parent.id if parent else None,
             priority=_parse_priority(_child_text(element, 'Priority')),
+            status=_parse_status(_child_text(element, 'Status')),
             details=_child_text(element, 'Notes', '') or '',
             calendar_id=calendar_ids.get(_child_text(element, 'CalendarUID')),
         )

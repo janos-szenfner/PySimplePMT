@@ -189,6 +189,73 @@ class TestJSONFileIO(unittest.TestCase):
             self.assertIn('color', task)
             self.assertIn('is_milestone', task)
 
+    def test_save_load_with_status(self):
+        """Test that status field is saved and loaded correctly."""
+        project = Project(name="Test Project")
+        start = datetime(2024, 1, 1)
+        end = datetime(2024, 1, 10)
+        task = Task(id="1", name="Test Task", start_date=start, end_date=end, status="Draft")
+        project.add_task(task)
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            filepath = f.name
+
+        try:
+            JSONFileIO.save_project(project, filepath)
+            loaded_project = JSONFileIO.load_project(filepath)
+            self.assertIsNotNone(loaded_project)
+            loaded_task = loaded_project.get_task_by_id("1")
+            self.assertEqual(loaded_task.status, "Draft")
+        finally:
+            os.unlink(filepath)
+
+    def test_load_legacy_file_without_status(self):
+        """Test that files without status field load with default 'Active'."""
+        project_data = {
+            'name': 'Legacy Project',
+            'tasks': [{
+                'id': '1',
+                'name': 'Legacy Task',
+                'start_date': '2024-01-01T00:00:00',
+                'end_date': '2024-01-10T00:00:00',
+                'progress': 0,
+                'dependencies': [],
+                'color': '#1f6aa5',
+                'is_milestone': False,
+                'task_type': 'Task',
+                'parent_task_id': None,
+                'duration': None,
+                'priority': 'Normal',
+                'shape': 'Default',
+                'show_in_timeline': True,
+                'earliest_begin': None,
+                'scheduling_options': 'End date is calculated',
+                'details': '',
+                'calendar_id': None,
+                'style': None
+            }],
+            'start_date': '2024-01-01T00:00:00',
+            'end_date': '2024-01-10T00:00:00',
+            'calendar': {'week_start': 1, 'holidays': [], 'nonworking_days': []},
+            'calendars': {'default': {'name': 'Default', 'week_start': 1, 'holidays': [], 'nonworking_days': []}},
+            'schedule_from': 'Start',
+            'deadline': None,
+            'status_date': None,
+            'priority': 500
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            filepath = f.name
+            json.dump(project_data, f)
+
+        try:
+            loaded_project = JSONFileIO.load_project(filepath)
+            self.assertIsNotNone(loaded_project)
+            loaded_task = loaded_project.get_task_by_id("1")
+            self.assertEqual(loaded_task.status, "Active")
+        finally:
+            os.unlink(filepath)
+
 
 class TestConvenienceFunctions(unittest.TestCase):
     """Test convenience functions for file I/O."""
