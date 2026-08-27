@@ -345,6 +345,22 @@ class DragDropTaskList(ctk.CTkFrame):
         be told, which is what this is for. The row tags are re-applied with
         it, because the banding and the cut-row shading are tag colours and
         those are held per row rather than on the style.
+
+        The rows are then painted again, and that is the half that was
+        missing: a row tag is named after the colours it carries, so the new
+        appearance does not reconfigure the old tags - it needs new ones,
+        under new names. Forgetting the old names only arranges for the new
+        ones to be built the next time a row is drawn, and a theme change
+        draws no rows. Every row on screen went on wearing the tag it was
+        given, which is still configured in the widget and still holds the
+        colours of the appearance the reader has just left - so the grid
+        stayed white on a dark desktop while the heading and the empty space
+        below the rows, which are the style rather than the tags, went dark
+        around it.
+
+        _paint_rows rather than update_task_list: the rows themselves have
+        not changed, only their colours, and rebuilding them would throw
+        away the selection and the folding for a repaint.
         """
         try:
             if not self.tree.winfo_exists():
@@ -354,6 +370,7 @@ class DragDropTaskList(ctk.CTkFrame):
 
         self._apply_grid_style()
         self._apply_row_tag_colours()
+        self._paint_rows()
 
 
     def __init__(self, master, project: Project, 
