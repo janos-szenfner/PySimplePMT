@@ -142,6 +142,22 @@ GRID_SELECT_BG: Tuple[str, str] = ('#cfe2f3', '#2f5d86')
 #: A row that has been cut and is waiting to be pasted.
 GRID_CUT_TEXT: Tuple[str, str] = ('#9aa0a6', '#71767c')
 
+#: The window's own furniture: the scrollbars and the divider between the
+#: two panes.
+#:
+#: These are ttk widgets with no colour of their own, so they took whatever
+#: the 'clam' theme ships - a light grey - in both appearances. On a dark
+#: window that left a pale scrollbar down each pane and a pale bar between
+#: them, which is the one part of the window a theme change never reached.
+SCROLL_TROUGH: Tuple[str, str] = ('#f0f0f0', '#2b2d31')
+SCROLL_THUMB: Tuple[str, str] = ('#c8c8c8', '#4a4e54')
+SCROLL_THUMB_ACTIVE: Tuple[str, str] = ('#a8a8a8', '#5a5f66')
+
+#: The draggable divider between the task list and the chart.
+SASH_BG: Tuple[str, str] = ('#d0d0d0', '#3a3d42')
+SASH_LIGHT: Tuple[str, str] = ('#e8e8e8', '#4a4e54')
+SASH_DARK: Tuple[str, str] = ('#b0b0b0', '#2a2c30')
+
 #: Rows the critical path analysis calls out: no float, and nearly none.
 GRID_CRITICAL_BG: Tuple[str, str] = ('#fde2e1', '#5a2b2a')
 GRID_TIGHT_BG: Tuple[str, str] = ('#fdf4d8', '#544a24')
@@ -239,6 +255,54 @@ def now(colour: Tuple[str, str]) -> str:
     if isinstance(colour, str):
         return colour
     return resolve(colour, current_appearance())
+
+
+def style_chrome() -> None:
+    """
+    Colour the scrollbars and the pane divider for the appearance in force.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Neither follows a theme on its own. A ttk.Scrollbar with no style takes
+    whatever the active ttk theme ships, and the sash was configured once at
+    startup with a light grey written into the source - so both stayed pale
+    on a dark window, in every mode, including after a restart.
+
+    Called at startup and again on every theme change; see
+    GanttApp._theme_changed.
+
+    Every scrollbar in the application is styled, not a named one: they are
+    plain ttk.Scrollbars built in three different modules, and a named style
+    would mean remembering to ask for it in each. The base name and both
+    orientations are configured because ttk resolves an unstyled vertical
+    scrollbar as 'Vertical.TScrollbar', which inherits from 'TScrollbar' but
+    can be overridden by a theme that sets it directly.
+    """
+    from tkinter import ttk
+
+    style = ttk.Style()
+    trough = now(SCROLL_TROUGH)
+    thumb = now(SCROLL_THUMB)
+    active = now(SCROLL_THUMB_ACTIVE)
+
+    for name in ('TScrollbar', 'Vertical.TScrollbar',
+                 'Horizontal.TScrollbar'):
+        try:
+            style.configure(name, background=thumb, troughcolor=trough,
+                            bordercolor=trough, arrowcolor=active,
+                            lightcolor=thumb, darkcolor=thumb)
+            style.map(name, background=[('active', active)])
+        except Exception:
+            logger.debug("Could not colour %s on this platform", name)
+
+    sash = now(SASH_BG)
+    try:
+        style.configure('Gantt.TPanedwindow', background=sash)
+        style.configure('Gantt.Sash', sashthickness=7, gripcount=0,
+                        background=sash, bordercolor=now(SASH_DARK),
+                        lightcolor=now(SASH_LIGHT), darkcolor=now(SASH_DARK))
+    except Exception:
+        logger.debug("Could not colour the pane divider on this platform")
 
 
 def style_treeview(style_name: str, row_height: Optional[int] = None,

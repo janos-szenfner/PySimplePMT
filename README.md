@@ -2184,6 +2184,33 @@ Export the visual Gantt chart to image and document formats:
 ### Themes
 The application uses CustomTkinter's theming system. You can switch between light and dark modes using the "Toggle Theme" button.
 
+**Three kinds of surface, and only one of them follows on its own.**
+CustomTkinter widgets are given `(light, dark)` pairs and swap over by
+themselves. The two big panes are not CustomTkinter — the task list is a ttk
+`Treeview`, whose style resolves its colours once and keeps them, and the
+chart is a picture drawn with Pillow that has the old colours baked into it —
+so `GanttApp._theme_changed` tells both to repaint.
+
+The third kind is the window's own furniture: the **scrollbars** and the
+**divider between the panes**. Those are plain ttk widgets with no colour of
+their own, so they took whatever the `clam` theme ships — a pale grey — and
+kept it. A night-mode window had a pale scrollbar down each pane and a pale
+bar between them, and restarting did not help, because nothing had ever
+coloured them at all. `theme.style_chrome()` does, from the palette, at
+startup and on every change.
+
+**It is called twice at startup, deliberately.** The task list selects the
+`clam` ttk theme for its grid lines, and `theme_use` resets every style
+configured before it — so the divider styled before the panes were built was
+wiped by the pane built underneath it, and the window opened with `clam`'s own
+greys until the first theme change put them right.
+
+**A pane that fails to repaint says so.** `_theme_changed` used to log a
+failure at debug level, which is indistinguishable from the theme not having
+been applied — and a silently stale pane is precisely the bug the method
+exists to prevent. A window being torn down raises `TclError` and is still
+expected; anything else is now a warning.
+
 ### Default Colors
 - **Tasks**: `#1f6aa5` (Blue)
 - **Milestones**: `#e74c3c` (Red)

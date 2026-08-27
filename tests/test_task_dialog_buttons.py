@@ -1107,3 +1107,107 @@ class TestWhereTheFieldsSit(DialogTestCase):
     def test_the_form_opens_on_the_general_tab(self):
         """The notes are a tab away, not the first thing you land on."""
         self.assertEqual(self.dialog().tabs.get(), "General")
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheWindowChromeFollowsTheTheme(DialogTestCase):
+    """
+    The scrollbars and the pane divider, which nothing used to colour.
+
+    WHY THESE EXIST:
+    ================
+    Both are plain ttk widgets with no colour of their own, so they took
+    whatever the 'clam' theme ships - a pale grey - and kept it. Switching to
+    night left a pale scrollbar down each pane and a pale bar between them,
+    and so did restarting, because nothing had ever coloured them at all.
+    """
+
+    def setUp(self):
+        """
+        A styler over the shared window, and the appearance to put back.
+
+        Built on DialogTestCase's root rather than one of its own. A second
+        CTk root invalidates the CTkImages cached in the icon registry - they
+        belong to the interpreter that made them - so every dialog built
+        afterwards fails while drawing a button.
+        """
+        from tkinter import ttk
+
+        import customtkinter as ctk
+
+        from gantt_app import theme
+
+        super().setUp()
+        self.theme = theme
+        self.style = ttk.Style()
+        self._was = ctk.get_appearance_mode()
+
+    def tearDown(self):
+        """Put the appearance back, so no later test inherits it."""
+        import customtkinter as ctk
+
+        try:
+            ctk.set_appearance_mode(self._was)
+            self.theme.style_chrome()
+        finally:
+            super().tearDown()
+
+    def colours(self):
+        """What the chrome is painted with now."""
+        return {
+            'sash': str(self.style.lookup('Gantt.TPanedwindow', 'background')),
+            'thumb': str(self.style.lookup('Vertical.TScrollbar',
+                                           'background')),
+            'trough': str(self.style.lookup('Vertical.TScrollbar',
+                                            'troughcolor')),
+        }
+
+    def paint(self, appearance):
+        """Put the window into one appearance and colour the chrome."""
+        import customtkinter as ctk
+
+        ctk.set_appearance_mode(appearance)
+        self.theme.style_chrome()
+        return self.colours()
+
+    def test_the_chrome_differs_between_the_two_appearances(self):
+        """Which is the whole of it: they used to be identical."""
+        light = self.paint('light')
+        dark = self.paint('dark')
+
+        for part in ('sash', 'thumb', 'trough'):
+            self.assertNotEqual(light[part], dark[part], part)
+
+    def test_the_dark_chrome_is_the_dark_half_of_the_palette(self):
+        """Read from the palette rather than written in the source."""
+        import customtkinter as ctk
+
+        ctk.set_appearance_mode('dark')
+        self.theme.style_chrome()
+
+        self.assertEqual(self.colours()['sash'],
+                         self.theme.SASH_BG[1])
+        self.assertEqual(self.colours()['thumb'],
+                         self.theme.SCROLL_THUMB[1])
+        self.assertEqual(self.colours()['trough'],
+                         self.theme.SCROLL_TROUGH[1])
+
+    def test_going_back_to_light_puts_the_light_half_back(self):
+        """A theme change has to work in both directions."""
+        self.paint('dark')
+
+        light = self.paint('light')
+
+        self.assertEqual(light['sash'], self.theme.SASH_BG[0])
+        self.assertEqual(light['thumb'], self.theme.SCROLL_THUMB[0])
+
+    def test_both_orientations_are_coloured(self):
+        """A horizontal scrollbar is as visible as a vertical one."""
+        import customtkinter as ctk
+
+        ctk.set_appearance_mode('dark')
+        self.theme.style_chrome()
+
+        self.assertEqual(
+            str(self.style.lookup('Horizontal.TScrollbar', 'background')),
+            self.theme.SCROLL_THUMB[1])

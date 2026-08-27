@@ -356,19 +356,36 @@ class GanttApp(ctk.CTk):
         told, so a flip left a white grid and a white chart inside a dark
         window.
 
+        The scrollbars and the pane divider are neither. They are ttk
+        widgets with no colour of their own, so they take whatever the ttk
+        theme ships and stayed pale on a dark window - in every mode, and
+        after a restart too, because nothing ever coloured them at all.
+        theme.style_chrome does, here and at startup.
+
         Guarded per pane. This runs from the desktop poll as well as from the
         button, so it can fire while the window is being torn down, and one
         pane that has already gone must not stop the other being repainted.
+
+        A failure is a warning rather than a debug line. A pane that quietly
+        does not repaint is exactly the bug this method exists to prevent,
+        and it looks identical to the theme not having been applied - so the
+        one place that knows better has to say so. A window being torn down
+        raises TclError and is expected; anything else is not.
         """
+        theme.style_chrome()
+
         for name in ('task_list', 'gantt_chart'):
             pane = getattr(self, name, None)
             if pane is None:
                 continue
             try:
                 pane.apply_theme()
+            except tk.TclError:
+                logger.debug("%s has gone; not repainting it", name)
             except Exception:
-                logger.debug("Could not repaint %s for the %s appearance",
-                             name, appearance, exc_info=True)
+                logger.warning("Could not repaint %s for the %s appearance; "
+                               "it will still be showing the old one",
+                               name, appearance, exc_info=True)
 
     def _create_ui(self):
         """Create the user interface."""
@@ -449,25 +466,34 @@ class GanttApp(ctk.CTk):
         # Set up clipboard keyboard bindings
         # These will be properly initialized after task_list is created
         self._setup_clipboard_bindings()
+
+        # Again, now that both panes exist.
+        #
+        # The task list selects the 'clam' ttk theme for its grid lines,
+        # and theme_use resets every style configured before it - so the
+        # sash styled at the top of this method was wiped by the pane
+        # built underneath it, and the window opened with clam's own pale
+        # divider and scrollbars until the first theme change put them
+        # right.
+        theme.style_chrome()
     
     def _configure_sash_style(self):
         """
-        Give the divider a visible grip in the application's grey palette.
+        Give the divider a visible grip, in the appearance now in force.
 
         DEVELOPMENT NOTES:
         ------------------
         The default sash is a couple of pixels wide and easy to miss. The
         'clam' theme, which the task list already selects for its grid lines,
         honours sash thickness and colour.
+
+        The colours used to be written here as light greys, so the divider
+        was pale on a dark window and stayed pale - a theme change never
+        came back to this method. They are a palette pair now and this is
+        one call into theme.style_chrome, which _theme_changed makes again
+        on every change.
         """
-        style = ttk.Style()
-        try:
-            style.configure('Gantt.TPanedwindow', background='#d0d0d0')
-            style.configure('Gantt.Sash', sashthickness=7, gripcount=0,
-                            background='#d0d0d0', bordercolor='#b0b0b0',
-                            lightcolor='#e8e8e8', darkcolor='#b0b0b0')
-        except tk.TclError:
-            logger.debug("Could not style the pane divider on this platform")
+        theme.style_chrome()
 
     def _setup_clipboard_bindings(self):
         """
