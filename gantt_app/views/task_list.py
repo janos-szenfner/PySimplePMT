@@ -460,7 +460,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # branch away. The names used to be prefixed with '|--' to stand in
         # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
-            'ID', 'Type', 'Duration', 'Start', 'End', 'Progress',
+            'ID', 'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
             'Dependencies', 'Milestone', 'Outline'
         ), show='tree headings')
 
@@ -475,6 +475,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('#0', text='Task Name', anchor=tk.W)
         self.tree.heading('ID', text='ID', anchor=tk.W)
         self.tree.heading('Type', text='Type', anchor=tk.W)
+        self.tree.heading('Status', text='Status', anchor=tk.W)
         self.tree.heading('Duration', text='Duration (Days)', anchor=tk.W)
         self.tree.heading('Start', text='Start Date', anchor=tk.W)
         self.tree.heading('End', text='End Date', anchor=tk.W)
@@ -499,6 +500,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('#0', width=300, minwidth=120, stretch=False)
         self.tree.column('ID', width=60, minwidth=40, stretch=False)
         self.tree.column('Type', width=90, minwidth=60, stretch=False)
+        self.tree.column('Status', width=50, minwidth=40, stretch=False)
         self.tree.column('Duration', width=110, minwidth=60, stretch=False)
         self.tree.column('Start', width=100, minwidth=80, stretch=False)
         self.tree.column('End', width=100, minwidth=80, stretch=False)
@@ -2571,6 +2573,9 @@ class DragDropTaskList(ctk.CTkFrame):
         # Format task type
         type_str = task.task_type
         
+        # Format status - D for Draft, A for Active
+        status_str = 'D' if task.status == 'Draft' else 'A'
+        
         # The name goes in column #0, which is the one that draws the
         # indentation and the expander beside it
         item_id = self.tree.insert(parent_item, tk.END,
@@ -2582,6 +2587,7 @@ class DragDropTaskList(ctk.CTkFrame):
                                      # not its identity; see display_ids
                                      self._display_label(task),
                                      type_str,
+                                     status_str,
                                      duration_str,
                                      start_str,
                                      end_str,
