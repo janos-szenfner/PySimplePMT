@@ -158,7 +158,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: pysimplepmt-${{ steps.version.outputs.version }}-deb
           path: |
@@ -258,7 +258,7 @@ jobs:
             || ls "${app}/Contents/Resources"/*.icns
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: pysimplepmt-${{ steps.version.outputs.version }}-macos
           path: |
@@ -291,7 +291,7 @@ jobs:
       # on it looks finished and is not, and two jobs racing to create the
       # same release is how that happens.
       - name: Download every build artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
