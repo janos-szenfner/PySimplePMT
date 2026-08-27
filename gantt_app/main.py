@@ -554,8 +554,23 @@ class GanttApp(ctk.CTk):
         self.gantt_chart.update_chart()
     
     def edit_task(self, task: Task):
-        """Open the task edit dialog."""
-        dialog = EditTaskDialog(
+        """
+        Open the task edit dialog.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The dialog is not waited on. It is modal through its own grab, and
+        nothing here needs its result - the work is done by the callbacks it
+        was given. wait_window() only blocked this caller, and this caller is
+        reached from the right-click menu, which on macOS is a native menu
+        whose tracking loop tk_popup does not return from until the menu has
+        finished. Opening the form from that loop and then entering a second
+        one inside it left the application with a spinning cursor and no
+        dialog anybody could reach - and no way out but Force Quit. See
+        TaskContextMenu._after_menu, which defers these entries onto the idle
+        queue for the same reason.
+        """
+        EditTaskDialog(
             self, task, self.project,
             on_save=self.on_task_saved,
             on_delete=self.on_task_deleted,
@@ -566,7 +581,6 @@ class GanttApp(ctk.CTk):
                 "Task", anchor
             ),
         )
-        dialog.wait_window()
     
     def on_task_saved(self, task: Task):
         """Handle task save from edit dialog."""

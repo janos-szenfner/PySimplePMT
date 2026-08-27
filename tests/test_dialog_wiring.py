@@ -155,3 +155,74 @@ class TestRequiredStartDate(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestOpeningAFormDoesNotBlockTheWindow(unittest.TestCase):
+    """
+    The forms opened from the right-click menu return at once.
+
+    WHY THESE EXIST:
+    ================
+    Choosing Edit on a sub-task left the application with a spinning cursor
+    and nothing on screen, recoverable only by Force Quit. The log stopped
+    dead after the line that opens the form:
+
+        Context menu: edit task 004
+        Editing task 004 'UI Mockups'
+
+    Both forms were opened and then waited on with wait_window(), which runs
+    a second event loop until the form closes. Nothing needed the result -
+    the work is done by the callbacks the form is given - so the wait bought
+    nothing and cost the caller its ability to return.
+
+    That caller is reached from the right-click menu, and on macOS that is a
+    native menu whose tracking loop tk_popup does not return from until the
+    menu has finished; see TaskContextMenu._after_menu, which defers these
+    entries onto the idle queue for the same reason. A second loop entered
+    from inside the first is a place an application can stop and not come
+    back from.
+    """
+
+    @staticmethod
+    def body_of(function) -> str:
+        """
+        A function's source with its docstring taken out.
+
+        Both of these explain in prose what they no longer do, and the
+        explanation names the call - so reading the source whole finds the
+        very word the test is looking for.
+        """
+        import ast
+        import inspect
+        import textwrap
+
+        source = textwrap.dedent(inspect.getsource(function))
+        tree = ast.parse(source).body[0]
+        if (tree.body and isinstance(tree.body[0], ast.Expr)
+                and isinstance(tree.body[0].value, ast.Constant)):
+            tree.body = tree.body[1:]
+        return ast.dump(tree)
+
+    def test_editing_returns_without_waiting(self):
+        """The form is modal through its own grab, not through the caller."""
+        from gantt_app.main import GanttApp
+
+        self.assertNotIn('wait_window', self.body_of(GanttApp.edit_task))
+
+    def test_creating_returns_without_waiting(self):
+        """The same entry, one row along the same menu."""
+        from gantt_app.views.task_list import DragDropTaskList
+
+        self.assertNotIn('wait_window',
+                         self.body_of(DragDropTaskList.create_task))
+
+    def test_the_forms_still_say_what_they_are_for(self):
+        """
+        Both still hand their result back through a callback, which is what
+        made the wait unnecessary in the first place.
+        """
+        from gantt_app.main import GanttApp
+        from gantt_app.views.task_list import DragDropTaskList
+
+        self.assertIn('on_save', self.body_of(GanttApp.edit_task))
+        self.assertIn('on_save', self.body_of(DragDropTaskList.create_task))

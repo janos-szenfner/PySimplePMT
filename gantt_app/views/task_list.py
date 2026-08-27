@@ -1672,14 +1672,15 @@ class DragDropTaskList(ctk.CTkFrame):
 
         logger.info("Creating a %s at %s", task_type, anchor_id)
 
-        dialog = CreateTaskDialog(
+        # Not waited on; see GanttApp.edit_task for what waiting on a dialog
+        # opened from the right-click menu did on macOS
+        CreateTaskDialog(
             self.winfo_toplevel(), self.project,
             task_type=task_type,
             parent_task=parent,
             on_save=lambda task: self._save_created(task, anchor_id, parent_id),
             project_tracker=self.project_tracker,
         )
-        dialog.wait_window()
 
     def _save_created(self, task: Task, anchor_id: str, parent_id):
         """

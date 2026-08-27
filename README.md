@@ -838,6 +838,25 @@ under everything else.
 - **`ICON_NAMES` is taken from the drawings** rather than kept as a list of
   its own, so the two cannot drift apart
 
+### A Form Opened From A Menu Is Not Waited On (`GanttApp.edit_task`)
+Choosing Edit on a sub-task left the application with a spinning cursor and
+nothing on screen, recoverable only by Force Quit. The log stopped dead after
+the line that opens the form.
+
+The edit and create forms were opened and then waited on with
+`wait_window()`, which runs a second event loop until the form closes.
+Nothing needed the result - both hand their work back through the callbacks
+they are given - so the wait bought nothing and cost the caller its ability
+to return. And the caller is reached from the right-click menu, which on
+macOS is a native menu whose tracking loop `tk_popup` does not return from
+until the menu has finished; see `TaskContextMenu._after_menu`, which defers
+those entries onto the idle queue for exactly that reason. A second loop
+entered from inside the first is a place an application can stop and not
+come back from.
+
+The forms are still modal - through their own grab, which is where modality
+belongs.
+
 ### Mark On Track Only Ever Brings A Row Forward (`Toolbar.mark_on_track`)
 A figure on a row is something somebody reported. The on-track figure is what
 the calendar expects of it. Where the two disagree and the report is higher,
@@ -2266,6 +2285,7 @@ Unit tests cover:
 - ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, the whole cascade from a part-finished sub-task to the phase above it, and that a plan of ticks and empty boxes reads exactly what counting ticks used to give
 - ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
+- ✅ **Forms opened from a menu**: That neither the edit nor the create form is waited on, and that both still hand their result back through a callback
 - ✅ **Mark on Track**: That work behind its dates is brought forward, that a figure already reported is never lowered - over a selection or over the whole project - and that being ahead of schedule is reported rather than corrected
 - ✅ **Linking rows that hold work**: That a row is never linked to what it holds, that a selection is chained at its top level, that a collector and everything in it move together when it is linked, that the plan settles, that the dates stop moving, and that a collector stops claiming a length it does not have
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
