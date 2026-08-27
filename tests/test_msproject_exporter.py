@@ -213,6 +213,26 @@ class MSProjectDocumentTestCase(unittest.TestCase):
         self.assertLess(tags.index('Notes'), tags.index('PredecessorLink'))
         self.assertEqual(tags[-1], 'PredecessorLink')
 
+    def test_no_element_the_schema_does_not_name_is_written(self):
+        """
+        A Draft stays behind rather than making the file unreadable.
+
+        MSPDI's <Task> is a fixed sequence of the elements the schema names,
+        and Status is not one of them - Project has a Status of its own but
+        it is calculated, not something a file may state. Writing one put an
+        unknown element in the middle of that sequence, which is the one
+        thing this exporter's element order exists to avoid; a plan carrying
+        it may not open in Project at all.
+        """
+        project = sample_project()
+        project.get_task_by_id("T2").status = 'Draft'
+
+        root = ET.fromstring(generate_msproject_content(project))
+
+        for element in root.findall('ms:Tasks/ms:Task', NS):
+            tags = [child.tag.split('}')[1] for child in element]
+            self.assertNotIn('Status', tags)
+
     def test_progress_and_notes_travel(self):
         """Completion and the task's details both have fields of their own."""
         task = self.task_by_name("Business case")

@@ -27,7 +27,9 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.calendarregistry import describe_week
-from gantt_app.models import Task, Project, TASK_TYPES, TASK_STATUSES, CONTAINER_TYPES
+from gantt_app.models import (
+    Task, Project, TASK_TYPES, TASK_STATUSES, CONTAINER_TYPES,
+)
 from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
@@ -125,21 +127,24 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     FIELD_TEXT = theme.FIELD_TEXT
     FIELD_TEXT_DISABLED = theme.FIELD_TEXT_DISABLED
 
-    #: The field grid is six columns: label, field, label, field, label, field.
+    #: The field grid is six columns: three pairs of label and field.
     #:
-    #: Three fields sit side by side on a row where they are short and belong
-    #: together - a start beside a finish beside a status, a percentage beside
-    #: a status beside a priority. One column of a dozen rows made the form
-    #: taller than most screens and left two thirds of every row empty.
+    #: Short fields that belong together share a row - a start beside a
+    #: finish, a percentage beside a status beside a priority. One column of
+    #: a dozen rows made the form taller than most screens and left two
+    #: thirds of every row empty.
+    #:
+    #: Two of the three pairs are the common case, and they take the first
+    #: two so the fields stay beside each other; the outer pair is there for
+    #: the one row that holds three. See _cell.
     FIELD_COLUMNS = 6
 
     #: Where a field sits on its row.
     #:
-    #: LEFT, THIRD, and RIGHT are the three column pairs; FULL runs across all six.
-    #: A LEFT always starts a row and a RIGHT fills the one a LEFT opened,
-    #: with THIRD in between. A field that is not built - a milestone has no
-    #: end date - leaves the half beside it empty rather than pulling the next
-    #: field up into a row it does not belong on.
+    #: LEFT opens a row, THIRD may take the middle of it and RIGHT closes
+    #: it; FULL runs across all six columns. A field that is not built - a
+    #: milestone has no end date - leaves the rest of the row empty rather
+    #: than pulling the next field up into a row it does not belong on.
     #:
     #: HALF takes a whole row and puts the widget in the left field column
     #: alone, anchored west at MENU_WIDTH rather than stretched. For a
@@ -162,9 +167,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     #: The menu keeps its width and the label is what gives, which is the
     #: trade this makes deliberately.
     MENU_WIDTH = 260
-
-    #: How wide a THIRD dropdown is drawn, for narrower fields like Status.
-    NARROW_WIDTH = 180
 
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
@@ -193,9 +195,11 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.cancel)
 
         self._row = 0
-        #: A row whose left half is filled and whose right half is free;
-        #: see _cell
+        #: A row that has been started and is not full yet; see _cell
         self._open_row = None
+        #: Whether the open row's middle pair has been taken, which decides
+        #: where the field that closes the row goes; see _cell
+        self._row_has_third = False
         self._prepare_checks()
 
         #: The caption beside each field, so greying a field out greys what
@@ -339,20 +343,40 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         tuple[int, int, int]
             The row, the column its label takes, and how many columns its
             widget spans.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A LEFT opens a row, a THIRD may take the middle of it, and a RIGHT
+        closes it. Only the RIGHT and the THIRD join a row already open;
+        everything else starts a new one, which is what keeps a field that
+        was not built - a milestone has no end date - from pulling the next
+        one up into a row it does not belong on.
+
+        Where the RIGHT lands depends on whether a THIRD took the middle,
+        which is what _row_has_third is for. A pair sits at the first two
+        column pairs and leaves the outer one empty, so the two fields stay
+        beside each other rather than being pushed to opposite edges with a
+        hole between them; a trio uses all three.
         """
-        if where == self.RIGHT and self._open_row is not None:
-            row, self._open_row = self._open_row, None
-            return row, 4, 1
+        if where in (self.THIRD, self.RIGHT) and self._open_row is not None:
+            row = self._open_row
+            if where == self.THIRD:
+                self._row_has_third = True
+                return row, 2, 1
+            self._open_row = None
+            column = 4 if self._row_has_third else 2
+            self._row_has_third = False
+            return row, column, 1
 
         row = self._next_row()
         if where == self.LEFT:
             self._open_row = row
+            self._row_has_third = False
             return row, 0, 1
 
         self._open_row = None
-        if where == self.RIGHT:
-            return row, 4, 1
-        if where == self.THIRD:
+        self._row_has_third = False
+        if where in (self.RIGHT, self.THIRD):
             return row, 2, 1
         if where == self.HALF:
             return row, 0, 1
@@ -366,8 +390,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         PARAMETERS:
         -----------
         where : str
-            LEFT, THIRD, RIGHT, FULL or HALF; see those constants. FULL by default,
-            which is what a field with nothing to sit beside wants.
+            LEFT, THIRD, RIGHT, FULL or HALF; see those constants. FULL by
+            default, which is what a field with nothing to sit beside wants.
 
         The label is remembered against its widget, so that greying a field
         out can grey what it is called as well - see _set_field_enabled.
@@ -375,21 +399,12 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         where = where or self.FULL
         row, column, span = self._cell(where)
 
-        if where in (self.HALF, self.THIRD):
+        if where == self.HALF:
             # Held to its own width rather than filling the column, so the
-            # window growing does not stretch it; see MENU_WIDTH and NARROW_WIDTH
-            sticky = tk.W
-            width = self.MENU_WIDTH if where == self.HALF else self.NARROW_WIDTH
-            try:
-                widget.configure(width=width)
-            except (AttributeError, tk.TclError, ValueError):
-                logger.debug("Could not set the width of %s", label)
-        
-        if where == self.THIRD:
-            # Narrow field for the middle position; see NARROW_WIDTH
+            # window growing does not stretch it; see MENU_WIDTH
             sticky = tk.W
             try:
-                widget.configure(width=self.NARROW_WIDTH)
+                widget.configure(width=self.MENU_WIDTH)
             except (AttributeError, tk.TclError, ValueError):
                 logger.debug("Could not set the width of %s", label)
 
@@ -521,9 +536,14 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         scroller = ScrollFrame(general)
         main_frame = scroller.content
-        # The two field columns share what is left after the labels, and
-        # share it evenly, so a start date and a finish date beside it are
-        # the same size as each other
+        # The two field columns a pair uses share what is left after the
+        # labels, and share it evenly, so a start date and a finish date
+        # beside it are the same size as each other.
+        #
+        # The third pair, which only the Progress row reaches, is left
+        # without weight on purpose: it holds a dropdown drawn at its own
+        # width, and giving it a share would open a gap in the middle of
+        # every row that has only two fields on it.
         main_frame.columnconfigure(1, weight=1, uniform='field')
         main_frame.columnconfigure(3, weight=1, uniform='field')
 
@@ -602,7 +622,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             frame, variable=self.task_type_var, values=list(TASK_TYPES),
             state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
-        self._field(frame, "Type:", self.task_type_menu, where=self.HALF)
+        self._field(frame, "Type:", self.task_type_menu, where=self.LEFT)
 
     def _watch_type(self):
         """
@@ -1254,10 +1274,20 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                     where=self.RIGHT)
 
     def _build_status(self, frame):
-        """The status dropdown with Draft/Active options."""
+        """
+        Draft or Active, between the percentage and the priority.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The middle of the three fields on that row; see _cell for what THIRD
+        means to the grid. Read with getattr rather than off the attribute,
+        because the template is whatever the dialog was seeded with and an
+        older one - a task read back from a file written before the field
+        existed - carries no status at all.
+        """
         template_status = getattr(self.template, 'status', None)
         if template_status is None:
-            logger.debug("Task template missing status attribute, defaulting to 'Active'")
+            logger.debug("The template carries no status; using Active")
             template_status = 'Active'
         self.status_var = ctk.StringVar(value=template_status)
         self.status_menu = ctk.CTkOptionMenu(
@@ -1265,7 +1295,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             values=list(TASK_STATUSES)
         )
         self._field(frame, "Status:", self.status_menu, where=self.THIRD)
-        logger.debug("Status field created with value: %s", template_status)
 
     def _build_show_in_timeline(self, frame):
         """The show in timeline checkbox."""

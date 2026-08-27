@@ -238,6 +238,14 @@ def _status_of(task: Task) -> str:
     The word alone, without the percentage - the fill is keyed by it, and a
     key that changed with every task's progress would need a colour per
     percentage.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    This is not Task.status, which says whether a row is a Draft or Active
+    and is the planner's own answer. The spreadsheet's Status column is read
+    off the progress and says how far the work has got - two different
+    questions that the word Status is used for on both sides of the export.
+    Neither is derived from the other, and this one does not read the field.
     """
     if task.progress >= 100:
         return STATUS_DONE

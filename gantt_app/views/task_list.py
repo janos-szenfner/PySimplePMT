@@ -500,7 +500,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('#0', width=300, minwidth=120, stretch=False)
         self.tree.column('ID', width=60, minwidth=40, stretch=False)
         self.tree.column('Type', width=90, minwidth=60, stretch=False)
-        self.tree.column('Status', width=50, minwidth=40, stretch=False)
+        self.tree.column('Status', width=64, minwidth=48, stretch=False)
         self.tree.column('Duration', width=110, minwidth=60, stretch=False)
         self.tree.column('Start', width=100, minwidth=80, stretch=False)
         self.tree.column('End', width=100, minwidth=80, stretch=False)

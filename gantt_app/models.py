@@ -1089,8 +1089,8 @@ class Task:
         status = data.get('status', 'Active')
         if status not in TASK_STATUSES:
             logger.info(
-                "Task '%s' has invalid status '%s' in file, defaulting to 'Active'",
-                data.get('name', 'unknown'), status
+                "Task %r has an invalid status %r in the file; reading "
+                "it as Active", data.get('name', 'unknown'), status
             )
             status = 'Active'
         

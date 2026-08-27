@@ -164,7 +164,8 @@ class EditTaskDialog(TaskFormDialog):
                 self.task.duration = duration
             self.task.priority = self.priority_var.get()
             self.task.status = self.status_var.get()
-            logger.debug("Task '%s' status updated to: %s", self.task.name, self.task.status)
+            logger.debug("Task %r status updated to %s", self.task.name,
+                         self.task.status)
             self.task.shape = self.shape_var.get()
             self.task.show_in_timeline = self.show_in_timeline_var.get()
             self.task.earliest_begin = earliest_begin
@@ -423,7 +424,8 @@ class CreateTaskDialog(TaskFormDialog):
                 details=details,
             )
             task.__post_init__()
-            logger.debug("Created task '%s' with status: %s", task.name, task.status)
+            logger.debug("Created task %r with status %s", task.name,
+                         task.status)
 
             if self.on_save:
                 self.on_save(task)

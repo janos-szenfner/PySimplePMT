@@ -219,10 +219,12 @@ def _task_attributes(row: PlanRow, calendar: WorkingCalendar) -> Dict[str, str]:
     if priority is not None and task.priority != 'Normal':
         attributes['priority'] = priority
 
-    # Export status field
+    # Only a status that is not the default is written, so a plan of
+    # ordinary tasks exports the same file it always did
     if task.status != 'Active':
         attributes['status'] = task.status
-    logger.debug("Exporting task '%s' with status: %s", task.name, task.status)
+        logger.debug("Exporting task %r with status %s", task.name,
+                     task.status)
 
     if task.earliest_begin is not None:
         attributes['thirdDate'] = _iso(task.earliest_begin)

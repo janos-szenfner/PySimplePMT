@@ -980,6 +980,55 @@ class TestWhereTheFieldsSit(DialogTestCase):
             self.assertLess(placed[left][1], placed[right][1],
                             f"{left} should be the left of the pair")
 
+    def test_three_short_fields_share_the_progress_row(self):
+        """
+        A percentage, a status and a priority, left to right on one row.
+
+        The row that holds three is the reason the grid has a third pair of
+        columns at all. It was laid out as a staircase - each field a row
+        lower and a pair further right than the one before it - because the
+        middle field started a new row instead of joining the one the
+        percentage had opened.
+        """
+        import customtkinter as ctk
+
+        dialog = self.dialog()
+        grid = dialog.name_entry.master
+
+        placed = {}
+        for child in grid.grid_slaves():
+            if isinstance(child, ctk.CTkLabel):
+                where = child.grid_info()
+                placed[child.cget('text')] = (int(where['row']),
+                                              int(where['column']))
+
+        row = {placed[name][0]
+               for name in ("Progress (%):", "Status:", "Priority:")}
+        self.assertEqual(len(row), 1, placed)
+
+        self.assertLess(placed["Progress (%):"][1], placed["Status:"][1])
+        self.assertLess(placed["Status:"][1], placed["Priority:"][1])
+
+    def test_a_pair_stays_beside_itself(self):
+        """
+        Two fields on a row take the first two column pairs, not the outer
+        ones - or a start date and its finish would sit at opposite edges
+        with the width of a third field empty between them.
+        """
+        import customtkinter as ctk
+
+        dialog = self.dialog()
+        grid = dialog.name_entry.master
+
+        placed = {}
+        for child in grid.grid_slaves():
+            if isinstance(child, ctk.CTkLabel):
+                where = child.grid_info()
+                placed[child.cget('text')] = int(where['column'])
+
+        for right in ("ID:", "End Date:", "Is Milestone:"):
+            self.assertEqual(placed[right], 2, right)
+
     def test_a_field_with_nothing_beside_it_keeps_the_left(self):
         """
         And is not pulled across into the half of a row above it.

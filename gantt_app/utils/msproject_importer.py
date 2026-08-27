@@ -362,7 +362,8 @@ def _parse_status(text: Optional[str]) -> str:
     if text in TASK_STATUSES:
         return text
     if text is not None:
-        logger.info("Invalid status value '%s' in MS Project file, defaulting to 'Active'", text)
+        logger.info("Invalid status %r in the MS Project file; reading it "
+                    "as Active", text)
     return 'Active'
 
 

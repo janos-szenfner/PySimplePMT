@@ -417,7 +417,8 @@ class GANImporter:
             # Parse status attribute with backward compatibility
             status = task_elem.get('status', 'Active')
             if status not in TASK_STATUSES:
-                logger.info("Task '%s' has invalid status '%s' in GAN file, defaulting to 'Active'", name, status)
+                logger.info("Task %r has an invalid status %r in the .gan "
+                            "file; reading it as Active", name, status)
                 status = 'Active'
 
             task = Task(

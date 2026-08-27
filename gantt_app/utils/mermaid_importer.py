@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
-from gantt_app.models import Project, Task
+from gantt_app.models import Project, Task, TASK_STATUSES
 from gantt_app.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
@@ -697,6 +697,16 @@ class MermaidImporter:
                 task.color = str(entry['color'])
             if entry.get('priority'):
                 task.priority = str(entry['priority'])
+            if entry.get('status'):
+                # Anything the exporter did not write means the default,
+                # and so does anything a hand-edited chart gets wrong
+                status = str(entry['status'])
+                if status in TASK_STATUSES:
+                    task.status = status
+                else:
+                    logger.info("Task %r has an unknown status %r in the "
+                                "chart; reading it as Active",
+                                task.name, status)
             if 'progress' in entry:
                 try:
                     task.progress = max(0, min(100, int(entry['progress'])))

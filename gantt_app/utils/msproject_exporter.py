@@ -35,10 +35,20 @@ other than the plan is worth less than one that does not recalculate at all.
 WHAT DOES NOT SURVIVE:
 ======================
 Task colours - MSPDI has no field for one - and the distinction between a
-Phase and a Task that has children, since Project has one kind of summary
-row. Both are
-cosmetic. Everything that decides a date goes across, including the per-task
-calendars, which is the one thing MSPDI holds and the .gan export cannot.
+Phase and a Task that has children, since Project has one kind of summary row.
+Both are cosmetic.
+
+Whether a task is a Draft or Active does not survive either. MSPDI's <Task> is
+a fixed sequence of the elements the schema names, and Status is not one of
+them - Project has a Status of its own but it is a calculated field, not
+something a file may state. An element the schema does not know sits in the
+middle of that sequence and makes the file invalid, so a plan carrying one may
+not open in Project at all: a field that does not cross is a smaller loss than
+an export that cannot be read. It crosses in the .gan and Mermaid exports and
+in the application's own files, which is where a round trip is expected.
+
+Everything that decides a date goes across, including the per-task calendars,
+which is the one thing MSPDI holds and the .gan export cannot.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -304,8 +314,6 @@ def _write_task(tasks: ET.Element, row: PlanRow, project: Project,
     _text(element, 'OutlineNumber', row.outline_number)
     _text(element, 'OutlineLevel', row.level)
     _text(element, 'Priority', PRIORITY_SCORES.get(task.priority, '500'))
-    _text(element, 'Status', task.status)
-    logger.debug("Exporting status '%s' for task '%s'", task.status, task.name)
     _text(element, 'Start', _moment(task.start_date, DAY_START))
     _text(element, 'Finish', _moment(finish, DAY_START if milestone else DAY_END))
     _text(element, 'Duration', _duration(days))
