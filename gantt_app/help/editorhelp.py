@@ -7,9 +7,9 @@ The editor asks for a type, two dates, a duration, a scheduling mode, a
 calendar, a milestone flag and a percentage, and what those mean to the plan
 is not obvious from the form: which of the three date fields is being worked
 out for you, why a finish lands where it does, which days count as worked,
-why ticking Milestone empties a box, what a sub-task does to its parent's
-dates. The form has no room to say, and the answers do not change often
-enough to belong on it.
+why turning Milestone on empties a box, what a sub-task does to its
+parent's dates. The form has no room to say, and the answers do not change
+often enough to belong on it.
 
 It answers all of it: every field on the form, how the calculated one is
 worked out, which days the calendar counts as worked and why a task moved
@@ -109,8 +109,8 @@ HELP_SECTIONS = (
         [
             "A milestone marks a moment rather than a span of work: design "
             "approved, MVP released, client sign-off. It takes no time, so it "
-            "has no end date, and ticking Is Milestone empties that box and "
-            "greys it out. Un-ticking gives it back.",
+            "has no end date, and turning Is Milestone on empties that "
+            "box and greys it out. Turning it off again gives it back.",
 
             "Because a milestone occupies no day, a task that follows one on "
             "the 15th starts on the 15th, not the 16th.",

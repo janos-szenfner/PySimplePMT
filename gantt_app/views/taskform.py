@@ -643,21 +643,30 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_milestone(self, frame):
         """
-        The milestone tick box, ticked when a milestone is being created.
+        The milestone switch, on when a milestone is being created.
 
         DEVELOPMENT NOTES:
         ------------------
-        The box is told what to show rather than left to work it out from
-        the variable it was handed. CustomTkinter decides a checkbox's
-        opening state by comparing the variable against its onvalue, which
-        is the number 1 against a BooleanVar holding True - a comparison
-        that holds in CPython but is the library's business, not ours, and
+        A switch rather than a tick box. This is not a form the reader
+        fills in and submits: flicking it empties the end date and greys it
+        out there and then, which is a setting being turned on rather than
+        a box being ticked, and a switch is what says so.
+
+        The switch is told what to show rather than left to work it out
+        from the variable it was handed. CustomTkinter decides the opening
+        state by comparing the variable against its onvalue, which is the
+        number 1 against a BooleanVar holding True - a comparison that
+        holds in CPython but is the library's business, not ours, and
         differs between its versions. Choosing Create Milestone and finding
-        the box unticked is the sort of thing that follows.
+        the switch off is the sort of thing that follows.
+
+        Kept as milestone_check: every other part of the form and the tests
+        reach it by that name, and CTkSwitch answers select, deselect and
+        get exactly as the tick box did.
         """
         self.is_milestone_var = ctk.BooleanVar(
             value=self.template.is_milestone)
-        self.milestone_check = ctk.CTkCheckBox(
+        self.milestone_check = ctk.CTkSwitch(
             frame, text="", variable=self.is_milestone_var,
             command=self.toggle_milestone,
         )

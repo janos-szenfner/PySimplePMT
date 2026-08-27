@@ -216,6 +216,22 @@ class TestDialogConstruction(unittest.TestCase):
             self.assertFalse(dialog.is_milestone_var.get(), kind)
             self.assertEqual(dialog.milestone_check.get(), 0, kind)
 
+    def test_the_milestone_control_is_a_switch(self):
+        """
+        A switch rather than a tick box.
+
+        Flicking it empties the end date and greys it out there and then,
+        which is a setting being turned on rather than a box being ticked
+        towards a form that gets submitted later.
+        """
+        import customtkinter as ctk
+
+        from gantt_app.views.taskdialogs import CreateTaskDialog
+
+        dialog = CreateTaskDialog(self.root, self.project, task_type="Task")
+
+        self.assertIsInstance(dialog.milestone_check, ctk.CTkSwitch)
+
     def test_editing_a_milestone_opens_with_the_box_ticked(self):
         """The same box, over a task that is already one."""
         from gantt_app.models import Task
