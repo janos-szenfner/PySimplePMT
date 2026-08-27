@@ -53,9 +53,6 @@ HELP_SECTIONS = (
             "container: it holds no work of its own, and its dates and "
             "progress come from what is inside it.",
 
-            "Deliverable - a thing that gets handed over. Also a container, "
-            "and also takes its dates from its children.",
-
             "Task - the primary unit of work. This is the level that holds a "
             "duration, a start, a finish and a percentage complete.",
 
@@ -70,7 +67,7 @@ HELP_SECTIONS = (
             "and settle its type in one action.",
 
             "A row keeps its own type wherever the new parent can hold it: a "
-            "Task indented under a Deliverable stays a Task, and so can still "
+            "Task indented under a Phase stays a Task, and so can still "
             "hold sub-tasks. Only a type the parent cannot hold is changed - "
             "a Task under another Task becomes a Subtask.",
         ],
@@ -102,7 +99,7 @@ HELP_SECTIONS = (
             "next reschedule takes them from the children again.",
 
             "That is also why the Duration box is filled in but not yours to "
-            "type in on a Phase or a Deliverable. The number shown is what "
+            "type in on a row with children. The number shown is what "
             "the children span, reported rather than stored.",
         ],
     ),
@@ -336,7 +333,7 @@ HELP_SECTIONS = (
 
             "The end date of a milestone, which has none by definition.",
 
-            "The duration of a Phase or a Deliverable, which is what its "
+            "The duration of a row with children, which is what its "
             "children span rather than a number of its own.",
         ],
     ),

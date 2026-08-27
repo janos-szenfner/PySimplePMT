@@ -35,7 +35,8 @@ other than the plan is worth less than one that does not recalculate at all.
 WHAT DOES NOT SURVIVE:
 ======================
 Task colours - MSPDI has no field for one - and the distinction between a
-Phase and a Deliverable, since Project has one kind of summary row. Both are
+Phase and a Task that has children, since Project has one kind of summary
+row. Both are
 cosmetic. Everything that decides a date goes across, including the per-task
 calendars, which is the one thing MSPDI holds and the .gan export cannot.
 

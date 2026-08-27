@@ -210,7 +210,7 @@ class TestDialogConstruction(unittest.TestCase):
         """A task is not a milestone until somebody says so."""
         from gantt_app.views.taskdialogs import CreateTaskDialog
 
-        for kind in ("Phase", "Deliverable", "Task", "Subtask"):
+        for kind in ("Phase", "Task", "Subtask"):
             dialog = CreateTaskDialog(self.root, self.project, task_type=kind)
 
             self.assertFalse(dialog.is_milestone_var.get(), kind)

@@ -68,8 +68,9 @@ class TestEveryIconHasAHandler(unittest.TestCase):
 
         actions = [action for _i, _t, action in IconToolbar.ICON_ACTIONS]
 
-        self.assertIn('show_critical_path', actions)
-        self.assertTrue(callable(getattr(Toolbar, 'show_critical_path', None)))
+        self.assertIn('toggle_critical_path_rows', actions)
+        self.assertTrue(callable(
+            getattr(Toolbar, 'toggle_critical_path_rows', None)))
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")

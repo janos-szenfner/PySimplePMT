@@ -6,7 +6,7 @@ WHY THIS MODULE EXISTS:
 Two short references already existed - one behind the task editor's Help
 button, one behind the Dependency tab's - and both are deliberately narrow:
 they explain the form the reader is looking at and nothing else. Neither
-answers "what is a Deliverable", "why did my task move", "what does float
+answers "what is a Phase", "why did my task move", "what does float
 mean", or "which calendar is this task on", and those are the questions that
 send somebody to the source code.
 
@@ -61,11 +61,8 @@ GUIDE_SECTIONS = (
             "any of them:",
 
             "Phase - the outermost grouping. A stage of the project, holding "
-            "deliverables and the work under them. It has no length of its "
-            "own: its dates and its progress come from what is inside it.",
-
-            "Deliverable - a thing that gets handed over. Also a container: "
-            "its dates and progress come from its children.",
+            "the work under it. It has no length of its own: its dates and "
+            "its progress come from what is inside it.",
 
             "Task - the primary unit of work. This is what holds a duration, "
             "a start, a finish and a percentage complete.",
@@ -77,8 +74,8 @@ GUIDE_SECTIONS = (
             "duration and no finish; it marks a date. Drawn as a diamond.",
 
             "Only the levels that hold work - Task and Subtask - have "
-            "durations you set. A Phase or a Deliverable showing a duration "
-            "is reporting what its children span, not a number of its own.",
+            "durations you set. A row with children showing a duration is "
+            "reporting what they span, not a number of its own.",
         ],
     ),
     (
@@ -86,8 +83,8 @@ GUIDE_SECTIONS = (
         [
             "Indent and outdent change a row's parent. A row keeps its own "
             "type wherever the new parent can hold it: a Task indented under "
-            "a Deliverable stays a Task, and so can still hold subtasks of "
-            "its own.",
+            "a Phase stays a Task, and so can still hold subtasks of its "
+            "own.",
 
             "Only a type the new parent cannot hold is changed. A Task under "
             "another Task becomes a Subtask; a Subtask lifted into a Phase "
@@ -110,15 +107,16 @@ GUIDE_SECTIONS = (
             "ID - assigned by the application and shown for reference. It is "
             "what dependencies and calendars point at internally.",
 
-            "Type - Phase, Deliverable, Task, Subtask or Milestone. See the "
+            "Type - Phase, Task, Subtask or Milestone. See the "
             "levels above. A sub-task cannot change its type or its parent "
             "from the editor; move it in the list instead.",
 
             "Parent - the row this one sits under. Empty for a top-level "
             "row.",
 
-            "Details - free notes. They travel with the plan and appear in "
-            "the exports that have somewhere to put them.",
+            "Notes - free notes, on a tab of their own beside General "
+            "and Dependency. They travel with the plan and appear in the "
+            "exports that have somewhere to put them.",
         ],
     ),
     (
@@ -152,6 +150,10 @@ GUIDE_SECTIONS = (
             "Three fields describe the same thing twice over - a start, a "
             "finish and a length - so one of them is always worked out from "
             "the other two. The Scheduling options menu says which:",
+
+            "It sits directly above the Start date, because it decides "
+            "which of the three boxes under it you can type in. The one it "
+            "is calculating is shaded.",
 
             "End date is calculated - you give the start and the duration, "
             "and the finish follows. The usual choice, and the default.",
@@ -196,7 +198,7 @@ GUIDE_SECTIONS = (
     (
         "Which days are worked",
         [
-            "Actions > Calendar Settings holds all of it, in three tabs. The "
+            "Settings > Calendar Settings holds all of it, in three tabs. The "
             "rules are read in a strict order, and the first one that "
             "answers wins:",
 
@@ -364,9 +366,14 @@ GUIDE_SECTIONS = (
     (
         "Critical path and float",
         [
-            "Actions > Critical Path analyses the plan both ways round and "
-            "reports, for every task, how much it could slip before the "
-            "project finishes later.",
+            "There are two ways to ask. The critical path button on the "
+            "icon bar paints every critical row in the task list light red, "
+            "and a second press takes the colour off again - the fastest "
+            "way to see which of the rows in front of you cannot slip.",
+
+            "View > Critical Path opens the full report: every task, both "
+            "ways round, with how much it could slip before the project "
+            "finishes later.",
 
             "Total float - working days of slack. Zero means the task cannot "
             "slip at all, so it is on the critical path. Every zero-float "
@@ -389,9 +396,9 @@ GUIDE_SECTIONS = (
     (
         "Progress and roll-up",
         [
-            "Progress (%) is set on the rows that hold work. Containers - "
-            "Phase and Deliverable - do not take a number of their own: they "
-            "report what is under them.",
+            "Progress (%) is set on the rows that hold work. A row with "
+            "children does not take a number of its own: it reports what is "
+            "under it.",
 
             "Each level counts what is under it in the way that suits that "
             "level, so a phase of ten tasks is not dragged to 100% by one "
@@ -417,9 +424,9 @@ GUIDE_SECTIONS = (
             "Show in timeline hides a row's bar without removing the row "
             "from the plan.",
 
-            "Shape and Colour set how a bar is drawn. View > Settings holds "
-            "the chart-wide options; the zoom controls and Fit are under the "
-            "chart itself.",
+            "Shape and Colour set how a bar is drawn. Settings > Gantt "
+            "Settings holds the chart-wide options; the zoom controls and "
+            "Fit are under the chart itself.",
 
             "The chart opens framed on the plan: one day of calendar before "
             "the first bar and enough after the last for its label. Use Fit "
@@ -532,10 +539,9 @@ GUIDE_SECTIONS = (
             "actually answers to.",
 
             "The presets apply a whole look in one press: Financial "
-            "Milestone is a yellow fill with bold black text, Deliverable "
-            "Complete is green text at normal weight, Phase Gate / Approval "
-            "is red bold italic, and Summary Phase is bold on a light slate "
-            "fill.",
+            "Milestone is a yellow fill with bold black text, Work Complete "
+            "is green text at normal weight, Phase Gate / Approval is red "
+            "bold italic, and Summary Phase is bold on a light slate fill.",
 
             "The X at the end of the group clears the formatting off the "
             "selected rows in one press, back to how the grid draws "
@@ -571,14 +577,25 @@ GUIDE_SECTIONS = (
             "The Predecessors column names what a task waits for by those "
             "same numbers, so the links renumber with the rows.",
 
-            "Double-click a task's name to type over it. Enter saves it, "
-            "clicking away saves it, and Escape leaves it alone. A name "
-            "typed here is the task's name - the editor shows it, and Undo "
-            "takes it back - and clearing the box puts the old name back, "
-            "because a row has to be called something.",
+            "Clicking a row twice does one of two things, depending on "
+            "how fast. Two quick clicks open the task editor. A click, a "
+            "pause, and a second click on the same row open the name for "
+            "typing over, in the list - the gesture a file manager renames "
+            "with.",
 
-            "Double-clicking no longer folds a branch away. The arrow "
-            "beside a row does that, as it always did.",
+            "The slow one waits about half a second before the box opens, "
+            "in case a second quick click is on its way. A double-click "
+            "inside that calls it off and opens the editor instead, so the "
+            "two never both happen.",
+
+            "Enter saves a typed name, clicking away saves it, and Escape "
+            "leaves it alone. A name typed here is the task's name - the "
+            "editor shows it, and Undo takes it back - and clearing the box "
+            "puts the old name back, because a row has to be called "
+            "something.",
+
+            "Neither gesture folds a branch away. The arrow beside a row "
+            "does that, as it always did.",
 
             "You can type the links straight into the Dependencies column. "
             "Double-click the cell and write the number of the task this "
@@ -634,8 +651,8 @@ GUIDE_SECTIONS = (
             "screen or scrolled out of sight, which is the point: scanning "
             "a list is exactly the activity that skips columns.",
 
-            "A Phase or a Deliverable reads as a bracket even before "
-            "anything has been put in it.",
+            "A Phase reads as a bracket even before anything has been put "
+            "in it.",
 
             "A summary row can be told not to be bold, like any other row, "
             "and clearing its formatting brings the bold back - bold is "
@@ -645,7 +662,7 @@ GUIDE_SECTIONS = (
     (
         "Project Settings",
         [
-            "Actions > Project Settings holds what the whole plan is built "
+            "Settings > Project Settings holds what the whole plan is built "
             "from. It used to be Project Title and ask only for a title; the "
             "title is still there, with the rest of it.",
 
@@ -687,6 +704,15 @@ GUIDE_SECTIONS = (
             "The window opens filling whatever screen you are on, so the "
             "task list and the chart get whatever room the desktop allows.",
 
+            "Five menus run across the top. File is the plan's own file - "
+            "new, open, save, save as. Actions is what is done to a plan "
+            "rather than to its file: importing and exporting. Settings "
+            "holds the three panels that describe the whole plan - the "
+            "project, the calendar, and how the chart is drawn. Edit "
+            "creates rows and changes them, and carries undo, redo and the "
+            "clipboard. View is about this window: the appearance, the "
+            "critical path report, and this guide.",
+
             "A menu closes when you click away from it, press Escape, or "
             "choose something from it. If one ever seems stuck, clicking "
             "anywhere else in the window will close it.",
@@ -709,20 +735,22 @@ GUIDE_SECTIONS = (
             "it says - see Marking rows up above.",
 
             "The pencil edits the selected task. Renaming the plan itself is "
-            "Actions > Project Title.",
+            "Settings > Project Settings.",
 
-            "Creating work items is on Actions > Create, and opening or "
-            "starting a plan is on the Project menu.",
+            "Creating work items is on Edit > Create, and opening or "
+            "starting a plan is on the File menu.",
 
-            "Then the critical path analysis, set apart on both sides "
-            "because it neither edits a row nor moves one about, and then "
-            "cut, copy, paste, delete, undo and redo.",
+            "Then the critical path button, set apart on both sides because "
+            "it neither edits a row nor moves one about - it colours the "
+            "critical rows in the list, and clears them again when pressed "
+            "a second time - and then cut, copy, paste, delete, undo and "
+            "redo.",
         ],
     ),
     (
         "Files: saving and opening",
         [
-            "Project > Save and Project > Load use this application's own "
+            "File > Save and File > Load use this application's own "
             "JSON format, which carries everything: the tasks, the links, "
             "the calendars, the overrides and the per-task calendar "
             "assignments.",
@@ -742,7 +770,7 @@ GUIDE_SECTIONS = (
     (
         "Files: importing",
         [
-            "File > Import reads four formats, none of which needs "
+            "Actions > Import reads four formats, none of which needs "
             "anything installed.",
 
             "GAN - GanttProject files. The file's own calendar block is "
@@ -776,7 +804,7 @@ GUIDE_SECTIONS = (
     (
         "Files: exporting",
         [
-            "File > Export writes GAN, MS Project, Mermaid, HTML, SVG, PNG, "
+            "Actions > Export writes GAN, MS Project, Mermaid, HTML, SVG, PNG, "
             "PDF and XLSX.",
 
             "GAN - a GanttProject file. GanttProject stores a start and a "

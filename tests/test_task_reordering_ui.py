@@ -494,10 +494,10 @@ class TestCreateSubmenu(TaskListTestCase):
                 for i in range(submenu.index('end') + 1)]
 
     def test_it_offers_every_type(self):
-        """The five the plan is built from, outermost first."""
+        """The four the plan is built from, outermost first."""
         self.assertEqual(
             self.submenu_labels("001"),
-            ["Phase", "Deliverable", "Task", "Subtask", "Milestone"])
+            ["Phase", "Task", "Subtask", "Milestone"])
 
     def test_a_task_lands_below_the_clicked_row(self):
         """
@@ -725,15 +725,22 @@ class TestDoubleClick(TaskListTestCase):
 
         self.assertFalse(self.task_list.tree.item("002", 'open'))
 
-    def test_double_click_does_not_open_the_edit_dialog(self):
-        """Editing moved to the context menu."""
+    def test_double_click_opens_the_edit_dialog(self):
+        """
+        Two clicks in quick succession open the row's editor.
+
+        They used to open the name box, so there was no gesture that reached
+        the editor at all. Renaming in place is the slow pair now - click,
+        pause, click - which is what a file manager renames with; see
+        DragDropTaskList.on_release.
+        """
         opened = []
         self.task_list.on_task_edit = opened.append
 
         self.double_click("002")
         self.double_click("001")
 
-        self.assertEqual(opened, [])
+        self.assertEqual([t.id for t in opened], ["002", "001"])
 
     def test_double_click_leaves_the_rows_alone(self):
         """It opens an editor over one; it does not reorder anything."""

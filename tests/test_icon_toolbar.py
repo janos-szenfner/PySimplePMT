@@ -36,7 +36,7 @@ class TestIconDefinitions(unittest.TestCase):
         """
         expected_icons = [
             'open', 'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone', 'phase', 'deliverable',
+            'task', 'subtask', 'milestone', 'phase',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_icons:
@@ -85,7 +85,7 @@ class TestIconDefinitions(unittest.TestCase):
         # Test ACTIVE_WHEN_PROJECT_OPEN group
         expected_active_icons = [
             'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone', 'phase', 'deliverable',
+            'task', 'subtask', 'milestone', 'phase',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_active_icons:
@@ -93,7 +93,7 @@ class TestIconDefinitions(unittest.TestCase):
                         f"'{icon_name}' should be in ACTIVE_WHEN_PROJECT_OPEN")
 
         # Test WORK_ITEM_CREATION_ICONS group
-        expected_work_items = ['task', 'subtask', 'milestone', 'phase', 'deliverable']
+        expected_work_items = ['task', 'subtask', 'milestone', 'phase']
         for icon_name in expected_work_items:
             self.assertIn(icon_name, WORK_ITEM_CREATION_ICONS,
                         f"'{icon_name}' should be in WORK_ITEM_CREATION_ICONS")
@@ -156,7 +156,7 @@ class TestIconToolbarCreation(unittest.TestCase):
         One button per icon named, and none for the dividers.
 
         Counted against ICON_ACTIONS rather than against a number written
-        here, which went stale the moment Phase and Deliverable were added.
+        here, which went stale the moment a button was added or taken away.
         """
         toolbar = IconToolbar(self.root, self.project)
         expected = [name for name, _tip, _action in toolbar.ICON_ACTIONS
@@ -408,7 +408,7 @@ class TestIconToolbarActions(unittest.TestCase):
             'save_project', 'save_project_as',
             'edit_selected_task', 'indent_selected', 'outdent_selected',
             'link_selected', 'unlink_selected',
-            'show_critical_path',
+            'toggle_critical_path_rows',
             'cut_tasks', 'copy_tasks', 'paste_tasks', 'delete_selected',
             'undo', 'redo',
         ])

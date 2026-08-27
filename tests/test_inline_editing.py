@@ -113,6 +113,25 @@ class InlineEditingTestCase(unittest.TestCase):
         self.task_list.tree.identify_column = lambda _x: reference
         return self.task_list.on_double_click(SimpleNamespace(x=5, y=0))
 
+    def slow_click(self, task_id: str):
+        """
+        Click a row that is already selected, and let the rename run.
+
+        The gesture a file manager renames with: two clicks with a pause
+        between them. The first selects; the second - this one - starts a
+        rename that waits RENAME_DELAY_MS in case a quick second click is
+        coming. Here the wait is skipped and the box opened directly.
+        """
+        self.task_list.tree.selection_set(task_id)
+        self.task_list.tree.identify_row = lambda y, item=task_id: item
+        self.task_list._column_name = lambda x: '#0'
+        self.task_list.on_press(SimpleNamespace(x=5, y=0))
+        self.task_list.on_release(SimpleNamespace(x=5, y=0))
+        started = self.task_list._rename_pending is not None
+        self.task_list._cancel_rename()
+        assert started, "the slow click did not start a rename"
+        self.task_list.edit_name_cell(task_id)
+
     def type_into_editor(self, text: str):
         """Replace what the open editor holds."""
         editor = self.task_list._cell_editor
@@ -129,14 +148,14 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
 
     def test_it_opens_an_editor_over_the_name(self):
         """Holding what the task is called, ready to be replaced."""
-        self.double_click('u1')
+        self.slow_click('u1')
 
         self.assertIsNotNone(self.task_list._cell_editor)
         self.assertEqual(self.task_list._cell_editor.get(), 'Planning')
 
     def test_the_editor_knows_which_row_it_is_over(self):
         """Or a commit would rename whichever task was edited last."""
-        self.double_click('u2')
+        self.slow_click('u2')
 
         self.assertEqual(self.task_list._cell_editor_task, 'u2')
 
@@ -149,7 +168,7 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
         """
         self.assertTrue(self.task_list.tree.item('u1', 'open'))
 
-        self.double_click('u1')
+        self.slow_click('u1')
 
         self.assertTrue(self.task_list.tree.item('u1', 'open'))
 
@@ -173,7 +192,7 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
         from unittest import mock
 
         with mock.patch.object(self.task_list, 'edit_name_cell') as sent:
-            self.double_click('u1', column='#0')
+            self.slow_click('u1')
 
         sent.assert_called_once_with('u1')
 
@@ -182,6 +201,104 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
         self.double_click('u1', column='Start')
 
         self.assertIsNone(self.task_list._cell_editor)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTheTwoSpeedsOfClicking(InlineEditingTestCase):
+    """
+    Which of the two gestures opens which editor.
+
+    Two quick clicks open the task editor. A click, a pause and a second
+    click open the name box in the grid. They start the same way - the
+    second click of either lands on a row that the first one selected - so
+    the rename is scheduled and then called off if a double-click arrives
+    inside RENAME_DELAY_MS.
+    """
+
+    def press_and_release(self, task_id='u1'):
+        """The second click of a gesture, without running the rename."""
+        self.task_list.tree.selection_set(task_id)
+        self.task_list.tree.identify_row = lambda y, item=task_id: item
+        self.task_list._column_name = lambda x: '#0'
+        self.task_list.on_press(SimpleNamespace(x=5, y=0))
+        self.task_list.on_release(SimpleNamespace(x=5, y=0))
+
+    def test_the_first_click_on_an_unselected_row_schedules_nothing(self):
+        """
+        Or clicking down a list would leave a name box open behind you.
+
+        A rename is only ever the second click of a pair, so the row has to
+        have been selected before the click that starts it.
+        """
+        self.task_list.tree.selection_set('u2')
+        self.task_list.tree.identify_row = lambda _y: 'u1'
+        self.task_list._column_name = lambda _x: '#0'
+
+        self.task_list.on_press(SimpleNamespace(x=5, y=0))
+        self.task_list.on_release(SimpleNamespace(x=5, y=0))
+
+        self.assertIsNone(self.task_list._rename_pending)
+
+    def test_clicking_a_row_that_is_already_selected_schedules_one(self):
+        """The slow rename, waiting to see whether a second click comes."""
+        self.press_and_release('u1')
+
+        self.assertIsNotNone(self.task_list._rename_pending)
+        self.task_list._cancel_rename()
+
+    def test_a_quick_second_click_calls_the_rename_off(self):
+        """
+        And opens the task editor instead.
+
+        Both gestures start with the same press, so the double-click has to
+        cancel what that press scheduled. Without it the editor opened and
+        the name box appeared over the list behind it a moment later.
+        """
+        from unittest import mock
+
+        self.press_and_release('u1')
+        self.assertIsNotNone(self.task_list._rename_pending)
+
+        with mock.patch.object(self.task_list, 'edit_task') as opened:
+            self.double_click('u1')
+
+        self.assertIsNone(self.task_list._rename_pending,
+                          "the rename should have been called off")
+        opened.assert_called_once_with('u1')
+
+    def test_the_rename_stands_down_if_the_selection_moved(self):
+        """
+        The wait is long enough for anything to have happened in it.
+
+        Asked again when it fires rather than trusted from when it was
+        scheduled.
+        """
+        from unittest import mock
+
+        with mock.patch.object(self.task_list, 'edit_name_cell') as opened:
+            self.task_list.tree.selection_set('u2')
+            self.task_list._rename_if_still_wanted('u1')
+
+        opened.assert_not_called()
+
+    def test_the_rename_stands_down_if_the_row_has_gone(self):
+        """Deleted under the wait, which leaves a box over nothing."""
+        from unittest import mock
+
+        self.task_list.tree.delete('u1')
+
+        with mock.patch.object(self.task_list, 'edit_name_cell') as opened:
+            self.task_list._rename_if_still_wanted('u1')
+
+        opened.assert_not_called()
+
+    def test_a_pending_rename_does_not_outlive_the_list(self):
+        """A timer firing into a destroyed widget is a Tk error."""
+        self.press_and_release('u1')
+
+        self.task_list.destroy()
+
+        self.assertIsNone(self.task_list._rename_pending)
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
@@ -228,7 +345,7 @@ class TestSavingTheName(InlineEditingTestCase):
 
     def test_enter_stores_it(self):
         """On the task, which is what makes it real."""
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('Project Planning')
 
         self.task_list._commit_name()
@@ -237,7 +354,7 @@ class TestSavingTheName(InlineEditingTestCase):
 
     def test_the_grid_shows_it(self):
         """The column redraws from the task."""
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('Project Planning')
 
         self.task_list._commit_name()
@@ -252,7 +369,7 @@ class TestSavingTheName(InlineEditingTestCase):
         An entry left over a row that has just been destroyed is a box
         floating over the wrong task.
         """
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('Renamed')
 
         self.task_list._commit_name()
@@ -261,7 +378,7 @@ class TestSavingTheName(InlineEditingTestCase):
 
     def test_escape_leaves_the_name_alone(self):
         """What was typed is discarded."""
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('Not saved')
 
         self.task_list._close_cell_editor()
@@ -275,7 +392,7 @@ class TestSavingTheName(InlineEditingTestCase):
         Quietly reverting says so and gets out of the way; a dialog would be
         a reprimand for clicking away from a box somebody had cleared.
         """
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('   ')
 
         self.task_list._commit_name()
@@ -284,7 +401,7 @@ class TestSavingTheName(InlineEditingTestCase):
 
     def test_surrounding_space_is_trimmed(self):
         """A name is what was meant, not what the keyboard left behind."""
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('  Project Planning  ')
 
         self.task_list._commit_name()
@@ -301,7 +418,7 @@ class TestSavingTheName(InlineEditingTestCase):
 
     def test_a_row_deleted_under_the_editor_is_not_renamed(self):
         """The commit runs from a focus change, which can happen at any time."""
-        self.double_click('u1')
+        self.slow_click('u1')
         self.type_into_editor('Renamed')
         self.project.remove_task('u1')
 

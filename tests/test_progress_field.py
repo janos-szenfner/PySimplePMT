@@ -37,14 +37,14 @@ class ProgressFieldTestCase(unittest.TestCase):
     """One plan holding a row of every type."""
 
     def setUp(self):
-        """A phase, a deliverable, a task, a sub-task and a milestone."""
+        """A phase, a task, a sub-task and a milestone."""
         self.root = ctk.CTk()
         self.root.withdraw()
 
         self.project = Project(name="Plan")
         rows = (
             ("001", "Preparation", "Phase", None),
-            ("002", "Handover", "Deliverable", "001"),
+            ("002", "Handover", "Task", "001"),
             ("003", "Implementation", "Task", "001"),
             ("004", "Defining goals", "Subtask", "003"),
             ("005", "Sign-off", "Milestone", None),
@@ -92,9 +92,9 @@ class TestEveryTypeIsOfferedAPercentage(ProgressFieldTestCase):
         """
         self.assertIsNotNone(self.editor_for("004").progress_entry)
 
-    def test_a_phase_and_a_deliverable_are_offered_a_percentage(self):
+    def test_a_phase_and_a_summary_task_are_offered_a_percentage(self):
         """Shown but not editable: they read theirs from what is under."""
-        for task_id in ("001", "002"):
+        for task_id in ("001", "003"):
             self.assertIsNotNone(self.editor_for(task_id).progress_entry,
                                  f"{task_id} has no progress box")
 
@@ -169,7 +169,8 @@ class TestATaskAveragesItsSubtasks(unittest.TestCase):
     def test_it_is_still_counted_rather_than_weighted(self):
         """
         A checklist is a checklist. Four sub-tasks of an hour each are four
-        entries like any other four; length is the Deliverable's business.
+        entries like any other four; length is the Phase's business, one
+        level up.
         """
         from gantt_app.models import rolled_up_progress
         from datetime import timedelta
@@ -189,8 +190,7 @@ class TestATaskAveragesItsSubtasks(unittest.TestCase):
         """A sub-task at 60% reaches the phase above it."""
         project = Project(name="Plan")
         rows = (("001", "Preparation", "Phase", None, 0),
-                ("002", "Handover", "Deliverable", "001", 0),
-                ("003", "Implementation", "Task", "002", 0),
+                ("003", "Implementation", "Task", "001", 0),
                 ("004", "Goals", "Subtask", "003", 60),
                 ("005", "Criteria", "Subtask", "003", 0),
                 ("006", "Scope", "Subtask", "003", 100))
@@ -201,7 +201,7 @@ class TestATaskAveragesItsSubtasks(unittest.TestCase):
 
         project.roll_up_summaries()
 
-        for task_id in ("001", "002", "003"):
+        for task_id in ("001", "003"):
             self.assertEqual(project.get_task_by_id(task_id).progress, 53)
 
 

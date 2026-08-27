@@ -145,7 +145,7 @@ class TestPhaseShape(unittest.TestCase):
     """
 
     def setUp(self):
-        """A Phase with a sub-task, a Deliverable with one, and a plain task."""
+        """A Phase over a Task, and a sub-task under that."""
         self.project = Project(name="Shapes")
         base = datetime(2026, 1, 5)
 
@@ -154,8 +154,8 @@ class TestPhaseShape(unittest.TestCase):
             end_date=base + timedelta(days=20), task_type="Phase",
         ))
         self.project.add_task(Task(
-            id="D", name="Deliverable", start_date=base,
-            end_date=base + timedelta(days=10), task_type="Deliverable",
+            id="D", name="Grouping task", start_date=base,
+            end_date=base + timedelta(days=10), task_type="Task",
             parent_task_id="P",
         ))
         self.project.add_task(Task(
@@ -174,15 +174,15 @@ class TestPhaseShape(unittest.TestCase):
         self.assertEqual(self.shapes()['Phase'], 'phase')
 
     def test_other_parents_keep_the_bracket(self):
-        """A Deliverable brackets the work beneath it, as before."""
-        self.assertEqual(self.shapes()['Deliverable'], 'bracket')
+        """A Task brackets the work beneath it, as before."""
+        self.assertEqual(self.shapes()['Grouping task'], 'bracket')
 
     def test_an_empty_phase_is_still_a_phase(self):
         """
         A Phase with nothing in it yet gets the same shape.
 
-        Otherwise the row changed shape the moment its first deliverable was
-        added, which read as two different kinds of row.
+        Otherwise the row changed shape the moment the first task was put
+        in it, which read as two different kinds of row.
         """
         project = Project(name="Empty phase")
         project.add_task(Task(id="P", name="Phase",

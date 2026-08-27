@@ -37,8 +37,8 @@ class EditTaskDialog(TaskFormDialog):
     Dialog for editing an existing task.
 
     It opens at TaskFormDialog's size. Both dialogs used to narrow it, from
-    when the form was one column; the notes now sit beside the fields and a
-    620-wide window squeezed them both.
+    when the form was one column; a 620-wide window then squeezed the tab
+    strip, and it holds three tabs now.
     """
 
     def __init__(self, master, task: Task, project: Project,
@@ -87,7 +87,8 @@ class EditTaskDialog(TaskFormDialog):
         """
         self.id_label = ctk.CTkLabel(frame,
                                      text=self.project.display_id(self.task.id))
-        self._field(frame, "ID:", self.id_label, sticky=tk.W)
+        self._field(frame, "ID:", self.id_label, sticky=tk.W,
+                    where=self.RIGHT)
 
     def _build_parent(self, frame):
         """Name the parent, when there is one."""
@@ -145,7 +146,7 @@ class EditTaskDialog(TaskFormDialog):
             self.task.end_date = end
             self.task.is_milestone = is_milestone
             self.task.progress = progress
-            # A Phase or a Deliverable takes its length from the work inside
+            # A row with children takes its length from the work inside
             # it, so nothing is written here for one. The form derives the
             # number from the two dates even where its own rules have greyed
             # the box out, and storing that froze a container at whatever its
@@ -315,7 +316,7 @@ class CreateTaskDialog(TaskFormDialog):
             frame, variable=self.task_type_var, values=list(TASK_TYPES),
             state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
-        self._field(frame, "Type:", self.task_type_menu)
+        self._field(frame, "Type:", self.task_type_menu, where=self.LEFT)
 
     def _build_parent(self, frame):
         """Name the parent, or offer the tasks that could be one."""
@@ -370,7 +371,7 @@ class CreateTaskDialog(TaskFormDialog):
             if parent_task_id:
                 # The level the chosen parent can hold, which is the task's
                 # own type wherever the parent can hold it - a Task created
-                # under a Deliverable stays a Task. Creating and indenting
+                # under a Phase stays a Task. Creating and indenting
                 # settle this the same way; see models.child_type_for.
                 parent = self.project.get_task_by_id(parent_task_id)
                 stand_in = Task(id='__type__', name=task_type,

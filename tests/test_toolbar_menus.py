@@ -45,9 +45,23 @@ class TestMenuOrder(unittest.TestCase):
         self.tree = menu_tree()
 
     def test_top_level_order(self):
-        """Project, File, Actions, Edit, then View last."""
+        """File, Actions, Settings, Edit, then View last."""
         self.assertEqual([menu['text'] for menu in self.tree],
-                         ['Project', 'File', 'Actions', 'Edit', 'View'])
+                         ['File', 'Actions', 'Settings', 'Edit', 'View'])
+
+    def test_file_comes_first(self):
+        """
+        Where every other application puts it.
+
+        A second menu called Project used to hold the new/open/save, so the
+        one place a reader looks first for Save was the one place it was
+        not.
+        """
+        self.assertEqual(self.tree[0]['text'], 'File')
+
+    def test_nothing_is_called_project_any_more(self):
+        """Its entries are under File; the empty menu went with them."""
+        self.assertNotIn('Project', [menu['text'] for menu in self.tree])
 
     def test_view_is_last(self):
         """View stays at the end of the list."""
@@ -61,16 +75,16 @@ class TestMenuContents(unittest.TestCase):
         """Set up test fixtures."""
         self.tree = menu_tree()
 
-    def test_project_menu(self):
-        """Project holds the file lifecycle actions."""
+    def test_file_menu(self):
+        """File holds the file lifecycle actions."""
         self.assertEqual(
-            labels(find(self.tree, 'Project')['items']),
+            labels(find(self.tree, 'File')['items']),
             ['New Project...', 'Load Project...', 'Save Project...',
              'Save Project As...'])
 
-    def test_file_menu_nests_import_and_export(self):
-        """File carries Import and Export as submenus."""
-        items = find(self.tree, 'File')['items']
+    def test_actions_menu_nests_import_and_export(self):
+        """Actions carries Import and Export as submenus."""
+        items = find(self.tree, 'Actions')['items']
 
         self.assertEqual(labels(items), ['Import', 'Export'])
         for item in items:
@@ -78,46 +92,46 @@ class TestMenuContents(unittest.TestCase):
             self.assertTrue(item['submenu'])
 
     def test_import_submenu_formats(self):
-        """Every import format is reachable under File > Import."""
-        items = find(self.tree, 'File')['items']
+        """Every import format is reachable under Actions > Import."""
+        items = find(self.tree, 'Actions')['items']
         imports = next(i for i in items if i['text'] == 'Import')
 
         self.assertEqual(labels(imports['submenu']),
                          ['MS Project...', 'GAN...', 'Mermaid...', 'XLSX...'])
 
     def test_export_submenu_formats(self):
-        """Every export format is reachable under File > Export."""
-        items = find(self.tree, 'File')['items']
+        """Every export format is reachable under Actions > Export."""
+        items = find(self.tree, 'Actions')['items']
         exports = next(i for i in items if i['text'] == 'Export')
 
         self.assertEqual(labels(exports['submenu']),
                          ['GAN...', 'MS Project...', 'Mermaid...', 'HTML...',
                           'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
 
-    def test_actions_holds_the_settings_for_the_plan(self):
+    def test_settings_holds_what_is_set_about_the_plan(self):
         """
-        What is set about the plan as a whole, and the analysis of it.
+        Three settings panels and nothing else.
 
-        Create moved to Edit - making a row is an edit - and how the chart
-        is drawn came here from View, because that is a setting of the plan
-        rather than of this window.
+        Create moved to Edit - making a row is an edit - and Critical Path
+        moved to View, which is where something that changes what the window
+        shows belongs.
         """
-        items = find(self.tree, 'Actions')['items']
+        items = find(self.tree, 'Settings')['items']
 
         self.assertEqual(labels(items),
                          ['Project Settings...', 'Calendar Settings...',
-                          'Gantt Settings...', 'Critical Path...'])
+                          'Gantt Settings...'])
         for item in items:
             self.assertNotIn('submenu', item)
 
-    def test_calendar_settings_sits_directly_under_actions(self):
+    def test_calendar_settings_sits_directly_under_settings(self):
         """
         Choosing which days the plan works is not a create action.
 
-        It belongs beside Project Title: both change something about the whole
-        project rather than adding a row to it.
+        It belongs beside Project Settings: both change something about the
+        whole project rather than adding a row to it.
         """
-        items = find(self.tree, 'Actions')['items']
+        items = find(self.tree, 'Settings')['items']
         entry = next(i for i in items if i['text'] == 'Calendar Settings...')
 
         self.assertNotIn('submenu', entry)
@@ -128,10 +142,10 @@ class TestMenuContents(unittest.TestCase):
         create = find(self.tree, 'Edit')['items'][0]
 
         self.assertEqual(labels(create['submenu']),
-                         ['Phase...', 'Deliverable...', 'Task...',
-                          'Subtask...', 'Milestone...'])
+                         ['Phase...', 'Task...', 'Subtask...',
+                          'Milestone...'])
 
-    def test_project_settings_sits_directly_under_actions(self):
+    def test_project_settings_sits_directly_under_settings(self):
         """
         The settings that apply to the whole plan are reachable in one step.
 
@@ -140,19 +154,24 @@ class TestMenuContents(unittest.TestCase):
         Project Title and ask for one; it opens the panel the title now sits
         on, with the rest of what a plan is built from.
         """
-        items = find(self.tree, 'Actions')['items']
+        items = find(self.tree, 'Settings')['items']
         settings = next(i for i in items if i['text'] == 'Project Settings...')
 
         self.assertNotIn('submenu', settings)
         self.assertTrue(callable(settings['command']))
 
-    def test_project_info_left_the_view_menu(self):
-        """View no longer offers Project Info."""
+    def test_the_view_menu_is_what_this_window_shows(self):
+        """
+        The appearance, the critical path, and the guide.
+
+        The chart's own settings went to Settings, beside the plan's other
+        settings. Critical Path came the other way: it changes what the
+        window shows rather than what the plan says.
+        """
         view = labels(find(self.tree, 'View')['items'])
 
-        # The chart's settings went to Actions, beside the plan's other
-        # settings; what is left here is about this window
-        self.assertEqual(view, ['System UI mode', 'Help'])
+        self.assertEqual(view,
+                         ['System UI mode', 'Critical Path...', 'Help'])
         self.assertNotIn('Project Info', view)
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):

@@ -15,12 +15,12 @@ This is a complete implementation of a project management tool with:
 
 - **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and today's column is tinted
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
-- **Foldable Hierarchy**: A task with sub-tasks shows an expander; double-click any row to fold its branch away
+- **Foldable Hierarchy**: A task with sub-tasks shows an expander; the arrow beside a row folds its branch away
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
-- **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Deliverable Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
+- **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
-- **Rename in the grid**: Double-click a task's name to type over it — Enter or clicking away saves, Escape cancels. The name goes on the task, so the editor shows it and Undo takes it back. Double-click no longer folds a branch; the arrow beside the row still does
+- **Two speeds of click**: Two quick clicks on a row open the task editor. A click, a pause and a second click open the name for typing over, in the grid — the gesture a file manager renames with. Enter or clicking away saves, Escape cancels. The name goes on the task, so the editor shows it and Undo takes it back. Neither gesture folds a branch; the arrow beside the row does that
 - **Type dependencies into the grid**: The Dependencies column takes the notation every planning tool uses — `3`, `3SS+1d`, `3FS-2d`, `3SF+50%`, several per cell. Double-click, type, Enter. It resolves the numbers, refuses a self-reference, an unknown task, a duplicate or anything that would run in a circle, reschedules, and writes the cell back in the same form
 - **Sequential IDs that keep up**: The ID column numbers rows 1..N down the list with no gaps, and follows every insert, delete, drag and indent. The number is a *position*; dependencies are held against the task itself, so a link never breaks when the numbers move — it just shows a different one
 - **Outline You Can Scan**: Any row with work under it is drawn in bold and its children are indented — true whatever the Type column says, and whether or not that column is on screen. The task name lives in the tree column, so the indentation is drawn against the name itself, and an **Outline Level** column gives the same depth as a number (1 at the top, 2 under it), the way Microsoft Project does
@@ -33,12 +33,12 @@ This is a complete implementation of a project management tool with:
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export the plan to a three page PDF — work item list beside the chart, the chart alone, then the list as a full table — to PNG, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
 - **Planning Tool Export**: Hand the plan to GanttProject as a .gan file, or to Microsoft Project as MSPDI .xml. Both carry the hierarchy, the links with their types and lags, the progress, the notes and the working calendar; both are written so the dates the other tool shows are the dates shown here
-- **Work Item Hierarchy**: Phase > Deliverable > Task > Subtask, with milestones at any level. Indenting and outdenting keep a task's type wherever the new parent can hold it, so a Task moved under a Deliverable stays a Task
+- **Work Item Hierarchy**: Phase > Task > Subtask, with milestones at any level. Indenting and outdenting keep a task's type wherever the new parent can hold it, so a Task moved under a Phase stays a Task and keeps being able to hold sub-tasks of its own
 - **Opens to fit the screen**: The window is sized to the area the desktop actually allows — the menu bar, Dock or taskbar excluded — rather than to a fixed 1400x900 that overflowed a 1366x768 laptop. The minimum is clamped to what was opened, so the window can always be resized to fit the display it is on
 - **Modern UI**: Built with CustomTkinter for a professional look
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Rows that line up**: the chart draws the rows the task list is showing, in its order and at its row height, so a bar sits on the line of the task it belongs to. Fold a branch away and its bars go with it; scroll the list and the chart follows
-- **Critical Path**: Automatic calculation and visualization of the critical path
+- **Critical Path**: Automatic calculation and visualization of the critical path. The icon on the bar paints every critical row light red in the task list — press it again to clear — and **View → Critical Path...** opens the full float table
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in **working** days and Hard/Rubber link hardness. A start link and a finish link on the same task state a span - Start-Start onto the first task and Finish-Finish onto the last makes a row cover the stretch between them, and its duration follows from the two dates rather than being carried over. A hard link pins a date but still has to clear any rubber floor set by another link
 - **Earliest Begin Date**: a floor on when a task's work can start, applied alongside the links and the working calendar
 - **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
@@ -52,9 +52,9 @@ This is a complete implementation of a project management tool with:
 - **Working Week**: Actions → Calendar Settings... → Working Week sets which weekdays are worked at all — a six-day week, a four-day week, or the standard Monday to Friday. Durations are held and finishes move, so putting Saturday to work pulls finishes in rather than lengthening tasks. A week with no working day in it is refused
 - **Manual Date Overrides**: Actions → Calendar Settings... → Manual Overrides rules on one named date at a time, and **outranks everything else** — a Saturday named as a make-up day is worked, and an ordinary Tuesday named as a company shutdown is not, whatever the weekend and holiday rules say. Each carries an optional reason, and deleting one puts the date back under the ordinary rules. Saved with the project
 - **Critical Path Analysis**: both passes of the critical path method, giving every task its early and late dates and its float in working days. *Every* zero-float task is critical, not one chain through them, so two parallel strands that both drive the finish are both reported
-- **Work Item Types**: Phase, Deliverable, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
-- **Summary Roll-Up**: Anything with children spans them, and completion works its way up the four levels. A Subtask carries its own percentage; a Task averages its sub-tasks' percentages evenly, or keeps the percentage typed on it when it has none; a Deliverable weights its tasks by how long they run; a Phase averages its deliverables evenly. An empty container reads 0%
-- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a row copies everything under it - a phase brings its deliverables, tasks and sub-tasks, nested as they were - and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
+- **Work Item Types**: Phase, Task, Subtask and Milestone, each with its own colour, and dates and progress that roll up through the levels
+- **Summary Roll-Up**: Anything with children spans them, and completion works its way up the levels. A Subtask carries its own percentage; a Task averages its sub-tasks' percentages evenly, or keeps the percentage typed on it when it has none; a Phase averages its tasks evenly. An empty container reads 0%
+- **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a row copies everything under it - a phase brings its tasks and their sub-tasks, nested as they were - and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
@@ -142,8 +142,8 @@ desktop asks for.
 
 ### Core Data Models (`models.py`)
 - **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, earliest_begin, scheduling_options, details
-- **Work Item Types**: `Phase`, `Deliverable`, `Task`, `Subtask`, `Milestone`. `Phase` and `Deliverable` are containers, taking their dates and progress from what is inside them; `Subtask` and `Milestone` hold nothing. The older hyphenated `Sub-Task` is rewritten to `Subtask` when a task is built, so plans saved by earlier versions load unchanged
-- **The Levels, and Moving Between Them**: the types describe a four-level plan, `Phase > Deliverable > Task > Subtask`, with a `Milestone` allowed at any level. `child_type_for()` decides what a task becomes when it is moved, and it keeps the task's own type wherever the new parent can hold it: a `Task` indented under a `Deliverable` **stays a `Task`**, and so keeps being able to hold sub-tasks of its own. Only a type the parent cannot hold is changed - a `Task` under another `Task` becomes a `Subtask`, a `Subtask` lifted into a `Phase` becomes a `Task` - and a `Milestone` stays a milestone wherever it lands. Creating a task under a parent settles it the same way, so indenting and creating agree
+- **Work Item Types**: `Phase`, `Task`, `Subtask`, `Milestone`. `Phase` is a container, taking its dates and progress from what is inside it; `Subtask` and `Milestone` hold nothing. Two older types are rewritten when a task is built, so plans saved by earlier versions load unchanged: the hyphenated `Sub-Task` becomes `Subtask`, and `Deliverable` - a level that used to sit between `Phase` and `Task` - becomes `Task`, which is the level it always described
+- **The Levels, and Moving Between Them**: the types describe a three-level plan, `Phase > Task > Subtask`, with a `Milestone` allowed at any level. `child_type_for()` decides what a task becomes when it is moved, and it keeps the task's own type wherever the new parent can hold it: a `Task` indented under a `Phase` **stays a `Task`**, and so keeps being able to hold sub-tasks of its own. Only a type the parent cannot hold is changed - a `Task` under another `Task` becomes a `Subtask`, a `Subtask` lifted into a `Phase` becomes a `Task` - and a `Milestone` stays a milestone wherever it lands. Creating a task under a parent settles it the same way, so indenting and creating agree
 - **Project Class**: name, tasks, start_date, end_date, calendar
 - **Methods**: add_task, remove_task, get_task_by_id, get_dependencies, get_dependents, move_task, move_task_before, next_task_id
 - **Completion Roll-Up**: `rolled_up_progress()` gives each level its own rule - see *Completion* below - and `roll_up_summaries()` applies it deepest-first, so ticking one sub-task reaches the phase above it in the same pass
@@ -603,8 +603,8 @@ Each level counts what is under it in the way that suits what that level is:
 | --- | --- |
 | **Subtask** | Its own percentage, like every other row. It was a tick box until the Task above it learned to average percentages |
 | **Task** | With sub-tasks, the even average of their percentages - counted, not weighted, a checklist being a checklist. Without, the percentage typed on it |
-| **Deliverable** | Its tasks weighted by how long they run, so a fortnight counts for more than an afternoon. With nothing to weight by - all milestones, say - a plain average |
-| **Phase** | Its deliverables averaged evenly. One being longer is not a reason for it to count for more |
+| **Phase** | Its tasks averaged evenly. One being longer is not a reason for it to count for more |
+| **Anything else with children** | Weighted by how long they run, so a fortnight counts for more than an afternoon. This was the `Deliverable`'s rule; it stays as the answer for a parent that is neither a `Phase` nor a `Task`, which a plan read from another format can hold |
 | **Empty container** | 0%. No work under it, none of it done |
 
 Percentages are clamped as they are read, so a child carrying something
@@ -613,16 +613,16 @@ cannot pull its parent outside it either.
 
 ### Task List View (`views/task_list.py`)
 - **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
-- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Deliverable, Task, Subtask, Milestone), Edit and Delete, Copy, Cut, Paste and Paste as Sub-Task, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
+- **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Task, Subtask, Milestone), Edit and Delete, Copy, Cut, Paste and Paste as Sub-Task, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
-- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. It keeps its own type wherever the new parent can hold it - a `Task` indented under a `Deliverable` stays a `Task` - and only takes a new one where the old is not a level that parent can hold; see *The Levels, and Moving Between Them* above. **Both act on every selected row**, as Copy and Cut do, and land them side by side rather than in a staircase: indent runs top to bottom so each row goes under the same sibling, outdent runs bottom to top so the rows keep their order. Selecting a parent and its children moves the branch once, not twice. A branch moves as a whole, one press is one undo, and the moved rows stay selected
+- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. It keeps its own type wherever the new parent can hold it - a `Task` indented under a `Phase` stays a `Task` - and only takes a new one where the old is not a level that parent can hold; see *The Levels, and Moving Between Them* above. **Both act on every selected row**, as Copy and Cut do, and land them side by side rather than in a staircase: indent runs top to bottom so each row goes under the same sibling, outdent runs bottom to top so the rows keep their order. Selecting a parent and its children moves the branch once, not twice. A branch moves as a whole, one press is one undo, and the moved rows stay selected
 - **EditTaskDialog** (`views/taskdialogs.py`): The task form over an existing task. Buttons read Help and Delete (set apart), then Close, Save & Close, Save & New
 - **CreateTaskDialog** (`views/taskdialogs.py`): The same form over a new one, for any of the five work item types
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
 - **Hierarchical Display**: Sub-tasks are visually indented under their parent tasks with tree structure
 - **Cut rows are held apart**: a row waiting to be pasted somewhere is greyed until it lands
 - **Features**:
-  - Double-click a row to expand or collapse its sub-tasks; edit from the right-click menu
+  - Two quick clicks open the editor; a slow second click renames in place; the arrow expands and collapses
   - Create tasks with all fields visible at once (no more one-by-one input)
   - Circular dependency prevention (including parent-child relationships)
   - Milestone toggle with automatic end_date handling
@@ -634,9 +634,20 @@ cannot pull its parent outside it either.
 
 ### The Task Form (`views/taskform.py`)
 
-The form both dialogs show. The fields run down the left; the notes fill the
-column beside them, having the height of the form to use rather than one line
-under everything else.
+The form both dialogs show, across three tabs: **General**, **Notes** and
+**Dependency**.
+
+The fields run down the General tab in reading order, and the **Scheduling
+options** menu sits directly above **Start Date** because it says which of the
+three boxes under it — start, end, duration — the form fills in for you. Read
+*after* them it explained a shaded box the user had already tried to type in.
+
+The notes have a tab of their own. They were the last row of the field grid
+once, so a box meant for paragraphs sat under everything else at the height of
+one; then a column beside the fields, which gave it the height it wanted but
+took half the width of the form to do it, on every edit, whether or not the
+task had any notes at all. A tab costs the fields nothing and gives the notes
+the whole window when they are what you came for.
 
 - **Grouped fields**: name, ID, type and parent; then the dates, duration and
   milestone flag; then progress, priority, timeline visibility and shape; then
@@ -687,7 +698,7 @@ under everything else.
   nothing pointed at says what is wrong in the status bar, as does a paste
   into a level that cannot hold it
 - **A row stands for the work under it**: copying a phase copies the phase,
-  its deliverables, its tasks and their sub-tasks, nested as they were. This
+  its tasks and their sub-tasks, nested as they were. This
   was the other way round on purpose - a plan is a tree, and duplicating a
   branch is not what picking one row means - until the project manager using
   it pointed out that there is no insert key, so copy and paste is how a plan
@@ -703,7 +714,7 @@ under everything else.
   selection is re-pointed at their copies; one pointing outside the selection
   is dropped, rather than wiring the new row into the plan the moment it
   appears. A cut keeps its links, having moved rather than been remade
-- **Held to the levels of the plan**: a phase belongs at the top, a deliverable
+- **Held to the levels of the plan**: a phase belongs at the top, a task
   in a phase, a sub-task in a task. Paste is greyed out where an item does not
   belong, and a selection with one item that does not fit is refused whole.
   Pasting a task inside itself is refused
@@ -776,14 +787,25 @@ under everything else.
   `SnapshotCommand.FIELDS`
 
 ### What Is On Which Menu (`views/toolbar.py`)
-- **Project**: opening, creating and saving a plan
-- **File**: import and export, each a submenu of formats
-- **Actions**: the settings that belong to the plan - Project, Calendar and
-  **Gantt Settings**, which came from View because how the chart is drawn is
-  a setting of the plan rather than of this window - and Critical Path
+- **File**: opening, creating and saving a plan
+- **Actions**: import and export, each a submenu of formats - what is *done
+  to* a plan, rather than the plan's own file
+- **Settings**: the three panels that describe the whole plan - Project,
+  Calendar and **Gantt Settings**
 - **Edit**: **Create** first, because everything under it acts on a row that
   has to exist already, then Undo, Redo, Cut, Copy and Paste
-- **View**: what is about this window - the day/night mode and Help
+- **View**: what is about this window - the day/night mode, **Critical
+  Path...** and Help
+
+**File is what a file menu is called.** It held the imports and exports while
+a second menu called **Project** held the new/open/save that every other
+application puts under File, so the one place a reader looks first for Save
+was the one place it was not. The imports and exports are the pair that needed
+the other name: they are things done to a plan rather than to its file.
+
+**Critical Path is under View** because it changes what the window shows
+rather than what the plan says — as does the icon beside it, which paints the
+critical rows into the list instead of opening the report.
 
 ### Menus That Open Out Of Menus (`views/toolbar.py`)
 - **Hover text is held back while a menu is open.** It is scheduled on a
@@ -897,8 +919,8 @@ now, so the two agree and the loop settles.
   what is new is that a sub-task half done now says so instead of counting
   for nothing
 - **Still counted rather than weighted.** Four sub-tasks of an hour each are
-  four entries like any other four; how long a thing runs is the
-  Deliverable's business, one level up
+  four entries like any other four; how long a thing runs is the Phase's
+  business, one level up
 - **Nothing about the form asks the machine.** This began as "the progress
   bar is not viewable on a different Mac", with two editors side by side -
   one showing `Progress (%)` and one showing `Completed`. They were a Task
@@ -961,7 +983,7 @@ now, so the two agree and the loop settles.
 - **Hover Tooltips**: Detailed information on hover (name, dates, working duration, elapsed calendar days, progress, dependencies)
 - **Zoom**: Zoom in, zoom out, Fit and Reset buttons beneath the chart. Fit scales the chart to exactly the width available so nothing scrolls; Reset returns to 100%, where a long plan is drawn wider than the pane to keep it readable
 - **Phase Bars**: A `Phase` is drawn as a solid bar ending in an arrow head pointing at its finish, whether or not anything hangs off it yet - it is the top of the plan, and the reader wants to see where it runs to
-- **Summary Bars**: Any other task with sub-tasks - a `Deliverable`, or a plain `Task` with work under it - is drawn as a spanning bracket rather than a solid bar
+- **Summary Bars**: Any other task with sub-tasks - a `Task` with work under it - is drawn as a spanning bracket rather than a solid bar
 - **Labels**: Task names displayed next to milestones
 - **Date Formatting**: Proper date display with tick formatting
 - **Empty State**: Helpful message when no tasks exist
@@ -974,15 +996,14 @@ Two rows, one above the other, because they are two different things.
 **The menu bar** names everything the application can do, the way a menu bar
 on any desktop does:
 
-- **Project**: New Project, Load Project, Save Project, Save Project As
-- **File**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
+- **File**: New Project, Load Project, Save Project, Save Project As
+- **Actions**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
-- **Actions**: Create (Phase, Deliverable, Task, Subtask, Milestone),
-  Project Title, Calendar Settings, and Critical Path
-- **Edit**: Undo, Redo, Cut, Copy, Paste - the clipboard three carry the key
-  they answer to, written the way this platform writes it (`⌘X` on a Mac,
-  `Ctrl+X` elsewhere)
-- **View**: Toggle Theme, Settings
+- **Settings**: Project Settings, Calendar Settings, Gantt Settings
+- **Edit**: Create (Phase, Task, Subtask, Milestone), Undo, Redo, Cut, Copy,
+  Paste - the clipboard three carry the key they answer to, written the way
+  this platform writes it (`⌘X` on a Mac, `Ctrl+X` elsewhere)
+- **View**: System UI mode, Critical Path..., Help
 - **Log**: Opens the application log window, at the end of the row
 
 **The action bar** under it carries the handful worth reaching for without
@@ -1012,8 +1033,8 @@ the toggle by name: packed only by side it landed at the end of the
 right-hand group, which by the time an appearance is chosen is past the
 search box, so it turned up at the far left of the row against undo and redo.
 
-Opening and creating a plan are on the **Project** menu rather than here, as
-are the five work item types, which are on **Actions → Create**. What is left
+Opening and creating a plan are on the **File** menu rather than here, as
+are the work item types, which are on **Edit → Create**. What is left
 on the bar is what gets used repeatedly while a plan is being built, which is
 the only thing an icon earns its place with.
 
@@ -1216,6 +1237,20 @@ the row, where it is in every other tree, and where it already was — having it
 on both meant a double-click on a parent's *name* folded the branch away
 instead of letting the name be typed over, which is what somebody
 double-clicking a name wants.
+
+**Two clicks mean two different things, and the pause is what tells them
+apart.** Two quick clicks open the task editor; a click, a pause and a second
+click open the name for typing over. Both gestures start with the same press
+on an already-selected row, so the slow one cannot commit at that moment: the
+release schedules the rename `RENAME_DELAY_MS` (600ms) out and `on_double_click`
+cancels it if a double-click arrives inside that. Without the cancel the editor
+opened and the name box appeared over the list behind it a moment later.
+
+The wait is long enough for anything to have happened in it, so
+`_rename_if_still_wanted` asks again when it fires rather than trusting what
+was true when it was scheduled — the row may have gone, or the selection may
+have moved. `destroy()` cancels a pending one, for the same reason it cancels a
+pending status message: a timer firing into a destroyed widget is a Tk error.
 
 A name typed here goes onto the task through the undo tracker, so the editor
 reads it and one Undo takes it back. An empty name puts the old one back
@@ -1491,7 +1526,7 @@ other than the plan is worth less than one that does not recalculate at all.
   and `ConstraintDate`; the links really do come after every scalar field,
   `Notes` included. Both look like mistakes, so both are pinned down by tests
 - **What does not survive**: task colours, which MSPDI has no field for, and
-  the difference between a Phase and a Deliverable, since Project has one kind
+  the difference between a Phase and a summary Task, since Project has one kind
   of summary row. Everything that decides a date goes across
 
 ### PDF Export (`utils/page_render.py`)
@@ -1553,7 +1588,7 @@ the right:
 | Phase | The phase the work sits under, colour-banded down the sheet |
 | Task | The work itself |
 | Responsible (A) | Left blank for the reader to fill in; the model has no owner field |
-| Key Deliverable | The Deliverable the row sits under, or the task's notes |
+| Key Deliverable | The task's own notes - what that piece of work delivers |
 | Pred. | Predecessor row numbers - `4`, `4SS`, `4FS+2` |
 | Duration (wd) | Working days, editable (shaded, blue text) |
 | Start / End | `WORKDAY` formulas over the duration |
@@ -1584,12 +1619,12 @@ so any task whose span reaches such a day has its finish written as a date.
 The sheet keeps saying what the plan says; those rows simply stop
 recalculating.
 
-Rows are the **leaves** of the plan: the work. A Phase or a Deliverable
-brackets other rows rather than being work of its own, so it appears as the
-Phase column and the colour banding, which is how this layout expresses
-grouping. Nesting deeper than that is flattened - the layout has one grouping
-column - and the Key Deliverable column names the deliverable a row sits under
-so the level stays readable.
+Rows are the **leaves** of the plan: the work. A Phase, or any row that
+brackets other rows rather than being work of its own, appears as the Phase
+column and the colour banding, which is how this layout expresses grouping.
+Nesting deeper than that is flattened - the layout has one grouping column -
+and the Key Deliverable column carries the row's own notes, so what a piece of
+work produces stays readable beside it.
 
 - **Optional Dependency**: Gracefully handles missing openpyxl library
 - **Directory Creation**: Automatically creates parent directories
@@ -1826,7 +1861,7 @@ pysimplepmt --log-file      # print the log file path
    - Start adding tasks and milestones
 
 2. **Add Work Items**
-   - **Actions -> Create** offers Phase, Deliverable, Task, Subtask and
+   - **Actions -> Create** offers Phase, Task, Subtask and
      Milestone, as does the Create submenu on any row's right-click menu
    - Creating from a row puts the new item beside it - or inside it, for a
      sub-task - rather than at the end of the plan
@@ -1855,8 +1890,8 @@ pysimplepmt --log-file      # print the log file path
    - Cannot create circular dependencies (a task cannot depend on itself or its own subtasks)
 
 6. **Edit Tasks**
-   - Choose Edit from a row's right-click menu. Double-click folds a branch
-     away instead, as it does in any other tree
+   - Double-click a row, or choose Edit from its right-click menu. Folding
+     is on the arrow beside the row, as it is in any other tree
    - Modify properties, dependencies, notes and colours
    - Save & Close, Save & New, or Delete
    - Help opens a reference on what each field means
@@ -1928,7 +1963,7 @@ pysimplepmt --log-file      # print the log file path
     - The log is also written to a file; see the Logging section for its location
 
 ### Mouse and Keyboard
-- **Double-click** a row to expand or collapse its sub-tasks
+- **Double-click** a row to open its editor; click it, pause, and click again to rename it in place; the arrow beside it expands and collapses
 - **Drag** a row to reorder it within its siblings
 - **Right-click** a row (two-finger click on macOS) to move, edit or delete it
 - Choose **View -> Toggle Theme** to switch between light and dark modes
@@ -1957,7 +1992,7 @@ The application starts with a complete sample project with tasks and subtasks:
 - `dependencies`: List of task IDs this task depends on
 - `color`: Hex color for visualization
 - `is_milestone`: Boolean flag for milestones
-- `task_type`: One of 'Phase', 'Deliverable', 'Task', 'Subtask', 'Milestone'
+- `task_type`: One of 'Phase', 'Task', 'Subtask', 'Milestone'
 - `parent_task_id`: ID of the parent row, None at the top level
 - `duration`: Length in working days when one has been set; None leaves it derived
 - `priority`: One of the levels in `priority.py`; 'Normal' by default
@@ -2183,11 +2218,13 @@ finish, total float, and whether it is critical.
 - Cycle-safe and iterative: an edge that cannot be measured contributes
   nothing and is logged, rather than the analysis failing on a plan that has
   one
-- Shown two ways: the critical tasks are highlighted in the Gantt chart, and
-  **Actions → Critical Path...** (or the toolbar icon between Milestone and
-  Cut) opens the full table with each task's float. A colour says *which*
-  tasks are critical; only the table says how close the rest are to becoming
-  so, and one day of float is the thing worth knowing about before it is spent
+- Shown three ways. The critical tasks are highlighted in the Gantt chart;
+  the **critical path icon** on the bar paints those same rows light red in
+  the task list and clears them again when pressed a second time; and
+  **View → Critical Path...** opens the full table with each task's float. A
+  colour says *which* tasks are critical, in whichever pane is being read;
+  only the table says how close the rest are to becoming so, and one day of
+  float is the thing worth knowing about before it is spent
 
 ### 5. Color Management
 - A colour per work item type, so the five levels are told apart before
@@ -2291,7 +2328,7 @@ Unit tests cover:
 - ✅ **Link and Unlink**: That the chain runs in grid order whatever order the rows were selected in, that it is Finish-to-Start with no lag, that existing links survive, that a pair closing a loop is skipped without losing the rest, what unlinking one row takes out against what unlinking several does, and that both buttons carry a drawing, a handler and this platform's key
 - ✅ **Dependency Chooser**: That a label carries the number the list shows, that two identically named tasks are still told apart, that the hierarchy is walked once per redraw however many candidates there are, and that the task linked is the one the dropdown was showing
 - ✅ **No test opens a dialog**: importing `tests/__init__.py` stands every blocking dialog down for the whole suite, because one that opens waits for somebody to click it and there is nobody on a build machine. A test that means to exercise a prompt patches it and asserts on the call; the one file that tests the dialog layer itself puts the real ones back in `setUpModule`. In the package rather than in a `conftest.py`, because the build runs `run_tests.py`, which is unittest - a guard that only holds under a runner nobody uses is not a guard
-- ✅ **Completion control**: That a Task, a Phase, a Deliverable and a Milestone are offered a percentage and a Sub-task a tick, and that the choice is made from the type and nothing else
+- ✅ **Completion control**: That every type is offered a percentage - a Sub-task included, which used to get a tick - and that a row with children shows its rolled-up figure rather than taking one of its own
 - ✅ **Menus**: That no part of a menu row is dead - the padding, the chevron and the entry all run it - that CustomTkinter's own click gate is still the thing being worked around, that a submenu survives the click that opened it, that moving to another row or clicking outside still closes it, that a click inside it leaves it open, and that a menu naming no opener behaves as it always did
 - ✅ **Icons**: That every icon on the toolbar row has a drawing, that every drawing paints at the sizes and inks asked for and is not blank, and that an unknown name answers None so the button can fall back to a letter
 - ✅ **Reading XML From Elsewhere**: That an entity-expansion file is refused by both importers and by the reader itself, that the refusal names the entity and reads as a parse error, and that ordinary namespaced plans using the predefined entities still import unchanged
@@ -2309,6 +2346,9 @@ Unit tests cover:
 - ✅ **Backward Scheduling**: That the plan ends on the deadline, that durations survive, that every link is still satisfied without a reschedule afterwards, that a task with float moves late rather than staying early, that a deadline in the past still moves the plan, and that a forward plan is settled byte for byte as it was before
 - ✅ **Inline Editing**: — the tests stub where a cell is, because that is the widget's answer and a window that has never been mapped does not reliably have one; `_cell_box`'s own behaviour is checked separately.
 - ✅ **Inline Editing (behaviour)**: That a double-click opens an editor over the right cell and routes the name and the dependencies to their own, that Enter stores the name and Escape does not, that an empty name reverts, that a row deleted under the editor is not renamed, that it is one undo step, and that renaming does not disturb the rest of the task
+- ✅ **The two speeds of clicking**: That the first click on an unselected row schedules no rename, that a click on one already selected does, that a quick second click calls it off and opens the editor instead, that the rename stands down if the selection moved or the row has gone, and that a pending one does not outlive the list
+- ✅ **The critical path painted into the list**: That the critical rows go light red and a row with float does not, that the highlight beats a fill the row was given, that it survives the list being rebuilt, that clearing it puts the banding back, and that no window is opened
+- ✅ **Where the fields sit**: That the four sections read Basic Information, Schedule, Calendar, Display; that each title has its row to itself and the last two open under a rule; that short fields sit two to a row and one with nothing beside it keeps the left; that the Scheduling options menu is immediately above Start Date, that the calculated box is shaded from the moment the form opens, that the tabs read General / Notes / Dependency, that the notes box is on its own tab and still opens holding and saves what the task says
 - ✅ **Dependency Grammar**: Every row of the specification's token table, commas and semicolons, case and spacing, a lag with no type and a type with no lag, and a round trip through every form the cell can hold
 - ✅ **The Dependencies Column**: That an unreadable cell stores nothing and says so, that the four guards refuse what they should, that the plan is left untouched by a check that fails, that a whole cell is one undo step, and that the task editor shows what the grid stored
 - ✅ **Exported IDs**: That the GanttProject and MSPDI files number tasks the way the list does, that the shared plan walk agrees with `display_ids` rather than counting for itself, that the spreadsheet's ID column holds numbers the plan shows, and that no identity reaches either file
@@ -2355,7 +2395,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
 8. **GAN Export of a per-task calendar**: a `.gan` file holds one calendar, so a task following a named calendar of its own is written with its duration counted against the plan's calendar instead. The dates survive; the number of days shown against that task in GanttProject does not match the one shown here. Export to MS Project where the per-task calendars matter
 9. **GAN Export of a worked weekend**: a `<date>` entry only ever takes a day off, so a day the plan works that its own week says it should not cannot be expressed. Those days are counted and logged rather than written wrong
-10. **MS Project Export is MSPDI, not `.mpp`**: nothing outside Project writes the binary format. The `.xml` opens with File -> Open. Task colours and the Phase/Deliverable distinction have no field in MSPDI and are dropped; everything that decides a date goes across
+10. **MS Project Export is MSPDI, not `.mpp`**: nothing outside Project writes the binary format. The `.xml` opens with File -> Open. Task colours have no field in MSPDI and are dropped; everything that decides a date goes across
 11. **XLSX Export of a worked weekend**: a Saturday or Sunday that is worked - whether by an override or by the working week itself - cannot be written as a live formula, since Excel's `WORKDAY` has a fixed Monday-to-Friday week. Tasks reaching such a day get their finish written as a date and stop recalculating; the sheet still says what the plan says. A day taken *off* stays live, because that is just another date on the holiday sheet
 
 ## Future Enhancements

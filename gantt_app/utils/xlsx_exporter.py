@@ -29,12 +29,12 @@ sheet that is live but wrong would be worse than one that is merely static.
 
 DEVELOPMENT NOTES:
 ------------------
-Rows are the leaves of the plan: the work. A Phase or a Deliverable is a
+Rows are the leaves of the plan: the work. A row with children is a
 bracket over other rows rather than work of its own, so it appears as the
 Phase column beside its work and as the colour banding down the sheet, which
 is how the format expresses grouping. Nesting deeper than that is flattened -
-the layout has one grouping column - and the Key Deliverable column names the
-deliverable a row sits under so the level is still readable.
+the layout has one grouping column - and the Key Deliverable column says
+what the row itself produces, taken from its notes.
 
 Optional Dependency: needs openpyxl, and says so rather than failing
 obscurely when it is missing.
@@ -169,7 +169,7 @@ def _plan_rows(project: Project) -> List[Task]:
     RETURNS:
     --------
     List[Task]
-        Every task with nothing hanging off it. A Phase or a Deliverable with
+        Every task with nothing hanging off it. A row with children and
         children is a bracket over other rows rather than work of its own, so
         it becomes the Phase column and the colour banding instead of a row.
         One with nothing inside it is work that has not been broken down yet,
@@ -201,8 +201,8 @@ def _phase_of(project: Project, task: Task) -> str:
     The name to put in the Phase column.
 
     The nearest ancestor that is a Phase, or failing that the outermost
-    ancestor of any kind - a plan grouped only into Deliverables still wants
-    its grouping shown. A task at the top level has no phase.
+    ancestor of any kind - a plan grouped into plain Tasks still wants its
+    grouping shown. A task at the top level has no phase.
     """
     ancestors = _ancestors(project, task)
     for ancestor in ancestors:
@@ -215,13 +215,19 @@ def _deliverable_of(project: Project, task: Task) -> str:
     """
     The name to put in the Key Deliverable column.
 
-    The nearest ancestor Deliverable, which is the level the Phase column
-    cannot show. With none, the task's own notes stand in - that is where a
-    plan built without Deliverables says what a task produces.
+    The first line of the task's own notes, which is where a plan says what
+    a row produces.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    This used to name the nearest ancestor of the Deliverable type, falling
+    back to the notes where a plan had none. That type is no longer offered -
+    a plan runs Phase, Task, Subtask - so the fallback is the whole rule now.
+
+    The column keeps its heading. What a piece of work delivers is something
+    a reader of a project spreadsheet looks for, and it does not stop being
+    one because no row is called that any more.
     """
-    for ancestor in _ancestors(project, task):
-        if ancestor.task_type == 'Deliverable':
-            return ancestor.name
     return (task.details or '').strip().splitlines()[0] if task.details else ''
 
 
@@ -687,7 +693,7 @@ def _write_summary_sheet(workbook, project: Project) -> None:
         ("Project Summary", ""),
         ("Project Name:", project.name),
         ("Total Tasks:", len(project.tasks)),
-        ("Phases and Deliverables:", containers),
+        ("Phases and groupings:", containers),
         ("Milestones:", milestones),
         ("Start Date:", project.start_date.strftime('%Y-%m-%d')
          if project.start_date else ''),

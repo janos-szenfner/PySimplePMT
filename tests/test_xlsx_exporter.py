@@ -60,10 +60,11 @@ class ExporterTestCase(unittest.TestCase):
         project.add_task(Task(id="P1", name="1. Procurement", task_type="Phase",
                               start_date=base, end_date=base))
         project.add_task(Task(id="D1", name="Signed contract",
-                              task_type="Deliverable", parent_task_id="P1",
+                              task_type="Task", parent_task_id="P1",
                               start_date=base, end_date=base))
         project.add_task(Task(id="T1", name="Business case", task_type="Subtask",
                               parent_task_id="D1", start_date=base,
+                              details="Signed contract",
                               end_date=base + timedelta(days=4), progress=50))
         project.add_task(Task(id="T2", name="Procurement demand",
                               task_type="Subtask", parent_task_id="D1",
@@ -171,8 +172,15 @@ class TestWhichTasksGetRows(ExporterTestCase):
         self.assertEqual(self.column(self.row_of("Business case"), 'B'),
                          "1. Procurement")
 
-    def test_a_deliverable_is_named_beside_its_work(self):
-        """The level the Phase column cannot show is still readable."""
+    def test_the_key_deliverable_column_says_what_a_row_produces(self):
+        """
+        Taken from the first line of the row's own notes.
+
+        It used to name the nearest ancestor of the Deliverable type and
+        fall back to the notes where a plan had none. That type is gone, so
+        the fallback is the whole rule. The column keeps its heading: what a
+        piece of work delivers is still what a reader looks for there.
+        """
         self.assertEqual(self.column(self.row_of("Business case"), 'E'),
                          "Signed contract")
 

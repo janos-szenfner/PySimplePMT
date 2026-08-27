@@ -84,7 +84,6 @@ class TestClipboardPayloadModel(unittest.TestCase):
     def test_entity_types_constant(self):
         """Test ENTITY_TYPES constant."""
         self.assertIn("task", ENTITY_TYPES)
-        self.assertIn("deliverable", ENTITY_TYPES)
         self.assertIn("phase", ENTITY_TYPES)
         self.assertIn("subtask", ENTITY_TYPES)
         self.assertIn("milestone", ENTITY_TYPES)
@@ -92,7 +91,6 @@ class TestClipboardPayloadModel(unittest.TestCase):
     def test_container_types_constant(self):
         """Test CONTAINER_TYPES constant."""
         self.assertIn("phase", CONTAINER_TYPES)
-        self.assertIn("deliverable", CONTAINER_TYPES)
         self.assertIn("task", CONTAINER_TYPES)
         self.assertNotIn("subtask", CONTAINER_TYPES)
         self.assertNotIn("milestone", CONTAINER_TYPES)
@@ -777,8 +775,7 @@ class TestWhatMayGoWhere(unittest.TestCase):
 
         today = datetime(2024, 1, 1)
         for task_id, kind, parent in (("P", "Phase", None),
-                                      ("D", "Deliverable", "P"),
-                                      ("T", "Task", "D"),
+                                      ("T", "Task", "P"),
                                       ("S", "Subtask", "T"),
                                       ("M", "Milestone", "T")):
             task = Task.create_task(name=kind, start_date=today,
@@ -796,21 +793,14 @@ class TestWhatMayGoWhere(unittest.TestCase):
                 self.service._can_accept_types(container, ["phase"]),
                 f"a phase should not go inside {container}")
 
-    def test_a_deliverable_belongs_in_a_phase(self):
-        """Or at the top, before it is filed under one."""
-        self.assertTrue(self.service._can_accept_types("P", ["deliverable"]))
-        self.assertTrue(self.service._can_accept_types(None, ["deliverable"]))
-        self.assertFalse(self.service._can_accept_types("T", ["deliverable"]))
-
     def test_a_subtask_belongs_to_a_task(self):
         """It is a tick on that task's checklist and on nobody else's."""
         self.assertTrue(self.service._can_accept_types("T", ["subtask"]))
         self.assertFalse(self.service._can_accept_types("P", ["subtask"]))
-        self.assertFalse(self.service._can_accept_types("D", ["subtask"]))
 
-    def test_a_task_goes_under_the_three_that_hold_work(self):
-        """A phase, a deliverable, or another task."""
-        for container in ("P", "D", "T"):
+    def test_a_task_goes_under_the_two_that_hold_work(self):
+        """A phase, or another task."""
+        for container in ("P", "T"):
             self.assertTrue(
                 self.service._can_accept_types(container, ["task"]),
                 f"a task should go inside {container}")
@@ -1149,14 +1139,6 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         )
         self.phase.task_type = "Phase"
         
-        self.deliverable = Task.create_task(
-            name="Deliverable",
-            start_date=today,
-            end_date=today + timedelta(days=15),
-            task_id="D001"
-        )
-        self.deliverable.task_type = "Deliverable"
-        
         self.subtask = Task.create_task(
             name="Subtask",
             start_date=today,
@@ -1171,7 +1153,7 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
             task_id="M001"
         )
         
-        for task in [self.task, self.phase, self.deliverable, self.subtask, self.milestone]:
+        for task in [self.task, self.phase, self.subtask, self.milestone]:
             self.project.add_task(task)
 
     def test_copy_phase(self):
@@ -1180,12 +1162,6 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         
         self.assertFalse(self.service.is_clipboard_empty())
         self.assertEqual(self.service.active_payload.items[0].type, "phase")
-
-    def test_copy_deliverable(self):
-        """Test copying a deliverable task."""
-        self.service.copy(["D001"])
-        
-        self.assertEqual(self.service.active_payload.items[0].type, "deliverable")
 
     def test_copy_subtask(self):
         """Test copying a subtask."""
@@ -1200,9 +1176,8 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         self.assertEqual(self.service.active_payload.items[0].type, "milestone")
 
     def test_container_types_can_accept_children(self):
-        """Test that Phase, Deliverable, Task can accept children."""
+        """Test that a Phase and a Task can accept children."""
         self.assertTrue(self.service._can_accept_types("P001", ["task"]))
-        self.assertTrue(self.service._can_accept_types("D001", ["task"]))
         self.assertTrue(self.service._can_accept_types("T001", ["task"]))
 
     def test_leaf_types_cannot_accept_children(self):

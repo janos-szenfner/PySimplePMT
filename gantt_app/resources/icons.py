@@ -9,7 +9,7 @@ painted with Pillow at whatever size and ink the row asks for.
 
 Available icons:
 - open, new_project, save, edit
-- task, subtask, milestone, phase, deliverable
+- task, subtask, milestone, phase
 - cut, copy, paste, delete
 - undo, redo
 - sun, moon (the light and dark appearances)
@@ -32,7 +32,7 @@ ALWAYS_ACTIVE: List[str] = ['open']
 # Icons that should be active only when there's an open/new project
 ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'new_project', 'save', 'save_as', 'edit',
-    'task', 'subtask', 'milestone', 'phase', 'deliverable',
+    'task', 'subtask', 'milestone', 'phase',
     'indent', 'outdent',
     'link', 'unlink',
     'bold', 'italic', 'underline',
@@ -44,7 +44,7 @@ ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
 ]
 
 # Work item creation icons
-WORK_ITEM_CREATION_ICONS: List[str] = ['task', 'subtask', 'milestone', 'phase', 'deliverable']
+WORK_ITEM_CREATION_ICONS: List[str] = ['task', 'subtask', 'milestone', 'phase']
 
 # =============================================================================
 # DRAWN ICONS
@@ -188,19 +188,12 @@ ICON_STROKES: Dict[str, List[tuple]] = {
     'milestone': [
         ('shape', [(0.50, 0.12), (0.88, 0.50), (0.50, 0.88), (0.12, 0.50)]),
     ],
-    # A phase brackets the deliverables under it, so it is drawn as the
+    # A phase brackets the work under it, so it is drawn as the
     # stack of layers it is - the outermost thing in the plan.
     'phase': [
         ('shape', [(0.50, 0.08), (0.92, 0.30), (0.50, 0.52), (0.08, 0.30)]),
         ('line', [(0.08, 0.50), (0.50, 0.72), (0.92, 0.50)]),
         ('line', [(0.08, 0.68), (0.50, 0.90), (0.92, 0.68)]),
-    ],
-    # A deliverable is the thing handed over when its tasks are done: a box
-    # with a tick on it, told apart from the plain rectangles by both.
-    'deliverable': [
-        ('shape', [(0.10, 0.26), (0.90, 0.26), (0.90, 0.88), (0.10, 0.88)]),
-        ('line', [(0.10, 0.44), (0.90, 0.44)]),
-        ('line', [(0.30, 0.64), (0.44, 0.78), (0.72, 0.54)]),
     ],
     # The critical path: three bars of a chart, the longest of them carrying
     # the chain forward. Drawn as the plan it measures rather than as a

@@ -92,6 +92,11 @@ class DragDropTaskList(ctk.CTkFrame):
     #: Text colour of a row that has been cut and not yet pasted.
     CUT_ROW_TEXT = theme.GRID_CUT_TEXT
 
+    #: Fill of a row on the critical path, while the icon has it turned on.
+    #: The same light red the critical path window uses for those rows, so
+    #: the report and the list agree about what a critical row looks like.
+    CRITICAL_ROW_BG = theme.GRID_CRITICAL_BG
+
     def _apply_grid_style(self):
         """
         Give the task table a light grey grid.
@@ -171,7 +176,7 @@ class DragDropTaskList(ctk.CTkFrame):
         RETURNS:
         --------
         bool
-            True for a Phase or a Deliverable, and for any task that has
+            True for a Phase, and for any task that has
             work nested under it.
 
         DEVELOPMENT NOTES:
@@ -280,8 +285,14 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         resolved = resolve_style(task.style, self.is_summary_row(task))
 
-        background = resolved.fill_color or theme.now(
-            self.GRID_ROW_ALT if band == 'oddrow' else self.GRID_ROW_BASE)
+        if task.id in self._critical_task_ids:
+            # Beats the row's own fill for the same reason the greying beats
+            # its ink: it says what the row is doing now, and the reader
+            # turned it on to see exactly that
+            background = theme.now(self.CRITICAL_ROW_BG)
+        else:
+            background = resolved.fill_color or theme.now(
+                self.GRID_ROW_ALT if band == 'oddrow' else self.GRID_ROW_BASE)
 
         if task.id in self._cut_task_ids() or self._is_search_context(task):
             foreground = theme.now(self.CUT_ROW_TEXT)
@@ -393,10 +404,22 @@ class DragDropTaskList(ctk.CTkFrame):
         #: The grid's family and size, asked of Tk once; see _base_font.
         self._base_font_spec = None
 
+        #: Rows painted as critical while the icon has the highlight on.
+        #: Empty means the highlight is off; see show_critical_path_rows.
+        self._critical_task_ids = set()
+
         #: The box open over a cell, and the row it belongs to. Set here so
         #: everything that asks can ask plainly; see _open_cell_editor.
         self._cell_editor = None
         self._cell_editor_task = None
+
+        #: A rename waiting to see whether a second click is coming, and the
+        #: row it would rename. See on_release and RENAME_DELAY_MS.
+        self._rename_pending = None
+        self._rename_row = None
+        #: Whether the row pressed was already the one selected. A click on a
+        #: row that was already picked out is the second of a slow pair.
+        self._pressed_selected = False
 
         # Create UI
         self._create_ui()
@@ -522,36 +545,87 @@ class DragDropTaskList(ctk.CTkFrame):
             can_paste=self.can_paste,
         )
 
+    #: How long a rename waits before it opens, in milliseconds.
+    #:
+    #: Long enough for a second click to arrive and cancel it, so a quick
+    #: double-click opens the editor rather than the name box. macOS calls a
+    #: pair within about half a second a double-click, so this sits past it.
+    RENAME_DELAY_MS = 600
+
     def on_double_click(self, event):
         """
-        Edit the cell that was double-clicked.
+        Open the row's editor, or the cell that has one of its own.
 
         DEVELOPMENT NOTES:
         ------------------
-        The name and the dependencies are the two things typed over far more
-        often than anything else is opened in a dialog, so double-clicking
-        either edits it in place.
+        Two clicks in quick succession open the editor window - the whole
+        row at once, which is what a double-click means in a task list and
+        what it means nearly everywhere else. Two clicks with a pause
+        between them type over the name in place, which is the same gesture
+        a file manager renames with; see on_release.
 
-        Folding is not on this gesture any more. It is on the expander
-        beside the row, where it is in every other tree, and where it was
-        already - having it on both meant a double-click on a parent's name
-        folded the branch away instead of letting the name be typed over.
+        A double-click used to open the name box, so there was no gesture
+        that reached the editor at all and no way to rename in place without
+        the dialog appearing instead half the time.
+
+        Dependencies keep their own cell editor. Typing "3FS+2d" over a cell
+        is not something the form does better, and the form is one click
+        away on any other column.
+
+        Any rename this click has already set going is called off first: the
+        first of these two clicks landed on a row that was probably already
+        selected, which is exactly what starts one.
 
         'break' stops ttk's own double-click handler running afterwards,
-        which would toggle the row underneath the editor that has just been
-        placed over it.
+        which would toggle the row underneath whatever has just been opened
+        over it.
         """
+        self._cancel_rename()
+
         item = self.tree.identify_row(event.y)
         if not item:
             return None
 
-        column = self._column_name(event.x)
-        if column == '#0':
-            self.edit_name_cell(item)
-        elif column == 'Dependencies':
+        if self._column_name(event.x) == 'Dependencies':
             self.edit_dependencies_cell(item)
+        else:
+            self.edit_task(item)
 
         return 'break'
+
+    def _cancel_rename(self):
+        """Call off a rename that has not opened yet."""
+        pending, self._rename_pending = self._rename_pending, None
+        self._rename_row = None
+        if pending is None:
+            return
+        try:
+            self.after_cancel(pending)
+        except (tk.TclError, ValueError):
+            pass
+
+    def _rename_if_still_wanted(self, item):
+        """
+        Open the name box, if nothing has happened since to say otherwise.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Asked again here rather than trusted from when it was scheduled. The
+        wait is long enough for the row to have gone, the selection to have
+        moved, or a dialog to have opened over the list.
+        """
+        self._rename_pending = None
+        self._rename_row = None
+
+        try:
+            if not self.tree.exists(item):
+                return
+            if self.tree.selection() != (item,):
+                return
+        except tk.TclError:
+            return
+
+        self.edit_name_cell(item)
 
     def _column_name(self, x: int):
         """
@@ -1282,8 +1356,9 @@ class DragDropTaskList(ctk.CTkFrame):
             pass
 
     def destroy(self):
-        """Take any waiting message off the queue before going away."""
+        """Take anything still waiting off the queue before going away."""
         self._cancel_pending_say()
+        self._cancel_rename()
         super().destroy()
 
     def _why_not_pasted(self, focused_id: Optional[str],
@@ -1381,8 +1456,19 @@ class DragDropTaskList(ctk.CTkFrame):
         item = self.tree.identify_row(event.y)
         if not item:
             # The heading, or empty space below the last row
+            self._cancel_rename()
+            self._pressed_selected = False
             return
 
+        # Asked before the click changes it: a press on a row that was
+        # already the one selected is the second of a slow pair, which is
+        # what renames. Asked after, every first click would look like one.
+        try:
+            self._pressed_selected = self.tree.selection() == (item,)
+        except tk.TclError:
+            self._pressed_selected = False
+
+        self._cancel_rename()
         self.dragged_task_id = item
         self.drag_item = item
         self._drag_origin = (event.x, event.y)
@@ -1535,14 +1621,30 @@ class DragDropTaskList(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        A release that never became a drag falls straight through, leaving
-        click-to-select and double-click-to-edit untouched.
+        A release that never became a drag is where a rename starts, if the
+        row it landed on was already the one selected - the second of two
+        clicks with a pause between them, which is how a file manager is
+        renamed and now how a task is. It waits RENAME_DELAY_MS first, so a
+        second click arriving quickly cancels it and opens the editor window
+        instead; see on_double_click.
         """
         if self.dragged_task_id is None:
             return
 
         if not self._dragging:
+            item = self.dragged_task_id
+            rename = (self._pressed_selected
+                      and self._column_name(event.x) == '#0'
+                      and self._cell_editor is None)
             self._end_drag()
+            if rename:
+                self._rename_row = item
+                try:
+                    self._rename_pending = self.after(
+                        self.RENAME_DELAY_MS, self._rename_if_still_wanted,
+                        item)
+                except tk.TclError:
+                    self._rename_pending = None
             return
 
         source_id = self.dragged_task_id
@@ -1702,8 +1804,7 @@ class DragDropTaskList(ctk.CTkFrame):
             task.parent_task_id = parent_id
             # Only set task_type to Subtask if it's not already set to a
             # specific type and has a parent
-            if parent_id and task.task_type not in ("Phase", "Deliverable",
-                                                    "Milestone"):
+            if parent_id and task.task_type not in ("Phase", "Milestone"):
                 task.task_type = "Subtask"
 
             self.project.add_task(task)
@@ -2269,9 +2370,9 @@ class DragDropTaskList(ctk.CTkFrame):
         
         # Format duration
         #
-        # A Phase or a Deliverable answers 0 from duration_days: it holds no
+        # A row with children answers 0 from duration_days: it holds no
         # work of its own, only the work beneath it. Printing that 0 beside a
-        # row whose two dates are a fortnight apart said the deliverable took
+        # row whose two dates are a fortnight apart said the phase took
         # no time, which is the one thing it does not mean. The working days
         # it spans is what the row is showing dates for, so that is the
         # number in the column.
@@ -2364,6 +2465,47 @@ class DragDropTaskList(ctk.CTkFrame):
                        if not tag.startswith('row_')]
             self.tree.item(item, tags=tuple(
                 markers + [band, self._row_tag(task, band)]))
+
+    # ------------------------------------------------------------------
+    # The critical path, painted onto the list
+    # ------------------------------------------------------------------
+
+    def show_critical_path_rows(self, task_ids) -> int:
+        """
+        Paint the given rows as critical, and clear any painted before.
+
+        PARAMETERS:
+        -----------
+        task_ids : Iterable[str]
+            The tasks with no float. An empty one turns the highlight off,
+            which is what clear_critical_path_rows does.
+
+        RETURNS:
+        --------
+        int
+            How many rows are painted now.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Held as ids rather than as rows, so the highlight survives the list
+        being rebuilt - which every edit does. The rows are looked up again
+        each time they are painted; see _row_tag.
+
+        The tags built for the old answer name colours that have stopped
+        being right, so they go the same way a theme change sends them.
+        """
+        self._critical_task_ids = set(task_ids)
+        self._apply_row_tag_colours()
+        self._paint_rows()
+        return len(self._critical_task_ids)
+
+    def clear_critical_path_rows(self):
+        """Take the highlight off, leaving every row as it was drawn."""
+        self.show_critical_path_rows(())
+
+    def critical_path_rows_shown(self) -> bool:
+        """Whether the highlight is on."""
+        return bool(self._critical_task_ids)
 
     def _rows_in_display_order(self):
         """Every row in the tree, parents before their children."""

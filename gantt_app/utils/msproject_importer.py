@@ -25,7 +25,7 @@ words everything msproject_exporter writes, which is what the round-trip test
 checks field by field.
 
 Two things do not, because MSPDI has nowhere to keep them: a task's colour,
-and whether a summary row was a Phase or a Deliverable. Colours are assigned
+and how deep a summary row sat. Colours are assigned
 from the same defaults the GanttProject import uses, and the summary levels
 are worked out from the outline depth.
 
@@ -335,16 +335,15 @@ def _task_type(is_milestone: bool, is_summary: bool, level: int) -> str:
 
     DEVELOPMENT NOTES:
     ------------------
-    Project has one kind of summary row where this application has two, so
-    the depth decides: the top level is a Phase and anything below it a
-    Deliverable. child_type_for then moves it to whatever its parent can
-    actually hold, which is what turns a summary three levels down into the
-    Task it has to be for its own children to be Subtasks.
+    Project has one kind of summary row, so the depth decides: the top
+    level is a Phase and anything below it a Task. child_type_for then moves
+    it to whatever its parent can actually hold, which is what keeps a
+    summary three levels down a Task, so its own children can be Subtasks.
     """
     if is_milestone:
         return 'Milestone'
     if is_summary:
-        return 'Phase' if level <= 1 else 'Deliverable'
+        return 'Phase' if level <= 1 else 'Task'
     return 'Task'
 
 

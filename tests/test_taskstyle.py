@@ -162,7 +162,7 @@ class PalettesTestCase(unittest.TestCase):
     def test_the_presets_are_the_four_the_spec_names(self):
         """One press each, because two menus and three toggles is not."""
         self.assertEqual([name for name, _style in PRESETS], [
-            'Financial Milestone', 'Deliverable Complete',
+            'Financial Milestone', 'Work Complete',
             'Phase Gate / Approval', 'Summary Phase',
         ])
 

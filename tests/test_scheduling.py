@@ -122,12 +122,12 @@ class TestASpanStatedByTwoLinks(DependencyTestCase):
     WHY THESE EXIST:
     ================
     Start-Start onto the first task and Finish-Finish onto the last is how a
-    row is made to cover a stretch of the plan - a deliverable spanning the
+    row is made to cover a stretch of the plan - a summary row spanning the
     work that produces it, without that work being nested inside it.
 
     Only the start was honoured, and the task's old length was put back on
-    top of it, so such a deliverable came out the length of whatever it
-    happened to be before: the first task's length. The finish it had been
+    top of it, so such a row came out the length of whatever it happened to
+    be before: the first task's length. The finish it had been
     given was thrown away.
     """
 
@@ -138,7 +138,7 @@ class TestASpanStatedByTwoLinks(DependencyTestCase):
         self.second.start_date = datetime(2026, 1, 6)
         self.second.end_date = datetime(2026, 1, 9)
 
-        self.span = Task(id="D", name="Deliverable", task_type="Deliverable",
+        self.span = Task(id="D", name="Span", task_type="Task",
                          start_date=datetime(2026, 1, 1),
                          end_date=datetime(2026, 1, 5))
         self.project.add_task(self.span)
@@ -330,8 +330,8 @@ class TestALengthWrittenOntoATask(DependencyTestCase):
     so the next pass over the working calendar rebuilt the finish from the
     stale number and undid the span - and the two rules then took turns until
     the reschedule loop gave up and reported a cycle that was not there. And a
-    Phase or a Deliverable, which holds no work of its own, reported the
-    number rather than the children it spans.
+    Phase, which holds no work of its own, reported the number rather than
+    the children it spans.
     """
 
     def test_a_span_updates_the_stored_length(self):
@@ -679,8 +679,8 @@ class TestSummaryRollUp(unittest.TestCase):
         A Task with sub-tasks reads how many of them are done.
 
         One of its two sub-tasks is finished, so it reads 50% - the length
-        of each does not come into it. A Deliverable weights its children by
-        duration instead, and a Phase averages them; see roll_up_summaries.
+        of each does not come into it. A Phase averages its tasks the same
+        way; see roll_up_summaries.
         """
         self.project.reschedule()
 

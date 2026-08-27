@@ -276,7 +276,7 @@ FILL_COLOURS: Tuple[Tuple[str, Optional[str]], ...] = (
 PRESETS: Tuple[Tuple[str, TaskStyle], ...] = (
     ('Financial Milestone',
      TaskStyle(fill_color='#fff2cc', text_color='#000000', bold=True)),
-    ('Deliverable Complete',
+    ('Work Complete',
      TaskStyle(text_color='#1e8449', bold=False)),
     ('Phase Gate / Approval',
      TaskStyle(text_color='#c0392b', bold=True, italic=True)),

@@ -125,10 +125,26 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     FIELD_TEXT = theme.FIELD_TEXT
     FIELD_TEXT_DISABLED = theme.FIELD_TEXT_DISABLED
 
+    #: The field grid is four columns: label, field, label, field.
+    #:
+    #: Two fields sit side by side on a row where they are short and belong
+    #: together - a start beside a finish, a percentage beside a priority.
+    #: One column of a dozen rows made the form taller than most screens and
+    #: left two thirds of every row empty.
+    FIELD_COLUMNS = 4
+
+    #: Where a field sits on its row.
+    #:
+    #: LEFT and RIGHT are the two column pairs; FULL runs across all four.
+    #: A LEFT always starts a row and a RIGHT fills the one a LEFT opened,
+    #: so a field that is not built - a milestone has no end date - leaves
+    #: the half beside it empty rather than pulling the next field up into
+    #: a row it does not belong on.
+    LEFT, RIGHT, FULL = 'left', 'right', 'full'
+
     #: Colour a new row starts on, by what is being created.
     DEFAULT_COLORS = {
         'Phase': "#34495e",        # Dark Blue
-        'Deliverable': "#28a745",   # Green  
         'Task': "#3498db",        # Blue
         'Subtask': "#9b59b6",      # Purple
         'Milestone': "#e74c3c",    # Red
@@ -153,6 +169,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.cancel)
 
         self._row = 0
+        #: A row whose left half is filled and whose right half is free;
+        #: see _cell
+        self._open_row = None
         self._prepare_checks()
 
         #: The caption beside each field, so greying a field out greys what
@@ -259,19 +278,80 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._row += 1
         return row
 
-    def _field(self, parent, label: str, widget=None,
-               sticky=tk.EW, label_sticky=tk.W) -> int:
+    def _heading(self, parent, text: str, rule: bool = False):
         """
-        Put a labelled widget on the next row and return that row.
+        A section title on a row of its own, optionally under a rule.
+
+        PARAMETERS:
+        -----------
+        rule : bool
+            Draw a separator above the title. The title goes below the line,
+            not beside it: a heading sharing a row with the first field of
+            its section reads as that field's label.
+
+        RETURNS:
+        --------
+        CTkLabel
+            The title, for a caller that wants to reach it again.
+        """
+        if rule:
+            ttk.Separator(parent, orient=tk.HORIZONTAL).grid(
+                row=self._next_row(), column=0,
+                columnspan=self.FIELD_COLUMNS, sticky=tk.EW, pady=(14, 0))
+
+        title = ctk.CTkLabel(parent, text=text, anchor=tk.W,
+                             font=ctk.CTkFont(size=15, weight='bold'))
+        title.grid(row=self._next_row(), column=0,
+                   columnspan=self.FIELD_COLUMNS, sticky=tk.W,
+                   pady=(12 if rule else 4, 2))
+        return title
+
+    def _cell(self, where: str):
+        """
+        The row and label column the next field goes in.
+
+        RETURNS:
+        --------
+        tuple[int, int, int]
+            The row, the column its label takes, and how many columns its
+            widget spans.
+        """
+        if where == self.RIGHT and self._open_row is not None:
+            row, self._open_row = self._open_row, None
+            return row, 2, 1
+
+        row = self._next_row()
+        if where == self.LEFT:
+            self._open_row = row
+            return row, 0, 1
+
+        self._open_row = None
+        if where == self.RIGHT:
+            return row, 2, 1
+        return row, 0, self.FIELD_COLUMNS - 1
+
+    def _field(self, parent, label: str, widget=None,
+               sticky=tk.EW, label_sticky=tk.W, where=None) -> int:
+        """
+        Put a labelled widget on the grid and return the row it took.
+
+        PARAMETERS:
+        -----------
+        where : str
+            LEFT, RIGHT or FULL; see those constants. FULL by default, which
+            is what a field with nothing to sit beside wants.
 
         The label is remembered against its widget, so that greying a field
         out can grey what it is called as well - see _set_field_enabled.
         """
-        row = self._next_row()
+        row, column, span = self._cell(where or self.FULL)
+
         caption = ctk.CTkLabel(parent, text=label)
-        caption.grid(row=row, column=0, sticky=label_sticky, pady=5)
+        caption.grid(row=row, column=column, sticky=label_sticky, pady=5,
+                     padx=(15, 0) if column else 0)
         if widget is not None:
-            widget.grid(row=row, column=1, sticky=sticky, pady=5)
+            widget.grid(row=row, column=column + 1, columnspan=span,
+                        sticky=sticky, pady=5)
             self._field_labels[widget] = caption
             # Painted as it goes in, so every box on the form is coloured by
             # the same rule rather than only the ones something greys out
@@ -378,31 +458,31 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self.tabs = ctk.CTkTabview(self, command=self._on_tab_changed)
         self.tabs.add("General")
+        self.tabs.add("Notes")
         self.tabs.add("Dependency")
 
-        # The General tab is two columns: the fields on the left, the notes
-        # beside them on the right.
+        # The notes have a tab to themselves.
         #
-        # The notes used to be the last row of the field grid, so a box
-        # meant for paragraphs sat under everything else at the height of
-        # one - a scroll away from the name of the task it describes, and
-        # squeezing every field above it to make room. Beside the fields it
-        # has the height of the form to fill, which is what a notes panel is
-        # for, and neither column crowds the other.
+        # They were the last row of the field grid once, so a box meant for
+        # paragraphs sat under everything else at the height of one, and
+        # then a column beside the fields - which gave it the height it
+        # wanted but took half the width of the form from the fields to do
+        # it, on every edit, whether or not the task had any notes at all.
+        # A tab costs the fields nothing and gives the notes the whole
+        # window when they are what you came for.
         general = self.tabs.tab("General")
-        columns = ctk.CTkFrame(general, fg_color='transparent')
-        columns.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
-        columns.grid_rowconfigure(0, weight=1)
-        columns.grid_columnconfigure(0, weight=3, uniform='pane')
-        columns.grid_columnconfigure(1, weight=2, uniform='pane')
 
-        scroller = ScrollFrame(columns)
+        scroller = ScrollFrame(general)
         main_frame = scroller.content
-        main_frame.columnconfigure(1, weight=1)
+        # The two field columns share what is left after the labels, and
+        # share it evenly, so a start date and a finish date beside it are
+        # the same size as each other
+        main_frame.columnconfigure(1, weight=1, uniform='field')
+        main_frame.columnconfigure(3, weight=1, uniform='field')
 
         self._build_general(main_frame)
-        scroller.grid(row=0, column=0, sticky=tk.NSEW)
-        self._build_details(columns)
+        scroller.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
+        self._build_details(self.tabs.tab("Notes"))
         self._build_problem_line(general)
         self._build_dependency_tab()
         self._build_buttons()
@@ -420,55 +500,50 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         
         DEVELOPMENT NOTES:
         ------------------
-        Fields are organized in logical groups:
-        1. Basic Information: name, ID, type, parent
-        2. Scheduling: dates, duration, milestone flag
-        3. Additional Scheduling: scheduling options, earliest begin
-        4. Progress: completion percentage
-        5. Appearance: color, shape
-        6. Details: notes/details
-        
-        This grouping makes the dialog more intuitive to use
-        without adding any performance overhead.
+        Four titled sections, in the order somebody reads them: what the row
+        is, when it happens, which week it is scheduled against, and how it
+        is drawn. The notes are not here - they have a tab of their own.
+
+        Only the last two carry a rule above the title. Basic Information
+        opens the tab and Schedule follows it directly, and a line between
+        two adjacent headings divides nothing that the headings do not
+        already divide.
+
+        The scheduling menu comes first in its section, above the start
+        date, because it says which of the three boxes under it the form
+        fills in. Read after them it explained a shaded box the user had
+        already tried to type in.
         """
-        # Basic Information group
+        self._heading(frame, "Basic Information")
         self.name_entry = ctk.CTkEntry(frame)
         self._field(frame, "Name:", self.name_entry)
         self.name_entry.insert(0, self.seed_name())
-        self._build_identity(frame)
         self._build_type(frame)
+        self._build_identity(frame)
         self._build_parent(frame)
+        self._build_progress(frame)
+        self._build_priority(frame)
 
-        # Separator between Basic Information and Scheduling
-        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
-            row=self._next_row(), column=0, columnspan=2, sticky=tk.EW, pady=10
-        )
-
-        # Scheduling group
+        self._heading(frame, "Schedule")
+        self._build_scheduling_options(frame)
         self._build_dates(frame)
         self._build_duration(frame)
         self._build_milestone(frame)
-        self._build_scheduling_options(frame)
-        self._build_working_calendar(frame)
         self._build_earliest_begin(frame)
 
-        # Separator between Scheduling and Progress
-        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
-            row=self._next_row(), column=0, columnspan=2, sticky=tk.EW, pady=10
-        )
+        # Now that all three of them exist. _update_field_states stands
+        # aside while the form is still being built, so the call inside
+        # _build_scheduling_options no longer reaches anything.
+        self._update_field_states()
 
-        # Progress group
-        self._build_progress(frame)
-        self._build_priority(frame)
+        # Titles itself, since it is not built at all in a plan that has no
+        # named calendars - and a heading over nothing is worse than no
+        # heading
+        self._build_working_calendar(frame)
+
+        self._heading(frame, "Display", rule=True)
         self._build_show_in_timeline(frame)
         self._build_shape(frame)
-
-        # Separator between Progress and Appearance
-        ttk.Separator(frame, orient=tk.HORIZONTAL).grid(
-            row=self._next_row(), column=0, columnspan=2, sticky=tk.EW, pady=10
-        )
-
-        # Appearance group
         self._build_color(frame)
 
     def _build_identity(self, frame):
@@ -481,7 +556,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             frame, variable=self.task_type_var, values=list(TASK_TYPES),
             state=tk.DISABLED if self.seed_type_locked() else tk.NORMAL,
         )
-        self._field(frame, "Type:", self.task_type_menu)
+        self._field(frame, "Type:", self.task_type_menu, where=self.LEFT)
 
     def _watch_type(self):
         """
@@ -493,7 +568,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         create dialog replaces with one of its own - the trace would have gone
         with it, and only the edit dialog would have kept up.
 
-        A Phase or a Deliverable takes its dates and its length from the work
+        A row with children takes its dates and its length from the work
         inside it, so those boxes stop being the user's the moment the type is
         chosen rather than the next time the form happens to update.
         """
@@ -517,7 +592,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         
         self.start_date_entry = DateEntry(frame,
                                           date=self.template.start_date)
-        self._field(frame, "Start Date:", self.start_date_entry)
+        self._field(frame, "Start Date:", self.start_date_entry,
+                    where=self.LEFT)
         
         # A container takes its dates from the work inside it
         if not dates_editable:
@@ -528,7 +604,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             return
 
         self.end_date_entry = DateEntry(frame, date=self.template.end_date)
-        self._field(frame, "End Date:", self.end_date_entry)
+        self._field(frame, "End Date:", self.end_date_entry,
+                    where=self.RIGHT)
         
         # A milestone takes no time, and a container is bracketed by
         # whatever is under it
@@ -559,7 +636,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             self.milestone_check.select()
         else:
             self.milestone_check.deselect()
-        self._field(frame, "Is Milestone:", self.milestone_check, sticky=tk.W)
+        self._field(frame, "Is Milestone:", self.milestone_check,
+                    sticky=tk.W, where=self.RIGHT)
 
     def _build_color(self, frame):
         """The color picker with Choose and Default buttons."""
@@ -581,9 +659,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         
         # Trace the variable to update field states when changed
         self.scheduling_options_var.trace_add("write", self._on_scheduling_mode_changed)
-        
-        # Initialize field states based on the current mode
-        self._update_field_states()
 
     def _on_scheduling_mode_changed(self, *args):
         """Grey the newly calculated box out, and work its value out."""
@@ -597,7 +672,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         DEVELOPMENT NOTES:
         ------------------
         What the task type forbids is applied after the mode, not before. A
-        Phase or a Deliverable takes its dates and its length from the work
+        row with children takes its dates and its length from the work
         inside it, and a milestone has neither an end nor a length; enabling
         everything and then greying out only what the mode calls calculated
         handed those back, so the dates of a task that brackets others could
@@ -707,6 +782,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.calendar_var = ctk.StringVar(value=active)
         self.calendar_menu = ctk.CTkOptionMenu(frame, variable=self.calendar_var,
                                                values=labels)
+        self._heading(frame, "Calendar", rule=True)
         self._field(frame, "Working calendar:", self.calendar_menu)
 
         # The dates follow the moment the calendar changes, without waiting
@@ -855,7 +931,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         DEVELOPMENT NOTES:
         ------------------
-        A greyed-out box is not read. A Phase and a Deliverable take their
+        A greyed-out box is not read. A row with children takes its
         length from the work inside them, and Task.duration_days answers 0
         for both - so the form read a length of nought days out of a box its
         own rules had disabled, and refused to create either of them for
@@ -1018,7 +1094,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             # Calculate from dates if not manually set
             duration = self.template.duration_days
         if not duration and self.template.end_date is not None:
-            # duration_days answers 0 for a Phase or a Deliverable, whose
+            # duration_days answers 0 for a row with children, whose
             # length is the work inside them. Nothing is inside one yet when
             # it is being created, and showing a length of nought days for a
             # task with two dates on the same form reads as a mistake
@@ -1031,7 +1107,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.duration_entry = ctk.CTkEntry(frame,
                                            textvariable=self.duration_var)
         self.duration_var.trace_add('write', self._duration_edited)
-        self._field(frame, "Duration:", self.duration_entry)
+        self._field(frame, "Duration:", self.duration_entry,
+                    where=self.LEFT)
 
         # A milestone has no length, and a container's is its children's
         if not duration_editable:
@@ -1116,7 +1193,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             frame, variable=self.priority_var,
             values=PRIORITY_LEVELS
         )
-        self._field(frame, "Priority:", self.priority_menu)
+        self._field(frame, "Priority:", self.priority_menu,
+                    where=self.RIGHT)
 
     def _build_show_in_timeline(self, frame):
         """The show in timeline checkbox."""
@@ -1156,7 +1234,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """
         self.progress_entry = ctk.CTkEntry(frame)
         self.progress_entry.insert(0, str(self.template.progress))
-        self._field(frame, "Progress (%):", self.progress_entry)
+        self._field(frame, "Progress (%):", self.progress_entry,
+                    where=self.LEFT)
 
         # Rolled up from the children of anything that has them
         if not self._should_show_progress():
@@ -1164,23 +1243,20 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_details(self, parent):
         """
-        The notes panel, filling the column beside the fields.
+        The notes box, filling its tab.
 
         PARAMETERS:
         -----------
         parent : widget
-            The two-column frame; this takes the right-hand one.
+            The Notes tab.
         """
         pane = ctk.CTkFrame(parent, fg_color='transparent')
-        pane.grid(row=0, column=1, sticky=tk.NSEW, padx=(10, 0))
-        pane.grid_rowconfigure(1, weight=1)
+        pane.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        pane.grid_rowconfigure(0, weight=1)
         pane.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(pane, text="Notes", anchor=tk.W).grid(
-            row=0, column=0, sticky=tk.EW, pady=(0, 4))
-
         self.details_text = ctk.CTkTextbox(pane, wrap='word')
-        self.details_text.grid(row=1, column=0, sticky=tk.NSEW)
+        self.details_text.grid(row=0, column=0, sticky=tk.NSEW)
         # Painted like every other box on the form. It is not placed by
         # _field, having a column to itself rather than a row.
         self._paint_field(self.details_text)

@@ -56,7 +56,7 @@ class TestDeepSubtaskCreation(unittest.TestCase):
                          self.level2.id)
 
     def test_only_container_types_are_offered_as_parents(self):
-        """Only container types (Phase, Deliverable, Task) can be parents."""
+        """Only the types that hold work - Phase and Task - can be parents."""
         offered = {t.id for t in candidate_parents(self.project)}
 
         # Level 1 is a Task (container) - should be offered
@@ -160,15 +160,6 @@ class TestTaskTypeCompatibility(unittest.TestCase):
         
         self.assertTrue(phase.can_have_children)
 
-    def test_deliverable_can_have_children(self):
-        """Deliverable tasks can have children."""
-        deliverable = Task.create_task("Deliverable", self.start,
-                                        self.start + timedelta(days=10))
-        deliverable.task_type = "Deliverable"
-        self.project.add_task(deliverable)
-        
-        self.assertTrue(deliverable.can_have_children)
-
     def test_task_can_have_children(self):
         """Task can have children."""
         task = Task.create_task("Task", self.start,
@@ -222,9 +213,9 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
     ================
     Indenting made everything a Subtask whatever it was moved under, which
     flattened the two middle levels the types exist to describe. A Task moved
-    under a Deliverable - the ordinary way a deliverable gets its work - came
+    under a Phase - the ordinary way a phase gets its work - came
     out as a Subtask, and a Subtask cannot itself have children, so it lost
-    the level below it as well. A Deliverable moved under a Phase became a
+    the level below it as well. Every level went the same way, so one moved
     Subtask too, so a plan could not be built up by indenting at all.
 
     DEVELOPMENT NOTES:
@@ -251,23 +242,14 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         project.tasks = project._flatten(project._children_by_parent())
         return project
 
-    def test_a_deliverable_under_a_phase_stays_a_deliverable(self):
-        """This is the level a phase is built out of."""
-        project = self.plan([("P", "Phase", None), ("D", "Deliverable", None)])
-
-        project.indent_task("D")
-
-        self.assertEqual(project.get_task_by_id("D").task_type, "Deliverable")
-        self.assertEqual(project.get_task_by_id("D").parent_task_id, "P")
-
-    def test_a_task_under_a_deliverable_stays_a_task(self):
+    def test_a_task_under_a_phase_stays_a_task(self):
         """
         And so keeps being able to hold sub-tasks.
 
         A Subtask cannot have children - see Task.can_have_children - so
         retyping it here took away the level below it as well.
         """
-        project = self.plan([("D", "Deliverable", None), ("T", "Task", None)])
+        project = self.plan([("D", "Phase", None), ("T", "Task", None)])
 
         project.indent_task("T")
 
@@ -278,7 +260,7 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
 
     def test_a_task_under_a_task_becomes_a_subtask(self):
         """That is the level below a task, and the one thing it can hold."""
-        project = self.plan([("D", "Deliverable", None), ("T1", "Task", "D"),
+        project = self.plan([("D", "Phase", None), ("T1", "Task", "D"),
                              ("T2", "Task", "D")])
 
         project.indent_task("T2")
@@ -305,15 +287,6 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
 
         self.assertEqual(project.get_task_by_id("S").task_type, "Task")
         self.assertEqual(project.get_task_by_id("S").parent_task_id, "P")
-
-    def test_a_deliverable_lifted_to_the_top_keeps_its_type(self):
-        """A plan can hold a deliverable at the top level."""
-        project = self.plan([("P", "Phase", None), ("D", "Deliverable", "P")])
-
-        project.outdent_task("D")
-
-        self.assertEqual(project.get_task_by_id("D").task_type, "Deliverable")
-        self.assertIsNone(project.get_task_by_id("D").parent_task_id)
 
     def test_a_subtask_lifted_clear_of_everything_becomes_a_task(self):
         """A plan holds no sub-tasks at the top level."""
@@ -449,7 +422,8 @@ class TestMovingSeveralRowsAtOnce(unittest.TestCase):
     def test_the_types_follow_the_level_each_row_lands_at(self):
         """The same rule a single indent uses; see child_type_for."""
         project = self.plan([("P", None), ("T1", None), ("T2", None)])
-        project.get_task_by_id("P").task_type = "Deliverable"
+        # A Phase holds Tasks, so they keep their type where they land
+        project.get_task_by_id("P").task_type = "Phase"
 
         project.indent_tasks(["T1", "T2"])
 

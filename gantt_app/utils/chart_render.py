@@ -213,7 +213,7 @@ def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
     Two shapes, because a plan has two kinds of parent and they are read
     differently. A Phase is the top of the plan - the reader wants to see
     where it runs to, so it is drawn as a solid bar ending in an arrow head
-    pointing at its finish. A Deliverable, or a plain Task that happens to
+    pointing at its finish. A Phase, or a plain Task that happens to
     have sub-tasks, brackets the work beneath it, which is the thin spine with
     feet that every Gantt tool uses.
 
@@ -553,7 +553,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
         # A Phase is drawn to a point whether or not anything hangs off it
         # yet. It is the top of the plan either way, and one that changed
-        # shape the moment its first deliverable was added looked like two
+        # shape the moment its first task was added looked like two
         # different kinds of row.
         is_phase = task.task_type == 'Phase'
         if is_phase or task.id in summary_ids:

@@ -461,13 +461,31 @@ class TestTheToolbarOffersIt(unittest.TestCase):
         self.assertIn('critical_path', ICON_STROKES)
         self.assertTrue(callable(getattr(Toolbar, 'show_critical_path', None)))
 
-    def test_it_is_on_the_actions_menu_too(self):
-        """Reachable without knowing which icon it is."""
+    def test_the_full_report_is_on_the_view_menu(self):
+        """
+        Which is the only place it opens from now.
+
+        The icon paints the critical rows into the task list instead. The
+        two answer different questions - "which of these rows cannot slip"
+        is asked while reading the plan, and reading it off a table in a
+        window covering that plan was the long way round.
+        """
         from tests.test_toolbar_menus import menu_tree, find, labels
 
-        items = find(menu_tree(), 'Actions')['items']
+        items = find(menu_tree(), 'View')['items']
 
         self.assertIn('Critical Path...', labels(items))
+
+    def test_the_icon_paints_the_list_rather_than_opening_the_report(self):
+        """The change: one gesture, answered where the reader is looking."""
+        from gantt_app.views.toolbar import IconToolbar, Toolbar
+
+        actions = [action for _i, _t, action in IconToolbar.ICON_ACTIONS]
+
+        self.assertIn('toggle_critical_path_rows', actions)
+        self.assertNotIn('show_critical_path', actions)
+        self.assertTrue(callable(
+            getattr(Toolbar, 'toggle_critical_path_rows', None)))
 
 
 class TestTasksOnCalendarsOfTheirOwn(CriticalPathTestCase):
@@ -786,3 +804,172 @@ class TestTheFloatAxisIsBuiltOnce(CriticalPathTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def _display_available() -> bool:
+    """Whether a usable Tk display is present."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+    except Exception:
+        return False
+    root.destroy()
+    return True
+
+
+HAVE_DISPLAY = _display_available()
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestThePathPaintedIntoTheList(unittest.TestCase):
+    """
+    The icon's answer: the critical rows, in light red, in the grid.
+
+    WHY THESE EXIST:
+    ================
+    "Which of these rows cannot slip" is asked while reading the plan, and
+    the report answered it in a window covering the plan being read. The
+    same answer painted onto the rows themselves needs no window at all.
+    """
+
+    def setUp(self):
+        """Two linked tasks that cannot slip, and one with float."""
+        import customtkinter as ctk
+
+        from gantt_app.utils.undoredo import (
+            ProjectStateTracker, UndoRedoManager,
+        )
+        from gantt_app.views.task_list import DragDropTaskList
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        base = datetime(2026, 1, 5)
+        self.project = Project(name="Plan")
+        for task_id in ("A", "B"):
+            self.project.add_task(Task(id=task_id, name=task_id,
+                                       task_type="Task", start_date=base,
+                                       end_date=base, duration=5))
+        self.project.add_task(Task(id="C", name="Slack", task_type="Task",
+                                   start_date=base, end_date=base,
+                                   duration=1))
+        self.project.get_task_by_id("B").add_dependency("A", 'FS', 'Hard')
+        self.project.reschedule()
+
+        self.task_list = DragDropTaskList(
+            self.root, self.project,
+            project_tracker=ProjectStateTracker(self.project,
+                                                UndoRedoManager()))
+        self.task_list.update_task_list()
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        """Close the window."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def fill(self, task_id: str) -> str:
+        """The background the row is painted with."""
+        tags = [tag for tag in self.task_list.tree.item(task_id, 'tags')
+                if tag.startswith('row_')]
+        return str(self.task_list.tree.tag_configure(tags[0], 'background'))
+
+    def critical(self):
+        """The ids the plan calls critical."""
+        return [task.id for task in self.project.get_critical_path()]
+
+    def paint(self):
+        """Turn the highlight on, and say how many rows it took."""
+        return self.task_list.show_critical_path_rows(self.critical())
+
+    def test_the_plan_has_a_critical_path_to_paint(self):
+        """The fixture, checked before anything is asserted about it."""
+        self.assertEqual(sorted(self.critical()), ["A", "B"])
+
+    def test_the_critical_rows_go_light_red(self):
+        """Which is the whole request."""
+        from gantt_app import theme
+
+        self.paint()
+
+        self.assertEqual(self.fill("A"), theme.now(
+            self.task_list.CRITICAL_ROW_BG))
+        self.assertEqual(self.fill("B"), theme.now(
+            self.task_list.CRITICAL_ROW_BG))
+
+    def test_a_row_with_float_is_left_alone(self):
+        """Or the highlight would say nothing about anything."""
+        from gantt_app import theme
+
+        self.paint()
+
+        self.assertNotEqual(self.fill("C"), theme.now(
+            self.task_list.CRITICAL_ROW_BG))
+
+    def test_it_says_how_many_rows_it_painted(self):
+        """What the status line reports back."""
+        self.assertEqual(self.paint(), 2)
+
+    def test_it_beats_a_fill_the_row_was_given(self):
+        """
+        For the reason the greying beats a row's ink: it says what the row
+        is doing now, and the reader turned it on to see exactly that.
+        """
+        from gantt_app import theme
+        from gantt_app.taskstyle import TaskStyle
+
+        self.project.get_task_by_id("A").style = TaskStyle(
+            fill_color="#ffff00")
+        self.task_list.update_task_list()
+
+        self.paint()
+
+        self.assertEqual(self.fill("A"), theme.now(
+            self.task_list.CRITICAL_ROW_BG))
+
+    def test_it_survives_the_list_being_rebuilt(self):
+        """
+        Which every edit does.
+
+        Held as ids rather than as rows for exactly this: an answer that
+        vanished the next time anything was typed would not be worth
+        turning on.
+        """
+        from gantt_app import theme
+
+        self.paint()
+
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.fill("A"), theme.now(
+            self.task_list.CRITICAL_ROW_BG))
+
+    def test_clearing_it_puts_the_banding_back(self):
+        """There has to be a way to put it down again."""
+        before = self.fill("A")
+
+        self.paint()
+        self.task_list.clear_critical_path_rows()
+
+        self.assertEqual(self.fill("A"), before)
+
+    def test_the_list_says_whether_it_is_on(self):
+        """Which is what makes the icon a toggle."""
+        self.assertFalse(self.task_list.critical_path_rows_shown())
+
+        self.paint()
+        self.assertTrue(self.task_list.critical_path_rows_shown())
+
+        self.task_list.clear_critical_path_rows()
+        self.assertFalse(self.task_list.critical_path_rows_shown())
+
+    def test_no_window_is_opened(self):
+        """The point of the change: the answer arrives without one."""
+        from unittest import mock
+
+        with mock.patch('gantt_app.views.criticalpath.show_critical_path') as opened:
+            self.paint()
+
+        opened.assert_not_called()

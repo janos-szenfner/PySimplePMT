@@ -235,7 +235,7 @@ class TestMenuStructure(unittest.TestCase):
         menu_tree = Toolbar._menu_definitions(self.stub)
         
         menu_texts = [menu['text'] for menu in menu_tree]
-        expected_order = ['Project', 'File', 'Actions', 'Edit', 'View']
+        expected_order = ['File', 'Actions', 'Settings', 'Edit', 'View']
         
         self.assertEqual(menu_texts, expected_order, 
                         f"Menu order incorrect. Expected: {expected_order}, Got: {menu_texts}")
@@ -251,11 +251,12 @@ class TestMenuStructure(unittest.TestCase):
         converted = toolbar._convert_to_new_menu_format()
         
         # Check that all expected top-level menus are present
-        self.assertIn('Project', converted)
         self.assertIn('File', converted)
         self.assertIn('Actions', converted)
+        self.assertIn('Settings', converted)
         self.assertIn('Edit', converted)
         self.assertIn('View', converted)
+        self.assertNotIn('Project', converted)
         
         # Check that Edit menu has all items
         edit_items = [item.get('label', item.get('text', '')) for item in converted['Edit']]
@@ -465,9 +466,9 @@ class TestSubmenusOpen(unittest.TestCase):
                         rows.append(widget)
         return rows
 
-    def test_file_offers_import_and_export(self):
+    def test_actions_offers_import_and_export(self):
         """Both are submenus, and both are there to be opened."""
-        dropdown = self.open_menu('File')
+        dropdown = self.open_menu('Actions')
 
         labels = [str(w.cget('text')).strip()
                   for w in self.submenu_rows(dropdown)]
@@ -481,7 +482,7 @@ class TestSubmenusOpen(unittest.TestCase):
         The parent closed on losing focus to its own submenu, and the
         submenu is the parent's child, so both vanished together.
         """
-        dropdown = self.open_menu('File')
+        dropdown = self.open_menu('Actions')
         self.submenu_rows(dropdown)[0].invoke()
         self.root.update_idletasks()
 

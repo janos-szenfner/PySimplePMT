@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 
 
 #: Supported entity types for clipboard operations
-ENTITY_TYPES = ('task', 'deliverable', 'phase', 'subtask', 'milestone')
+ENTITY_TYPES = ('task', 'phase', 'subtask', 'milestone')
 
 #: Container types that can accept pasted items
-CONTAINER_TYPES = ('phase', 'deliverable', 'task')
+CONTAINER_TYPES = ('phase', 'task')
 
 #: What separates the readable summary on the desktop clipboard from the
 #: JSON after it. See ClipboardService._clipboard_text.
@@ -37,7 +37,7 @@ CLIPBOARD_MARKER = '\n--- PySimplePMT tasks ---\n'
 #: What each kind of item may be pasted into, by the type of the row it
 #: would go under. An empty tuple means the top level and nowhere else.
 #:
-#: The plan runs Phase, Deliverable, Task, Subtask, and pasting is held to
+#: The plan runs Phase, Task, Subtask, and pasting is held to
 #: that: a phase is a top-level scope and does not go inside a task, a
 #: sub-task belongs to a task and to nothing else. Paste is greyed out on
 #: the menu where this says no, rather than being offered and then refused.
@@ -47,10 +47,9 @@ CLIPBOARD_MARKER = '\n--- PySimplePMT tasks ---\n'
 #: always allowed and imported files arrive carrying.
 ALLOWED_PARENT_TYPES = {
     'phase': (),
-    'deliverable': ('phase',),
-    'task': ('phase', 'deliverable', 'task'),
+    'task': ('phase', 'task'),
     'subtask': ('task',),
-    'milestone': ('phase', 'deliverable', 'task'),
+    'milestone': ('phase', 'task'),
 }
 
 
@@ -61,7 +60,7 @@ class ClipboardItem:
     
     Attributes:
         id: Unique identifier for the item
-        type: Entity type (e.g., 'task', 'deliverable')
+        type: Entity type (e.g., 'task', 'phase')
         payload: Deep copy of the original entity properties
     """
     id: str

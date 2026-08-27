@@ -1147,10 +1147,23 @@ class Toolbar(ctk.CTkFrame):
         --------
         List[Dict]
             One entry per top-level menu, each with its text and items.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        File is what a file menu is called. It held the imports and exports
+        while a second menu called Project held the new/open/save that every
+        other application puts under File, so the one place a reader looks
+        first for Save was the one place it was not. The imports and exports
+        are the menu that needed the other name: they are things done to a
+        plan rather than the plan's own file, which is Actions.
+
+        Critical Path is under View because it changes what the window shows
+        rather than what the plan says - as does the icon beside it, which
+        paints the critical rows in the list instead of opening the report.
         """
         return [
             {
-                'text': 'Project',
+                'text': 'File',
                 'items': [
                     {"text": "New Project...", "command": self.new_project},
                     {"text": "Load Project...", "command": self.load_project},
@@ -1159,7 +1172,7 @@ class Toolbar(ctk.CTkFrame):
                 ],
             },
             {
-                'text': 'File',
+                'text': 'Actions',
                 'items': [
                     {"text": "Import", "submenu": [
                         {"text": "MS Project...", "command": self.import_mpp},
@@ -1180,16 +1193,12 @@ class Toolbar(ctk.CTkFrame):
                 ],
             },
             {
-                'text': 'Actions',
+                'text': 'Settings',
                 'items': [
                     {"text": "Project Settings...", "command": self.edit_project_info},
                     {"text": "Calendar Settings...", "command": self.edit_holidays},
-                    # How the chart is drawn is a setting of the plan like
-                    # the two above it, rather than something about this
-                    # window - which is what View is for
                     {"text": "Gantt Settings...",
                      "command": self.open_gantt_chart_settings},
-                    {"text": "Critical Path...", "command": self.show_critical_path},
                 ],
             },
             {
@@ -1200,7 +1209,6 @@ class Toolbar(ctk.CTkFrame):
                     # has to exist already
                     {"text": "Create", "submenu": [
                         {"text": "Phase...", "command": self.add_phase},
-                        {"text": "Deliverable...", "command": self.add_deliverable},
                         {"text": "Task...", "command": self.add_task},
                         {"text": "Subtask...", "command": self.add_subtask},
                         {"text": "Milestone...", "command": self.add_milestone},
@@ -1229,6 +1237,10 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Always Night (dark)",
                          "command": self.use_dark_theme},
                     ]},
+                    # The full report. The icon on the bar paints the
+                    # critical rows in the list instead; see
+                    # highlight_critical_path
+                    {"text": "Critical Path...", "command": self.show_critical_path},
                     {"text": "Help", "command": self.show_help},
                 ],
             },
@@ -1300,12 +1312,8 @@ class Toolbar(ctk.CTkFrame):
         dialog.wait_window()
 
     def add_phase(self):
-        """Add a phase: the outermost grouping, bracketing deliverables."""
+        """Add a phase: the outermost grouping, bracketing its tasks."""
         self._create_of_type("Phase")
-
-    def add_deliverable(self):
-        """Add a deliverable: a grouping of the tasks that produce it."""
-        self._create_of_type("Deliverable")
 
     def add_task(self):
         """Add a new task to the project with undo support."""
@@ -1622,6 +1630,58 @@ class Toolbar(ctk.CTkFrame):
             self.on_project_changed()
 
         show_critical_path(self.master, self.project)
+
+    def toggle_critical_path_rows(self):
+        """
+        Paint the critical rows into the task list, or stop painting them.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The icon answers in the list; View > Critical Path opens the full
+        report. They are two different questions - "which of these rows
+        cannot slip" is asked while reading the plan, and having to read it
+        off a table in a window covering that plan was the long way round to
+        an answer the list itself could give.
+
+        A press with the highlight already on turns it off. There is no
+        other way back: the highlight outlives the edits that redraw the
+        list, by design, so it has to be something the reader can put down.
+
+        The plan is settled first, for the reason the report settles it -
+        float is measured against the dates as scheduled, so an unapplied
+        link would give an answer that changes the moment anything else
+        touches the project.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'show_critical_path_rows'):
+            return
+
+        if task_list.critical_path_rows_shown():
+            task_list.clear_critical_path_rows()
+            self._report("Critical path highlight off.")
+            return
+
+        if self.project.apply_schedule() and self.on_project_changed:
+            self.on_project_changed()
+
+        painted = task_list.show_critical_path_rows(
+            task.id for task in self.project.get_critical_path())
+
+        if painted:
+            self._report(f"{painted} rows on the critical path "
+                         f"are highlighted.")
+        else:
+            self._report("Nothing is on the critical path: "
+                         "every task has float.")
+
+    def _report(self, message: str):
+        """Say something in the status bar, where there is one."""
+        task_list = getattr(self, 'task_list', None)
+        say = getattr(task_list, '_say', None)
+        if callable(say):
+            say(message)
+        else:
+            logger.info(message)
 
     def save_project(self):
         """
@@ -2900,7 +2960,8 @@ class IconToolbar(ctk.CTkFrame):
         (SEPARATOR, '', ''),
         # Set apart on both sides: it neither creates anything nor moves
         # anything about, so it belongs to neither group it sits between
-        ('critical_path', 'Critical Path Analysis', 'show_critical_path'),
+        ('critical_path', 'Highlight the Critical Path',
+         'toggle_critical_path_rows'),
         (SEPARATOR, '', ''),
         ('cut', 'Cut', 'cut_tasks'),
         ('copy', 'Copy', 'copy_tasks'),

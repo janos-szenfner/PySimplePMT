@@ -26,7 +26,7 @@ from unittest import mock
 from datetime import date, datetime, timedelta
 
 from gantt_app.help.userguide import GUIDE_SECTIONS
-from gantt_app.models import Project, Task
+from gantt_app.models import TASK_TYPES, Project, Task
 from gantt_app.utils.chart_figure import calculate_date_range
 from gantt_app.workdaycalendar import WorkingCalendar
 
@@ -71,8 +71,8 @@ class TestTheGuideCovers(unittest.TestCase):
     def test_the_task_types_are_all_explained(self):
         """The hierarchy is the first thing anybody has to understand."""
         body = self.body()
-        for word in ('phase', 'deliverable', 'task', 'subtask', 'milestone'):
-            self.assertIn(word, body, word)
+        for task_type in TASK_TYPES:
+            self.assertIn(task_type.lower(), body, task_type)
 
     def test_the_scheduling_rules_are_explained(self):
         """Which is what "why did my task move" comes down to."""

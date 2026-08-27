@@ -81,37 +81,50 @@ DEPENDENCY_HARDNESS_LABELS = {
 }
 
 #: Task types in the new hierarchy
-TASK_TYPES = ('Phase', 'Deliverable', 'Task', 'Subtask', 'Milestone')
+TASK_TYPES = ('Phase', 'Task', 'Subtask', 'Milestone')
 
 #: Task type display labels
 TASK_TYPE_LABELS = {
     'Phase': 'Phase',
-    'Deliverable': 'Deliverable', 
     'Task': 'Task',
     'Subtask': 'Subtask',
     'Milestone': 'Milestone',
 }
 
+#: What a type that is no longer offered becomes when a plan carrying it is
+#: opened.
+#:
+#: Deliverable was a level between Phase and Task. Plans, saved files and
+#: imports still carry it, and a row whose type is not one this application
+#: knows would be a row nothing could decide anything about - which rule
+#: rolls its progress up, whether it may hold children, what it is called in
+#: the Type column. Read as the nearest thing that is still offered instead,
+#: which is a Task: it holds work, it may have rows beneath it, and a phase
+#: full of them reads as it did.
+RETIRED_TASK_TYPES = {
+    'Deliverable': 'Task',
+    'Sub-Task': 'Subtask',
+}
+
 #: Container types that have children and roll up dates/progress
-CONTAINER_TYPES = ('Phase', 'Deliverable')
+CONTAINER_TYPES = ('Phase',)
 
 #: Work types that represent actual work items
 WORK_TYPES = ('Task', 'Subtask')
 
 #: Types that can have subtasks
-PARENT_TYPES = ('Phase', 'Deliverable', 'Task')
+PARENT_TYPES = ('Phase', 'Task')
 
 #: Types that cannot have children (leaf nodes)
 LEAF_TYPES = ('Subtask', 'Milestone')
 
 #: What a task is allowed to be, by the type of the parent it sits under.
 #:
-#: The types describe a four-level plan - Phase > Deliverable > Task >
-#: Subtask - with a Milestone allowed at any level, since a milestone marks a
-#: moment in whatever it is a moment in.
+#: The types describe a three-level plan - Phase > Task > Subtask - with a
+#: Milestone allowed at any level, since a milestone marks a moment in
+#: whatever it is a moment in.
 ALLOWED_CHILD_TYPES = {
-    'Phase': ('Deliverable', 'Task', 'Milestone'),
-    'Deliverable': ('Task', 'Milestone'),
+    'Phase': ('Task', 'Milestone'),
     'Task': ('Subtask', 'Milestone'),
 }
 
@@ -121,13 +134,12 @@ ALLOWED_CHILD_TYPES = {
 #: is being placed in a plan, not promoted into a bracket over other rows.
 DEFAULT_CHILD_TYPE = {
     'Phase': 'Task',
-    'Deliverable': 'Task',
     'Task': 'Subtask',
 }
 
 #: What a task is allowed to be at the top of the plan. A Subtask is not:
 #: it is the level below a Task, so lifted clear of one it becomes a Task.
-ROOT_TYPES = ('Phase', 'Deliverable', 'Task', 'Milestone')
+ROOT_TYPES = ('Phase', 'Task', 'Milestone')
 
 
 def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
@@ -150,11 +162,11 @@ def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
     DEVELOPMENT NOTES:
     ------------------
     Indenting used to make everything a Subtask whatever it was moved under.
-    That flattened the two middle levels the types exist to describe: a Task
-    moved under a Deliverable - the ordinary way a deliverable gets its work -
-    came out as a Subtask, and since a Subtask cannot itself have children it
-    could no longer hold the sub-tasks it was meant to. Moving a Deliverable
-    under a Phase turned it into a Subtask too, so a plan could not be built
+    That flattened the levels the types exist to describe: a Task moved
+    under a Phase - the ordinary way a phase gets its work - came out as a
+    Subtask, and since a Subtask cannot itself have children it could no
+    longer hold the sub-tasks it was meant to. Every level went the same way,
+    so a plan could not be built
     by indenting at all.
 
     The type is only changed where the parent could not otherwise hold it,
@@ -206,14 +218,15 @@ A Subtask carries a percentage of its own, like every other row.
     is new is that a sub-task half done now says so instead of counting for
     nothing.
 
-    A Deliverable weights its tasks by how long they run, so a fortnight's
-    work counts for more towards it than an afternoon's. Where nothing under
-    it has any length - all milestones, say - there is nothing to weight by
-    and it averages them instead.
+    A Phase averages its tasks evenly. Tasks are the units a phase is scoped
+    in, and one being longer than another is not a reason for it to count
+    for more of the phase.
 
-    A Phase averages its deliverables evenly. Deliverables are the units a
-    phase is scoped in, and one being longer than another is not a reason
-    for it to count for more of the phase.
+    Anything else that has come to have children weights them by how long
+    they run, so a fortnight's work counts for more than an afternoon's.
+    Nothing offered carries children other than a Phase or a Task, but a
+    plan can arrive from a file holding whatever its own format allowed, and
+    a rule that covers it beats a row that totals to nothing.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -235,7 +248,7 @@ A Subtask carries a percentage of its own, like every other row.
     if parent.task_type == 'Phase':
         return int(round(sum(percentages) / len(percentages)))
 
-    # A Deliverable, and anything else that has come to have children
+    # Anything else that has come to have children; see the note above
     lengths = [child.duration_days or 0 for child in children]
     total = sum(lengths)
     if total <= 0:
@@ -490,7 +503,7 @@ class Task:
         progress: Completion percentage (0-100)
         dependencies: List of task IDs that must complete before this task
         color: Hex color string for visualization
-        task_type: Type of task - one of TASK_TYPES (Phase, Deliverable, Task, Subtask, Milestone)
+        task_type: Type of task - one of TASK_TYPES (Phase, Task, Subtask, Milestone)
         parent_task_id: ID of parent task (for hierarchical organization)
         duration: Duration in days (can be manually set)
         priority: Task priority level
@@ -504,8 +517,9 @@ class Task:
     
     DEVELOPMENT NOTES:
     ------------------
-    - task_type can be 'Phase', 'Deliverable', 'Task', 'Subtask', or 'Milestone'
-    - Phase and Deliverable are container types that roll up dates and progress from children
+    - task_type can be 'Phase', 'Task', 'Subtask', or 'Milestone'
+    - A Phase is a container type that rolls up dates and progress from its
+      children; so does any other row that comes to have them
     - Task is the primary work unit with duration, start/end dates, and completion
     - Subtask is a micro-action under a Task for basic completion tracking
     - Milestone is a zero-duration marker representing key events
@@ -558,9 +572,10 @@ class Task:
         if self.progress < 0 or self.progress > 100:
             raise ValueError("Progress must be between 0 and 100")
         
-        # Handle backward compatibility for legacy task types
-        if self.task_type == "Sub-Task":
-            self.task_type = "Subtask"
+        # A type this application no longer offers is read as the nearest
+        # thing it does; see RETIRED_TASK_TYPES
+        self.task_type = RETIRED_TASK_TYPES.get(self.task_type,
+                                                self.task_type)
         
         # Synchronize is_milestone with task_type for backward compatibility
         if self.task_type == "Milestone":
@@ -571,7 +586,7 @@ class Task:
             self.task_type = "Milestone"
             self.end_date = None
         
-        # For container types (Phase, Deliverable), ensure they don't have end_date if they shouldn't
+        # For container types, ensure they don't have end_date if they shouldn't
         # Actually, containers CAN have end dates as they roll up from children
         
         self.dependencies = DependencyList(self.dependencies or [])
@@ -612,7 +627,7 @@ class Task:
 
     @property
     def is_container(self) -> bool:
-        """Whether this task is a container type (Phase or Deliverable)."""
+        """Whether this task is a container type (a Phase)."""
         return self.task_type in CONTAINER_TYPES
 
     @property
@@ -870,45 +885,6 @@ class Task:
         )
     
     @classmethod
-    def create_deliverable(cls, name: str, start_date: datetime, 
-                           color: str = "#28a745", progress: int = 0,
-                           dependencies: List[str] = None, task_id: str = None) -> 'Task':
-        """
-        Create a new Deliverable (major work package / scope output).
-        
-        PARAMETERS:
-        -----------
-        name : str
-            Name of the deliverable
-        start_date : datetime
-            Start date of the deliverable
-        color : str, optional
-            Hex color for visualization (default: green)
-        progress : int, optional
-            Initial progress percentage (default: 0)
-        dependencies : List[str], optional
-            List of task IDs this deliverable depends on
-        task_id : str, optional
-            Identifier to use; see create_task.
-        
-        RETURNS:
-        --------
-        Task
-            A new Deliverable with task_type='Deliverable' and no parent
-        """
-        return cls(
-            id=task_id or str(uuid.uuid4()),
-            name=name,
-            start_date=start_date,
-            end_date=None,  # Will be rolled up from children
-            progress=progress,
-            dependencies=dependencies or [],
-            color=color,
-            task_type="Deliverable",
-            is_milestone=False,
-            parent_task_id=None
-        )
-    
     @property
     def working_calendar(self) -> WorkingCalendar:
         """
@@ -963,7 +939,8 @@ class Task:
         Project.enforce_working_calendar moves it off.
         """
         # The type is answered before the stored number. A Phase or a
-        # Deliverable holds no work of its own whatever is written on it, and
+        # A row with children holds no work of its own whatever is written
+        # on it, and
         # the task form writes a duration onto everything it saves - so a
         # container edited once carried a number that stopped following its
         # children and then disagreed with its own two dates.
@@ -1649,8 +1626,8 @@ class Project:
         rather than the indent being refused.
 
         The task keeps its own type wherever the new parent can hold it - see
-        child_type_for. A Task indented under a Deliverable stays a Task,
-        which is the level a deliverable's work belongs at.
+        child_type_for. A Task indented under a Phase stays a Task, which is
+        the level a phase's work belongs at.
         """
         new_parent = self.indent_target(task_id)
         if new_parent is None:
@@ -1768,8 +1745,8 @@ class Project:
         DEVELOPMENT NOTES:
         ------------------
         A task lifted all the way out keeps its type where that is one a plan
-        can hold at the top - a Deliverable stays a Deliverable - and a
-        Subtask, being the level below a Task, becomes a Task. One that is
+        can hold at the top - a Phase stays a Phase - and a Subtask, being
+        the level below a Task, becomes a Task. One that is
         still nested takes the level whatever it landed in expects; see
         child_type_for.
 
@@ -3165,8 +3142,8 @@ class Project:
         # last is how a row is made to cover a stretch of the plan, and there
         # is nothing else the pair can mean. Honouring only the start and
         # putting the old length back left such a row the length of whatever
-        # it happened to be before, which for a deliverable linked across two
-        # tasks was the length of the first one.
+        # it happened to be before, which for a phase linked across two of
+        # its tasks was the length of the first one.
         holds_span = (required_start is not None and required_end is not None
                       and not task.is_milestone
                       and required_end >= required_start)
@@ -3574,7 +3551,7 @@ class Project:
         which is what makes this leave the effort alone: the task ends up
         somewhere else in calendar time holding exactly the work it held.
 
-        Containers are skipped. A Phase or a Deliverable takes its dates from
+        Containers are skipped. A row with children takes its dates from
         the children beneath it - see roll_up_summaries - and those are on
         working days by the time this is done with them, so bracketing them
         cannot land on a weekend.
@@ -3648,7 +3625,7 @@ class Project:
         for task in self._deepest_first():
             brood = children.get(task.id)
             if not brood:
-                # An empty Phase or Deliverable holds no work, so none of it
+                # An empty Phase holds no work, so none of it
                 # is done. Its dates are left alone: there is nothing under
                 # it to take them from, and the ones it was given are the
                 # only ones it has.
@@ -3671,8 +3648,8 @@ class Project:
 
             # Anything with children brackets them, whatever it is called.
             #
-            # Rolling the dates up for Phase and Deliverable alone left every
-            # other parent holding whatever dates it happened to have: a
+            # Rolling the dates up for the named container types alone left
+            # every other parent holding whatever dates it had: a
             # plain Task with sub-tasks stopped spanning them, and so did
             # every parent the importers build - a Mermaid section, a
             # spreadsheet phase, a nested GanttProject task all arrive as

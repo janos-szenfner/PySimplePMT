@@ -679,7 +679,7 @@ class TestTheRoundTripIsFaithful(unittest.TestCase):
             return task
 
         add("P1", "Planning", "Phase", None, 0)
-        add("D1", "Signed contract", "Deliverable", "P1", 0)
+        add("D1", "Signed contract", "Task", "P1", 0)
         add("T1", "Business case", "Subtask", "D1", 4, progress=30,
             colour="#ff0000")
         add("T2", "Procurement", "Subtask", "D1", 9).add_dependency(
@@ -732,7 +732,7 @@ class TestTheRoundTripIsFaithful(unittest.TestCase):
 
         types = {task.id: task.task_type for task in reimported.tasks}
         self.assertEqual(types["P1"], "Phase")
-        self.assertEqual(types["D1"], "Deliverable")
+        self.assertEqual(types["D1"], "Task")
         self.assertEqual(reimported.get_task_by_id("D1").parent_task_id, "P1")
         self.assertEqual(reimported.get_task_by_id("T1").parent_task_id, "D1")
 

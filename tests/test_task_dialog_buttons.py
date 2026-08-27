@@ -810,3 +810,253 @@ class TestTheKeyboardExits(DialogTestCase):
         self.assertNotEqual(str(primary.cget('fg_color')), 'transparent')
         self.assertEqual(str(secondary.cget('fg_color')), 'transparent')
         self.assertGreater(int(secondary.cget('border_width')), 0)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestWhereTheFieldsSit(DialogTestCase):
+    """
+    The order of the General tab, and what the notes have to themselves.
+
+    Both are about reading order rather than behaviour, so both are checked
+    against the grid the form was actually built into: a field moved in the
+    source and not in the layout would pass a test that only read the code.
+    """
+
+    def dialog(self):
+        """An edit dialog over the fixture task."""
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.task, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        dialog.update_idletasks()
+        return dialog
+
+    def labels(self, dialog):
+        """
+        Every label on the General tab, in reading order.
+
+        Sorted by row and then by column: the grid is four columns wide and
+        two fields share a row, so a sort on the row alone leaves the two
+        halves of a row in whatever order Tk happens to list them.
+        """
+        import customtkinter as ctk
+
+        grid = dialog.name_entry.master
+        cells = []
+        for child in grid.grid_slaves():
+            if not isinstance(child, ctk.CTkLabel):
+                continue
+            where = child.grid_info()
+            cells.append((int(where['row']), int(where['column']),
+                          child.cget('text')))
+        return [text for _row, _column, text in sorted(cells)]
+
+    def sections(self, dialog):
+        """The section titles, in order."""
+        return [text for text in self.labels(dialog)
+                if text in ("Basic Information", "Schedule", "Calendar",
+                            "Display")]
+
+    def test_the_scheduling_menu_comes_before_the_dates(self):
+        """
+        It says which of the three boxes under it the form fills in.
+
+        Read after them it explained a greyed-out box the user had already
+        tried to type in.
+        """
+        labels = self.labels(self.dialog())
+
+        self.assertLess(labels.index("Scheduling options:"),
+                        labels.index("Start Date:"))
+
+    def test_it_sits_immediately_above_the_start_date(self):
+        """Nothing in between, or it is explaining something else."""
+        labels = self.labels(self.dialog())
+
+        self.assertEqual(labels[labels.index("Scheduling options:") + 1],
+                         "Start Date:")
+
+    def test_it_is_the_first_thing_under_the_schedule_heading(self):
+        """Which is the other half of putting it above the dates."""
+        labels = self.labels(self.dialog())
+
+        self.assertEqual(labels[labels.index("Schedule") + 1],
+                         "Scheduling options:")
+
+    def test_the_calculated_box_is_greyed_from_the_moment_it_opens(self):
+        """
+        The menu is built before the boxes it greys out now.
+
+        It used to grey them from inside its own builder, which ran last;
+        moved first, that call reaches nothing and the form has to make it
+        again once all three exist.
+        """
+        dialog = self.dialog()
+
+        self.assertEqual(dialog.scheduling_options_var.get(),
+                         "End date is calculated")
+        self.assertFalse(dialog._field_is_live(dialog.end_date_entry))
+        self.assertTrue(dialog._field_is_live(dialog.start_date_entry))
+
+    def test_the_sections_read_in_order(self):
+        """What the row is, when it happens, which week, how it is drawn."""
+        self.assertEqual(self.sections(self.dialog()),
+                         ["Basic Information", "Schedule", "Calendar",
+                          "Display"])
+
+    def test_a_title_has_its_row_to_itself(self):
+        """
+        Above its section rather than beside the first field of it.
+
+        A heading sharing a row with a field reads as that field's label.
+        """
+        import customtkinter as ctk
+
+        dialog = self.dialog()
+        grid = dialog.name_entry.master
+
+        titled = {}
+        for child in grid.grid_slaves():
+            where = child.grid_info()
+            titled.setdefault(int(where['row']), []).append(
+                child.cget('text') if isinstance(child, ctk.CTkLabel) else None)
+
+        for row, texts in titled.items():
+            for text in texts:
+                if text in ("Basic Information", "Schedule", "Calendar",
+                            "Display"):
+                    self.assertEqual(len(texts), 1,
+                                     f"{text} shares row {row}")
+
+    def test_the_last_two_sections_are_ruled_off(self):
+        """
+        Calendar and Display each open under a separator.
+
+        Basic Information opens the tab and Schedule follows it directly, so
+        a line between those two would divide nothing the headings do not.
+        """
+        import customtkinter as ctk
+        from tkinter import ttk
+
+        dialog = self.dialog()
+        grid = dialog.name_entry.master
+
+        rules = {int(child.grid_info()['row'])
+                 for child in grid.grid_slaves()
+                 if isinstance(child, ttk.Separator)}
+        titles = {child.cget('text'): int(child.grid_info()['row'])
+                  for child in grid.grid_slaves()
+                  if isinstance(child, ctk.CTkLabel)}
+
+        self.assertIn(titles["Calendar"] - 1, rules)
+        self.assertIn(titles["Display"] - 1, rules)
+        self.assertNotIn(titles["Schedule"] - 1, rules)
+
+    def test_short_fields_sit_two_to_a_row(self):
+        """
+        A start beside a finish, a percentage beside a priority.
+
+        One column of a dozen rows made the form taller than most screens.
+        """
+        import customtkinter as ctk
+
+        dialog = self.dialog()
+        grid = dialog.name_entry.master
+
+        placed = {}
+        for child in grid.grid_slaves():
+            if isinstance(child, ctk.CTkLabel):
+                where = child.grid_info()
+                placed[child.cget('text')] = (int(where['row']),
+                                              int(where['column']))
+
+        for left, right in (("Type:", "ID:"),
+                            ("Progress (%):", "Priority:"),
+                            ("Start Date:", "End Date:"),
+                            ("Duration:", "Is Milestone:")):
+            self.assertEqual(placed[left][0], placed[right][0],
+                             f"{left} and {right} are not on one row")
+            self.assertLess(placed[left][1], placed[right][1],
+                            f"{left} should be the left of the pair")
+
+    def test_a_field_with_nothing_beside_it_keeps_the_left(self):
+        """
+        And is not pulled across into the half of a row above it.
+
+        A milestone has no end date, so the start has the row to itself -
+        which has to leave the half beside it empty rather than letting the
+        duration below climb into it.
+        """
+        from gantt_app.views.taskdialogs import CreateTaskDialog
+        import customtkinter as ctk
+
+        dialog = CreateTaskDialog(self.root, self.project,
+                                  task_type="Milestone")
+        dialog.update_idletasks()
+        grid = dialog.name_entry.master
+
+        placed = {}
+        for child in grid.grid_slaves():
+            if isinstance(child, ctk.CTkLabel):
+                where = child.grid_info()
+                placed[child.cget('text')] = (int(where['row']),
+                                              int(where['column']))
+
+        self.assertNotIn("End Date:", placed)
+        self.assertEqual(placed["Start Date:"][1], 0)
+        self.assertGreater(placed["Duration:"][0], placed["Start Date:"][0])
+
+    def test_the_calendar_section_is_left_out_with_its_menu(self):
+        """
+        A heading over nothing is worse than no heading.
+
+        The menu is not built at all in a plan with no named calendars to
+        choose between, so the title it sits under cannot be either.
+        """
+        dialog = self.dialog()
+        if dialog.calendar_var is not None:
+            self.assertIn("Calendar", self.sections(dialog))
+            return
+
+        self.assertNotIn("Calendar", self.sections(dialog))
+
+    def test_the_notes_have_a_tab_of_their_own(self):
+        """Between the fields and the links, which is where they belong."""
+        dialog = self.dialog()
+
+        self.assertEqual(
+            list(dialog.tabs._segmented_button._buttons_dict.keys()),
+            ["General", "Notes", "Dependency"])
+
+    def test_the_notes_box_is_on_that_tab(self):
+        """
+        And not beside the fields, where it took half the width of the
+        form on every edit whether or not the task had any notes.
+        """
+        dialog = self.dialog()
+
+        self.assertTrue(str(dialog.details_text).startswith(
+            str(dialog.tabs.tab("Notes"))))
+
+    def test_the_notes_still_open_holding_what_the_task_says(self):
+        """A tab is where it is drawn; it is still the same field."""
+        self.task.details = "Waiting on the signed contract"
+
+        dialog = self.dialog()
+
+        self.assertEqual(dialog.details_text.get("1.0", "end").strip(),
+                         "Waiting on the signed contract")
+
+    def test_the_notes_are_saved_from_their_tab(self):
+        """The one thing moving a field can quietly break."""
+        dialog = self.dialog()
+        dialog.details_text.insert("1.0", "Rewritten")
+
+        dialog.save()
+
+        self.assertEqual(self.task.details, "Rewritten")
+
+    def test_the_form_opens_on_the_general_tab(self):
+        """The notes are a tab away, not the first thing you land on."""
+        self.assertEqual(self.dialog().tabs.get(), "General")
