@@ -207,16 +207,20 @@ class TestTaskTypeCompatibility(unittest.TestCase):
 
 class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
     """
-    A task keeps its type wherever the new parent can hold it.
+    A row keeps its type wherever it is moved. Every one of them.
 
     WHY THESE EXIST:
     ================
     Indenting made everything a Subtask whatever it was moved under, which
-    flattened the two middle levels the types exist to describe. A Task moved
-    under a Phase - the ordinary way a phase gets its work - came
-    out as a Subtask, and a Subtask cannot itself have children, so it lost
-    the level below it as well. Every level went the same way, so one moved
-    Subtask too, so a plan could not be built up by indenting at all.
+    flattened the levels the types exist to describe. That was fixed by
+    keeping the type wherever the new parent could hold it - which left the
+    cases where it could not, and a Task indented under a Task still came
+    back a Subtask, unable to hold the sub-tasks it had been built with.
+
+    The type is now left alone entirely. It is the user's statement about
+    what a row is; where the row sits is a separate statement, and moving it
+    says nothing about the first. The Type column and the editor are where
+    it is asked for, and both now accept an answer for any row.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -258,15 +262,23 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         self.assertEqual(task.parent_task_id, "D")
         self.assertTrue(task.can_have_children)
 
-    def test_a_task_under_a_task_becomes_a_subtask(self):
-        """That is the level below a task, and the one thing it can hold."""
+    def test_a_task_under_a_task_stays_a_task(self):
+        """
+        The case the older rule still retyped.
+
+        A Task indented under a Task came back a Subtask, so the row you had
+        built as a task - with sub-tasks of its own - dropped a level and
+        could no longer hold them.
+        """
         project = self.plan([("D", "Phase", None), ("T1", "Task", "D"),
                              ("T2", "Task", "D")])
 
         project.indent_task("T2")
 
-        self.assertEqual(project.get_task_by_id("T2").task_type, "Subtask")
-        self.assertEqual(project.get_task_by_id("T2").parent_task_id, "T1")
+        task = project.get_task_by_id("T2")
+        self.assertEqual(task.task_type, "Task")
+        self.assertEqual(task.parent_task_id, "T1")
+        self.assertTrue(task.can_have_children)
 
     def test_a_milestone_stays_a_milestone_wherever_it_lands(self):
         """It marks a moment in whatever it is a moment in."""
@@ -278,24 +290,51 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         self.assertEqual(milestone.task_type, "Milestone")
         self.assertTrue(milestone.is_milestone)
 
-    def test_a_subtask_lifted_into_a_phase_becomes_a_task(self):
-        """A phase holds no sub-tasks; the level below it is a task."""
+    def test_a_subtask_lifted_into_a_phase_stays_a_subtask(self):
+        """Until somebody says otherwise, which is what the Type column is."""
         project = self.plan([("P", "Phase", None), ("T", "Task", "P"),
                              ("S", "Subtask", "T")])
 
         project.outdent_task("S")
 
-        self.assertEqual(project.get_task_by_id("S").task_type, "Task")
+        self.assertEqual(project.get_task_by_id("S").task_type, "Subtask")
         self.assertEqual(project.get_task_by_id("S").parent_task_id, "P")
 
-    def test_a_subtask_lifted_clear_of_everything_becomes_a_task(self):
-        """A plan holds no sub-tasks at the top level."""
+    def test_a_subtask_lifted_clear_of_everything_stays_a_subtask(self):
+        """The top of the plan is a position, not a type."""
         project = self.plan([("T", "Task", None), ("S", "Subtask", "T")])
 
         project.outdent_task("S")
 
-        self.assertEqual(project.get_task_by_id("S").task_type, "Task")
+        self.assertEqual(project.get_task_by_id("S").task_type, "Subtask")
         self.assertIsNone(project.get_task_by_id("S").parent_task_id)
+
+    def test_a_phase_indented_under_a_phase_stays_a_phase(self):
+        """Nothing about a move changes what a row is."""
+        project = self.plan([("P1", "Phase", None), ("P2", "Phase", None)])
+
+        project.indent_task("P2")
+
+        self.assertEqual(project.get_task_by_id("P2").task_type, "Phase")
+
+    def test_a_round_trip_leaves_the_type_where_it_started(self):
+        """
+        Indent then outdent used to be a one-way trip down the levels.
+
+        A Task went in and a Subtask came out, and outdenting it again gave
+        back a Task only because that was the level the top of the plan
+        expected - so the type had been through two rewrites to arrive back
+        by luck. Anything the two rules did not agree about stayed changed.
+        """
+        project = self.plan([("D", "Phase", None), ("T1", "Task", "D"),
+                             ("T2", "Task", "D")])
+
+        project.indent_task("T2")
+        project.outdent_task("T2")
+
+        task = project.get_task_by_id("T2")
+        self.assertEqual(task.task_type, "Task")
+        self.assertEqual(task.parent_task_id, "D")
 
 
 class TestMovingSeveralRowsAtOnce(unittest.TestCase):

@@ -68,8 +68,17 @@ class EditTaskDialog(TaskFormDialog):
         return self.task.name
 
     def seed_type_locked(self):
-        """A sub-task cannot change type without changing parent."""
-        return bool(self.task.parent_task_id)
+        """
+        Never. The type is the user's to set, wherever the row sits.
+
+        A row with a parent used to have the menu greyed out, on the
+        grounds that a sub-task could not be anything else without being
+        moved first. That made the type a property of the tree rather than
+        of the row, and left a nested row with no way to say what it was:
+        the editor refused, and indenting - the other way it could change -
+        only ever went the wrong way.
+        """
+        return False
 
     # ---- the two rows only an existing task has -----------------------
 
@@ -139,9 +148,9 @@ class EditTaskDialog(TaskFormDialog):
             old_task = copy.copy(self.task)
 
             self.task.name = name
-            # A sub-task cannot change its type or parent from here
-            if not self.task.parent_task_id:
-                self.task.task_type = self.task_type_var.get()
+            # Whatever the menu says, wherever the row sits; see
+            # seed_type_locked
+            self.task.task_type = self.task_type_var.get()
             self.task.start_date = start
             self.task.end_date = end
             self.task.is_milestone = is_milestone

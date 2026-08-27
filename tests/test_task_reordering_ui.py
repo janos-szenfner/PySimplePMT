@@ -328,11 +328,11 @@ class TestIndentOutdent(TaskListTestCase):
         self.assertIsNone(levels["002"][1])
         self.assertIsNone(levels["003"][1])
 
-    def test_indenting_reparents_and_retypes(self):
-        """The row goes under the one above and becomes a sub-task."""
+    def test_indenting_reparents_and_keeps_the_type(self):
+        """The row goes under the one above and stays what it was."""
         self.invoke_entry("002", "Indent")
 
-        self.assertEqual(self.levels()["002"], ("Subtask", "001"))
+        self.assertEqual(self.levels()["002"], ("Task", "001"))
 
     def test_indenting_nests_the_row_in_the_tree(self):
         """The change is visible, not just in the model."""
@@ -340,11 +340,11 @@ class TestIndentOutdent(TaskListTestCase):
 
         self.assertIn("002", self.task_list.tree.get_children("001"))
 
-    def test_outdenting_lifts_a_subtask_to_a_task(self):
-        """A sub-task taken to the top level becomes a task."""
+    def test_outdenting_lifts_a_subtask_without_retyping_it(self):
+        """It reaches the top level and is still a sub-task."""
         self.invoke_entry("004", "Outdent")
 
-        self.assertEqual(self.levels()["004"], ("Task", None))
+        self.assertEqual(self.levels()["004"], ("Subtask", None))
 
     def test_the_moved_row_stays_selected(self):
         """The task stays put so it can be moved again."""
@@ -366,11 +366,11 @@ class TestIndentOutdent(TaskListTestCase):
         self.assertTrue(self.task_list.tree.item("001", 'open'))
 
     def test_indenting_carries_the_subtasks(self):
-        """A branch moves as a whole."""
+        """A branch moves as a whole, and none of it is retyped."""
         self.invoke_entry("002", "Indent")
 
         levels = self.levels()
-        self.assertEqual(levels["002"], ("Subtask", "001"))
+        self.assertEqual(levels["002"], ("Task", "001"))
         self.assertEqual(levels["004"], ("Subtask", "002"))
 
     def test_indenting_under_a_milestone_is_refused(self):
@@ -411,10 +411,10 @@ class TestIndentUndo(TaskListTestCase):
         task = self.project.get_task_by_id(task_id)
         return task.task_type, task.parent_task_id
 
-    def test_undo_restores_the_parent_and_type(self):
+    def test_undo_restores_the_parent(self):
         """Undoing an indent puts the task back at its old level."""
         self.task_list.indent_task("002")
-        self.assertEqual(self.level_of("002"), ("Subtask", "001"))
+        self.assertEqual(self.level_of("002"), ("Task", "001"))
 
         self.manager.undo()
 
@@ -427,12 +427,12 @@ class TestIndentUndo(TaskListTestCase):
 
         self.manager.redo()
 
-        self.assertEqual(self.level_of("002"), ("Subtask", "001"))
+        self.assertEqual(self.level_of("002"), ("Task", "001"))
 
     def test_undo_restores_an_outdent(self):
         """The same holds coming the other way."""
         self.task_list.outdent_task("004")
-        self.assertEqual(self.level_of("004"), ("Task", None))
+        self.assertEqual(self.level_of("004"), ("Subtask", None))
 
         self.manager.undo()
 

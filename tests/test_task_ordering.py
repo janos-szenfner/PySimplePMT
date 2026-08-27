@@ -226,12 +226,16 @@ class TestIndent(unittest.TestCase):
 
         self.assertEqual(self.parent_of("B"), "A")
 
-    def test_it_becomes_a_subtask(self):
-        """The type changes with the level."""
+    def test_it_keeps_its_type(self):
+        """
+        The level changes; what the row is does not.
+
+        A Task indented under a Task used to come back a Subtask, which took
+        away its ability to hold the sub-tasks it was built with.
+        """
         self.project.indent_task("B")
 
-        self.assertEqual(self.project.get_task_by_id("B").task_type,
-                         "Subtask")
+        self.assertEqual(self.project.get_task_by_id("B").task_type, "Task")
 
     def test_the_first_row_cannot_indent(self):
         """There is nothing above it to go under."""
@@ -379,11 +383,12 @@ class TestOutdent(unittest.TestCase):
 
         self.assertIsNone(self.project.get_task_by_id("B").parent_task_id)
 
-    def test_it_becomes_a_task_at_the_top_level(self):
-        """A task with no parent left is a task, not a sub-task."""
+    def test_it_keeps_its_type_at_the_top_level(self):
+        """The top of the plan is a position rather than a type."""
         self.project.outdent_task("B")
 
-        self.assertEqual(self.project.get_task_by_id("B").task_type, "Task")
+        self.assertEqual(self.project.get_task_by_id("B").task_type,
+                         "Subtask")
 
     def test_it_stays_a_subtask_when_still_nested(self):
         """Coming out of a nested level leaves it a sub-task."""

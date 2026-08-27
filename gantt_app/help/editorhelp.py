@@ -62,14 +62,15 @@ HELP_SECTIONS = (
             "Milestone - a moment rather than a stretch of work. No duration "
             "and no finish; it marks a date.",
 
-            "A sub-task cannot change its type or its parent from this form. "
-            "Use Indent and Outdent in the list instead, which move a row "
-            "and settle its type in one action.",
+            "Any row can be retyped here, nested or not. The menu used to "
+            "be greyed out for a row with a parent, which left a sub-task "
+            "no way to say what it was.",
 
-            "A row keeps its own type wherever the new parent can hold it: a "
-            "Task indented under a Phase stays a Task, and so can still "
-            "hold sub-tasks. Only a type the parent cannot hold is changed - "
-            "a Task under another Task becomes a Subtask.",
+            "A row keeps its type wherever it is moved. Indent and Outdent "
+            "change where it sits and nothing else, so a Task indented "
+            "under another Task is still a Task and can still hold "
+            "sub-tasks. The Type column in the list is the quick way to "
+            "change one: double-click the cell and pick from the list.",
         ],
     ),
     (

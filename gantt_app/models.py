@@ -144,14 +144,14 @@ ROOT_TYPES = ('Phase', 'Task', 'Milestone')
 
 def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
     """
-    The type a task takes when it is moved under a given parent.
+    The type a row should start on under a given parent.
 
     PARAMETERS:
     -----------
     parent : Optional[Task]
-        What it is being moved under, or None for the top of the plan.
+        What it is being placed under, or None for the top of the plan.
     task : Task
-        The task being moved.
+        The row being placed, carrying whatever type it starts with.
 
     RETURNS:
     --------
@@ -161,16 +161,14 @@ def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
 
     DEVELOPMENT NOTES:
     ------------------
-    Indenting used to make everything a Subtask whatever it was moved under.
-    That flattened the levels the types exist to describe: a Task moved
-    under a Phase - the ordinary way a phase gets its work - came out as a
-    Subtask, and since a Subtask cannot itself have children it could no
-    longer hold the sub-tasks it was meant to. Every level went the same way,
-    so a plan could not be built
-    by indenting at all.
+    For rows arriving without a type anybody chose: created from a parent's
+    Create menu, or read out of an imported outline that states depth and
+    nothing else. It settles what such a row should be.
 
-    The type is only changed where the parent could not otherwise hold it,
-    which is what keeps a Milestone a Milestone wherever it is dropped.
+    It is no longer applied to a row being *moved*. Indenting and outdenting
+    leave the type alone - see indent_task - because by then the type is
+    something the user has either chosen or accepted, and a move is a
+    statement about where a row sits rather than about what it is.
     """
     if parent is None:
         return task.task_type if task.task_type in ROOT_TYPES else 'Task'
@@ -1625,9 +1623,16 @@ class Project:
         is the ordinary way a phase gets built, so the link has to give way
         rather than the indent being refused.
 
-        The task keeps its own type wherever the new parent can hold it - see
-        child_type_for. A Task indented under a Phase stays a Task, which is
-        the level a phase's work belongs at.
+        The task keeps its type. Every one of them, wherever it lands: a
+        Task indented under another Task is still a Task.
+
+        It used to be retyped to whatever the new parent expected, so
+        indenting a Task under a Task made it a Subtask - and the row you
+        had built as a task, with sub-tasks of its own, came back a level
+        down and could no longer hold them. The type is the user's
+        statement about what a row is; where it sits is a separate
+        statement, and moving a row says nothing about the first. Change it
+        in the Type column or in the editor, which is where it is asked for.
         """
         new_parent = self.indent_target(task_id)
         if new_parent is None:
@@ -1635,7 +1640,6 @@ class Project:
 
         task = self.get_task_by_id(task_id)
         task.parent_task_id = new_parent.id
-        task.task_type = child_type_for(new_parent, task)
 
         self.tasks = self._flatten(self._children_by_parent())
         self.strip_ancestor_links(task_id)
@@ -1744,11 +1748,9 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        A task lifted all the way out keeps its type where that is one a plan
-        can hold at the top - a Phase stays a Phase - and a Subtask, being
-        the level below a Task, becomes a Task. One that is
-        still nested takes the level whatever it landed in expects; see
-        child_type_for.
+        The task keeps its type, at the top of the plan as anywhere else -
+        a Subtask lifted clear of its task is still a Subtask until
+        somebody says otherwise. See indent_task for why.
 
         It keeps its own sub-tasks. Its old parent may stop being a summary
         entirely, in which case that parent goes back to holding its own
@@ -1765,9 +1767,6 @@ class Project:
         parent = self.get_task_by_id(task.parent_task_id)
 
         task.parent_task_id = parent.parent_task_id
-        grandparent = (self.get_task_by_id(task.parent_task_id)
-                       if task.parent_task_id else None)
-        task.task_type = child_type_for(grandparent, task)
 
         self.tasks = self._flatten(self._children_by_parent())
         return True
