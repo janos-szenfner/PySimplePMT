@@ -357,3 +357,118 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
             Toolbar._alt_key_pressed(stub, self.event(keysym='j', char='j',
                                                       keycode=38)))
         stub.task_list.create_task_at_cursor.assert_not_called()
+
+
+class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
+    """
+    The net under the new-task shortcut, for a Tk that matches neither
+    sequence bound above it.
+
+    WHY THESE EXIST:
+    ================
+    Two goes at Cmd+Option+I had already been made, and on the machine it
+    was reported from it still did nothing - so the assumption both of them
+    rest on, that Tk will match a sequence naming Command and Option, is
+    the one left to drop. This reads the modifiers out of the event's state
+    instead, and identifies the key by where it sits on the keyboard.
+
+    Every keystroke in the window passes through it, so what it does *not*
+    do matters as much: plain Cmd+I is italic, and a net that caught it
+    would create a task every time somebody emphasised a row.
+    """
+
+    def event(self, **fields):
+        """A stand-in key event, carrying modifier bits in its state."""
+        from types import SimpleNamespace
+
+        from gantt_app.shortcuts import COMMAND_BIT, OPTION_BIT
+
+        fields.setdefault('keysym', '')
+        fields.setdefault('char', '')
+        fields.setdefault('keycode', 0)
+        fields.setdefault('state', COMMAND_BIT | OPTION_BIT)
+        return SimpleNamespace(**fields)
+
+    def toolbar(self):
+        """A Toolbar with nothing built but the task list it talks to."""
+        from unittest import mock
+
+        from gantt_app.views.toolbar import Toolbar
+
+        stub = Toolbar.__new__(Toolbar)
+        stub.task_list = mock.Mock(spec=['create_task_at_cursor'])
+        return stub
+
+    def call(self, stub, event):
+        """Run the net, with the platform branch forced on."""
+        from unittest import mock
+
+        from gantt_app import shortcuts
+        from gantt_app.views.toolbar import Toolbar
+
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            return Toolbar._any_key_pressed(stub, event)
+
+    def test_the_shortcut_is_caught(self):
+        """Both modifiers and the I key, however the key is spelt."""
+        from gantt_app.shortcuts import MAC_KEYCODES
+
+        stub = self.toolbar()
+
+        answer = self.call(stub, self.event(keysym='dead_circumflex',
+                                            char='ˆ',
+                                            keycode=MAC_KEYCODES['i'] << 16))
+
+        self.assertEqual(answer, 'break')
+        stub.task_list.create_task_at_cursor.assert_called_once_with()
+
+    def test_the_option_bit_is_not_insisted_on(self):
+        """
+        Losing the Option bit is one of the ways this can go wrong.
+
+        Insisting on it would be insisting on the thing that has gone
+        missing. Cmd+I stays italic all the same: <Command-i> is bound for
+        it, and Tk runs the one most specific binding a window has for an
+        event - so plain Cmd+I never reaches here to be mistaken for this.
+        """
+        from gantt_app.shortcuts import COMMAND_BIT, MAC_KEYCODES
+
+        stub = self.toolbar()
+
+        answer = self.call(stub, self.event(keysym='dead_circumflex',
+                                            char='ˆ', state=COMMAND_BIT,
+                                            keycode=MAC_KEYCODES['i']))
+
+        self.assertEqual(answer, 'break')
+        stub.task_list.create_task_at_cursor.assert_called_once_with()
+
+    def test_nothing_held_is_left_alone(self):
+        """A bare keystroke is somebody typing."""
+        from gantt_app.shortcuts import MAC_KEYCODES
+
+        stub = self.toolbar()
+
+        answer = self.call(stub, self.event(keysym='i', char='i', state=0,
+                                            keycode=MAC_KEYCODES['i']))
+
+        self.assertIsNone(answer)
+        stub.task_list.create_task_at_cursor.assert_not_called()
+
+    def test_ordinary_typing_is_left_alone(self):
+        """Every key in the window comes through here."""
+        stub = self.toolbar()
+
+        answer = self.call(stub, self.event(keysym='a', char='a', state=0))
+
+        self.assertIsNone(answer)
+        stub.task_list.create_task_at_cursor.assert_not_called()
+
+    def test_another_key_under_the_same_modifiers_is_left_alone(self):
+        """Or every Cmd+Option shortcut would make a task."""
+        stub = self.toolbar()
+
+        answer = self.call(stub, self.event(keysym='j', char='∆',
+                                            keycode=38))
+
+        self.assertIsNone(answer)
+        stub.task_list.create_task_at_cursor.assert_not_called()

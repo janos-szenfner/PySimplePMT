@@ -164,6 +164,52 @@ def sequences(key: str, shift: bool = False, alt: bool = False) -> tuple:
 #: the keyboard layout produces - which is the point of having them here.
 MAC_KEYCODES = {'b': 11, 'i': 34, 'u': 32}
 
+#: The bits Tk sets in an event's state for the modifiers a shortcut holds.
+#:
+#: Tk uses the X11 modifier masks on every platform, and its macOS port puts
+#: the Command key on Mod1 and the Option key on Mod2 - the same two bits its
+#: binding table answers to the names 'Command' and 'Option'. So a state read
+#: here and a sequence bound above are talking about the same thing.
+#:
+#: Read directly only by the last-resort net under a shortcut that holds
+#: Option; see modifiers_held and Toolbar._any_key_pressed. Everywhere else
+#: Tk matches the modifiers itself, which is better done by the library.
+COMMAND_BIT = 0x08                      # Mod1
+OPTION_BIT = 0x10                       # Mod2
+
+
+def modifiers_held(event, alt: bool = False) -> bool:
+    """
+    Whether a key event carries this platform's shortcut modifiers.
+
+    PARAMETERS:
+    -----------
+    event : tkinter.Event
+        A KeyPress.
+    alt : bool
+        True to require Option as well as the platform's own modifier.
+
+    RETURNS:
+    --------
+    bool
+        True when every modifier asked for is held. Others may be held too;
+        this says nothing about them.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    macOS only. Everywhere else Alt leaves a keystroke alone, so the bound
+    sequences match and nothing needs to read the state by hand - and the
+    bit Alt sets is not the same on Windows as it is on X11, so guessing at
+    one here would be a wrong answer rather than a missing one.
+    """
+    if not IS_MACOS:
+        return False
+    state = getattr(event, 'state', 0)
+    if not isinstance(state, int):
+        return False
+    wanted = COMMAND_BIT | (OPTION_BIT if alt else 0)
+    return state & wanted == wanted
+
 
 def any_key_with(shift: bool = False, alt: bool = False) -> str:
     """
@@ -220,10 +266,16 @@ def is_key(event, key: str) -> bool:
         keycode = getattr(event, 'keycode', None)
         if isinstance(keycode, int):
             # Tk has reported this as the bare virtual keycode and, in other
-            # versions, packed into the high bytes with the keysym below it
-            return keycode in (MAC_KEYCODES[wanted],
-                               MAC_KEYCODES[wanted] << 16,
-                               MAC_KEYCODES[wanted] << 24)
+            # versions, packed into the high bytes with the character
+            # underneath it. The low bits are shifted away rather than
+            # compared: an equality against the packed forms only matched
+            # when the character underneath happened to be zero, which for
+            # Option+I - a dead circumflex on a US layout, and something
+            # else again on others - it is not.
+            virtual = MAC_KEYCODES[wanted]
+            return virtual in (keycode,
+                               (keycode >> 16) & 0xFFFF,
+                               (keycode >> 24) & 0xFF)
     return False
 
 

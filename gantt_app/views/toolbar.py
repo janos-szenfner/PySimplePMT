@@ -30,6 +30,7 @@ from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
 from gantt_app.shortcuts import accelerator
 from gantt_app.shortcuts import any_key_with, is_key
+from gantt_app.shortcuts import IS_MACOS, modifiers_held
 from gantt_app.shortcuts import bind_all as bind_shortcut
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views import tooltip as tooltips
@@ -2515,13 +2516,28 @@ class Toolbar(ctk.CTkFrame):
         # on a Mac, Ctrl+Alt+I elsewhere: plain Cmd+I is italic, which is
         # already bound above.
         #
-        # Bound twice. The plain sequence is what works wherever Option
-        # leaves the keystroke alone; the catch-all is for macOS, where it
-        # does not - see shortcuts.is_key. Tk matches the modifiers on the
-        # catch-all and _hotkey_new_task decides whether the key was I, so
-        # a keystroke that arrives as a dead circumflex still lands.
+        # Bound three times, each one narrower than the last, because Option
+        # is a compose key on macOS and what arrives there depends on the Tk
+        # build and the keyboard layout. They cannot fire twice between
+        # them: all three sit on the same window, and Tk runs only the most
+        # specific binding a tag has for an event.
+        #
+        #   the plain sequence   - wherever Option leaves the keystroke
+        #                          alone, which is everywhere but a Mac
+        #   the modifier catch   - Tk matches Command and Option itself and
+        #                          is_key works out whether the key was I,
+        #                          so a dead circumflex still lands
+        #   the last-resort net  - for a keystroke that reaches neither of
+        #                          those, which is what was still being
+        #                          reported. The modifiers are read out of
+        #                          the state by hand and the key is taken
+        #                          from where it sits on the keyboard. Mac
+        #                          only, since it is a Mac fault: see
+        #                          _any_key_pressed.
         bind_shortcut(window, 'I', self._hotkey_new_task, alt=True)
         window.bind(any_key_with(alt=True), self._alt_key_pressed, add='+')
+        if IS_MACOS:
+            window.bind('<KeyPress>', self._any_key_pressed, add='+')
 
     def _hotkey_link(self, _event=None):
         """Link the selected rows from the keyboard."""
@@ -2553,6 +2569,60 @@ class Toolbar(ctk.CTkFrame):
                      getattr(event, 'char', None),
                      getattr(event, 'keycode', None))
         return None
+
+    def _any_key_pressed(self, event):
+        """
+        The last net under the new-task shortcut, on macOS.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every key in the window comes through here, so it answers None and
+        gets out of the way for all but one of them. Only a keystroke Tk
+        did not match to any narrower binding reaches it at all - Tk runs
+        one binding per tag, the most specific it has - so ordinary typing
+        and every other shortcut are already gone by this point.
+
+        It exists because the two bindings above both ask Tk to recognise
+        the keystroke, and on macOS that is exactly what cannot be relied
+        on: Option replaces the character, and which Tk build spells the
+        modifiers how has moved between versions. Here the state is read
+        directly and the key is identified by where it sits on the
+        keyboard, which is the one thing Option cannot change.
+
+        Option is not insisted on, and that is deliberate rather than
+        sloppy. Anything that still carried both an Option Tk recognised
+        and a legible I would have been taken by one of the sequences
+        above; what gets this far has lost one or the other, so demanding
+        both back would be demanding exactly what has gone missing. Plain
+        Cmd+I cannot arrive here either - <Command-i> is bound for italic
+        and Tk prefers it, running the one most specific binding a window
+        has for an event and no other.
+
+        Every keystroke that reaches this point with the modifier held is
+        logged with what it was carrying. If the shortcut ever fails again,
+        the Log window either names the keysym, the character, the keycode
+        and the state that arrived, or says nothing at all - and those are
+        two different faults with two different answers. Silence means Tk
+        never delivered the keystroke, which no binding can be written
+        around; the shortcut would have to move off the Option key.
+        """
+        if not modifiers_held(event):
+            return None
+
+        described = (getattr(event, 'keysym', None),
+                     getattr(event, 'char', None),
+                     getattr(event, 'keycode', None),
+                     getattr(event, 'state', None))
+
+        if not is_key(event, 'I'):
+            logger.debug("The modifier held with keysym=%r char=%r "
+                         "keycode=%r state=%r; not the new-task shortcut",
+                         *described)
+            return None
+
+        logger.debug("The new-task shortcut reached the last-resort net as "
+                     "keysym=%r char=%r keycode=%r state=%r", *described)
+        return self._hotkey_new_task(event)
 
     def _hotkey_new_task(self, _event=None):
         """Create a task at the cursor from the keyboard."""

@@ -116,5 +116,121 @@ class AcceleratorTestCase(unittest.TestCase):
             self.assertNotIn('⌘', label)
 
 
+class KeyIdentityTestCase(unittest.TestCase):
+    """
+    Which key an event is, when Option has taken the character away.
+
+    WHY THESE EXIST:
+    ----------------
+    Option is a compose key on macOS: Option+I is the dead key for a
+    circumflex, so the event carries no 'i' anywhere a binding could match.
+    All that is left of the key pressed is where it sits on the keyboard,
+    which is what the keycode names - and reading it wrongly is silent, as
+    a shortcut that does nothing at all.
+    """
+
+    class FakeEvent:
+        """Only the attributes is_key reads."""
+
+        def __init__(self, keysym='', char='', keycode=None, state=0):
+            self.keysym = keysym
+            self.char = char
+            self.keycode = keycode
+            self.state = state
+
+    def test_the_keysym_is_enough(self):
+        """The ordinary case, on every platform."""
+        self.assertTrue(shortcuts.is_key(self.FakeEvent(keysym='i'), 'I'))
+
+    def test_another_key_is_not_it(self):
+        """A near miss is still a miss."""
+        self.assertFalse(shortcuts.is_key(self.FakeEvent(keysym='o'), 'I'))
+
+    def test_a_packed_keycode_still_names_the_key(self):
+        """
+        The character underneath the keycode does not hide the key.
+
+        Tk packs the virtual keycode into the high bytes and leaves the
+        character below it, so the whole number is never equal to the
+        keycode on its own - which is what the comparison used to ask for.
+        """
+        circumflex = ord('ˆ')
+        packed = (shortcuts.MAC_KEYCODES['i'] << 16) | circumflex
+
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            event = self.FakeEvent(keysym='dead_circumflex', char='ˆ',
+                                   keycode=packed)
+
+            self.assertTrue(shortcuts.is_key(event, 'I'))
+
+    def test_a_bare_keycode_still_names_the_key(self):
+        """The other spelling Tk has used for the same thing."""
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            event = self.FakeEvent(keysym='dead_circumflex',
+                                   keycode=shortcuts.MAC_KEYCODES['i'])
+
+            self.assertTrue(shortcuts.is_key(event, 'I'))
+
+    def test_another_packed_keycode_is_not_it(self):
+        """A different physical key, packed the same way, is not I."""
+        packed = (shortcuts.MAC_KEYCODES['b'] << 16) | ord('b')
+
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            event = self.FakeEvent(keysym='dead_circumflex', keycode=packed)
+
+            self.assertFalse(shortcuts.is_key(event, 'I'))
+
+
+class ModifiersHeldTestCase(unittest.TestCase):
+    """
+    Reading the modifiers out of the event, where Tk would not match them.
+
+    WHY THESE EXIST:
+    ----------------
+    This is the last net under the new-task shortcut. It has to catch
+    Cmd+Option+I, and it must not catch plain Cmd+I - which is italic, and
+    would start creating tasks instead.
+    """
+
+    def held(self, state):
+        """An event carrying nothing but these modifier bits."""
+        return KeyIdentityTestCase.FakeEvent(keysym='i', state=state)
+
+    def test_both_modifiers_are_held(self):
+        """The combination the shortcut is on."""
+        state = shortcuts.COMMAND_BIT | shortcuts.OPTION_BIT
+
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            self.assertTrue(shortcuts.modifiers_held(self.held(state),
+                                                     alt=True))
+
+    def test_the_modifier_alone_is_not_the_pair(self):
+        """Cmd+I is italic and has to stay italic."""
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            self.assertFalse(
+                shortcuts.modifiers_held(self.held(shortcuts.COMMAND_BIT),
+                                         alt=True))
+
+    def test_a_shift_alongside_does_not_matter(self):
+        """Other modifiers are not asked about."""
+        state = shortcuts.COMMAND_BIT | shortcuts.OPTION_BIT | 0x01
+
+        with mock.patch.object(shortcuts, 'IS_MACOS', True):
+            self.assertTrue(shortcuts.modifiers_held(self.held(state),
+                                                     alt=True))
+
+    def test_nothing_is_read_off_a_mac(self):
+        """
+        Everywhere else Tk matches the sequence, and the bit Alt sets is
+        not the same on Windows as on X11 - so this answers no rather than
+        guessing.
+        """
+        state = shortcuts.COMMAND_BIT | shortcuts.OPTION_BIT
+
+        with mock.patch.object(shortcuts, 'IS_MACOS', False):
+            self.assertFalse(shortcuts.modifiers_held(self.held(state),
+                                                      alt=True))
+
+
 if __name__ == '__main__':
     unittest.main()
