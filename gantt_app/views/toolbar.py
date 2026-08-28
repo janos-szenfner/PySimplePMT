@@ -976,6 +976,11 @@ class Toolbar(ctk.CTkFrame):
         #: to do, making it a second Save As with a different name on it.
         #: None until a file has been chosen; see save_project.
         self.current_file_path = None
+        
+        # References for chart switching (Gantt Chart <-> Dashboard)
+        # Set by set_dashboard and set_content_panes from main.py
+        self.dashboard_frame = None
+        self.content_panes = None
 
         # Create UI
         self._create_ui()
@@ -1238,6 +1243,10 @@ class Toolbar(ctk.CTkFrame):
                          "command": self.use_light_theme},
                         {"text": "Always Night (dark)",
                          "command": self.use_dark_theme},
+                    ]},
+                    {"text": "Charts", "submenu": [
+                        {"text": "Gantt Chart", "command": self.show_gantt_chart},
+                        {"text": "Dashboard", "command": self.show_dashboard},
                     ]},
                     # The full report. The icon on the bar paints the
                     # critical rows in the list instead; see
@@ -2307,6 +2316,57 @@ class Toolbar(ctk.CTkFrame):
     def set_gantt_chart(self, gantt_chart):
         """Set the Gantt chart reference for export functionality."""
         self.gantt_chart = gantt_chart
+    
+    def set_dashboard(self, dashboard_frame):
+        """Set the dashboard frame reference for chart switching."""
+        self.dashboard_frame = dashboard_frame
+    
+    def set_content_panes(self, content_panes):
+        """Set the content panes reference for chart switching."""
+        self.content_panes = content_panes
+    
+    def show_gantt_chart(self):
+        """Show the Gantt chart in the content panes."""
+        if self.content_panes is None or self.gantt_chart is None:
+            return
+        
+        # Find if dashboard is currently shown and remove it
+        panes = self.content_panes.panes()
+        for i, pane in enumerate(panes):
+            if pane == self.dashboard_frame:
+                self.content_panes.forget(i)
+        
+        # Add Gantt chart back if not already there
+        panes = self.content_panes.panes()
+        if self.gantt_chart not in panes:
+            self.content_panes.add(self.gantt_chart, weight=3)
+    
+    def show_dashboard(self):
+        """Show the dashboard in the content panes."""
+        if self.content_panes is None:
+            return
+        
+        # Create dashboard frame lazily if not yet created
+        if self.dashboard_frame is None and hasattr(self, '_create_dashboard_lazy'):
+            self.dashboard_frame = self._create_dashboard_lazy()
+        
+        if self.dashboard_frame is None:
+            return
+        
+        # Find if Gantt chart is currently shown and remove it
+        panes = self.content_panes.panes()
+        for i, pane in enumerate(panes):
+            if pane == self.gantt_chart:
+                self.content_panes.forget(i)
+        
+        # Add dashboard if not already there
+        panes = self.content_panes.panes()
+        if self.dashboard_frame not in panes:
+            self.content_panes.add(self.dashboard_frame, weight=3)
+        
+        # Update dashboard with current project data
+        if hasattr(self.dashboard_frame, 'update_dashboard'):
+            self.dashboard_frame.update_dashboard()
     
     def set_undo_redo_manager(self, manager: UndoRedoManager):
         """Set the undo/redo manager."""

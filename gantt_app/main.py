@@ -18,6 +18,7 @@ from gantt_app.views.task_list import DragDropTaskList
 from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.toolbar import Toolbar
+from gantt_app.views.project_dashboard import ProjectDashboardFrame
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
 from gantt_app.utils.copypastecut import ClipboardManager, setup_keyboard_bindings
@@ -441,11 +442,20 @@ class GanttApp(ctk.CTk):
         )
         self.content_panes.add(self.gantt_chart, weight=3)
 
+        # Dashboard frame will be created lazily when first shown
+        self.dashboard_frame = None
+
         # Place the divider once the window has its real size
         self.after(120, self._set_initial_sash)
         
         # Set Gantt chart reference in toolbar for export functionality
         self.toolbar.set_gantt_chart(self.gantt_chart)
+        
+        # Set content panes reference in toolbar for chart switching
+        self.toolbar.set_content_panes(self.content_panes)
+        
+        # Set a method to create the dashboard frame lazily
+        self.toolbar._create_dashboard_lazy = self._create_dashboard_frame
 
         # The chart draws the rows the task list is showing, so the two line
         # up. Both have to exist first: this went in beside the toolbar's
@@ -476,6 +486,15 @@ class GanttApp(ctk.CTk):
         # divider and scrollbars until the first theme change put them
         # right.
         theme.style_chrome()
+    
+    def _create_dashboard_frame(self):
+        """Create the dashboard frame lazily when first needed."""
+        if self.dashboard_frame is None:
+            self.dashboard_frame = ProjectDashboardFrame(
+                self.content_panes, self.project
+            )
+            self.toolbar.set_dashboard(self.dashboard_frame)
+        return self.dashboard_frame
     
     def _configure_sash_style(self):
         """

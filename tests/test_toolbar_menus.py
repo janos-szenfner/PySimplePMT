@@ -171,7 +171,7 @@ class TestMenuContents(unittest.TestCase):
         view = labels(find(self.tree, 'View')['items'])
 
         self.assertEqual(view,
-                         ['System UI mode', 'Critical Path...', 'Help'])
+                         ['System UI mode', 'Charts', 'Critical Path...', 'Help'])
         self.assertNotIn('Project Info', view)
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):
