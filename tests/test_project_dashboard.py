@@ -1,562 +1,482 @@
 """
-Unit tests for the Project Dashboard module.
+Tests for the project dashboard: the arithmetic, the drawing and the switch.
+
+WHY THIS MODULE EXISTS:
+======================
+The dashboard makes claims about the plan - how far along it is, where the
+work sits, how much of it is milestones - and a claim drawn as a picture is
+one nobody checks by looking. The arithmetic is separated from the widget for
+exactly that reason, and most of what is here needs no display at all.
+
+The drawing is checked too, because the first version of this dashboard drew
+nothing whatsoever: it built Plotly figures and loaded them into a tkinterweb
+frame, which runs no JavaScript, so the panel came up empty and every test
+passed. Counting what actually reached the canvas is what stops that being
+possible twice.
 
 DEVELOPMENT NOTES:
 ------------------
-These tests verify the dashboard's calculation logic, data processing,
-and HTML generation without requiring a display or GUI interaction.
-
-All tests are designed to run headless and do not open any windows.
+The worked example is the one in the specification: eight rows, one of them
+30% done, giving 11.43% overall and an 84/16/0 split by type. Numbers taken
+from the specification rather than from the code, so the test can disagree
+with the code.
 """
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# Import the dashboard module
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gantt_app.views.project_dashboard import ProjectDashboard
+from gantt_app.models import Project, Task
+from gantt_app.views.project_dashboard import (
+    dashboard_rows, duration_by_type, kpi_metrics, weighted_progress,
+)
 
 
-class TestProjectDashboardDataProcessing(unittest.TestCase):
-    """Tests for data processing and sample data creation."""
+BASE = datetime(2026, 1, 5)
+
+#: The specification's example: (id, name, type, duration, progress, parent).
+WORKED_EXAMPLE = (
+    ("001", "Project Planning", "Task", 2, 0, None),
+    ("002", "Requirements Gathering", "Subtask", 1, 0, "001"),
+    ("003", "Design Phase", "Task", 5, 0, None),
+    ("004", "UI Mockups", "Subtask", 3, 0, "003"),
+    ("005", "Implementation", "Task", 8, 30, None),
+    ("006", "Design Review", "Milestone", 0, 0, None),
+    ("007", "Testing", "Task", 3, 0, None),
+    ("008", "Deployment", "Task", 3, 0, None),
+)
+
+
+def sample_project() -> Project:
+    """The worked example as a plan."""
+    project = Project(name="Sample")
+    for task_id, name, kind, duration, progress, parent in WORKED_EXAMPLE:
+        project.add_task(Task(
+            id=task_id, name=name, task_type=kind, start_date=BASE,
+            end_date=BASE, duration=duration, progress=progress,
+            parent_task_id=parent, is_milestone=(kind == 'Milestone'),
+        ))
+    return project
+
+
+def _display_available() -> bool:
+    """Whether a Tk window can be opened here."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+        root.destroy()
+        return True
+    except Exception:
+        return False
+
+
+HAVE_DISPLAY = _display_available()
+
+
+class TestTheRows(unittest.TestCase):
+    """Turning a plan into the flat rows the charts read."""
+
+    def test_a_plan_with_nothing_in_it_gives_nothing(self):
+        """
+        And no invented tasks.
+
+        The dashboard used to fall back to eight sample rows, so a reader
+        who opened it before typing anything was shown a stranger's plan
+        under their own project's name.
+        """
+        self.assertEqual(dashboard_rows(Project(name="Empty")), [])
+
+    def test_no_plan_at_all_gives_nothing(self):
+        """The same answer, one step earlier."""
+        self.assertEqual(dashboard_rows(None), [])
+
+    def test_a_row_carries_what_the_charts_need(self):
+        """Every key the four charts read is on every row."""
+        row = dashboard_rows(sample_project())[0]
+
+        for key in ('ID', 'Name', 'Type', 'Duration', 'Progress', 'Level'):
+            self.assertIn(key, row)
+
+    def test_the_level_follows_the_parent(self):
+        """A root row is one, and a row inside it is two."""
+        levels = {row['ID']: row['Level']
+                  for row in dashboard_rows(sample_project())}
+
+        self.assertEqual(levels['001'], 1)
+        self.assertEqual(levels['002'], 2)
+        self.assertEqual(levels['004'], 2)
+
+    def test_a_ring_of_parents_does_not_hang(self):
+        """
+        A plan whose parent links form a ring is not supposed to exist,
+        and the dashboard is not the place to find out. Walked with a
+        seen-set rather than by recursion, which answers with a blown
+        stack and a window that will not open.
+        """
+        project = Project(name="Ring")
+        for task_id, parent in (("A", "B"), ("B", "A")):
+            project.add_task(Task(id=task_id, name=task_id, task_type="Task",
+                                  start_date=BASE, end_date=BASE, duration=1,
+                                  parent_task_id=parent))
+
+        levels = {row['ID']: row['Level']
+                  for row in dashboard_rows(project)}
+
+        self.assertEqual(set(levels), {"A", "B"})
+
+
+class TestWeightedProgress(unittest.TestCase):
+    """How far along the plan is, as one number."""
+
+    def rows(self):
+        """The worked example."""
+        return dashboard_rows(sample_project())
+
+    def test_the_specifications_worked_example(self):
+        """(8 * 30) / 21 = 11.43%."""
+        self.assertAlmostEqual(weighted_progress(self.rows()), 11.43,
+                               places=2)
+
+    def test_only_the_top_level_counts(self):
+        """
+        A sub-task's work is already inside the row that brackets it, so
+        counting it again would weigh it twice.
+        """
+        rows = [
+            {'Level': 1, 'Duration': 10, 'Progress': 0, 'Type': 'Task'},
+            {'Level': 2, 'Duration': 10, 'Progress': 100, 'Type': 'Subtask'},
+        ]
+
+        self.assertEqual(weighted_progress(rows), 0.0)
+
+    def test_length_decides_the_weight(self):
+        """A finished one-day row does not make a nine-day plan half done."""
+        rows = [
+            {'Level': 1, 'Duration': 1, 'Progress': 100, 'Type': 'Task'},
+            {'Level': 1, 'Duration': 9, 'Progress': 0, 'Type': 'Task'},
+        ]
+
+        self.assertAlmostEqual(weighted_progress(rows), 10.0)
+
+    def test_a_plan_holding_no_days_is_not_a_division(self):
+        """Every row a milestone: no duration to divide by."""
+        rows = [{'Level': 1, 'Duration': 0, 'Progress': 0,
+                 'Type': 'Milestone'}]
+
+        self.assertEqual(weighted_progress(rows), 0.0)
+
+
+class TestDurationByType(unittest.TestCase):
+    """What the donut divides up."""
+
+    def test_the_specifications_worked_example(self):
+        """21 days of tasks, 4 of sub-tasks, none of milestones."""
+        shares = dict(duration_by_type(dashboard_rows(sample_project())))
+
+        self.assertEqual(shares['Task'], 21)
+        self.assertEqual(shares['Subtask'], 4)
+        self.assertEqual(shares['Milestone'], 0)
+
+    def test_the_shares_are_what_the_specification_says(self):
+        """84%, 16% and nothing, out of 25 days."""
+        shares = dict(duration_by_type(dashboard_rows(sample_project())))
+        total = sum(shares.values())
+
+        self.assertEqual(total, 25)
+        self.assertAlmostEqual(shares['Task'] / total * 100, 84.0)
+        self.assertAlmostEqual(shares['Subtask'] / total * 100, 16.0)
+
+    def test_the_order_is_the_models_own(self):
+        """
+        Or the colours move between two readings of the same plan, and a
+        reader who learnt that green means sub-task learns it again.
+        """
+        order = [kind for kind, _days
+                 in duration_by_type(dashboard_rows(sample_project()))]
+
+        self.assertEqual(order, ['Task', 'Subtask', 'Milestone'])
+
+    def test_a_type_nobody_used_is_not_listed(self):
+        """A plan with no phases says nothing about phases."""
+        kinds = {kind for kind, _days
+                 in duration_by_type(dashboard_rows(sample_project()))}
+
+        self.assertNotIn('Phase', kinds)
+
+
+class TestKPIMetrics(unittest.TestCase):
+    """The five numbers in the summary box."""
 
     def setUp(self):
-        """Set up test fixtures."""
-        self.dashboard = ProjectDashboard()
-        self.sample_data = self.dashboard.project_data
+        """The worked example's figures."""
+        self.metrics = kpi_metrics(dashboard_rows(sample_project()))
 
-    def test_sample_data_structure(self):
-        """Sample data has correct structure with required fields."""
-        required_fields = ['ID', 'Task Name', 'Type', 'Duration', 'Progress', 'Level', 'Start Date', 'End Date']
-        
-        for task in self.sample_data:
-            for field in required_fields:
-                self.assertIn(field, task, 
-                           f"Missing required field '{field}' in task {task.get('ID', 'unknown')}")
+    def test_the_scope_is_the_top_level_days(self):
+        """21 days, which is what the specification says."""
+        self.assertEqual(self.metrics['total_scope'], 21)
 
-    def test_sample_data_types(self):
-        """Sample data has correct data types."""
-        for task in self.sample_data:
-            self.assertIsInstance(task['ID'], str)
-            self.assertIsInstance(task['Task Name'], str)
-            self.assertIsInstance(task['Type'], str)
-            self.assertIsInstance(task['Duration'], int)
-            self.assertIsInstance(task['Progress'], int)
-            self.assertIsInstance(task['Level'], int)
-            self.assertIsInstance(task['Start Date'], datetime)
-            self.assertIsInstance(task['End Date'], datetime)
+    def test_every_row_is_counted_as_an_item(self):
+        """Eight items, sub-tasks included."""
+        self.assertEqual(self.metrics['total_items'], 8)
 
-    def test_sample_data_task_types(self):
-        """Sample data contains expected task types."""
-        types = [task['Type'] for task in self.sample_data]
-        
-        # Should have Task, Subtask, and Milestone types
-        self.assertIn('Task', types)
-        self.assertIn('Subtask', types)
-        self.assertIn('Milestone', types)
+    def test_the_milestones_are_counted(self):
+        """One."""
+        self.assertEqual(self.metrics['milestones'], 1)
 
-    def test_sample_data_levels(self):
-        """Sample data has correct outline levels."""
-        levels = [task['Level'] for task in self.sample_data]
-        
-        # Should have both Level 1 and Level 2 tasks
-        self.assertIn(1, levels)
-        self.assertIn(2, levels)
+    def test_the_completion_is_the_weighted_progress(self):
+        """The two are the same number and have to stay the same number."""
+        rows = dashboard_rows(sample_project())
 
-    def test_data_list_creation(self):
-        """Project data is correctly stored as list of dicts."""
-        self.assertIsInstance(self.sample_data, list)
-        self.assertEqual(len(self.sample_data), 8)  # Sample has 8 tasks
-        # Verify all items have required fields
-        for task in self.sample_data:
-            self.assertIn('ID', task)
-            self.assertIn('Task Name', task)
-            self.assertIn('Type', task)
+        self.assertEqual(self.metrics['progress'], weighted_progress(rows))
 
-    def test_custom_data_initialization(self):
-        """Dashboard can be initialized with custom data."""
-        custom_data = [
-            {
-                "ID": "001",
-                "Task Name": "Custom Task",
-                "Type": "Task",
-                "Duration": 5,
-                "Progress": 50,
-                "Level": 1,
-                "Start Date": datetime(2026, 1, 1),
-                "End Date": datetime(2026, 1, 5)
-            }
-        ]
-        
-        custom_dashboard = ProjectDashboard(project_data=custom_data)
-        self.assertEqual(len(custom_dashboard.project_data), 1)
-        self.assertEqual(custom_dashboard.project_data[0]['Task Name'], "Custom Task")
+    def test_the_started_share_counts_the_rows_that_have_moved(self):
+        """One row of eight has progress on it."""
+        self.assertAlmostEqual(self.metrics['active_share'], 12.5)
+
+    def test_an_empty_plan_divides_by_nothing(self):
+        """Every figure is zero rather than an exception."""
+        metrics = kpi_metrics([])
+
+        self.assertEqual(metrics['total_items'], 0)
+        self.assertEqual(metrics['active_share'], 0.0)
+        self.assertEqual(metrics['progress'], 0.0)
 
 
-class TestWeightedProgressCalculation(unittest.TestCase):
-    """Tests for weighted progress calculation logic."""
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestWhatReachesTheCanvas(unittest.TestCase):
+    """
+    That something is actually drawn.
 
-    def test_weighted_progress_basic(self):
-        """Weighted progress is calculated correctly for basic case."""
-        # Create dashboard with specific data
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 50, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 10, "Progress": 100, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 20)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        weighted_progress = dashboard._calculate_weighted_progress()
-        
-        # Expected: (10 * 50 + 10 * 100) / (10 + 10) = 1500 / 20 = 75.0
-        self.assertEqual(weighted_progress, 75.0)
+    WHY THESE EXIST:
+    ================
+    The dashboard this replaced drew four charts' worth of nothing - Plotly
+    figures loaded into a frame that runs no JavaScript - and every test of
+    it passed, because they all checked the HTML it generated rather than
+    what appeared. These count what is on the canvas.
+    """
 
-    def test_weighted_progress_only_level_1(self):
-        """Weighted progress only considers Level 1 tasks."""
-        data = [
-            {"ID": "001", "Task Name": "Main Task", "Type": "Task", "Duration": 10, "Progress": 50, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Subtask", "Type": "Subtask", "Duration": 5, "Progress": 100, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 5)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        weighted_progress = dashboard._calculate_weighted_progress()
-        
-        # Subtask should be ignored, only main task counts
-        # Expected: (10 * 50) / 10 = 50.0
-        self.assertEqual(weighted_progress, 50.0)
+    def setUp(self):
+        """The worked example, drawn at a size a window would give it."""
+        import customtkinter as ctk
 
-    def test_weighted_progress_zero_duration(self):
-        """Weighted progress handles zero total duration gracefully."""
-        data = [
-            {"ID": "001", "Task Name": "Milestone", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 1)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        weighted_progress = dashboard._calculate_weighted_progress()
-        
-        # Should return 0.0 when total duration is 0
-        self.assertEqual(weighted_progress, 0.0)
+        from gantt_app.views.project_dashboard import ProjectDashboardFrame
 
-    def test_weighted_progress_formula_from_requirements(self):
-        """Test the specific formula from requirements: (8 * 0.30) / 21 = 11.43%
-        
-        This matches the example in the requirements where:
-        - Implementation has duration 8 and progress 30%
-        - Total scope is 21 days
-        - Expected weighted progress: (8 * 0.30) / 21 = 0.1142857... = 11.43%
+        self.ctk = ctk
+        self.opening_mode = str(ctk.get_appearance_mode())
+        ctk.set_appearance_mode('light')
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.project = sample_project()
+        self.frame = ProjectDashboardFrame(self.root, self.project)
+        self.frame.canvas.configure(width=1200, height=800)
+        self.frame.refresh()
+
+    def tearDown(self):
+        """Put the appearance back, and close the window."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        try:
+            self.ctk.set_appearance_mode(self.opening_mode)
+        except Exception:
+            pass
+
+    def texts(self):
+        """Every piece of text on the canvas."""
+        canvas = self.frame.canvas
+        return [canvas.itemcget(item, 'text') for item in canvas.find_all()
+                if canvas.type(item) == 'text']
+
+    def kinds(self):
+        """How many canvas items of each kind were drawn."""
+        canvas = self.frame.canvas
+        counted = {}
+        for item in canvas.find_all():
+            kind = canvas.type(item)
+            counted[kind] = counted.get(kind, 0) + 1
+        return counted
+
+    def test_all_four_charts_are_titled(self):
+        """The panel is four charts, not one that happened to work."""
+        titles = self.texts()
+
+        for expected in ("Task Progress (%)",
+                         "Duration Allocation by Task Type (Days)",
+                         "Duration per Item (Days)",
+                         "Summary"):
+            self.assertIn(expected, titles)
+
+    def test_the_bars_and_the_ring_are_actually_drawn(self):
+        """Rectangles for the bars, arcs for the ring, lines for the grid."""
+        kinds = self.kinds()
+
+        self.assertGreater(kinds.get('rectangle', 0), 4)
+        self.assertGreater(kinds.get('arc', 0), 0)
+        self.assertGreater(kinds.get('line', 0), 0)
+
+    def test_the_ring_has_a_segment_per_type_that_holds_days(self):
+        """A milestone holds no days, so it has no segment - only a key."""
+        self.assertEqual(self.kinds().get('arc', 0), 2)
+
+    def test_the_summary_shows_the_numbers(self):
+        """The figures a reader came for, not just their captions."""
+        texts = self.texts()
+
+        self.assertIn("21 days", texts)
+        self.assertIn("8 items", texts)
+        self.assertIn("11.43%", texts)
+
+    def test_an_empty_plan_says_so_and_invents_nothing(self):
+        """No bars, no ring, and none of the old sample task names."""
+        from gantt_app.views.project_dashboard import ProjectDashboardFrame
+
+        frame = ProjectDashboardFrame(self.root, Project(name="Empty"))
+        frame.canvas.configure(width=1200, height=800)
+        frame.refresh()
+
+        texts = [frame.canvas.itemcget(item, 'text')
+                 for item in frame.canvas.find_all()
+                 if frame.canvas.type(item) == 'text']
+
+        self.assertTrue(any("Nothing to summarise" in text
+                            for text in texts), texts)
+        self.assertFalse(any("Implementation" in text for text in texts))
+
+    def test_a_new_task_reaches_the_dashboard(self):
+        """refresh reads the plan again rather than what it drew last."""
+        self.project.add_task(Task(id="009", name="Handover",
+                                   task_type="Task", start_date=BASE,
+                                   end_date=BASE, duration=4))
+        self.frame.refresh()
+
+        self.assertIn("25 days", self.texts())
+
+    def test_the_drawing_follows_the_appearance(self):
         """
-        # Create data matching the requirements example
-        data = [
-            {"ID": "001", "Task Name": "Project Planning", "Type": "Task", "Duration": 2, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 2)},
-            {"ID": "002", "Task Name": "Requirements Gathering", "Type": "Subtask", "Duration": 1, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 3), "End Date": datetime(2026, 1, 3)},
-            {"ID": "003", "Task Name": "Design Phase", "Type": "Task", "Duration": 5, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 4), "End Date": datetime(2026, 1, 8)},
-            {"ID": "004", "Task Name": "UI Mockups", "Type": "Subtask", "Duration": 3, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 9), "End Date": datetime(2026, 1, 11)},
-            {"ID": "005", "Task Name": "Implementation", "Type": "Task", "Duration": 8, "Progress": 30, "Level": 1, "Start Date": datetime(2026, 1, 12), "End Date": datetime(2026, 1, 19)},
-            {"ID": "006", "Task Name": "Design Review", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 20), "End Date": datetime(2026, 1, 20)},
-            {"ID": "007", "Task Name": "Testing", "Type": "Task", "Duration": 3, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 21), "End Date": datetime(2026, 1, 23)},
-            {"ID": "008", "Task Name": "Deployment", "Type": "Task", "Duration": 3, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 24), "End Date": datetime(2026, 1, 26)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        weighted_progress = dashboard._calculate_weighted_progress()
-        
-        # Level 1 tasks: Project Planning (2), Design Phase (5), Implementation (8), Testing (3), Deployment (3)
-        # Total Level 1 duration = 2 + 5 + 8 + 3 + 3 = 21
-        # Weighted sum = 2*0 + 5*0 + 8*30 + 3*0 + 3*0 = 240
-        # Weighted progress = 240 / 21 = 11.42857...
-        expected = 240 / 21
-        self.assertAlmostEqual(weighted_progress, expected, places=4)
-
-
-class TestKPIMetricsCalculation(unittest.TestCase):
-    """Tests for KPI metrics calculation logic."""
-
-    def test_total_project_scope(self):
-        """Total Project Scope is sum of Level 1 task durations."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 5, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 15)},
-            {"ID": "003", "Task Name": "Subtask", "Type": "Subtask", "Duration": 3, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 3)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        # Total scope should be 10 + 5 = 15 (only Level 1)
-        self.assertEqual(metrics['total_project_scope'], 15)
-
-    def test_total_items_tracked(self):
-        """Total Items Tracked is total number of items."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 5, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 15)},
-            {"ID": "003", "Task Name": "Subtask", "Type": "Subtask", "Duration": 3, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 3)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        self.assertEqual(metrics['total_items_tracked'], 3)
-
-    def test_milestones_count(self):
-        """Milestones Count is number of items with Type == 'Milestone'."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Milestone 1", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 11)},
-            {"ID": "003", "Task Name": "Task B", "Type": "Task", "Duration": 5, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 12), "End Date": datetime(2026, 1, 16)},
-            {"ID": "004", "Task Name": "Milestone 2", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 17), "End Date": datetime(2026, 1, 17)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        self.assertEqual(metrics['milestones_count'], 2)
-
-    def test_average_progress(self):
-        """Average Progress is the weighted progress."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 50, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 10, "Progress": 75, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 20)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        # Expected: (10*50 + 10*75) / (10+10) = 1250 / 20 = 62.5
-        self.assertEqual(metrics['average_progress'], 62.5)
-
-    def test_active_status_percentage(self):
-        """Active Status shows percentage of items with progress > 0."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 50, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 20)},
-            {"ID": "003", "Task Name": "Task C", "Type": "Task", "Duration": 10, "Progress": 25, "Level": 1, "Start Date": datetime(2026, 1, 21), "End Date": datetime(2026, 1, 30)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        # 2 out of 3 items have progress > 0, so 66.666...%
-        active_status = metrics['active_status']
-        self.assertIn("67%", active_status)
-        self.assertIn("Active", active_status)
-
-    def test_active_status_zero(self):
-        """Active Status handles case when no items have progress."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 20)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        self.assertEqual(metrics['active_status'], "0% Active (A)")
-
-
-class TestHTMLGeneration(unittest.TestCase):
-    """Tests for HTML generation functionality."""
-
-    def test_html_generation_returns_string(self):
-        """generate_dashboard_html returns a string."""
-        dashboard = ProjectDashboard()
-        html = dashboard.generate_dashboard_html()
-        
-        self.assertIsInstance(html, str)
-
-    def test_html_contains_plotly_div(self):
-        """Generated HTML contains Plotly chart div."""
-        dashboard = ProjectDashboard()
-        html = dashboard.generate_dashboard_html()
-        
-        self.assertIn("<div", html)
-        self.assertIn("plotly", html.lower())
-
-    def test_html_contains_all_chart_titles(self):
-        """Generated HTML contains all chart titles."""
-        dashboard = ProjectDashboard()
-        html = dashboard.generate_dashboard_html()
-        
-        titles = [
-            "Task Progress (%) Breakdown",
-            "Duration Allocation by Task Type",
-            "Duration per Item",
-            "Dashboard Summary KPIs"
-        ]
-        
-        for title in titles:
-            self.assertIn(title, html, f"Missing chart title: {title}")
-
-    def test_html_contains_kpi_metrics(self):
-        """Generated HTML contains KPI metrics."""
-        dashboard = ProjectDashboard()
-        html = dashboard.generate_dashboard_html()
-        
-        kpi_terms = [
-            "PROJECT METRICS OVERVIEW",
-            "Total Project Scope",
-            "Total Items Tracked",
-            "Milestones Count",
-            "Average Progress",
-            "Active Status"
-        ]
-        
-        for term in kpi_terms:
-            self.assertIn(term, html, f"Missing KPI term: {term}")
-
-    def test_html_contains_task_names(self):
-        """Generated HTML contains task names from data."""
-        data = [
-            {"ID": "001", "Task Name": "Custom Task", "Type": "Task", "Duration": 5, "Progress": 50, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 5)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        html = dashboard.generate_dashboard_html()
-        
-        self.assertIn("Custom Task", html)
-
-
-class TestFigureOnlyCreation(unittest.TestCase):
-    """Tests for _create_figure_only method."""
-
-    def test_figure_only_returns_figure(self):
-        """_create_figure_only returns a Plotly figure."""
-        dashboard = ProjectDashboard()
-        fig = dashboard._create_figure_only()
-        
-        # Check if it's a Plotly figure by checking for expected attributes
-        self.assertTrue(hasattr(fig, 'to_html'))
-        self.assertTrue(hasattr(fig, 'update_layout'))
-
-    def test_figure_only_respects_dimensions(self):
-        """_create_figure_only respects provided dimensions."""
-        dashboard = ProjectDashboard()
-        
-        fig1 = dashboard._create_figure_only(width=1000, height=800)
-        fig2 = dashboard._create_figure_only(width=1500, height=1000)
-        
-        # Figures should have different dimensions
-        self.assertNotEqual(fig1.to_dict()['layout']['width'], 
-                          fig2.to_dict()['layout']['width'])
-        self.assertNotEqual(fig1.to_dict()['layout']['height'], 
-                          fig2.to_dict()['layout']['height'])
-
-
-class TestDurationAllocationLogic(unittest.TestCase):
-    """Tests for duration allocation calculation."""
-
-    def test_duration_allocation_by_type(self):
-        """Duration allocation groups by Type correctly."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 15, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 25)},
-            {"ID": "003", "Task Name": "Subtask A", "Type": "Subtask", "Duration": 5, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 5)},
-            {"ID": "004", "Task Name": "Subtask B", "Type": "Subtask", "Duration": 3, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 6), "End Date": datetime(2026, 1, 8)},
-            {"ID": "005", "Task Name": "Milestone A", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 26), "End Date": datetime(2026, 1, 26)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        # Calculate type duration manually
-        type_duration = {}
-        for t in data:
-            task_type = t['Type']
-            if task_type not in type_duration:
-                type_duration[task_type] = 0
-            type_duration[task_type] += t['Duration']
-        
-        # Task: 10 + 15 = 25
-        # Subtask: 5 + 3 = 8
-        # Milestone: 0
-        self.assertEqual(type_duration['Task'], 25)
-        self.assertEqual(type_duration['Subtask'], 8)
-        self.assertEqual(type_duration['Milestone'], 0)
-
-    def test_duration_allocation_percentage(self):
-        """Duration allocation percentages are calculated correctly."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 25, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 25)},
-            {"ID": "002", "Task Name": "Subtask A", "Type": "Subtask", "Duration": 4, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 4)},
-            {"ID": "003", "Task Name": "Milestone A", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 26), "End Date": datetime(2026, 1, 26)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        # Calculate type duration manually
-        type_duration = {}
-        for t in data:
-            task_type = t['Type']
-            if task_type not in type_duration:
-                type_duration[task_type] = 0
-            type_duration[task_type] += t['Duration']
-        
-        total_duration = sum(type_duration.values())
-        
-        # Total = 25 + 4 + 0 = 29
-        # Task: 25 / 29 = 86.206...%
-        # Subtask: 4 / 29 = 13.793...%
-        # Milestone: 0 / 29 = 0%
-        
-        task_percent = (type_duration['Task'] / total_duration) * 100
-        subtask_percent = (type_duration['Subtask'] / total_duration) * 100
-        milestone_percent = (type_duration['Milestone'] / total_duration) * 100
-        
-        self.assertAlmostEqual(task_percent, 86.20689655, places=4)
-        self.assertAlmostEqual(subtask_percent, 13.79310345, places=4)
-        self.assertEqual(milestone_percent, 0.0)
-
-    def test_duration_allocation_matches_requirements_example(self):
-        """Test duration allocation matches the requirements example.
-        
-        From requirements:
-        * Tasks: 21 / 25 = 84.0%
-        * Subtasks: 4 / 25 = 16.0%
-        * Milestones: 0 / 25 = 0.0%
+        Every colour on a canvas is written into the item that carries it,
+        so nothing here follows a theme change until it is drawn again.
         """
-        # Total duration = 25 (21 Tasks + 4 Subtasks + 0 Milestones)
-        data = [
-            {"ID": "001", "Task Name": "P1", "Type": "Task", "Duration": 2, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 2)},
-            {"ID": "002", "Task Name": "P2", "Type": "Task", "Duration": 5, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 3), "End Date": datetime(2026, 1, 7)},
-            {"ID": "003", "Task Name": "P3", "Type": "Task", "Duration": 8, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 8), "End Date": datetime(2026, 1, 15)},
-            {"ID": "004", "Task Name": "P4", "Type": "Task", "Duration": 3, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 16), "End Date": datetime(2026, 1, 18)},
-            {"ID": "005", "Task Name": "P5", "Type": "Task", "Duration": 3, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 19), "End Date": datetime(2026, 1, 21)},
-            {"ID": "006", "Task Name": "S1", "Type": "Subtask", "Duration": 1, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 1)},
-            {"ID": "007", "Task Name": "S2", "Type": "Subtask", "Duration": 1, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 2), "End Date": datetime(2026, 1, 2)},
-            {"ID": "008", "Task Name": "S3", "Type": "Subtask", "Duration": 1, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 3), "End Date": datetime(2026, 1, 3)},
-            {"ID": "009", "Task Name": "S4", "Type": "Subtask", "Duration": 1, "Progress": 0, "Level": 2, "Start Date": datetime(2026, 1, 4), "End Date": datetime(2026, 1, 4)},
-            {"ID": "010", "Task Name": "M1", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 22), "End Date": datetime(2026, 1, 22)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        # Calculate type duration manually
-        type_duration = {}
-        for t in data:
-            task_type = t['Type']
-            if task_type not in type_duration:
-                type_duration[task_type] = 0
-            type_duration[task_type] += t['Duration']
-        
-        total_duration = sum(type_duration.values())
-        
-        # Task total: 2 + 5 + 8 + 3 + 3 = 21
-        # Subtask total: 1 + 1 + 1 + 1 = 4
-        # Milestone total: 0
-        # Total: 25
-        
-        task_percent = (type_duration['Task'] / total_duration) * 100
-        subtask_percent = (type_duration['Subtask'] / total_duration) * 100
-        milestone_percent = (type_duration['Milestone'] / total_duration) * 100
-        
-        self.assertEqual(task_percent, 84.0)
-        self.assertEqual(subtask_percent, 16.0)
-        self.assertEqual(milestone_percent, 0.0)
+        from gantt_app import theme
+
+        light = self.frame.canvas.cget('background')
+        self.ctk.set_appearance_mode('dark')
+        self.frame.apply_theme()
+        dark = self.frame.canvas.cget('background')
+
+        self.assertEqual(str(light), theme.DASH_BOARD_BG[0])
+        self.assertEqual(str(dark), theme.DASH_BOARD_BG[1])
 
 
-class TestItemWorkloadDistribution(unittest.TestCase):
-    """Tests for item workload distribution logic."""
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
+    """
+    View > Charts, which swaps what the right-hand pane holds.
 
-    def test_item_duration_formula(self):
-        """Item Duration = End Date - Start Date + 1."""
-        start_date = datetime(2026, 1, 1)
-        end_date = datetime(2026, 1, 5)
-        
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 5, "Progress": 0, "Level": 1, "Start Date": start_date, "End Date": end_date},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        
-        # Duration should be as provided in the data
-        self.assertEqual(dashboard.project_data[0]['Duration'], 5)
+    WHY THESE EXIST:
+    ================
+    ttk's panes() answers with Tk pathnames rather than widgets, so the
+    comparisons that decided what was on screen were all False: choosing
+    Dashboard left the chart where it was and added a third pane beside it,
+    and choosing Gantt Chart afterwards did nothing at all.
+    """
 
-    def test_item_duration_single_day(self):
-        """Single day task has duration of 1."""
-        start_date = datetime(2026, 1, 1)
-        
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 1, "Progress": 0, "Level": 1, "Start Date": start_date, "End Date": start_date},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        self.assertEqual(dashboard.project_data[0]['Duration'], 1)
+    def setUp(self):
+        """A toolbar, a paned window and the two things it can hold."""
+        import tkinter as tk
+        from tkinter import ttk
 
-    def test_workload_distribution_sorted_by_id(self):
-        """Workload distribution chart sorts tasks by ID."""
-        data = [
-            {"ID": "003", "Task Name": "Task C", "Type": "Task", "Duration": 3, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 3)},
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 1, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 1)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 2, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 2), "End Date": datetime(2026, 1, 3)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        sorted_tasks = sorted(dashboard.project_data, key=lambda t: t['ID'])
-        
-        # Should be sorted as 001, 002, 003
-        self.assertEqual(sorted_tasks[0]['ID'], "001")
-        self.assertEqual(sorted_tasks[1]['ID'], "002")
-        self.assertEqual(sorted_tasks[2]['ID'], "003")
+        import customtkinter as ctk
 
+        from gantt_app.views.toolbar import Toolbar
 
-class TestEdgeCases(unittest.TestCase):
-    """Tests for edge cases and error handling."""
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.project = sample_project()
 
-    def test_empty_project_data(self):
-        """Dashboard handles empty project data gracefully."""
-        # Empty list should use sample data
-        dashboard = ProjectDashboard(project_data=[])
-        # Should have sample data
-        self.assertGreater(len(dashboard.project_data), 0)
+        self.toolbar = Toolbar(self.root, self.project)
+        self.panes = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        self.task_list_pane = ctk.CTkFrame(self.panes)
+        self.chart = ctk.CTkFrame(self.panes)
+        self.panes.add(self.task_list_pane, weight=1)
+        self.panes.add(self.chart, weight=3)
 
-    def test_none_project_data(self):
-        """Dashboard handles None project data gracefully."""
-        dashboard = ProjectDashboard(project_data=None)
-        # Should have sample data
-        self.assertGreater(len(dashboard.project_data), 0)
+        self.toolbar.set_gantt_chart(self.chart)
+        self.toolbar.set_content_panes(self.panes)
+        self.toolbar.set_dashboard_factory(self._make_dashboard)
+        self.built = 0
+        self.root.update_idletasks()
 
-    def test_single_task(self):
-        """Dashboard works with single task."""
-        data = [
-            {"ID": "001", "Task Name": "Only Task", "Type": "Task", "Duration": 5, "Progress": 50, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 5)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        self.assertEqual(metrics['total_project_scope'], 5)
-        self.assertEqual(metrics['total_items_tracked'], 1)
-        self.assertEqual(metrics['milestones_count'], 0)
-        self.assertEqual(metrics['average_progress'], 50.0)
+    def _make_dashboard(self):
+        """What the toolbar calls the first time the dashboard is wanted."""
+        from gantt_app.views.project_dashboard import ProjectDashboardFrame
 
-    def test_all_zero_duration(self):
-        """Dashboard handles all zero duration tasks."""
-        data = [
-            {"ID": "001", "Task Name": "Task A", "Type": "Task", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 1)},
-            {"ID": "002", "Task Name": "Task B", "Type": "Task", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 1)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        metrics = dashboard._calculate_kpi_metrics()
-        
-        self.assertEqual(metrics['total_project_scope'], 0)
-        self.assertEqual(metrics['average_progress'], 0.0)
+        self.built += 1
+        dashboard = ProjectDashboardFrame(self.panes, self.project)
+        self.toolbar.set_dashboard(dashboard)
+        return dashboard
 
-    def test_mixed_task_types(self):
-        """Dashboard handles all task types correctly."""
-        data = [
-            {"ID": "001", "Task Name": "Phase", "Type": "Phase", "Duration": 10, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 10)},
-            {"ID": "002", "Task Name": "Task", "Type": "Task", "Duration": 5, "Progress": 50, "Level": 2, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 5)},
-            {"ID": "003", "Task Name": "Subtask", "Type": "Subtask", "Duration": 2, "Progress": 25, "Level": 3, "Start Date": datetime(2026, 1, 1), "End Date": datetime(2026, 1, 2)},
-            {"ID": "004", "Task Name": "Milestone", "Type": "Milestone", "Duration": 0, "Progress": 0, "Level": 1, "Start Date": datetime(2026, 1, 11), "End Date": datetime(2026, 1, 11)},
-        ]
-        
-        dashboard = ProjectDashboard(project_data=data)
-        
-        # Should handle all types without errors
-        metrics = dashboard._calculate_kpi_metrics()
-        self.assertIsInstance(metrics, dict)
-        
-        # Should generate HTML without errors
-        html = dashboard.generate_dashboard_html()
-        self.assertIsInstance(html, str)
+    def tearDown(self):
+        """Close the window."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def showing(self):
+        """The panes on the paned window, as Tk names them."""
+        return list(self.panes.panes())
+
+    def test_the_chart_is_what_the_window_opens_on(self):
+        """The dashboard is somewhere to go, not the default."""
+        self.assertIn(str(self.chart), self.showing())
+        self.assertEqual(self.built, 0)
+
+    def test_the_dashboard_takes_the_charts_place(self):
+        """One pane goes and one arrives; the list keeps its own."""
+        self.toolbar.show_dashboard()
+
+        showing = self.showing()
+        self.assertNotIn(str(self.chart), showing)
+        self.assertIn(str(self.toolbar.dashboard_frame), showing)
+        self.assertEqual(len(showing), 2, showing)
+
+    def test_the_chart_comes_back(self):
+        """And the dashboard goes, rather than the two stacking up."""
+        self.toolbar.show_dashboard()
+        self.toolbar.show_gantt_chart()
+
+        showing = self.showing()
+        self.assertIn(str(self.chart), showing)
+        self.assertNotIn(str(self.toolbar.dashboard_frame), showing)
+        self.assertEqual(len(showing), 2, showing)
+
+    def test_choosing_the_same_view_twice_changes_nothing(self):
+        """A reader who clicks Dashboard again still has two panes."""
+        self.toolbar.show_dashboard()
+        self.toolbar.show_dashboard()
+
+        self.assertEqual(len(self.showing()), 2, self.showing())
+
+    def test_the_dashboard_is_built_once_and_kept(self):
+        """It is a panel most readers never open."""
+        self.toolbar.show_dashboard()
+        self.toolbar.show_gantt_chart()
+        self.toolbar.show_dashboard()
+
+        self.assertEqual(self.built, 1)
+
+    def test_the_menu_offers_both_under_charts(self):
+        """View > Charts, with the Gantt chart named first."""
+        from gantt_app.views.toolbar import Toolbar
+
+        view = [menu for menu in Toolbar._menu_definitions(self.toolbar)
+                if menu['text'] == 'View'][0]
+        charts = [item for item in view['items']
+                  if item['text'] == 'Charts'][0]
+
+        self.assertEqual([item['text'] for item in charts['submenu']],
+                         ['Gantt Chart', 'Dashboard'])
 
 
 if __name__ == '__main__':

@@ -202,6 +202,38 @@ HEADER_NON_WORKING: Tuple[str, str] = ('#f2f4f6', '#1b1d21')
 HEADER_TODAY_BG: Tuple[str, str] = ('#dbeafe', '#1e3a5f')
 HEADER_TODAY_TEXT: Tuple[str, str] = ('#1e40af', '#bfdbfe')
 
+# ---- the dashboard ---------------------------------------------------------
+#
+# The dashboard is drawn on a Tk canvas in plain Python. A canvas takes one
+# colour per thing and knows nothing about appearance modes, so every one of
+# these is resolved when it is drawn and resolved again on a theme change;
+# see ProjectDashboardFrame.apply_theme.
+
+#: The panel behind a chart, and the board the four of them sit on.
+DASH_PLOT_BG: Tuple[str, str] = ('#ffffff', '#232529')
+DASH_BOARD_BG: Tuple[str, str] = ('#f7f8fa', '#1b1d21')
+
+#: A panel title, a tick label, and the axis box and gridlines.
+DASH_TITLE_TEXT: Tuple[str, str] = ('#1a1a1a', '#e8eaed')
+DASH_TICK_TEXT: Tuple[str, str] = ('#5f6368', '#9aa0a6')
+DASH_AXIS: Tuple[str, str] = ('#c8cdd2', '#43464c')
+DASH_GRID: Tuple[str, str] = ('#ecf0f1', '#33363b')
+
+#: The bars: progress across the top, duration along the bottom.
+DASH_PROGRESS_BAR: Tuple[str, str] = ('#2b8fd4', '#38bdf8')
+DASH_DURATION_BAR: Tuple[str, str] = ('#5b62d6', '#818cf8')
+
+#: The donut, one colour per task type, in the order the types are declared.
+DASH_SERIES_1: Tuple[str, str] = ('#4f46e5', '#6366f1')
+DASH_SERIES_2: Tuple[str, str] = ('#059669', '#10b981')
+DASH_SERIES_3: Tuple[str, str] = ('#d97706', '#f59e0b')
+DASH_SERIES_4: Tuple[str, str] = ('#dc2626', '#ef4444')
+
+#: The summary box in the fourth quarter.
+DASH_KPI_BG: Tuple[str, str] = ('#eef1f5', '#2d3748')
+DASH_KPI_BORDER: Tuple[str, str] = ('#c8cdd2', '#4a5568')
+
+
 #: What a toolbar icon is drawn in, as RGB rather than hex - Pillow draws
 #: the strokes and knows nothing about appearance modes, so each appearance
 #: gets its own drawing and CTkImage picks between them. Near-black on the

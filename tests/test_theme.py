@@ -439,6 +439,10 @@ class TestThePaletteIsAlwaysAPair(unittest.TestCase):
         'HEADER_MONTH_BG', 'HEADER_CELL_BG', 'HEADER_RULE',
         'HEADER_WEEK_RULE', 'HEADER_MONTH_TEXT', 'HEADER_DAY_TEXT',
         'HEADER_NON_WORKING', 'HEADER_TODAY_BG', 'HEADER_TODAY_TEXT',
+        'DASH_PLOT_BG', 'DASH_BOARD_BG', 'DASH_TITLE_TEXT', 'DASH_TICK_TEXT',
+        'DASH_AXIS', 'DASH_GRID', 'DASH_PROGRESS_BAR', 'DASH_DURATION_BAR',
+        'DASH_SERIES_1', 'DASH_SERIES_2', 'DASH_SERIES_3', 'DASH_SERIES_4',
+        'DASH_KPI_BG', 'DASH_KPI_BORDER',
     )
 
     def test_the_list_covers_every_pair_in_the_module(self):

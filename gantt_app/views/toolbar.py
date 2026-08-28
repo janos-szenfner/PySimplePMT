@@ -977,10 +977,14 @@ class Toolbar(ctk.CTkFrame):
         #: None until a file has been chosen; see save_project.
         self.current_file_path = None
         
-        # References for chart switching (Gantt Chart <-> Dashboard)
-        # Set by set_dashboard and set_content_panes from main.py
+        #: The right-hand pane's two views and the paned window they sit
+        #: in; see show_gantt_chart and show_dashboard. Set by the
+        #: application once both exist.
         self.dashboard_frame = None
         self.content_panes = None
+        #: How to build the dashboard when it is first asked for; see
+        #: set_dashboard_factory
+        self._dashboard_factory = None
 
         # Create UI
         self._create_ui()
@@ -2320,54 +2324,96 @@ class Toolbar(ctk.CTkFrame):
     def set_dashboard(self, dashboard_frame):
         """Set the dashboard frame reference for chart switching."""
         self.dashboard_frame = dashboard_frame
-    
+
     def set_content_panes(self, content_panes):
         """Set the content panes reference for chart switching."""
         self.content_panes = content_panes
-    
+
+    def set_dashboard_factory(self, factory):
+        """
+        How to build the dashboard the first time it is asked for.
+
+        PARAMETERS:
+        -----------
+        factory : callable
+            Called with no arguments, returns the dashboard frame.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The dashboard is not built at startup. It is a panel most readers
+        never open, and building it costs a canvas and a pass over the plan
+        - so it is made the first time somebody chooses it and kept after
+        that. A setter rather than an attribute assigned from outside: the
+        application used to reach in and write the callable onto the
+        toolbar directly, past the two setters sitting right beside it.
+        """
+        self._dashboard_factory = factory
+
+    def _showing(self, widget) -> bool:
+        """
+        Whether a widget is one of the panes on show.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        panes() answers with Tk pathnames - strings - not widgets, so
+        comparing one against a widget is False however many panes are up.
+        Switching to the dashboard therefore never removed the chart and
+        never found the dashboard already there: it left the chart where it
+        was and added a third pane beside it, and switching back did
+        nothing at all.
+        """
+        if self.content_panes is None or widget is None:
+            return False
+        try:
+            return str(widget) in self.content_panes.panes()
+        except tk.TclError:
+            return False
+
+    def _hide_pane(self, widget):
+        """Take a pane off the paned window, if it is on it."""
+        if not self._showing(widget):
+            return
+        try:
+            self.content_panes.forget(widget)
+        except tk.TclError:
+            logger.debug("Could not take %s off the panes", widget)
+
     def show_gantt_chart(self):
-        """Show the Gantt chart in the content panes."""
+        """
+        Put the Gantt chart back in the right-hand pane.
+
+        The chart is what the window opens on; this is the way back from
+        the dashboard rather than a thing the reader has to choose first.
+        """
         if self.content_panes is None or self.gantt_chart is None:
             return
-        
-        # Find if dashboard is currently shown and remove it
-        panes = self.content_panes.panes()
-        for i, pane in enumerate(panes):
-            if pane == self.dashboard_frame:
-                self.content_panes.forget(i)
-        
-        # Add Gantt chart back if not already there
-        panes = self.content_panes.panes()
-        if self.gantt_chart not in panes:
+
+        self._hide_pane(self.dashboard_frame)
+        if not self._showing(self.gantt_chart):
             self.content_panes.add(self.gantt_chart, weight=3)
-    
+            logger.info("Showing the Gantt chart")
+
     def show_dashboard(self):
-        """Show the dashboard in the content panes."""
+        """Put the dashboard in the right-hand pane instead of the chart."""
         if self.content_panes is None:
             return
-        
-        # Create dashboard frame lazily if not yet created
-        if self.dashboard_frame is None and hasattr(self, '_create_dashboard_lazy'):
-            self.dashboard_frame = self._create_dashboard_lazy()
-        
+
         if self.dashboard_frame is None:
-            return
-        
-        # Find if Gantt chart is currently shown and remove it
-        panes = self.content_panes.panes()
-        for i, pane in enumerate(panes):
-            if pane == self.gantt_chart:
-                self.content_panes.forget(i)
-        
-        # Add dashboard if not already there
-        panes = self.content_panes.panes()
-        if self.dashboard_frame not in panes:
+            factory = getattr(self, '_dashboard_factory', None)
+            if factory is None:
+                logger.debug("No dashboard to show")
+                return
+            self.dashboard_frame = factory()
+            if self.dashboard_frame is None:
+                return
+
+        self._hide_pane(self.gantt_chart)
+        if not self._showing(self.dashboard_frame):
             self.content_panes.add(self.dashboard_frame, weight=3)
-        
-        # Update dashboard with current project data
-        if hasattr(self.dashboard_frame, 'update_dashboard'):
-            self.dashboard_frame.update_dashboard()
-    
+            logger.info("Showing the dashboard")
+
+        self.dashboard_frame.refresh()
+
     def set_undo_redo_manager(self, manager: UndoRedoManager):
         """Set the undo/redo manager."""
         self.undo_redo_manager = manager

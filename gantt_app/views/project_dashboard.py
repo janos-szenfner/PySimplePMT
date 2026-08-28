@@ -1,1172 +1,599 @@
 """
-Project Analytics Dashboard for PySimplePMT
+The project dashboard: what the plan adds up to, in four charts.
 
-This module provides a CTkFrame widget that visualizes project metrics
-using Plotly charts embedded in a CustomTkinter frame via tkinterweb.
+WHY THIS MODULE EXISTS:
+======================
+A Gantt chart says when everything happens and almost nothing about how the
+plan is doing. How far along is it, where is the work concentrated, how much
+of the plan is milestones rather than effort - those are read off a plan by
+counting, and nobody counts. The dashboard answers them in one panel, beside
+the same task list, and View > Charts switches between the two.
 
-DASHBOARD ELEMENTS:
-===================
-1. Task Progress Bar Chart
-   - Measures completion level per primary task (Outline Level = 1)
-   - Formula: Progress % = Progress Value
-   - Weighted Project Progress = SUM(Task Duration * Progress) / SUM(Task Duration)
+WHY IT IS DRAWN BY HAND:
+=======================
+Every mark here is put on a Tk canvas in plain Python. That is not a stylistic
+preference, it is the only thing that works: the first version of this
+dashboard built Plotly figures and loaded them into a tkinterweb HtmlFrame,
+which renders no JavaScript, so it drew four charts' worth of nothing. The
+Gantt view learned the same lesson before it - see GanttChartView.draw_chart -
+and there is no reason to learn it twice.
 
-2. Duration Allocation Donut Chart
-   - Categorizes total work duration by item Type (Task, Subtask, Milestone)
-   - Formula: Type Share % = (SUM(Duration by Type) / SUM(Total Duration)) * 100
+Drawing it here also means it needs nothing fetched at runtime. A Plotly page
+either carries a megabyte of plotly.js or links one from a CDN, and an
+application that goes to the network to draw its own window is an application
+that shows a blank panel on a train.
 
-3. Item Workload Distribution Bar Chart
-   - Displays individual work duration per item ID across the project lifecycle
-   - Formula: Item Duration = End Date - Start Date + 1
+WHAT THE FOUR CHARTS SAY:
+========================
+Task Progress
+    One bar per top-level row, the percentage it reports. What is moving.
 
-4. KPI Summary Overview Box
-   - Aggregates critical high-level project metrics:
-     * Total Project Scope = SUM(Duration of Level 1 Tasks)
-     * Milestone Ratio = Count of items where Type == 'Milestone'
-     * Overall Completion = Weighted Progress
+Duration Allocation
+    A donut of total duration split by task type. Where the effort sits, and
+    how much of the plan is milestones - which hold none.
 
-DEPENDENCIES:
-=============
-- customtkinter: UI toolkit for the dashboard window
-- plotly: Chart rendering engine
-- tkinterweb: Embeds Plotly charts in Tkinter
+Duration per Item
+    One bar per row, its own length. Which pieces are big.
 
-USAGE:
-======
-This module provides a CTkFrame widget that can be embedded in the main application.
+Summary
+    The five numbers underneath all of it; see kpi_metrics.
 
-Integration:
-    from gantt_app.views.project_dashboard import ProjectDashboardFrame
-    dashboard_frame = ProjectDashboardFrame(parent, project)
-    dashboard_frame.pack(fill="both", expand=True)
+DEVELOPMENT NOTES:
+------------------
+The arithmetic is four module-level functions taking plain lists of
+dictionaries, so what the dashboard claims can be tested without opening a
+window. The widget draws; it does not calculate.
 
-Or run standalone for testing:
-    from gantt_app.views.project_dashboard import create_sample_dashboard
-    create_sample_dashboard().run()
-
-The dashboard can be connected to the toolbar via:
-    toolbar.set_dashboard(dashboard_frame)
-    toolbar.set_chart_panes(content_panes)
+Durations are the ones the task list shows - working days, from
+Task.duration_days - rather than the calendar span between the two dates. The
+dashboard sits beside the grid, and a panel disagreeing with the column next
+to it about how long a task is would be read as a fault in one of them.
 """
 
 import tkinter as tk
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
-from tkinterweb import HtmlFrame
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
-from gantt_app.models import Project
+from gantt_app import theme
+from gantt_app.models import Project, TASK_TYPES
+from gantt_app.utils.log import get_logger
 
+logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# What the plan adds up to
+# ---------------------------------------------------------------------------
+
+def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
+    """
+    The plan as flat rows, with everything the charts need on each one.
+
+    PARAMETERS:
+    -----------
+    project : Optional[Project]
+        The plan. None, or one with no tasks, gives an empty list.
+
+    RETURNS:
+    --------
+    List[Dict[str, Any]]
+        One dictionary per task: id, name, type, duration, progress, level.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    An empty plan gives no rows, and the dashboard says so. It used to hand
+    back eight invented tasks - Project Planning, Design Phase, Implementation
+    at 30% - so a reader who opened the dashboard before typing anything was
+    shown a stranger's plan with their own project's name over it, and every
+    number in the summary was fiction presented as measurement.
+    """
+    if project is None:
+        return []
+
+    rows = []
+    for task in project.tasks:
+        rows.append({
+            'ID': task.id,
+            'Name': task.name,
+            'Type': task.task_type,
+            'Duration': task.duration_days or 0,
+            'Progress': task.progress or 0,
+            'Level': _level_of(task, project),
+        })
+    return rows
+
+
+def _level_of(task, project: Project) -> int:
+    """
+    How deep a row sits, counting the top level as one.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Walked with a loop and a seen-set rather than by recursion. A plan whose
+    parent links form a ring is not supposed to exist, but a dashboard is
+    not the place to find out: recursion answers that with a blown stack and
+    a window that will not open.
+    """
+    level = 1
+    seen = {task.id}
+    parent_id = task.parent_task_id
+    while parent_id is not None and parent_id not in seen:
+        parent = project.get_task_by_id(parent_id)
+        if parent is None:
+            break
+        seen.add(parent_id)
+        level += 1
+        parent_id = parent.parent_task_id
+    return level
+
+
+def weighted_progress(rows: List[Dict[str, Any]]) -> float:
+    """
+    How far the plan has got, as one percentage.
+
+    RETURNS:
+    --------
+    float
+        SUM(duration * progress) / SUM(duration) over the top-level rows,
+        and 0.0 when they hold no duration between them.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Weighted by duration and taken over the top level only, so a plan is not
+    reported as half done because half of its one-day rows are finished
+    while the eight-day one has not started. Sub-tasks are left out because
+    their work is already counted inside the row that brackets them.
+    """
+    top = [row for row in rows if row['Level'] == 1]
+    total = sum(row['Duration'] for row in top)
+    if not total:
+        return 0.0
+    return sum(row['Duration'] * row['Progress'] for row in top) / total
+
+
+def duration_by_type(rows: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
+    """
+    Total duration per task type, for the donut.
+
+    RETURNS:
+    --------
+    List[Tuple[str, int]]
+        (type, days) for every type present, in the order the model
+        declares them so the colours do not move between two readings of
+        the same plan.
+    """
+    totals: Dict[str, int] = {}
+    for row in rows:
+        totals[row['Type']] = totals.get(row['Type'], 0) + row['Duration']
+
+    ordered = [kind for kind in TASK_TYPES if kind in totals]
+    ordered += sorted(kind for kind in totals if kind not in TASK_TYPES)
+    return [(kind, totals[kind]) for kind in ordered]
+
+
+def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    The five numbers in the summary box.
+
+    RETURNS:
+    --------
+    Dict[str, Any]
+        total_scope   - days held by the top-level rows
+        total_items   - how many rows there are
+        milestones    - how many of them are milestones
+        progress      - weighted_progress over the same rows
+        active_share  - percentage of rows that have started
+    """
+    top = [row for row in rows if row['Level'] == 1]
+    started = [row for row in rows if row['Progress'] > 0]
+    return {
+        'total_scope': sum(row['Duration'] for row in top),
+        'total_items': len(rows),
+        'milestones': len([row for row in rows
+                           if row['Type'] == 'Milestone']),
+        'progress': weighted_progress(rows),
+        'active_share': (len(started) / len(rows) * 100) if rows else 0.0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# The panel
+# ---------------------------------------------------------------------------
 
 class ProjectDashboardFrame(ctk.CTkFrame):
     """
-    A CTkFrame widget that displays a project analytics dashboard.
-    
-    This class creates Plotly charts that display various project metrics including
-    task progress, duration allocation, workload distribution, and KPI summaries.
-    
-    The frame can be embedded in the main application's paned window to replace
-    the Gantt chart when the user selects Dashboard from the View > Charts menu.
-    
-    ATTRIBUTES:
+    The four charts, on one canvas, beside the task list.
+
+    PARAMETERS:
     -----------
-    project : Project
-        The project whose data is being visualized.
-    
-    METHODS:
-    --------
-    update_dashboard()
-        Regenerates the dashboard HTML with current project data.
+    master : widget
+        Usually the paned window the Gantt chart also lives in.
+    project : Optional[Project]
+        The plan to summarise. refresh() re-reads it.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    One canvas rather than four, because the four quarters are drawn from
+    one set of numbers and resized by one event. Everything is redrawn from
+    scratch on every change; there is no incremental update to get wrong,
+    and a dashboard redraw is a few hundred canvas items.
     """
-    
+
+    #: How much of the canvas the axis box leaves for the labels around it.
+    PAD = 18
+    TITLE_H = 26
+    LEFT_LABEL_W = 130
+    BOTTOM_LABEL_H = 62
+
+    #: A redraw is skipped until the canvas is at least this big, which it
+    #: is not while the pane is still being laid out.
+    MIN_USEFUL_PX = 240
+
+    #: How thick the donut's ring is drawn, as a share of its radius.
+    RING_SHARE = 0.42
+
     def __init__(self, master, project: Optional[Project] = None, **kwargs):
-        """
-        Initialize the ProjectDashboardFrame.
-        
-        PARAMETERS:
-        -----------
-        master : tkinter widget
-            The parent widget.
-        project : Project, optional
-            The project to visualize. If None, uses sample data.
-        **kwargs
-            Additional keyword arguments passed to CTkFrame.
-        """
         super().__init__(master, **kwargs)
-        
+
         self.project = project
-        self.html_frame = None
-        
-        # Create the dashboard UI
-        self._create_widgets()
-    
-    def _create_widgets(self):
-        """Create the dashboard widgets."""
-        # Title Label
-        self.title_label = ctk.CTkLabel(
-            self,
-            text="Project Metrics & Analytics Dashboard",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        self.title_label.pack(pady=10)
-        
-        # Subtitle Label
-        self.subtitle_label = ctk.CTkLabel(
-            self,
-            text="Interactive visualization of project progress, duration allocation, and workload distribution",
-            font=ctk.CTkFont(size=12, weight="normal"),
-            text_color="#888888"
-        )
-        self.subtitle_label.pack(pady=5)
-        
-        # Create HTML frame for embedding Plotly charts
-        self.html_frame = HtmlFrame(self)
-        self.html_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Generate and load initial dashboard HTML
-        self.update_dashboard()
-    
-    def _convert_project_to_dashboard_data(self) -> List[Dict[str, Any]]:
+        self._last_size = (0, 0)
+
+        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.bind('<Configure>', self._on_resize)
+
+        self._redraw()
+
+    # -- what the outside calls ------------------------------------------
+
+    def refresh(self):
+        """Read the plan again and redraw. Called when anything changes."""
+        self._redraw()
+
+    def apply_theme(self):
         """
-        Convert Project tasks to the dashboard data format.
-        
-        RETURNS:
-        --------
-        List[Dict[str, Any]]
-            List of task data dictionaries in the format expected by the dashboard.
+        Redraw for the appearance now in force.
+
+        Every colour on a canvas is written into the item that carries it,
+        so nothing here follows a theme change until it is drawn again -
+        the same reason the chart and the task grid have this method.
         """
-        if self.project is None or not self.project.tasks:
-            return self._create_sample_data()
-        
-        dashboard_data = []
-        
-        for task in self.project.tasks:
-            # Calculate level based on parent hierarchy
-            level = self._calculate_task_level(task, self.project)
-            
-            # Calculate duration in days
-            if task.is_milestone or task.task_type == "Milestone":
-                duration = 0
-            elif task.duration is not None:
-                duration = task.duration
-            elif task.end_date and task.start_date:
-                # Calculate working days
-                duration = task.duration_days or 0
-            else:
-                duration = 0
-            
-            # Use the Task model's task_type directly
-            task_type = task.task_type
-            
-            dashboard_data.append({
-                "ID": task.id,
-                "Task Name": task.name,
-                "Type": task_type,
-                "Duration": duration,
-                "Progress": task.progress,
-                "Level": level,
-                "Start Date": task.start_date,
-                "End Date": task.end_date
-            })
-        
-        return dashboard_data
-    
-    def _calculate_task_level(self, task, project: Project) -> int:
-        """
-        Calculate the outline level for a task based on its parent hierarchy.
-        
-        PARAMETERS:
-        -----------
-        task : Task
-            The task to calculate the level for.
-        project : Project
-            The project containing the task.
-        
-        RETURNS:
-        --------
-        int
-            The outline level (1 for root tasks, 2 for subtasks, etc.)
-        """
-        # Root level tasks (no parent) are level 1
-        if task.parent_task_id is None:
-            return 1
-        
-        # Find parent and recursively calculate
-        parent = project.get_task_by_id(task.parent_task_id)
-        if parent is None:
-            return 1
-        
-        return self._calculate_task_level(parent, project) + 1
-    
-    def _create_sample_data(self) -> List[Dict[str, Any]]:
-        """
-        Create sample project data for demonstration when no project is provided.
-        
-        RETURNS:
-        --------
-        List[Dict[str, Any]]
-            Sample task data matching the screenshot requirements.
-        """
-        base_date = datetime(2026, 1, 1)
-        return [
-            {
-                "ID": "001",
-                "Task Name": "Project Planning",
-                "Type": "Task",
-                "Duration": 2,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date,
-                "End Date": base_date + timedelta(days=1)
-            },
-            {
-                "ID": "002",
-                "Task Name": "Requirements Gathering",
-                "Type": "Subtask",
-                "Duration": 1,
-                "Progress": 0,
-                "Level": 2,
-                "Start Date": base_date + timedelta(days=2),
-                "End Date": base_date + timedelta(days=2)
-            },
-            {
-                "ID": "003",
-                "Task Name": "Design Phase",
-                "Type": "Task",
-                "Duration": 5,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=3),
-                "End Date": base_date + timedelta(days=7)
-            },
-            {
-                "ID": "004",
-                "Task Name": "UI Mockups",
-                "Type": "Subtask",
-                "Duration": 3,
-                "Progress": 0,
-                "Level": 2,
-                "Start Date": base_date + timedelta(days=8),
-                "End Date": base_date + timedelta(days=10)
-            },
-            {
-                "ID": "005",
-                "Task Name": "Implementation",
-                "Type": "Task",
-                "Duration": 8,
-                "Progress": 30,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=11),
-                "End Date": base_date + timedelta(days=18)
-            },
-            {
-                "ID": "006",
-                "Task Name": "Design Review",
-                "Type": "Milestone",
-                "Duration": 0,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=19),
-                "End Date": base_date + timedelta(days=19)
-            },
-            {
-                "ID": "007",
-                "Task Name": "Testing",
-                "Type": "Task",
-                "Duration": 3,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=20),
-                "End Date": base_date + timedelta(days=22)
-            },
-            {
-                "ID": "008",
-                "Task Name": "Deployment",
-                "Type": "Task",
-                "Duration": 3,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=23),
-                "End Date": base_date + timedelta(days=25)
-            },
-        ]
-    
-    def _calculate_weighted_progress(self, project_data: List[Dict[str, Any]]) -> float:
-        """
-        Calculate weighted project progress.
-        
-        Formula: SUM(Task Duration * Progress) / SUM(Task Duration)
-        Only considers primary tasks (Level = 1).
-        
-        PARAMETERS:
-        -----------
-        project_data : List[Dict[str, Any]]
-            The project data to calculate from.
-        
-        RETURNS:
-        --------
-        float
-            Weighted progress as a decimal (0-100).
-        """
-        main_tasks = [t for t in project_data if t['Level'] == 1]
-        if not main_tasks:
-            return 0.0
-        
-        total_duration = sum(t['Duration'] for t in main_tasks)
-        if total_duration == 0:
-            return 0.0
-        
-        weighted_sum = sum(t['Duration'] * t['Progress'] for t in main_tasks)
-        return weighted_sum / total_duration
-    
-    def _calculate_kpi_metrics(self, project_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Calculate all KPI metrics for the project.
-        
-        PARAMETERS:
-        -----------
-        project_data : List[Dict[str, Any]]
-            The project data to calculate from.
-        
-        RETURNS:
-        --------
-        Dict[str, Any]
-            Dictionary containing:
-            - total_project_scope: Total duration of Level 1 tasks
-            - total_items_tracked: Total number of items
-            - milestones_count: Number of milestone items
-            - average_progress: Average progress percentage
-            - active_status: Status summary
-        """
-        main_tasks = [t for t in project_data if t['Level'] == 1]
-        total_scope = sum(t['Duration'] for t in main_tasks)
-        total_items = len(project_data)
-        milestones_count = len([t for t in project_data if t['Type'] == 'Milestone'])
-        
-        # Active Status calculation
-        active_count = len([t for t in project_data if t['Progress'] > 0])
-        active_percentage = (active_count / total_items * 100) if total_items > 0 else 0
-        
-        return {
-            'total_project_scope': total_scope,
-            'total_items_tracked': total_items,
-            'milestones_count': milestones_count,
-            'average_progress': self._calculate_weighted_progress(project_data),
-            'active_status': f"{active_percentage:.0f}% Active (A)" if active_percentage > 0 else "0% Active (A)"
-        }
-    
-    def _create_figure(self, width: int = 1200, height: int = 800) -> go.Figure:
-        """
-        Create the Plotly figure for the dashboard.
-        
-        PARAMETERS:
-        -----------
-        width : int
-            Figure width in pixels.
-        height : int
-            Figure height in pixels.
-        
-        RETURNS:
-        --------
-        go.Figure
-            The Plotly figure object.
-        """
-        project_data = self._convert_project_to_dashboard_data()
-        kpi_metrics = self._calculate_kpi_metrics(project_data)
-        
-        # Create subplot grid
-        fig = make_subplots(
-            rows=2, cols=2,
-            specs=[
-                [{"type": "bar"}, {"type": "domain"}],
-                [{"type": "bar"}, {"type": "xy"}]
-            ],
-            subplot_titles=(
-                "Task Progress (%) Breakdown",
-                "Duration Allocation by Task Type (Days)",
-                "Duration per Item (Days)",
-                "Dashboard Summary KPIs"
-            ),
-            vertical_spacing=0.1,
-            horizontal_spacing=0.1
-        )
-        
-        # 1. Task Progress Bar Chart (Top Left)
-        # Only show primary tasks (Level = 1)
-        main_tasks = [t for t in project_data if t['Level'] == 1]
-        main_tasks = sorted(main_tasks, key=lambda t: t['ID'])
-        
-        fig.add_trace(
-            go.Bar(
-                x=[t['Progress'] for t in main_tasks],
-                y=[t['Task Name'] for t in main_tasks],
-                orientation='h',
-                marker=dict(color='#38bdf8'),
-                name="Progress %",
-                text=[f"{t['Progress']}%" for t in main_tasks],
-                textposition='outside',
-                hovertemplate='<b>%{y}</b><br>Progress: %{x:.0f}%<extra></extra>'
-            ),
-            row=1, col=1
-        )
-        
-        # Update x-axis for progress chart to show percentage
-        fig.update_xaxes(
-            title_text="Progress (%)",
-            range=[0, 100],
-            ticksuffix="%",
-            row=1, col=1
-        )
-        
-        # Update y-axis for progress chart
-        fig.update_yaxes(
-            title_text="",
-            autorange='reversed',
-            row=1, col=1
-        )
-        
-        # 2. Duration Allocation Donut Chart (Top Right)
-        # Group by Type and sum Duration
-        type_duration = {}
-        for t in project_data:
-            task_type = t['Type']
-            if task_type not in type_duration:
-                type_duration[task_type] = 0
-            type_duration[task_type] += t['Duration']
-        
-        # Convert to sorted lists for consistent ordering
-        types_sorted = sorted(type_duration.keys())
-        durations = [type_duration[t] for t in types_sorted]
-        
-        fig.add_trace(
-            go.Pie(
-                labels=types_sorted,
-                values=durations,
-                hole=0.5,
-                marker=dict(colors=['#6366f1', '#10b981', '#f59e0b', '#ef4444']),
-                name="Duration Share",
-                textinfo='label+percent',
-                textposition='outside',
-                hovertemplate='<b>%{label}</b><br>Duration: %{value} days<br>Share: %{percent}<extra></extra>'
-            ),
-            row=1, col=2
-        )
-        
-        # 3. Item Workload Distribution Bar Chart (Bottom Left)
-        # Sort by ID for consistent ordering
-        sorted_tasks = sorted(project_data, key=lambda t: t['ID'])
-        
-        fig.add_trace(
-            go.Bar(
-                x=[t['Task Name'] for t in sorted_tasks],
-                y=[t['Duration'] for t in sorted_tasks],
-                marker=dict(color='#818cf8'),
-                name="Days",
-                text=[f"{t['Duration']}d" for t in sorted_tasks],
-                textposition='outside',
-                hovertemplate='<b>%{x}</b><br>Duration: %{y} days<extra></extra>'
-            ),
-            row=2, col=1
-        )
-        
-        # Update axes for workload chart
-        fig.update_xaxes(
-            title_text="",
-            tickangle=-45,
-            row=2, col=1
-        )
-        
-        fig.update_yaxes(
-            title_text="Duration (Days)",
-            row=2, col=1
-        )
-        
-        # 4. KPI Summary Overview Box (Bottom Right)
-        # Create a custom annotation for the KPI box
-        kpi_text = (
-            f"<b>PROJECT METRICS OVERVIEW</b><br><br>"
-            f"&bull; Total Project Scope: <b>{kpi_metrics['total_project_scope']} Days</b><br>"
-            f"&bull; Total Items Tracked: <b>{kpi_metrics['total_items_tracked']} Items</b><br>"
-            f"&bull; Milestones Count: <b>{kpi_metrics['milestones_count']} Milestone</b><br>"
-            f"&bull; Average Progress: <b>{kpi_metrics['average_progress']:.2f}%</b><br>"
-            f"&bull; Active Status: <b>{kpi_metrics['active_status']}</b>"
-        )
-        
-        # Add invisible scatter trace to reserve space
-        fig.add_trace(
-            go.Scatter(
-                x=[0],
-                y=[0],
-                mode='markers',
-                marker=dict(size=0),
-                hoverinfo='skip',
-                showlegend=False
-            ),
-            row=2, col=2
-        )
-        
-        # Add annotation for KPI box
-        fig.add_annotation(
-            x=0.5,
-            y=0.5,
-            xref="x2",
-            yref="y2",
-            text=kpi_text,
-            showarrow=False,
-            font=dict(size=12, color='#ffffff'),
-            bgcolor='#2d3748',
-            bordercolor='#4a5568',
-            borderwidth=2,
-            borderpad=10,
-            align="left",
-            xanchor="center",
-            yanchor="middle"
-        )
-        
-        # Theme and Layout Configurations
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='#1a1a1a',
-            plot_bgcolor='#1a1a1a',
-            showlegend=False,
-            margin=dict(l=20, r=20, t=40, b=20),
-            height=height,
-            width=width
-        )
-        
-        return fig
-    
-    def update_dashboard(self):
-        """
-        Regenerate the dashboard HTML with current project data.
-        
-        This should be called whenever the project changes to ensure
-        the dashboard displays the latest data.
-        """
-        if self.html_frame is None:
+        self._redraw()
+
+    def set_project(self, project: Optional[Project]):
+        """Point the dashboard at a different plan."""
+        self.project = project
+        self._redraw()
+
+    # -- drawing ----------------------------------------------------------
+
+    def _on_resize(self, event):
+        """Redraw when the pane changes size, and not for a stray pixel."""
+        if (abs(event.width - self._last_size[0]) < 4
+                and abs(event.height - self._last_size[1]) < 4):
             return
-        
-        fig = self._create_figure()
-        html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
-        self.html_frame.load_html(html_content)
+        self._last_size = (event.width, event.height)
+        self._redraw()
 
+    def _size(self) -> Tuple[int, int]:
+        """
+        How big the canvas is to draw into.
 
-class ProjectDashboard:
-    """
-    A standalone dashboard for visualizing project metrics.
-    
-    This class is kept for backward compatibility. For integration into the
-    main application, use ProjectDashboardFrame instead.
-    
-    This class creates a CustomTkinter window containing Plotly charts that
-    display various project metrics including task progress, duration allocation,
-    workload distribution, and KPI summaries.
-    
-    ATTRIBUTES:
-    -----------
-    project_data : List[Dict[str, Any]]
-        List of dictionaries containing task data with keys:
-        - ID: Task identifier
-        - Task Name: Name of the task
-        - Type: Task type (Task, Subtask, Milestone, Phase)
-        - Duration: Duration in days
-        - Progress: Progress percentage (0-100)
-        - Level: Outline level (1 for primary tasks)
-        - Start Date: Start date of the task
-        - End Date: End date of the task
-    
-    METHODS:
-    --------
-    run()
-        Creates and displays the dashboard window.
-    generate_dashboard_html()
-        Generates the HTML content for the dashboard using Plotly.
-    """
-    
-    def __init__(self, project_data: Optional[List[Dict[str, Any]]] = None):
+        DEVELOPMENT NOTES:
+        ------------------
+        winfo_width answers 1 until Tk has laid the widget out, so two
+        things stand in for it: the size the last Configure reported, and
+        then the size the canvas was asked for. In the application the
+        first of those is the real answer - Configure is where a pane's
+        size arrives - and the second is what lets the drawing be checked
+        without putting a window on somebody's screen, since Tk delivers no
+        Configure to a widget that was never mapped.
         """
-        Initialize the ProjectDashboard.
-        
-        PARAMETERS:
-        -----------
-        project_data : List[Dict[str, Any]], optional
-            List of task data dictionaries. If None, uses sample data.
+        width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
+        if width > 1 and height > 1:
+            return width, height
+        if self._last_size[0] > 1 and self._last_size[1] > 1:
+            return self._last_size
+        return self.canvas.winfo_reqwidth(), self.canvas.winfo_reqheight()
+
+    def _redraw(self):
+        """Put the whole dashboard on the canvas again."""
+        try:
+            if not self.canvas.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        self.canvas.delete('all')
+        width, height = self._size()
+        self.canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
+
+        if width < self.MIN_USEFUL_PX or height < self.MIN_USEFUL_PX:
+            # Still being laid out, or dragged too narrow to say anything.
+            # The Configure that follows draws it; logged because a blank
+            # dashboard is otherwise indistinguishable from a broken one
+            logger.debug("Dashboard not drawn at %sx%s; too small to read",
+                         width, height)
+            return
+
+        rows = dashboard_rows(self.project)
+        if not rows:
+            self._draw_empty(width, height)
+            return
+
+        half_w = width // 2
+        half_h = height // 2
+        self._draw_progress(rows, 0, 0, half_w, half_h)
+        self._draw_donut(rows, half_w, 0, width - half_w, half_h)
+        self._draw_workload(rows, 0, half_h, half_w, height - half_h)
+        self._draw_summary(rows, half_w, half_h,
+                           width - half_w, height - half_h)
+
+    def _draw_empty(self, width: int, height: int):
         """
-        self.project_data = project_data or self._create_sample_data()
-        # Store data as list of dicts, no pandas dependency
-    
-    def _create_sample_data(self) -> List[Dict[str, Any]]:
+        What an empty plan gets: a sentence, not invented tasks.
         """
-        Create sample project data for demonstration.
-        
+        self.canvas.create_text(
+            width // 2, height // 2,
+            text="Nothing to summarise yet.\n"
+                 "Add a task to the plan and it will appear here.",
+            fill=theme.now(theme.DASH_TICK_TEXT), justify=tk.CENTER,
+            font=self._font(13))
+
+    def _panel(self, x: int, y: int, width: int, height: int, title: str):
+        """
+        The paper one chart is drawn on, and its title.
+
         RETURNS:
         --------
-        List[Dict[str, Any]]
-            Sample task data matching the screenshot requirements.
+        tuple[int, int, int, int]
+            The area left inside it: left, top, right, bottom.
         """
-        base_date = datetime(2026, 1, 1)
-        return [
-            {
-                "ID": "001",
-                "Task Name": "Project Planning",
-                "Type": "Task",
-                "Duration": 2,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date,
-                "End Date": base_date + timedelta(days=1)
-            },
-            {
-                "ID": "002",
-                "Task Name": "Requirements Gathering",
-                "Type": "Subtask",
-                "Duration": 1,
-                "Progress": 0,
-                "Level": 2,
-                "Start Date": base_date + timedelta(days=2),
-                "End Date": base_date + timedelta(days=2)
-            },
-            {
-                "ID": "003",
-                "Task Name": "Design Phase",
-                "Type": "Task",
-                "Duration": 5,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=3),
-                "End Date": base_date + timedelta(days=7)
-            },
-            {
-                "ID": "004",
-                "Task Name": "UI Mockups",
-                "Type": "Subtask",
-                "Duration": 3,
-                "Progress": 0,
-                "Level": 2,
-                "Start Date": base_date + timedelta(days=8),
-                "End Date": base_date + timedelta(days=10)
-            },
-            {
-                "ID": "005",
-                "Task Name": "Implementation",
-                "Type": "Task",
-                "Duration": 8,
-                "Progress": 30,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=11),
-                "End Date": base_date + timedelta(days=18)
-            },
-            {
-                "ID": "006",
-                "Task Name": "Design Review",
-                "Type": "Milestone",
-                "Duration": 0,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=19),
-                "End Date": base_date + timedelta(days=19)
-            },
-            {
-                "ID": "007",
-                "Task Name": "Testing",
-                "Type": "Task",
-                "Duration": 3,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=20),
-                "End Date": base_date + timedelta(days=22)
-            },
-            {
-                "ID": "008",
-                "Task Name": "Deployment",
-                "Type": "Task",
-                "Duration": 3,
-                "Progress": 0,
-                "Level": 1,
-                "Start Date": base_date + timedelta(days=23),
-                "End Date": base_date + timedelta(days=25)
-            },
-        ]
-    
-    def _calculate_weighted_progress(self) -> float:
-        """
-        Calculate weighted project progress.
-        
-        Formula: SUM(Task Duration * Progress) / SUM(Task Duration)
-        Only considers primary tasks (Level = 1).
-        
-        RETURNS:
-        --------
-        float
-            Weighted progress as a decimal (0-100).
-        """
-        main_tasks = [t for t in self.project_data if t['Level'] == 1]
-        if not main_tasks:
-            return 0.0
-        
-        total_duration = sum(t['Duration'] for t in main_tasks)
-        if total_duration == 0:
-            return 0.0
-        
-        weighted_sum = sum(t['Duration'] * t['Progress'] for t in main_tasks)
-        return weighted_sum / total_duration
-    
-    def _calculate_kpi_metrics(self) -> Dict[str, Any]:
-        """
-        Calculate all KPI metrics for the project.
-        
-        RETURNS:
-        --------
-        Dict[str, Any]
-            Dictionary containing:
-            - total_project_scope: Total duration of Level 1 tasks
-            - total_items_tracked: Total number of items
-            - milestones_count: Number of milestone items
-            - average_progress: Average progress percentage
-            - active_status: Status summary
-        """
-        main_tasks = [t for t in self.project_data if t['Level'] == 1]
-        total_scope = sum(t['Duration'] for t in main_tasks)
-        total_items = len(self.project_data)
-        milestones_count = len([t for t in self.project_data if t['Type'] == 'Milestone'])
-        
-        # Active Status calculation
-        active_count = len([t for t in self.project_data if t['Progress'] > 0])
-        active_percentage = (active_count / total_items * 100) if total_items > 0 else 0
-        
-        return {
-            'total_project_scope': total_scope,
-            'total_items_tracked': total_items,
-            'milestones_count': milestones_count,
-            'average_progress': self._calculate_weighted_progress(),
-            'active_status': f"{active_percentage:.0f}% Active (A)" if active_percentage > 0 else "0% Active (A)"
-        }
-    
-    def generate_dashboard_html(self) -> str:
-        """
-        Generate the HTML content for the dashboard using Plotly.
-        
-        Creates a 2x2 grid layout with:
-        - Top Left: Task Progress Bar Chart (horizontal bars)
-        - Top Right: Duration Allocation Donut Chart
-        - Bottom Left: Item Workload Distribution Bar Chart
-        - Bottom Right: KPI Summary Overview Box
-        
-        RETURNS:
-        --------
-        str
-            HTML string containing the complete dashboard.
-        """
-        # Calculate metrics
-        kpi_metrics = self._calculate_kpi_metrics()
-        
-        # Create subplot grid
-        fig = make_subplots(
-            rows=2, cols=2,
-            specs=[
-                [{"type": "bar"}, {"type": "domain"}],
-                [{"type": "bar"}, {"type": "xy"}]
-            ],
-            subplot_titles=(
-                "Task Progress (%) Breakdown",
-                "Duration Allocation by Task Type (Days)",
-                "Duration per Item (Days)",
-                "Dashboard Summary KPIs"
-            ),
-            vertical_spacing=0.1,
-            horizontal_spacing=0.1
-        )
-        
-        # 1. Task Progress Bar Chart (Top Left)
-        # Only show primary tasks (Level = 1)
-        main_tasks = [t for t in self.project_data if t['Level'] == 1]
-        
-        # Sort by ID for consistent ordering
-        main_tasks = sorted(main_tasks, key=lambda t: t['ID'])
-        
-        fig.add_trace(
-            go.Bar(
-                x=[t['Progress'] for t in main_tasks],
-                y=[t['Task Name'] for t in main_tasks],
-                orientation='h',
-                marker=dict(color='#38bdf8'),
-                name="Progress %",
-                text=[f"{t['Progress']}%" for t in main_tasks],
-                textposition='outside',
-                hovertemplate='<b>%{y}</b><br>Progress: %{x:.0f}%<extra></extra>'
-            ),
-            row=1, col=1
-        )
-        
-        # Update x-axis for progress chart to show percentage
-        fig.update_xaxes(
-            title_text="Progress (%)",
-            range=[0, 100],
-            ticksuffix="%",
-            row=1, col=1
-        )
-        
-        # Update y-axis for progress chart
-        fig.update_yaxes(
-            title_text="",
-            autorange='reversed',
-            row=1, col=1
-        )
-        
-        # 2. Duration Allocation Donut Chart (Top Right)
-        # Group by Type and sum Duration
-        type_duration = {}
-        for t in self.project_data:
-            task_type = t['Type']
-            if task_type not in type_duration:
-                type_duration[task_type] = 0
-            type_duration[task_type] += t['Duration']
-        
-        # Convert to sorted lists for consistent ordering
-        types_sorted = sorted(type_duration.keys())
-        durations = [type_duration[t] for t in types_sorted]
-        
-        fig.add_trace(
-            go.Pie(
-                labels=types_sorted,
-                values=durations,
-                hole=0.5,
-                marker=dict(colors=['#6366f1', '#10b981', '#f59e0b', '#ef4444']),
-                name="Duration Share",
-                textinfo='label+percent',
-                textposition='outside',
-                hovertemplate='<b>%{label}</b><br>Duration: %{value} days<br>Share: %{percent}<extra></extra>'
-            ),
-            row=1, col=2
-        )
-        
-        # 3. Item Workload Distribution Bar Chart (Bottom Left)
-        # Sort by ID for consistent ordering
-        sorted_tasks = sorted(self.project_data, key=lambda t: t['ID'])
-        
-        fig.add_trace(
-            go.Bar(
-                x=[t['Task Name'] for t in sorted_tasks],
-                y=[t['Duration'] for t in sorted_tasks],
-                marker=dict(color='#818cf8'),
-                name="Days",
-                text=[f"{t['Duration']}d" for t in sorted_tasks],
-                textposition='outside',
-                hovertemplate='<b>%{x}</b><br>Duration: %{y} days<extra></extra>'
-            ),
-            row=2, col=1
-        )
-        
-        # Update axes for workload chart
-        fig.update_xaxes(
-            title_text="",
-            tickangle=-45,
-            row=2, col=1
-        )
-        
-        fig.update_yaxes(
-            title_text="Duration (Days)",
-            row=2, col=1
-        )
-        
-        # 4. KPI Summary Overview Box (Bottom Right)
-        # Create a custom annotation for the KPI box
-        kpi_text = (
-            f"<b>PROJECT METRICS OVERVIEW</b><br><br>"
-            f"&bull; Total Project Scope: <b>{kpi_metrics['total_project_scope']} Days</b><br>"
-            f"&bull; Total Items Tracked: <b>{kpi_metrics['total_items_tracked']} Items</b><br>"
-            f"&bull; Milestones Count: <b>{kpi_metrics['milestones_count']} Milestone</b><br>"
-            f"&bull; Average Progress: <b>{kpi_metrics['average_progress']:.2f}%</b><br>"
-            f"&bull; Active Status: <b>{kpi_metrics['active_status']}</b>"
-        )
-        
-        # Add invisible scatter trace to reserve space
-        fig.add_trace(
-            go.Scatter(
-                x=[0],
-                y=[0],
-                mode='markers',
-                marker=dict(size=0),
-                hoverinfo='skip',
-                showlegend=False
-            ),
-            row=2, col=2
-        )
-        
-        # Add annotation for KPI box
-        fig.add_annotation(
-            x=0.5,
-            y=0.5,
-            xref="x2",
-            yref="y2",
-            text=kpi_text,
-            showarrow=False,
-            font=dict(size=12, color='#ffffff'),
-            bgcolor='#2d3748',
-            bordercolor='#4a5568',
-            borderwidth=2,
-            borderpad=10,
-            align="left",
-            xanchor="center",
-            yanchor="middle"
-        )
-        
-        # Theme and Layout Configurations
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='#1a1a1a',
-            plot_bgcolor='#1a1a1a',
-            showlegend=False,
-            margin=dict(l=20, r=20, t=40, b=20),
-            height=800,
-            width=1200
-        )
-        
-        # Export Plotly figure to HTML string
-        return fig.to_html(include_plotlyjs='cdn', full_html=True)
-    
-    def run(self):
-        """
-        Create and display the dashboard window.
-        
-        This method initializes the CustomTkinter application, sets up the
-        theme, and embeds the Plotly dashboard in a tkinterweb HtmlFrame.
-        """
-        # Create the main application window
-        app = ctk.CTk()
-        
-        # Set CustomTkinter theme to match dark Plotly theme
-        ctk.set_appearance_mode("Dark")
-        ctk.set_default_color_theme("blue")
-        
-        # Configure window
-        app.title("Project Analytics Dashboard")
-        app.geometry("1200x900")
-        
-        # Title Label
-        title_label = ctk.CTkLabel(
-            app,
-            text="Project Metrics & Analytics Dashboard",
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        title_label.pack(pady=10)
-        
-        # Subtitle Label
-        subtitle_label = ctk.CTkLabel(
-            app,
-            text="Interactive visualization of project progress, duration allocation, and workload distribution",
-            font=ctk.CTkFont(size=12, weight="normal"),
-            text_color="#888888"
-        )
-        subtitle_label.pack(pady=5)
-        
-        # Create HTML frame for embedding Plotly charts
-        html_frame = HtmlFrame(app)
-        html_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Generate and load dashboard HTML
-        raw_html = self.generate_dashboard_html()
-        html_frame.load_html(raw_html)
-        
-        # Handle window resize
-        def on_resize(event):
-            """Regenerate HTML on window resize for responsive charts."""
-            # Regenerate HTML with updated dimensions
-            new_width = max(event.width, 800)
-            new_height = max(event.height - 100, 600)
-            
-            fig = self._create_figure_only(new_width, new_height)
-            html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
-            html_frame.load_html(html_content)
-        
-        app.bind('<Configure>', on_resize)
-        
-        # Run the application
-        app.mainloop()
-    
-    def _create_figure_only(self, width: int = 1200, height: int = 800) -> go.Figure:
-        """
-        Create only the Plotly figure without HTML generation.
-        
-        This is used for responsive resizing.
-        
-        PARAMETERS:
-        -----------
-        width : int
-            Figure width in pixels.
-        height : int
-            Figure height in pixels.
-        
-        RETURNS:
-        --------
-        go.Figure
-            The Plotly figure object.
-        """
-        # Calculate metrics
-        kpi_metrics = self._calculate_kpi_metrics()
-        
-        # Create subplot grid
-        fig = make_subplots(
-            rows=2, cols=2,
-            specs=[
-                [{"type": "bar"}, {"type": "domain"}],
-                [{"type": "bar"}, {"type": "xy"}]
-            ],
-            subplot_titles=(
-                "Task Progress (%) Breakdown",
-                "Duration Allocation by Task Type (Days)",
-                "Duration per Item (Days)",
-                "Dashboard Summary KPIs"
-            ),
-            vertical_spacing=0.1,
-            horizontal_spacing=0.1
-        )
-        
-        # 1. Task Progress Bar Chart
-        main_tasks = sorted([t for t in self.project_data if t['Level'] == 1], key=lambda t: t['ID'])
-        fig.add_trace(
-            go.Bar(
-                x=[t['Progress'] for t in main_tasks],
-                y=[t['Task Name'] for t in main_tasks],
-                orientation='h',
-                marker=dict(color='#38bdf8'),
-                name="Progress %",
-                text=[f"{t['Progress']}%" for t in main_tasks],
-                textposition='outside',
-                hovertemplate='<b>%{y}</b><br>Progress: %{x:.0f}%<extra></extra>'
-            ),
-            row=1, col=1
-        )
-        
-        fig.update_xaxes(
-            title_text="Progress (%)",
-            range=[0, 100],
-            ticksuffix="%",
-            row=1, col=1
-        )
-        
-        fig.update_yaxes(
-            title_text="",
-            autorange='reversed',
-            row=1, col=1
-        )
-        
-        # 2. Duration Allocation Donut Chart
-        type_duration = {}
-        for t in self.project_data:
-            task_type = t['Type']
-            if task_type not in type_duration:
-                type_duration[task_type] = 0
-            type_duration[task_type] += t['Duration']
-        
-        types_sorted = sorted(type_duration.keys())
-        durations = [type_duration[t] for t in types_sorted]
-        
-        fig.add_trace(
-            go.Pie(
-                labels=types_sorted,
-                values=durations,
-                hole=0.5,
-                marker=dict(colors=['#6366f1', '#10b981', '#f59e0b', '#ef4444']),
-                name="Duration Share",
-                textinfo='label+percent',
-                textposition='outside',
-                hovertemplate='<b>%{label}</b><br>Duration: %{value} days<br>Share: %{percent}<extra></extra>'
-            ),
-            row=1, col=2
-        )
-        
-        # 3. Item Workload Distribution Bar Chart
-        sorted_tasks = sorted(self.project_data, key=lambda t: t['ID'])
-        fig.add_trace(
-            go.Bar(
-                x=[t['Task Name'] for t in sorted_tasks],
-                y=[t['Duration'] for t in sorted_tasks],
-                marker=dict(color='#818cf8'),
-                name="Days",
-                text=[f"{t['Duration']}d" for t in sorted_tasks],
-                textposition='outside',
-                hovertemplate='<b>%{x}</b><br>Duration: %{y} days<extra></extra>'
-            ),
-            row=2, col=1
-        )
-        
-        fig.update_xaxes(
-            title_text="",
-            tickangle=-45,
-            row=2, col=1
-        )
-        
-        fig.update_yaxes(
-            title_text="Duration (Days)",
-            row=2, col=1
-        )
-        
-        # 4. KPI Summary Overview Box
-        kpi_text = (
-            f"<b>PROJECT METRICS OVERVIEW</b><br><br>"
-            f"&bull; Total Project Scope: <b>{kpi_metrics['total_project_scope']} Days</b><br>"
-            f"&bull; Total Items Tracked: <b>{kpi_metrics['total_items_tracked']} Items</b><br>"
-            f"&bull; Milestones Count: <b>{kpi_metrics['milestones_count']} Milestone</b><br>"
-            f"&bull; Average Progress: <b>{kpi_metrics['average_progress']:.2f}%</b><br>"
-            f"&bull; Active Status: <b>{kpi_metrics['active_status']}</b>"
-        )
-        
-        fig.add_trace(
-            go.Scatter(
-                x=[0],
-                y=[0],
-                mode='markers',
-                marker=dict(size=0),
-                hoverinfo='skip',
-                showlegend=False
-            ),
-            row=2, col=2
-        )
-        
-        fig.add_annotation(
-            x=0.5,
-            y=0.5,
-            xref="x2",
-            yref="y2",
-            text=kpi_text,
-            showarrow=False,
-            font=dict(size=12, color='#ffffff'),
-            bgcolor='#2d3748',
-            bordercolor='#4a5568',
-            borderwidth=2,
-            borderpad=10,
-            align="left",
-            xanchor="center",
-            yanchor="middle"
-        )
-        
-        # Theme and Layout
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='#1a1a1a',
-            plot_bgcolor='#1a1a1a',
-            showlegend=False,
-            margin=dict(l=20, r=20, t=40, b=20),
-            height=height,
-            width=width
-        )
-        
-        return fig
+        left, top = x + self.PAD // 2, y + self.PAD // 2
+        right, bottom = x + width - self.PAD // 2, y + height - self.PAD // 2
+        self.canvas.create_rectangle(
+            left, top, right, bottom, width=0,
+            fill=theme.now(theme.DASH_PLOT_BG))
+        self.canvas.create_text(
+            (left + right) // 2, top + self.TITLE_H // 2, text=title,
+            fill=theme.now(theme.DASH_TITLE_TEXT), font=self._font(12, True))
+        return left + self.PAD, top + self.TITLE_H, right - self.PAD, bottom
 
+    def _font(self, size: int, bold: bool = False):
+        """A canvas font, in the family Tk has everywhere."""
+        return ('TkDefaultFont', size, 'bold') if bold \
+            else ('TkDefaultFont', size)
 
-def create_sample_dashboard():
-    """
-    Create and run a dashboard with sample data.
-    
-    This is a convenience function for testing and demonstration.
-    """
-    dashboard = ProjectDashboard()
-    return dashboard
+    # -- 1: progress across the top-level rows ----------------------------
 
+    def _draw_progress(self, rows, x, y, width, height):
+        """One horizontal bar per top-level row, 0 to 100 per cent."""
+        left, top, right, bottom = self._panel(
+            x, y, width, height, "Task Progress (%)")
 
-if __name__ == "__main__":
-    create_sample_dashboard().run()
+        top_rows = [row for row in rows if row['Level'] == 1]
+        if not top_rows:
+            self._say(left, top, right, bottom, "No top-level rows")
+            return
+
+        plot_left = left + self.LEFT_LABEL_W
+        plot_bottom = bottom - 28
+        if plot_left >= right - 40 or plot_bottom <= top + 10:
+            return
+
+        axis = theme.now(theme.DASH_AXIS)
+        self.canvas.create_rectangle(plot_left, top, right, plot_bottom,
+                                     outline=axis, width=1)
+
+        # The scale, every twenty per cent
+        for percent in range(0, 101, 20):
+            at = plot_left + (right - plot_left) * percent / 100
+            if percent:
+                self.canvas.create_line(at, top, at, plot_bottom,
+                                        fill=theme.now(theme.DASH_GRID),
+                                        dash=(2, 3))
+            self.canvas.create_text(at, plot_bottom + 10, text=f"{percent}%",
+                                    fill=theme.now(theme.DASH_TICK_TEXT),
+                                    font=self._font(9))
+
+        band = (plot_bottom - top) / len(top_rows)
+        thickness = max(4, min(22, band * 0.55))
+        for index, row in enumerate(top_rows):
+            middle = top + band * (index + 0.5)
+            self.canvas.create_text(
+                plot_left - 8, middle, text=self._clip(row['Name'], 20),
+                anchor=tk.E, fill=theme.now(theme.DASH_TICK_TEXT),
+                font=self._font(10))
+
+            share = max(0.0, min(100.0, float(row['Progress']))) / 100
+            end = plot_left + (right - plot_left) * share
+            if end > plot_left + 1:
+                self.canvas.create_rectangle(
+                    plot_left + 1, middle - thickness / 2,
+                    end, middle + thickness / 2,
+                    fill=theme.now(theme.DASH_PROGRESS_BAR), width=0)
+            self.canvas.create_text(
+                end + 6, middle, text=f"{int(row['Progress'])}%", anchor=tk.W,
+                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(9))
+
+    # -- 2: where the duration sits ---------------------------------------
+
+    def _draw_donut(self, rows, x, y, width, height):
+        """Total duration split by task type, as a ring with a legend."""
+        left, top, right, bottom = self._panel(
+            x, y, width, height, "Duration Allocation by Task Type (Days)")
+
+        shares = duration_by_type(rows)
+        total = sum(days for _kind, days in shares)
+        colours = self._series_colours()
+
+        legend_h = min(len(shares) * 18 + 6, max(0, (bottom - top) // 2))
+        ring_bottom = bottom - legend_h
+        size = min(right - left, ring_bottom - top) - 10
+
+        if total <= 0:
+            self._say(left, top, right, bottom,
+                      "No duration to divide up yet")
+        elif size > 40:
+            radius = size / 2
+            cx = (left + right) / 2
+            cy = (top + ring_bottom) / 2
+            thickness = radius * self.RING_SHARE
+            inset = thickness / 2
+            box = (cx - radius + inset, cy - radius + inset,
+                   cx + radius - inset, cy + radius - inset)
+
+            start = 90.0
+            for index, (_kind, days) in enumerate(shares):
+                if not days:
+                    continue
+                extent = -360.0 * days / total
+                if extent > -0.05:
+                    continue
+                self.canvas.create_arc(
+                    *box, start=start, extent=extent, style=tk.ARC,
+                    outline=colours[index % len(colours)],
+                    width=int(max(2, thickness)))
+                start += extent
+
+        # The legend carries the numbers, including the types holding none
+        row_y = bottom - legend_h + 10
+        for index, (kind, days) in enumerate(shares):
+            if row_y > bottom - 4:
+                break
+            share = (days / total * 100) if total else 0.0
+            self.canvas.create_rectangle(
+                left, row_y - 5, left + 10, row_y + 5, width=0,
+                fill=colours[index % len(colours)])
+            self.canvas.create_text(
+                left + 18, row_y, anchor=tk.W,
+                text=f"{kind}  {days}d  ({share:.1f}%)",
+                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
+            row_y += 18
+
+    def _series_colours(self) -> List[str]:
+        """The donut's colours, resolved for the appearance in force."""
+        return [theme.now(pair) for pair in (
+            theme.DASH_SERIES_1, theme.DASH_SERIES_2,
+            theme.DASH_SERIES_3, theme.DASH_SERIES_4)]
+
+    # -- 3: how long each row is ------------------------------------------
+
+    def _draw_workload(self, rows, x, y, width, height):
+        """One vertical bar per row, its own duration in days."""
+        left, top, right, bottom = self._panel(
+            x, y, width, height, "Duration per Item (Days)")
+
+        longest = max((row['Duration'] for row in rows), default=0)
+        if longest <= 0:
+            self._say(left, top, right, bottom, "Every row is zero days long")
+            return
+
+        plot_left = left + 30
+        plot_bottom = bottom - self.BOTTOM_LABEL_H
+        if plot_left >= right - 20 or plot_bottom <= top + 20:
+            return
+
+        axis = theme.now(theme.DASH_AXIS)
+        self.canvas.create_rectangle(plot_left, top, right, plot_bottom,
+                                     outline=axis, width=1)
+
+        # A gridline every step days, at a step that keeps the count small
+        step = max(1, -(-longest // 5))
+        value = step
+        while value <= longest:
+            at = plot_bottom - (plot_bottom - top) * value / longest
+            self.canvas.create_line(plot_left, at, right, at,
+                                    fill=theme.now(theme.DASH_GRID),
+                                    dash=(2, 3))
+            self.canvas.create_text(plot_left - 6, at, text=str(value),
+                                    anchor=tk.E, font=self._font(9),
+                                    fill=theme.now(theme.DASH_TICK_TEXT))
+            value += step
+
+        band = (right - plot_left) / len(rows)
+        thickness = max(3, min(34, band * 0.6))
+        for index, row in enumerate(rows):
+            middle = plot_left + band * (index + 0.5)
+            if row['Duration'] > 0:
+                bar_top = plot_bottom - ((plot_bottom - top)
+                                         * row['Duration'] / longest)
+                self.canvas.create_rectangle(
+                    middle - thickness / 2, bar_top,
+                    middle + thickness / 2, plot_bottom - 1,
+                    fill=theme.now(theme.DASH_DURATION_BAR), width=0)
+                self.canvas.create_text(
+                    middle, bar_top - 7, text=f"{row['Duration']}d",
+                    fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(8))
+            self._angled(middle, plot_bottom + 6, row['Name'])
+
+    def _angled(self, x: float, y: float, text: str):
+        """
+        A label under a bar, turned out of the way of its neighbours.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Tk grew the angle option for canvas text in 8.6, and the Tk that
+        ships with macOS is 8.5. So the turn is attempted and the flat
+        label is what a Tk without it gets - shorter, because a flat label
+        has a bar's width to fit in rather than a diagonal.
+        """
+        try:
+            self.canvas.create_text(
+                x, y, text=self._clip(text, 18), angle=35, anchor=tk.NE,
+                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(9))
+        except tk.TclError:
+            self.canvas.create_text(
+                x, y, text=self._clip(text, 8), anchor=tk.N,
+                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(8))
+
+    # -- 4: the numbers underneath ----------------------------------------
+
+    def _draw_summary(self, rows, x, y, width, height):
+        """The five figures, in a box of their own."""
+        left, top, right, bottom = self._panel(
+            x, y, width, height, "Summary")
+
+        metrics = kpi_metrics(rows)
+        lines = (
+            ("Total project scope", f"{metrics['total_scope']} days"),
+            ("Total items tracked", f"{metrics['total_items']} items"),
+            ("Milestones", f"{metrics['milestones']}"),
+            ("Overall completion", f"{metrics['progress']:.2f}%"),
+            ("Rows started", f"{metrics['active_share']:.0f}%"),
+        )
+
+        box_h = min(len(lines) * 24 + 28, bottom - top)
+        box_top = top + max(0, (bottom - top - box_h) // 2)
+        self.canvas.create_rectangle(
+            left, box_top, right, box_top + box_h,
+            fill=theme.now(theme.DASH_KPI_BG),
+            outline=theme.now(theme.DASH_KPI_BORDER), width=1)
+
+        row_y = box_top + 22
+        for caption, value in lines:
+            if row_y > box_top + box_h - 6:
+                break
+            self.canvas.create_text(
+                left + 16, row_y, text=caption, anchor=tk.W,
+                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
+            self.canvas.create_text(
+                right - 16, row_y, text=value, anchor=tk.E,
+                fill=theme.now(theme.DASH_TITLE_TEXT),
+                font=self._font(11, True))
+            row_y += 24
+
+    # -- odds and ends -----------------------------------------------------
+
+    def _say(self, left, top, right, bottom, text: str):
+        """A sentence in the middle of a panel that has nothing to draw."""
+        self.canvas.create_text(
+            (left + right) // 2, (top + bottom) // 2, text=text,
+            fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
+
+    @staticmethod
+    def _clip(text: str, longest: int) -> str:
+        """A name cut to fit, with an ellipsis to say it was cut."""
+        text = str(text or '')
+        return text if len(text) <= longest else text[:longest - 1] + '…'

@@ -363,6 +363,11 @@ class GanttApp(ctk.CTk):
         after a restart too, because nothing ever coloured them at all.
         theme.style_chrome does, here and at startup.
 
+        The dashboard is a third of the same kind: a Tk canvas, whose items
+        each carry the colour they were drawn with. It is in the list only
+        when it has been built, which is why the loop skips a pane of None
+        rather than assuming all three exist.
+
         Guarded per pane. This runs from the desktop poll as well as from the
         button, so it can fire while the window is being torn down, and one
         pane that has already gone must not stop the other being repainted.
@@ -375,7 +380,7 @@ class GanttApp(ctk.CTk):
         """
         theme.style_chrome()
 
-        for name in ('task_list', 'gantt_chart'):
+        for name in ('task_list', 'gantt_chart', 'dashboard_frame'):
             pane = getattr(self, name, None)
             if pane is None:
                 continue
@@ -442,7 +447,8 @@ class GanttApp(ctk.CTk):
         )
         self.content_panes.add(self.gantt_chart, weight=3)
 
-        # Dashboard frame will be created lazily when first shown
+        # The other thing the right-hand pane can hold. Not built here: see
+        # _create_dashboard_frame
         self.dashboard_frame = None
 
         # Place the divider once the window has its real size
@@ -450,12 +456,11 @@ class GanttApp(ctk.CTk):
         
         # Set Gantt chart reference in toolbar for export functionality
         self.toolbar.set_gantt_chart(self.gantt_chart)
-        
-        # Set content panes reference in toolbar for chart switching
+
+        # What View > Charts switches between, and how to build the half
+        # that does not exist yet
         self.toolbar.set_content_panes(self.content_panes)
-        
-        # Set a method to create the dashboard frame lazily
-        self.toolbar._create_dashboard_lazy = self._create_dashboard_frame
+        self.toolbar.set_dashboard_factory(self._create_dashboard_frame)
 
         # The chart draws the rows the task list is showing, so the two line
         # up. Both have to exist first: this went in beside the toolbar's
@@ -488,12 +493,21 @@ class GanttApp(ctk.CTk):
         theme.style_chrome()
     
     def _create_dashboard_frame(self):
-        """Create the dashboard frame lazily when first needed."""
+        """
+        Build the dashboard the first time somebody asks for it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Built into the paned window but not added to it - showing it is the
+        toolbar's business, and building it here as well would put it on
+        screen the moment it exists.
+        """
         if self.dashboard_frame is None:
             self.dashboard_frame = ProjectDashboardFrame(
                 self.content_panes, self.project
             )
             self.toolbar.set_dashboard(self.dashboard_frame)
+            logger.info("Built the dashboard")
         return self.dashboard_frame
     
     def _configure_sash_style(self):
@@ -661,6 +675,15 @@ class GanttApp(ctk.CTk):
 
         self.task_list.update_task_list()
         self.gantt_chart.update_chart()
+
+        # Only when it has been built. It reads the same plan the other two
+        # do, so a change that reaches them and not it leaves the summary
+        # describing a plan that no longer exists
+        if self.dashboard_frame is not None:
+            try:
+                self.dashboard_frame.refresh()
+            except tk.TclError:
+                logger.debug("The dashboard has gone; not refreshing it")
         
         # Update window title with project name
         if self.project.name:
