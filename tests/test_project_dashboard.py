@@ -235,10 +235,26 @@ class TestKPIMetrics(unittest.TestCase):
         self.assertEqual(self.metrics['milestones'], 1)
 
     def test_the_completion_is_the_weighted_progress(self):
-        """The two are the same number and have to stay the same number."""
+        """
+        The specification's Overall Completion, which is the weighted
+        figure and not the average of the percentages on the rows. The box
+        showed the first and called it the second.
+        """
         rows = dashboard_rows(sample_project())
 
-        self.assertEqual(self.metrics['progress'], weighted_progress(rows))
+        self.assertEqual(self.metrics['completion'], weighted_progress(rows))
+        self.assertAlmostEqual(self.metrics['completion'], 11.43, places=2)
+
+    def test_it_is_not_the_average_of_the_percentages(self):
+        """
+        Which is the number the old caption promised. One row at 30% out
+        of eight averages 3.75%; weighted by length it is 11.43%, and the
+        two are only ever the same when every row is the same length.
+        """
+        rows = dashboard_rows(sample_project())
+        flat = sum(row['Progress'] for row in rows) / len(rows)
+
+        self.assertNotAlmostEqual(self.metrics['completion'], flat, places=2)
 
     def test_a_plan_of_active_rows_is_all_active(self):
         """The shares read the Status field, not the progress."""
@@ -287,7 +303,7 @@ class TestKPIMetrics(unittest.TestCase):
         self.assertEqual(metrics['total_items'], 0)
         self.assertEqual(metrics['active_share'], 0.0)
         self.assertEqual(metrics['draft_share'], 0.0)
-        self.assertEqual(metrics['progress'], 0.0)
+        self.assertEqual(metrics['completion'], 0.0)
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
@@ -382,7 +398,7 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
         texts = self.texts()
 
         for caption in ("Total Project Scope", "Total Items Tracked",
-                        "Milestones Count", "Average Progress",
+                        "Milestones Count", "Overall Completion",
                         "Active Status", "Draft Status"):
             self.assertIn(caption, texts)
 

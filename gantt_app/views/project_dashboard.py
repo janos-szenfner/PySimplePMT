@@ -184,12 +184,19 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         total_scope   - days held by the top-level rows
         total_items   - how many rows there are
         milestones    - how many of them are milestones
-        progress      - weighted_progress over the same rows
+        completion    - weighted_progress over the same rows
         active_share  - percentage of rows marked Active
         draft_share   - percentage marked Draft, being the rest of them
 
     DEVELOPMENT NOTES:
     ------------------
+    Completion is the plan's overall completion, weighted by how long each
+    row is - not the average of the percentages on them. The box called it
+    an average while showing the weighted figure, which is the sort of
+    caption that gets believed rather than checked: the two only agree when
+    every row is the same length, and a plan where they are is a plan that
+    did not need weighting.
+
     The two shares are the Status field a row carries - the A and D the
     task list shows in its Status column - and not how far the work has
     got. They are meant to be read as a pair and to come to a hundred, so
@@ -206,7 +213,7 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         'total_items': len(rows),
         'milestones': len([row for row in rows
                            if row['Type'] == 'Milestone']),
-        'progress': weighted_progress(rows),
+        'completion': weighted_progress(rows),
         'active_share': active_share,
         'draft_share': (100.0 - active_share) if rows else 0.0,
     }
@@ -590,7 +597,7 @@ class ProjectDashboardFrame(ctk.CTkFrame):
             ("Milestones Count",
              f"{metrics['milestones']} "
              f"{self._plural('Milestone', metrics['milestones'])}"),
-            ("Average Progress", f"{metrics['progress']:.2f}%"),
+            ("Overall Completion", f"{metrics['completion']:.2f}%"),
             ("Active Status", f"{metrics['active_share']:.0f}% Active (A)"),
             ("Draft Status", f"{metrics['draft_share']:.0f}% Draft (D)"),
         )
