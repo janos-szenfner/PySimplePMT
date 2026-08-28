@@ -33,27 +33,38 @@ from gantt_app.views.project_dashboard import (
 
 BASE = datetime(2026, 1, 5)
 
-#: The specification's example: (id, name, type, duration, progress, parent).
+#: The specification's example, as
+#: (id, name, type, duration, progress, parent, status).
 WORKED_EXAMPLE = (
-    ("001", "Project Planning", "Task", 2, 0, None),
-    ("002", "Requirements Gathering", "Subtask", 1, 0, "001"),
-    ("003", "Design Phase", "Task", 5, 0, None),
-    ("004", "UI Mockups", "Subtask", 3, 0, "003"),
-    ("005", "Implementation", "Task", 8, 30, None),
-    ("006", "Design Review", "Milestone", 0, 0, None),
-    ("007", "Testing", "Task", 3, 0, None),
-    ("008", "Deployment", "Task", 3, 0, None),
+    ("001", "Project Planning", "Task", 2, 0, None, 'Active'),
+    ("002", "Requirements Gathering", "Subtask", 1, 0, "001", 'Active'),
+    ("003", "Design Phase", "Task", 5, 0, None, 'Active'),
+    ("004", "UI Mockups", "Subtask", 3, 0, "003", 'Active'),
+    ("005", "Implementation", "Task", 8, 30, None, 'Active'),
+    ("006", "Design Review", "Milestone", 0, 0, None, 'Active'),
+    ("007", "Testing", "Task", 3, 0, None, 'Active'),
+    ("008", "Deployment", "Task", 3, 0, None, 'Active'),
 )
 
 
-def sample_project() -> Project:
-    """The worked example as a plan."""
+def sample_project(**statuses) -> Project:
+    """
+    The worked example as a plan.
+
+    PARAMETERS:
+    -----------
+    **statuses
+        Rows to mark as something other than the example says, by id -
+        sample_project(t003='Draft').
+    """
     project = Project(name="Sample")
-    for task_id, name, kind, duration, progress, parent in WORKED_EXAMPLE:
+    for task_id, name, kind, duration, progress, parent, status \
+            in WORKED_EXAMPLE:
         project.add_task(Task(
             id=task_id, name=name, task_type=kind, start_date=BASE,
             end_date=BASE, duration=duration, progress=progress,
             parent_task_id=parent, is_milestone=(kind == 'Milestone'),
+            status=statuses.get(f"t{task_id}", status),
         ))
     return project
 
@@ -93,7 +104,8 @@ class TestTheRows(unittest.TestCase):
         """Every key the four charts read is on every row."""
         row = dashboard_rows(sample_project())[0]
 
-        for key in ('ID', 'Name', 'Type', 'Duration', 'Progress', 'Level'):
+        for key in ('ID', 'Name', 'Type', 'Status', 'Duration', 'Progress',
+                    'Level'):
             self.assertIn(key, row)
 
     def test_the_level_follows_the_parent(self):
@@ -228,9 +240,45 @@ class TestKPIMetrics(unittest.TestCase):
 
         self.assertEqual(self.metrics['progress'], weighted_progress(rows))
 
-    def test_the_started_share_counts_the_rows_that_have_moved(self):
-        """One row of eight has progress on it."""
-        self.assertAlmostEqual(self.metrics['active_share'], 12.5)
+    def test_a_plan_of_active_rows_is_all_active(self):
+        """The shares read the Status field, not the progress."""
+        self.assertAlmostEqual(self.metrics['active_share'], 100.0)
+        self.assertAlmostEqual(self.metrics['draft_share'], 0.0)
+
+    def test_the_drafts_are_the_rest_of_them(self):
+        """Two rows of eight marked Draft is a quarter of the plan."""
+        metrics = kpi_metrics(dashboard_rows(
+            sample_project(t003='Draft', t004='Draft')))
+
+        self.assertAlmostEqual(metrics['active_share'], 75.0)
+        self.assertAlmostEqual(metrics['draft_share'], 25.0)
+
+    def test_the_two_shares_always_come_to_a_hundred(self):
+        """
+        They are written side by side and read as a pair, so a plan whose
+        halves do not meet reads as a fault in the arithmetic - which,
+        with two counts rounded separately, it would be.
+        """
+        for drafts in range(len(WORKED_EXAMPLE) + 1):
+            marked = {f"t{row[0]}": 'Draft'
+                      for row in WORKED_EXAMPLE[:drafts]}
+            metrics = kpi_metrics(dashboard_rows(sample_project(**marked)))
+
+            self.assertAlmostEqual(
+                metrics['active_share'] + metrics['draft_share'], 100.0,
+                msg=f"{drafts} drafts")
+
+    def test_progress_does_not_decide_the_status(self):
+        """
+        A row can be Active and untouched, or Draft and half done. The
+        share used to count the rows that had progress on them, which is a
+        different question and was labelled with this one's answer.
+        """
+        rows = dashboard_rows(sample_project())
+        started = [row for row in rows if row['Progress'] > 0]
+
+        self.assertEqual(len(started), 1)
+        self.assertAlmostEqual(self.metrics['active_share'], 100.0)
 
     def test_an_empty_plan_divides_by_nothing(self):
         """Every figure is zero rather than an exception."""
@@ -238,6 +286,7 @@ class TestKPIMetrics(unittest.TestCase):
 
         self.assertEqual(metrics['total_items'], 0)
         self.assertEqual(metrics['active_share'], 0.0)
+        self.assertEqual(metrics['draft_share'], 0.0)
         self.assertEqual(metrics['progress'], 0.0)
 
 
@@ -323,9 +372,35 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
         """The figures a reader came for, not just their captions."""
         texts = self.texts()
 
-        self.assertIn("21 days", texts)
-        self.assertIn("8 items", texts)
+        self.assertIn("21 Days", texts)
+        self.assertIn("8 Items", texts)
+        self.assertIn("1 Milestone", texts)
         self.assertIn("11.43%", texts)
+
+    def test_the_summary_names_every_figure(self):
+        """Six lines, each with a caption saying what it counts."""
+        texts = self.texts()
+
+        for caption in ("Total Project Scope", "Total Items Tracked",
+                        "Milestones Count", "Average Progress",
+                        "Active Status", "Draft Status"):
+            self.assertIn(caption, texts)
+
+    def test_the_two_status_lines_are_drawn_as_a_pair(self):
+        """Both letters, both shares, and the two coming to a hundred."""
+        from gantt_app.views.project_dashboard import ProjectDashboardFrame
+
+        frame = ProjectDashboardFrame(
+            self.root, sample_project(t003='Draft', t004='Draft'))
+        frame.canvas.configure(width=1200, height=800)
+        frame.refresh()
+
+        texts = [frame.canvas.itemcget(item, 'text')
+                 for item in frame.canvas.find_all()
+                 if frame.canvas.type(item) == 'text']
+
+        self.assertIn("75% Active (A)", texts)
+        self.assertIn("25% Draft (D)", texts)
 
     def test_an_empty_plan_says_so_and_invents_nothing(self):
         """No bars, no ring, and none of the old sample task names."""
@@ -350,7 +425,7 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
                                    end_date=BASE, duration=4))
         self.frame.refresh()
 
-        self.assertIn("25 days", self.texts())
+        self.assertIn("25 Days", self.texts())
 
     def test_the_drawing_follows_the_appearance(self):
         """
@@ -477,6 +552,109 @@ class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
 
         self.assertEqual([item['text'] for item in charts['submenu']],
                          ['Gantt Chart', 'Dashboard'])
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheDashboardFollowsThePlan(unittest.TestCase):
+    """
+    That an edit reaches the summary, through the real application.
+
+    WHY THESE EXIST:
+    ================
+    A dashboard that was right when it was opened and stale afterwards is
+    worse than no dashboard: every number on it still looks like a
+    measurement. The chain it depends on - a change notifies
+    on_project_changed, which is update_all, which refreshes all three
+    panes - is four links long and entirely invisible, and nothing about
+    the dashboard would look wrong if a link went.
+
+    Built on the real GanttApp rather than a stand-in, because the wiring
+    is what is being tested and a stand-in would be wired by the test.
+    """
+
+    def setUp(self):
+        """The application, with the dashboard open on its sample plan."""
+        from gantt_app.main import GanttApp
+
+        self.app = GanttApp()
+        self.app.withdraw()
+        self.app.update_idletasks()
+
+        self.app.toolbar.show_dashboard()
+        self.dashboard = self.app.dashboard_frame
+        self.dashboard.canvas.configure(width=1200, height=800)
+        self.dashboard.refresh()
+
+    def tearDown(self):
+        """Tear it down."""
+        try:
+            self.app.destroy()
+        except Exception:
+            pass
+
+    def texts(self):
+        """Every piece of text the dashboard is showing."""
+        canvas = self.dashboard.canvas
+        return [canvas.itemcget(item, 'text') for item in canvas.find_all()
+                if canvas.type(item) == 'text']
+
+    def items_reported(self):
+        """The count in the summary box, as a number."""
+        for text in self.texts():
+            if text.endswith(' Items'):
+                return int(text.split()[0])
+        raise AssertionError(f"no item count on the dashboard: {self.texts()}")
+
+    def test_it_opens_on_the_plan_that_is_loaded(self):
+        """Not on sample data, and not on nothing."""
+        self.assertEqual(self.items_reported(),
+                         len(self.app.project.tasks))
+
+    def test_a_row_added_through_the_list_reaches_it(self):
+        """The route every dialog and every import ends up taking."""
+        before = self.items_reported()
+
+        self.app.task_list.add_task(Task(
+            id="900", name="Handover", task_type="Task",
+            start_date=BASE, end_date=BASE, duration=4))
+
+        self.assertEqual(self.items_reported(), before + 1)
+
+    def test_a_row_removed_through_the_list_reaches_it(self):
+        """And the other direction."""
+        before = self.items_reported()
+        going = self.app.project.tasks[-1].id
+
+        self.app.task_list.remove_task(going)
+
+        self.assertEqual(self.items_reported(), before - 1)
+
+    def test_progress_typed_into_a_row_reaches_the_summary(self):
+        """
+        The number a reader is most likely to change, and most likely to
+        go back to the dashboard to look at.
+        """
+        top = [task for task in self.app.project.tasks
+               if task.parent_task_id is None and not task.effective_milestone]
+        top[0].progress = 100
+        self.app.update_all()
+
+        self.assertNotIn("0.00%", self.texts())
+
+    def test_it_is_refreshed_even_while_the_chart_is_the_one_on_show(self):
+        """
+        Or it would be right only until the first edit made behind its
+        back, and a reader who switched away and back would be told the
+        plan had not moved.
+        """
+        self.app.toolbar.show_gantt_chart()
+        before = self.items_reported()
+
+        self.app.task_list.add_task(Task(
+            id="901", name="Retrospective", task_type="Task",
+            start_date=BASE, end_date=BASE, duration=1))
+
+        self.assertEqual(self.items_reported(), before + 1)
 
 
 if __name__ == '__main__':

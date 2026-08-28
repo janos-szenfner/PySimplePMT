@@ -78,7 +78,8 @@ def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
     RETURNS:
     --------
     List[Dict[str, Any]]
-        One dictionary per task: id, name, type, duration, progress, level.
+        One dictionary per task: id, name, type, status, duration, progress
+        and level.
 
     DEVELOPMENT NOTES:
     ------------------
@@ -97,6 +98,7 @@ def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
             'ID': task.id,
             'Name': task.name,
             'Type': task.task_type,
+            'Status': getattr(task, 'status', 'Active') or 'Active',
             'Duration': task.duration_days or 0,
             'Progress': task.progress or 0,
             'Level': _level_of(task, project),
@@ -174,7 +176,7 @@ def duration_by_type(rows: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
 
 def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    The five numbers in the summary box.
+    The six numbers in the summary box.
 
     RETURNS:
     --------
@@ -183,17 +185,30 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         total_items   - how many rows there are
         milestones    - how many of them are milestones
         progress      - weighted_progress over the same rows
-        active_share  - percentage of rows that have started
+        active_share  - percentage of rows marked Active
+        draft_share   - percentage marked Draft, being the rest of them
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The two shares are the Status field a row carries - the A and D the
+    task list shows in its Status column - and not how far the work has
+    got. They are meant to be read as a pair and to come to a hundred, so
+    the draft share is what is left after the active one rather than a
+    second count of its own: rounding two halves separately is how a plan
+    of eight rows comes to 99%.
     """
     top = [row for row in rows if row['Level'] == 1]
-    started = [row for row in rows if row['Progress'] > 0]
+    active = [row for row in rows if row.get('Status', 'Active') != 'Draft']
+
+    active_share = (len(active) / len(rows) * 100) if rows else 0.0
     return {
         'total_scope': sum(row['Duration'] for row in top),
         'total_items': len(rows),
         'milestones': len([row for row in rows
                            if row['Type'] == 'Milestone']),
         'progress': weighted_progress(rows),
-        'active_share': (len(started) / len(rows) * 100) if rows else 0.0,
+        'active_share': active_share,
+        'draft_share': (100.0 - active_share) if rows else 0.0,
     }
 
 
@@ -551,17 +566,33 @@ class ProjectDashboardFrame(ctk.CTkFrame):
     # -- 4: the numbers underneath ----------------------------------------
 
     def _draw_summary(self, rows, x, y, width, height):
-        """The five figures, in a box of their own."""
+        """
+        The six figures, in a box of their own.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The two status lines are written as a pair - the share Active and
+        the share Draft, coming to a hundred between them - because either
+        on its own leaves the reader working out the other, and the A and
+        the D are the letters the task list's own Status column uses.
+        """
         left, top, right, bottom = self._panel(
             x, y, width, height, "Summary")
 
         metrics = kpi_metrics(rows)
         lines = (
-            ("Total project scope", f"{metrics['total_scope']} days"),
-            ("Total items tracked", f"{metrics['total_items']} items"),
-            ("Milestones", f"{metrics['milestones']}"),
-            ("Overall completion", f"{metrics['progress']:.2f}%"),
-            ("Rows started", f"{metrics['active_share']:.0f}%"),
+            ("Total Project Scope",
+             f"{metrics['total_scope']} "
+             f"{self._plural('Day', metrics['total_scope'])}"),
+            ("Total Items Tracked",
+             f"{metrics['total_items']} "
+             f"{self._plural('Item', metrics['total_items'])}"),
+            ("Milestones Count",
+             f"{metrics['milestones']} "
+             f"{self._plural('Milestone', metrics['milestones'])}"),
+            ("Average Progress", f"{metrics['progress']:.2f}%"),
+            ("Active Status", f"{metrics['active_share']:.0f}% Active (A)"),
+            ("Draft Status", f"{metrics['draft_share']:.0f}% Draft (D)"),
         )
 
         box_h = min(len(lines) * 24 + 28, bottom - top)
@@ -591,6 +622,11 @@ class ProjectDashboardFrame(ctk.CTkFrame):
         self.canvas.create_text(
             (left + right) // 2, (top + bottom) // 2, text=text,
             fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
+
+    @staticmethod
+    def _plural(word: str, count) -> str:
+        """The word, with an s on it unless there is exactly one."""
+        return word if count == 1 else word + 's'
 
     @staticmethod
     def _clip(text: str, longest: int) -> str:
