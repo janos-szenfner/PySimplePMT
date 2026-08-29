@@ -19,6 +19,7 @@ This is a complete implementation of a project management tool with:
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
+- **Resource Settings**: Settings → Resource Settings manages Named people, Generic role placeholders and Team pools in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity, hourly rates, days off and team splits; everything is stored inside the project JSON. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
 - **Retype in the grid**: Double-click the **Type** cell for a dropdown of every type. Picking one stores it — one undo step, and the editor shows it. Choosing `Milestone` sets the milestone flag with it, so the editor opens with the switch on; choosing anything else clears it again
 - **New task from the keyboard**: `⌥⌘I` on a Mac, `Ctrl+Alt+I` elsewhere, creates a task beside the row the cursor is on and opens its editor. With no cursor it goes at the end of the plan
@@ -68,6 +69,7 @@ This is a complete implementation of a project management tool with:
 gantt_app/
 ├── __init__.py
 ├── models.py              # Task and Project data models
+├── resource_model.py      # Resources, teams, schedules, leave and capacity
 ├── workdaycalendar.py     # Working days, weekends, holidays, overrides
 ├── calendarregistry.py    # Named calendars, and which one a task follows
 ├── theme.py               # Light or dark, who decides it, and the palette
@@ -83,10 +85,11 @@ gantt_app/
 │   ├── scrollframe.py     # Scrolling container the task form is built in
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
 │   ├── colorpicker.py     # Color picker with popup for task dialogs
-│   ├── datepicker.py      # Date box with a calendar, used by the task dialogs
+│   ├── datepicker.py      # Date box and calendar shared by task/resource editors
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── holidaydialog.py   # Working week, public holidays, date overrides
+│   ├── resourcesettings.py # Resource grids and resource/team editor modals
 │   ├── searchbox.py       # Finding a row by anything written on it
 │   ├── criticalpath.py    # The critical path analysis, task by task
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
@@ -152,6 +155,84 @@ desktop asks for.
 - **Serialization**: to_dict(), from_dict() for JSON compatibility
 - **Critical Path**: get_critical_path() algorithm for project analysis
 - **Factory Methods**: create_task(), create_milestone() for easy object creation
+
+### Resource Management (`resource_model.py`, `views/resourcesettings.py`)
+
+**Settings → Resource Settings** opens the resource pool belonging to the current
+project. Resource definitions are deliberately separate from task assignment:
+the pool can be prepared before the schedule knows exactly who will perform each
+piece of work.
+
+#### Resource and team data
+
+- **Named resources** represent known people, carrying a name, role or skill,
+  schedule, daily capacity, hourly rate, team memberships and days off.
+- **Generic resources** reserve a role before a person is known. An unnamed
+  Generic resource receives a role-based name such as `DevOps Placeholder #1`.
+- **Team pools** aggregate Named and Generic members through independent split
+  percentages, or use a fixed manual capacity override.
+- **Project persistence** writes resources and teams into the same JSON object as
+  the tasks. Copying or sharing a project file therefore carries its resource
+  pool, schedules, leave and team allocations with it. Files saved before
+  resource management existed load with an empty pool.
+
+#### Grid-first Resource Settings window
+
+The **Resources** and **Teams** tabs are full-width, scrollable data grids rather
+than permanent forms. Resource rows show type, name, role, schedule, capacity,
+teams and days off. Team rows show schedule, calculation mode, total capacity,
+member count and a daily summary. Search narrows either table, and the Resources
+tab can also filter Named or Generic entries.
+
+Clicking a row highlights it and enables **Edit Selected** and the red
+**Delete Selected** action. **Create New Resource** and **Create New Team** open
+dedicated modal editors. **Save & Apply** updates the project in memory;
+**Save Changes** uses the ordinary project save command, and **File → Save**
+will write the same state as well.
+
+#### Resource Editor
+
+The Resource Editor has four tabs:
+
+1. **General Settings** — name, Named or Generic type, role, schedule, capacity
+   unit and value, seven daily capacity boxes, and hourly rate.
+2. **Days Off** — any number of leave or downtime ranges, with the same calendar
+   date picker used by the task editor and an optional reason.
+3. **Assigned Teams** — every available team with an assignment checkbox and an
+   exact split percentage.
+4. **Assigned Tasks (Read-Only)** — reserved for task-resource assignment, which
+   remains future work and will be managed from the Gantt / Task Scheduler view.
+
+The schedule presets are Standard Monday-Friday, Full Week, Weekend Only, 24/7
+Continuous and Custom. Capacity can be entered as FTE, daily hours or weekly
+hours (`1.0 FTE = 40 hours/week`). Changing units preserves the capacity;
+editing one day makes the pattern Custom and recalculates the weekly total and
+FTE.
+
+#### Team Editor and allocation status
+
+The Team Editor sets the team's schedule and chooses either **Dynamic
+(Calculated from Assigned Members)** or **Fixed Team Capacity**. Its member
+matrix adds or removes resources and recalculates contributed daily hours,
+weekly hours and FTE while a split is typed. A fixed team uses its manual limit
+regardless of member totals.
+
+Split percentages are not silently capped. For example, a 40-hour member at
+`200%` contributes 80 hours, and the saved project retains `200%`. Member rows
+use the following capacity states:
+
+| Split | State | Colour |
+| ---: | --- | --- |
+| `0%` | Free | Neutral |
+| `1–80%` | Optimal | Green |
+| `81–100%` | Full capacity | Yellow |
+| `>100%` | Over capacitated | Red |
+
+Setting a split to zero or choosing **Remove** unassigns the member. Deleting a
+resource removes it from every team matrix because memberships live on the
+resource itself. Task assignment, workload costing and resource levelling are
+not complete yet; Resource Settings currently defines the pool and its
+available capacity.
 
 ### The Working Day Calendar (`workdaycalendar.py`)
 
@@ -1012,7 +1093,7 @@ on any desktop does:
 - **File**: New Project, Load Project, Save Project, Save Project As
 - **Actions**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
-- **Settings**: Project Settings, Calendar Settings, Gantt Settings
+- **Settings**: Project Settings, Calendar Settings, Resource Settings, Gantt Settings
 - **Edit**: Create (Phase, Task, Subtask, Milestone), Undo, Redo, Cut, Copy,
   Paste - the clipboard three carry the key they answer to, written the way
   this platform writes it (`⌘X` on a Mac, `Ctrl+X` elsewhere)
@@ -2434,7 +2515,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-2198 tests passing, with 1 display-dependent test skipped when its required environment is unavailable.
+2203 tests passing, with 1 display-dependent test skipped when its required environment is unavailable.
 
 ## Known Limitations
 
@@ -2498,5 +2579,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.64.3
+**Version**: 1.64.4
 **Last Updated**: 2026-08-29
