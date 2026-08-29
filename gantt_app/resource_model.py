@@ -137,12 +137,21 @@ class ResourceRepository:
             generic.assigned_project_ids + named.assigned_project_ids))
         return generic
 
-    def save_to_file(self):
-        data = {
+    def to_dict(self) -> dict:
+        return {
             "resources": [resource.to_dict()
                           for resource in self.resources.values()],
             "teams": [team.to_dict() for team in self.teams.values()],
         }
+
+    @classmethod
+    def from_dict(cls, data) -> "ResourceRepository":
+        repository = cls()
+        repository._load_dict(data)
+        return repository
+
+    def save_to_file(self):
+        data = self.to_dict()
         self.filepath.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.filepath.with_suffix(self.filepath.suffix + ".tmp")
         with temporary.open("w", encoding="utf-8") as stream:
@@ -157,6 +166,11 @@ class ResourceRepository:
             self.resources = {}
             self.teams = {}
             return
+        self._load_dict(data)
+
+    def _load_dict(self, data):
+        if data is None:
+            data = {}
         if not isinstance(data, dict):
             raise ValueError("Resource settings must contain a JSON object")
         resource_data = data.get("resources", [])

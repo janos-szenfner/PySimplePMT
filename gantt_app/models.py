@@ -19,6 +19,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
+from gantt_app.resource_model import ResourceRepository
 from gantt_app.taskstyle import TaskStyle
 from gantt_app.calendarregistry import CalendarRegistry, default_registry
 from gantt_app.workdaycalendar import (
@@ -1165,6 +1166,8 @@ class Project:
     #: anything, and a number a reader typed should still be theirs when
     #: they come back to it.
     priority: int = DEFAULT_PROJECT_PRIORITY
+    resource_repository: ResourceRepository = field(
+        default_factory=ResourceRepository, compare=False)
 
     def calendar_for(self, task: Task) -> WorkingCalendar:
         """
@@ -2818,6 +2821,7 @@ class Project:
             'status_date': (self.status_date.isoformat()
                             if self.status_date else None),
             'priority': self.priority,
+            **self.resource_repository.to_dict(),
         }
 
     @staticmethod
@@ -2884,6 +2888,10 @@ class Project:
             deadline=cls._read_date(data.get('deadline')),
             status_date=cls._read_date(data.get('status_date')),
             priority=data.get('priority', DEFAULT_PROJECT_PRIORITY),
+            resource_repository=ResourceRepository.from_dict({
+                'resources': data.get('resources', []),
+                'teams': data.get('teams', []),
+            }),
         )
         
         # Add tasks manually

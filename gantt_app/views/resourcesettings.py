@@ -130,7 +130,6 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                 weekly_capacity_hours=capacity, cost_per_hour=cost,
                 assigned_project_ids=project_ids)
             self.repo.add_resource(resource)
-        self._persist()
         self._clear_form()
         self._refresh_resource_list()
         self._refresh_team_list()
@@ -158,13 +157,11 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                                    "Delete this resource from the project pool?"):
             return
         self.repo.remove_resource(resource_id)
-        self._persist()
         self._refresh_resource_list()
         self._refresh_team_list()
 
     def _swap_generic(self, generic_id: str, named_id: str):
         self.repo.swap_generic(generic_id, named_id)
-        self._persist()
         self._refresh_resource_list()
         self._refresh_team_list()
 
@@ -236,7 +233,6 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.team_problem.configure(text="Enter a team name.")
             return
         self.repo.add_team(TeamPool(id=self.repo.new_id("team"), name=name))
-        self._persist()
         self.entry_team_name.delete(0, tk.END)
         self.team_problem.configure(text="")
         self._refresh_team_list()
@@ -259,7 +255,6 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         team.fixed_hours = fixed_hours
         for resource_id, percentage in allocations.items():
             self.repo.set_team_allocation(resource_id, team_id, percentage)
-        self._persist()
         self.team_problem.configure(text="")
         self._refresh_team_list()
 
@@ -267,7 +262,6 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         if not messagebox.askyesno("Delete Team", "Delete this team pool?"):
             return
         self.repo.remove_team(team_id)
-        self._persist()
         self._refresh_team_list()
 
     def _refresh_team_list(self):
@@ -312,10 +306,3 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             ctk.CTkButton(actions, text="Delete", width=70,
                           command=lambda tid=team.id: self._delete_team(tid)).pack(
                               side=tk.RIGHT, padx=2)
-
-    def _persist(self):
-        try:
-            self.repo.save_to_file()
-        except OSError as error:
-            messagebox.showerror("Resource Settings",
-                                 f"Could not save resource settings:\n{error}")

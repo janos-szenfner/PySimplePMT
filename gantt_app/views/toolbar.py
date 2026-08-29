@@ -16,6 +16,7 @@ from typing import Optional, Callable, List, Dict
 import customtkinter as ctk
 
 from gantt_app.models import Task, Project
+from gantt_app.resource_model import ResourceRepository
 from gantt_app.utils.file_io import save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
 from gantt_app.utils.mpp_importer import (
@@ -1775,6 +1776,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
+            self.project.resource_repository = project.resource_repository
             
             self._forget_the_previous_plan()
             
@@ -1800,6 +1802,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.tasks = []
             self.project.start_date = None
             self.project.end_date = None
+            self.project.resource_repository = ResourceRepository()
             
             self._forget_the_previous_plan()
             
@@ -2072,6 +2075,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
+            self.project.resource_repository = project.resource_repository
 
             self._forget_the_previous_plan()
 
@@ -2499,21 +2503,10 @@ class Toolbar(ctk.CTkFrame):
     
     def open_resource_settings(self):
         """Open the resource and team settings dialog."""
-        from gantt_app.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
-        repository = ResourceRepository()
-        try:
-            repository.load_from_file()
-        except (OSError, ValueError, TypeError) as error:
-            logger.exception("Could not load resource settings")
-            messagebox.showerror(
-                "Resource Settings",
-                f"Could not load resource settings:\n{error}"
-            )
-            return
         ResourceSettingsWindow(
-            self.winfo_toplevel(), repository,
+            self.winfo_toplevel(), self.project.resource_repository,
             active_project_ids=[self.project.name],
         )
 

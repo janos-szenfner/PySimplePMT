@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import shutil
 
 from gantt_app.models import Task, Project
+from gantt_app.resource_model import Resource, ResourceType, TeamPool
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 
 
@@ -98,6 +99,57 @@ class TestJSONFileIO(unittest.TestCase):
             self.assertEqual(loaded_task.color, original_task.color)
             self.assertEqual(loaded_task.is_milestone, original_task.is_milestone)
     
+    def test_resources_are_saved_inside_the_project_json(self):
+        repository = self.project.resource_repository
+        repository.add_resource(Resource(
+            id="res_1", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager", weekly_capacity_hours=40,
+            cost_per_hour=75, assigned_project_ids=["Test Project"],
+        ))
+        repository.add_team(TeamPool(id="team_1", name="Core QA"))
+        repository.set_team_allocation("res_1", "team_1", 60)
+        filepath = os.path.join(self.test_dir, "project_with_resources.json")
+
+        self.assertTrue(JSONFileIO.save_project(self.project, filepath))
+
+        with open(filepath, encoding="utf-8") as stream:
+            data = json.load(stream)
+        self.assertEqual(data["resources"][0]["name"], "John Doe")
+        self.assertEqual(data["teams"][0]["name"], "Core QA")
+        self.assertFalse(os.path.exists(os.path.join(self.test_dir,
+                                                     "resources.json")))
+
+    def test_resources_load_back_into_the_project(self):
+        repository = self.project.resource_repository
+        repository.add_resource(Resource(
+            id="res_1", name="DevOps Engineer #1",
+            resource_type=ResourceType.GENERIC, role_type="DevOps",
+            team_memberships={"team_1": 0.4},
+        ))
+        repository.add_team(TeamPool(id="team_1", name="Infrastructure"))
+        filepath = os.path.join(self.test_dir, "resource_roundtrip.json")
+
+        JSONFileIO.save_project(self.project, filepath)
+        loaded = JSONFileIO.load_project(filepath)
+
+        self.assertEqual(loaded.resource_repository.resources["res_1"].name,
+                         "DevOps Engineer #1")
+        self.assertEqual(loaded.resource_repository.teams["team_1"].name,
+                         "Infrastructure")
+        self.assertEqual(
+            loaded.resource_repository.resources["res_1"].team_memberships,
+            {"team_1": 0.4})
+
+    def test_legacy_project_without_resources_loads_an_empty_pool(self):
+        data = self.project.to_dict()
+        data.pop("resources")
+        data.pop("teams")
+
+        loaded = Project.from_dict(data)
+
+        self.assertEqual(loaded.resource_repository.resources, {})
+        self.assertEqual(loaded.resource_repository.teams, {})
+
     def test_load_nonexistent_file(self):
         """Test loading a file that doesn't exist."""
         filepath = os.path.join(self.test_dir, "nonexistent.json")
