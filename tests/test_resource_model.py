@@ -1,10 +1,12 @@
+from datetime import date
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from gantt_app.resource_model import (
-    Resource, ResourceRepository, ResourceType, TeamPool,
+    DAYS, Resource, ResourceRepository, ResourceType, SchedulePattern, TeamPool,
+    capacity_from_entry, default_daily_capacity,
 )
 
 
@@ -107,6 +109,123 @@ class TestResourceModel(unittest.TestCase):
         self.assertEqual(replacement.assigned_project_ids,
                          ["Project A", "Project B"])
         self.assertIn("person", repository.resources)
+
+    def test_standard_full_week_weekend_and_continuous_defaults(self):
+        self.assertEqual(list(default_daily_capacity(
+            SchedulePattern.STANDARD).values()), [8, 8, 8, 8, 8, 0, 0])
+        self.assertAlmostEqual(sum(default_daily_capacity(
+            SchedulePattern.FULL_WEEK).values()), 40)
+        self.assertEqual(list(default_daily_capacity(
+            SchedulePattern.WEEKEND_ONLY).values()), [0, 0, 0, 0, 0, 8, 8])
+        self.assertEqual(list(default_daily_capacity(
+            SchedulePattern.CONTINUOUS).values()), [24] * 7)
+
+    def test_capacity_units_recalculate_daily_weekly_and_fte(self):
+        weekly = capacity_from_entry(SchedulePattern.STANDARD, 20,
+                                     "Weekly Hours")
+        daily = capacity_from_entry(SchedulePattern.WEEKEND_ONLY, 12,
+                                    "Daily Hours")
+        fte = capacity_from_entry(SchedulePattern.FULL_WEEK, 1.5, "FTE")
+
+        self.assertEqual(list(weekly.values()), [4, 4, 4, 4, 4, 0, 0])
+        self.assertEqual(list(daily.values()), [0, 0, 0, 0, 0, 12, 12])
+        self.assertAlmostEqual(sum(fte.values()), 60)
+
+    def test_custom_daily_grid_drives_weekly_capacity_and_fte(self):
+        resource = self.resource()
+
+        resource.set_daily_capacity(dict(zip(DAYS, [8, 4, 8, 4, 0, 0, 0])))
+
+        self.assertIs(resource.schedule_pattern, SchedulePattern.CUSTOM)
+        self.assertEqual(resource.weekly_capacity_hours, 24)
+        self.assertEqual(resource.fte, 0.6)
+
+    def test_daily_workload_flags_only_the_overbooked_day(self):
+        resource = self.resource()
+
+        status = resource.workload_status({"mon": 10, "tue": 0})
+
+        self.assertTrue(status["mon"]["overallocated"])
+        self.assertEqual(status["mon"]["percentage"], 125)
+        self.assertFalse(status["tue"]["overallocated"])
+
+    def test_workload_by_calendar_date_uses_that_weekdays_capacity(self):
+        resource = self.resource()
+
+        status = resource.workload_status_for_dates({
+            date(2026, 8, 31): 10,
+            "2026-09-05": 2,
+        })
+
+        self.assertEqual(status["2026-08-31"]["percentage"], 125)
+        self.assertTrue(status["2026-08-31"]["overallocated"])
+        self.assertEqual(status["2026-09-05"]["capacity"], 0)
+        self.assertTrue(status["2026-09-05"]["overallocated"])
+
+    def test_team_daily_capacity_applies_each_member_split(self):
+        team = TeamPool(id="team_1", name="Core QA")
+        john = self.resource(team_memberships={"team_1": 0.5})
+        weekend = self.resource(
+            "res_2", ResourceType.GENERIC, name="Weekend QA",
+            schedule_pattern=SchedulePattern.WEEKEND_ONLY,
+            daily_capacity_hours=dict(zip(DAYS, [0, 0, 0, 0, 0, 12, 12])),
+            team_memberships={"team_1": 0.25})
+
+        daily = team.calculate_daily_capacity([john, weekend])
+
+        self.assertEqual(list(daily.values()), [4, 4, 4, 4, 4, 3, 3])
+        self.assertEqual(team.calculate_effective_capacity([john, weekend]), 26)
+
+    def test_fixed_team_uses_its_own_daily_schedule(self):
+        team = TeamPool(
+            id="team_1", name="Operations", is_fixed_capacity=True,
+            schedule_pattern=SchedulePattern.CONTINUOUS,
+            fixed_daily_hours=dict.fromkeys(DAYS, 24))
+
+        self.assertEqual(list(team.calculate_daily_capacity([]).values()),
+                         [24] * 7)
+        self.assertEqual(team.calculate_effective_capacity([]), 168)
+        self.assertEqual(team.fixed_fte, 4.2)
+
+    def test_generic_placeholder_names_increment_by_role(self):
+        repository = ResourceRepository()
+        repository.add_resource(self.resource(
+            resource_type=ResourceType.GENERIC,
+            name="DevOps Placeholder #1", role_type="DevOps"))
+
+        self.assertEqual(repository.next_placeholder_name("DevOps"),
+                         "DevOps Placeholder #2")
+        self.assertEqual(repository.next_placeholder_name("QA"),
+                         "QA Placeholder #1")
+
+    def test_resource_operations_are_logged(self):
+        repository = ResourceRepository()
+        resource = self.resource()
+        team = TeamPool(id="team_1", name="Core QA")
+
+        with self.assertLogs("gantt_app.resource_model", level="INFO") as logs:
+            repository.add_resource(resource)
+            repository.add_team(team)
+            repository.set_team_allocation(resource.id, team.id, 50)
+            repository.remove_resource(resource.id)
+            repository.remove_team(team.id)
+
+        text = "\n".join(logs.output)
+        self.assertIn("Added named resource", text)
+        self.assertIn("allocation", text)
+        self.assertIn("Removed resource", text)
+        self.assertIn("Removed resource team", text)
+
+    def test_legacy_resource_gains_a_standard_daily_schedule(self):
+        data = self.resource().to_dict()
+        data.pop("schedule_pattern")
+        data.pop("daily_capacity_hours")
+
+        restored = Resource.from_dict(data)
+
+        self.assertIs(restored.schedule_pattern, SchedulePattern.STANDARD)
+        self.assertEqual(list(restored.daily_capacity_hours.values()),
+                         [8, 8, 8, 8, 8, 0, 0])
 
     def test_repository_persists_and_loads_resources_and_teams(self):
         with tempfile.TemporaryDirectory() as directory:

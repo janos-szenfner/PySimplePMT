@@ -101,6 +101,36 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertIn(self.project.name, dialog.project_vars)
         self.assertTrue(hasattr(dialog, "team_list_frame"))
 
+    def test_resource_settings_builds_daily_capacity_controls(self):
+        from gantt_app.resource_model import ResourceRepository, SchedulePattern
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        dialog = ResourceSettingsWindow(self.root, repository)
+
+        self.assertEqual(tuple(dialog.daily_entries),
+                         ("mon", "tue", "wed", "thu", "fri", "sat", "sun"))
+        dialog._schedule_changed(SchedulePattern.CONTINUOUS.value)
+        self.assertEqual([float(entry.get())
+                          for entry in dialog.daily_entries.values()], [24] * 7)
+        self.assertEqual(dialog.capacity_summary.cget("text"),
+                         "168 hours/week | 4.20 FTE")
+
+    def test_generic_resource_name_is_generated_from_its_role(self):
+        from gantt_app.resource_model import ResourceRepository, ResourceType
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        dialog = ResourceSettingsWindow(self.root, repository)
+        dialog.combo_type.set("Generic (Role Placeholder)")
+        dialog.entry_role.insert(0, "DevOps")
+
+        dialog._save_resource()
+
+        resource = next(iter(repository.resources.values()))
+        self.assertEqual(resource.name, "DevOps Placeholder #1")
+        self.assertIs(resource.resource_type, ResourceType.GENERIC)
+
     def test_the_settings_dialog_opens_on_the_saved_colours(self):
         """
         Not on the theme's, which would discard what was chosen before.
