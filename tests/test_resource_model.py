@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from gantt_app.resource_model import (
-    DAYS, Resource, ResourceRepository, ResourceType, SchedulePattern, TeamPool,
+    DAYS, DaysOffRange, Resource, ResourceRepository, ResourceType,
+    SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,
 )
 
@@ -32,6 +33,19 @@ class TestResourceModel(unittest.TestCase):
 
         self.assertEqual(restored, resource)
         self.assertIs(restored.resource_type, ResourceType.NAMED)
+
+    def test_days_off_ranges_round_trip_with_a_resource(self):
+        resource = self.resource(days_off=[DaysOffRange(
+            date(2026, 8, 10), date(2026, 8, 20), "Summer Vacation")])
+
+        restored = Resource.from_dict(resource.to_dict())
+
+        self.assertEqual(restored.days_off, resource.days_off)
+        self.assertEqual(restored.days_off[0].reason, "Summer Vacation")
+
+    def test_days_off_range_rejects_an_end_before_its_start(self):
+        with self.assertRaises(ValueError):
+            DaysOffRange(date(2026, 8, 20), date(2026, 8, 10), "Invalid")
 
     def test_resource_rejects_team_type_and_invalid_numbers(self):
         with self.assertRaises(ValueError):

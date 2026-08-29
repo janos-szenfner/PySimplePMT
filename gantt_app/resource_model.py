@@ -93,6 +93,35 @@ def _validated_daily(values: Dict[str, float], maximum: Optional[float] = 24) ->
     return result
 
 
+@dataclass(frozen=True)
+class DaysOffRange:
+    start_date: date
+    end_date: date
+    reason: str = ""
+
+    def __post_init__(self):
+        start = (self.start_date if isinstance(self.start_date, date)
+                 else date.fromisoformat(str(self.start_date)))
+        end = (self.end_date if isinstance(self.end_date, date)
+               else date.fromisoformat(str(self.end_date)))
+        if end < start:
+            raise ValueError("Days off end date cannot be before its start date")
+        object.__setattr__(self, "start_date", start)
+        object.__setattr__(self, "end_date", end)
+        object.__setattr__(self, "reason", self.reason.strip())
+
+    def to_dict(self):
+        return {
+            "start_date": self.start_date.isoformat(),
+            "end_date": self.end_date.isoformat(),
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(**data)
+
+
 @dataclass
 class Resource:
     id: str
@@ -105,6 +134,7 @@ class Resource:
     assigned_project_ids: List[str] = field(default_factory=list)
     schedule_pattern: SchedulePattern = SchedulePattern.STANDARD
     daily_capacity_hours: Dict[str, float] = field(default_factory=dict)
+    days_off: List[DaysOffRange] = field(default_factory=list)
 
     def __post_init__(self):
         if not isinstance(self.resource_type, ResourceType):
@@ -122,6 +152,9 @@ class Resource:
                  distribute_weekly_capacity(self.schedule_pattern,
                                             self.weekly_capacity_hours))
         self.set_daily_capacity(daily, preserve_pattern=True)
+        self.days_off = [item if isinstance(item, DaysOffRange)
+                         else DaysOffRange.from_dict(item)
+                         for item in self.days_off]
 
     @property
     def fte(self) -> float:
@@ -191,6 +224,7 @@ class Resource:
             "assigned_project_ids": self.assigned_project_ids,
             "schedule_pattern": self.schedule_pattern.value,
             "daily_capacity_hours": self.daily_capacity_hours,
+            "days_off": [item.to_dict() for item in self.days_off],
         }
 
     @classmethod

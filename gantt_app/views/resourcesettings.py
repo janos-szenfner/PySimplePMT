@@ -1,755 +1,926 @@
 import tkinter as tk
-from typing import Dict, Optional
+from datetime import date
+from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
 
 from gantt_app.resource_model import (
-    DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, Resource, ResourceRepository,
-    ResourceType, SchedulePattern, TeamPool, capacity_from_entry,
-    default_daily_capacity,
+    DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, DaysOffRange, Resource,
+    ResourceRepository, ResourceType, SchedulePattern, TeamPool,
+    capacity_from_entry, default_daily_capacity,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views import dialogs as messagebox
-from gantt_app.views.modal import grab_when_visible
+from gantt_app.views.modal import grab_when_visible, take_grab
 
 
 logger = get_logger(__name__)
 CAPACITY_UNITS = ("FTE", "Daily Hours", "Weekly Hours")
+TYPE_LABELS = {
+    ResourceType.NAMED: "Named (Person)",
+    ResourceType.GENERIC: "Generic (Role Placeholder)",
+}
+TYPE_VALUES = {label: kind for kind, label in TYPE_LABELS.items()}
 
 
-class ResourceSettingsWindow(ctk.CTkToplevel):
-    GEOMETRY = "1250x780"
+def _field(parent, label, widget, row):
+    ctk.CTkLabel(parent, text=label, anchor=tk.W,
+                 font=("Arial", 11, "bold")).grid(
+                     row=row, column=0, padx=(12, 8), pady=6, sticky="w")
+    widget.grid(row=row, column=1, padx=(0, 12), pady=6, sticky="ew")
 
-    def __init__(self, master, repo: ResourceRepository,
-                 active_project_ids=None, **kwargs):
+
+def _set_entry(entry, value):
+    entry.delete(0, tk.END)
+    entry.insert(0, str(value))
+
+
+def _number(entry, label, default=0.0):
+    text = entry.get().strip().rstrip("%")
+    try:
+        value = float(text) if text else default
+    except ValueError as error:
+        raise ValueError(f"{label} must be a number.") from error
+    if value < 0:
+        raise ValueError(f"{label} cannot be negative.")
+    return value
+
+
+def _schedule_short(pattern):
+    return {
+        SchedulePattern.STANDARD: "Standard (M-F)",
+        SchedulePattern.FULL_WEEK: "Full Week (M-Sun)",
+        SchedulePattern.WEEKEND_ONLY: "Weekend Only",
+        SchedulePattern.CONTINUOUS: "24/7 Continuous",
+        SchedulePattern.CUSTOM: "Custom",
+    }[pattern]
+
+
+def _daily_summary(values):
+    active = [(index, DAY_LABELS[index], values[day])
+              for index, day in enumerate(DAYS) if values[day] > 0]
+    if not active:
+        return "0h/day"
+    hours = {value for _index, _label, value in active}
+    if len(hours) != 1:
+        return f"{sum(values.values()):g}h/week (custom)"
+    indices = [index for index, _label, _value in active]
+    labels = [label for _index, label, _value in active]
+    days = (f"{labels[0]}-{labels[-1]}"
+            if indices == list(range(indices[0], indices[-1] + 1))
+            else ", ".join(labels))
+    return f"{active[0][2]:g}h/day ({days})"
+
+
+class DataGrid(ctk.CTkScrollableFrame):
+    def __init__(self, master, columns, on_select, **kwargs):
         super().__init__(master, **kwargs)
-        self.repo = repo
-        self.active_project_ids = list(active_project_ids or [])
-        self.editing_resource_id: Optional[str] = None
-        self.editing_team_id: Optional[str] = None
-        self.editing_resource_team_id: Optional[str] = None
-        self.project_vars: Dict[str, ctk.BooleanVar] = {}
-        self._updating_capacity = False
+        self.columns = columns
+        self.on_select = on_select
+        self.row_widgets = {}
+        self.selected_id = None
+        for column, (_name, width, weight, _anchor) in enumerate(columns):
+            self.grid_columnconfigure(column, weight=weight, minsize=width)
+        self._header()
 
-        self.title("Resource Settings - Manage Resources & Teams")
+    def _header(self):
+        for column, (name, _width, _weight, anchor) in enumerate(self.columns):
+            ctk.CTkLabel(self, text=name, font=("Arial", 10, "bold"),
+                         anchor=anchor, fg_color=("gray80", "gray25")).grid(
+                             row=0, column=column, padx=1, pady=(0, 2),
+                             sticky="nsew")
+
+    def clear(self):
+        for widgets in self.row_widgets.values():
+            for widget in widgets:
+                widget.destroy()
+        self.row_widgets = {}
+        self.selected_id = None
+
+    def add_row(self, item_id, values):
+        row = len(self.row_widgets) + 1
+        widgets = []
+        for column, (value, specification) in enumerate(zip(values, self.columns)):
+            _name, width, _weight, anchor = specification
+            text, text_color = value if isinstance(value, tuple) else (value, None)
+            options = {"text_color": text_color} if text_color else {}
+            label = ctk.CTkLabel(
+                self, text=text, anchor=anchor, justify=tk.LEFT,
+                wraplength=max(width - 10, 40), fg_color="transparent",
+                **options)
+            label.grid(row=row, column=column, padx=1, pady=1, sticky="nsew")
+            label.bind("<Button-1>", lambda _event, key=item_id: self.select(key))
+            widgets.append(label)
+        self.row_widgets[item_id] = widgets
+
+    def select(self, item_id, notify=True):
+        if item_id not in self.row_widgets:
+            return
+        for key, widgets in self.row_widgets.items():
+            color = ("#b9d8f2", "#24577a") if key == item_id else "transparent"
+            for widget in widgets:
+                widget.configure(fg_color=color)
+        self.selected_id = item_id
+        if notify:
+            self.on_select(item_id)
+
+
+class BaseEditorModal(ctk.CTkToplevel):
+    GEOMETRY = "900x680"
+
+    def __init__(self, master, title, tabs, on_apply):
+        super().__init__(master)
+        self.on_apply = on_apply
+        self.title(title)
         self.geometry(self.GEOMETRY)
-        self.minsize(1050, 650)
+        self.minsize(760, 560)
         self.transient(master.winfo_toplevel())
         self.bind("<Escape>", lambda _event: self.destroy())
-
         self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
-        self.tab_resources = self.tabview.add("Resources (Named & Generic)")
-        self.tab_teams = self.tabview.add("Teams & Allocation Matrix")
-        self._setup_resources_tab()
-        self._setup_teams_tab()
-        logger.info("Opened Resource Settings with %d resources and %d teams",
-                    len(repo.resources), len(repo.teams))
-        grab_when_visible(self)
+        self.tabview.pack(fill=tk.BOTH, expand=True, padx=14, pady=(14, 6))
+        self.tabs = {name: self.tabview.add(name) for name in tabs}
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill=tk.X, padx=14, pady=(0, 14))
+        ctk.CTkButton(footer, text="Cancel", width=100,
+                      command=self.destroy).pack(side=tk.RIGHT, padx=(6, 0))
+        ctk.CTkButton(footer, text="Save & Apply", width=120,
+                      command=self.save_and_apply).pack(side=tk.RIGHT)
+        self.problem_label = ctk.CTkLabel(
+            footer, text="", text_color="#c0392b", anchor=tk.W)
+        self.problem_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        take_grab(self)
+        self.after_idle(self.focus_set)
 
-    @staticmethod
-    def _label(parent, text):
-        ctk.CTkLabel(parent, text=text, anchor=tk.W,
-                     font=("Arial", 11, "bold")).pack(
-                         fill=tk.X, padx=10, pady=(8, 1))
+    def fail(self, message):
+        self.problem_label.configure(text=message)
 
-    def _setup_resources_tab(self):
-        form = ctk.CTkScrollableFrame(self.tab_resources, width=365)
-        form.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
-        ctk.CTkLabel(form, text="CREATE / EDIT RESOURCE",
-                     font=("Arial", 16, "bold")).pack(pady=10)
+    def save_and_apply(self):
+        raise NotImplementedError
 
-        self._label(form, "Resource Name")
-        self.entry_name = ctk.CTkEntry(form)
-        self.entry_name.pack(fill=tk.X, padx=10)
-        self._label(form, "Resource Type")
-        self.combo_type = ctk.CTkComboBox(
-            form, values=["Named (Person)", "Generic (Role Placeholder)"],
-            state="readonly")
-        self.combo_type.set("Named (Person)")
-        self.combo_type.pack(fill=tk.X, padx=10)
-        self._label(form, "Role / Skill Tag")
-        self.entry_role = ctk.CTkEntry(form)
-        self.entry_role.pack(fill=tk.X, padx=10)
 
-        self._label(form, "Work Schedule Pattern")
-        self.combo_schedule = ctk.CTkOptionMenu(
-            form, values=[pattern.value for pattern in SchedulePattern],
-            command=self._schedule_changed)
-        self.combo_schedule.set(SchedulePattern.STANDARD.value)
-        self.combo_schedule.pack(fill=tk.X, padx=10)
+class ResourceEditorModal(BaseEditorModal):
+    def __init__(self, master, repo, resource=None, on_apply=None):
+        self.repo = repo
+        self.resource = resource
+        self.days_off = list(resource.days_off) if resource else []
+        self.team_controls = {}
+        self._updating_capacity = False
+        title = f"Resource Editor: {resource.name}" if resource else "Create Resource"
+        super().__init__(master, title,
+                         ("General Settings", "Days Off", "Assigned Teams",
+                          "Assigned Tasks (Read-Only)"), on_apply)
+        self._build_general()
+        self._build_days_off()
+        self._build_teams()
+        self._build_tasks()
+        if resource:
+            self._load_resource()
+        else:
+            self._apply_pattern(SchedulePattern.STANDARD.value)
 
-        self._label(form, "Capacity Entry & Units")
-        capacity_row = ctk.CTkFrame(form, fg_color="transparent")
-        capacity_row.pack(fill=tk.X, padx=10)
-        self.combo_capacity_unit = ctk.CTkSegmentedButton(
-            capacity_row, values=list(CAPACITY_UNITS),
-            command=self._capacity_unit_changed)
-        self.combo_capacity_unit.set("Weekly Hours")
-        self.combo_capacity_unit.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.entry_capacity = ctk.CTkEntry(capacity_row, width=75)
-        self.entry_capacity.insert(0, "40")
-        self.entry_capacity.pack(side=tk.RIGHT, padx=(6, 0))
-        self.entry_capacity.bind("<FocusOut>", self._capacity_entry_changed)
-        self.entry_capacity.bind("<Return>", self._capacity_entry_changed)
+    def _build_general(self):
+        tab = self.tabs["General Settings"]
+        tab.grid_columnconfigure(1, weight=1)
+        self.name_entry = ctk.CTkEntry(tab)
+        _field(tab, "Resource Name", self.name_entry, 0)
+        self.type_menu = ctk.CTkOptionMenu(tab, values=list(TYPE_VALUES))
+        self.type_menu.set(TYPE_LABELS[ResourceType.NAMED])
+        _field(tab, "Resource Type", self.type_menu, 1)
+        self.role_entry = ctk.CTkEntry(tab)
+        _field(tab, "Role / Skill Tag", self.role_entry, 2)
+        self.schedule_menu = ctk.CTkOptionMenu(
+            tab, values=[pattern.value for pattern in SchedulePattern],
+            command=self._apply_pattern)
+        self.schedule_menu.set(SchedulePattern.STANDARD.value)
+        _field(tab, "Work Schedule Pattern", self.schedule_menu, 3)
 
-        self._label(form, "Day-by-Day Capacity Breakdown Grid")
-        day_row = ctk.CTkFrame(form, fg_color="transparent")
-        day_row.pack(fill=tk.X, padx=10)
+        capacity = ctk.CTkFrame(tab, fg_color="transparent")
+        self.capacity_unit = ctk.CTkSegmentedButton(
+            capacity, values=list(CAPACITY_UNITS), command=self._unit_changed)
+        self.capacity_unit.set("Weekly Hours")
+        self.capacity_unit.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.capacity_entry = ctk.CTkEntry(capacity, width=90)
+        self.capacity_entry.pack(side=tk.RIGHT, padx=(8, 0))
+        self.capacity_entry.bind("<FocusOut>", self._capacity_changed)
+        self.capacity_entry.bind("<Return>", self._capacity_changed)
+        _field(tab, "Capacity Unit & Value", capacity, 4)
+
+        day_frame = ctk.CTkFrame(tab, fg_color="transparent")
         self.daily_entries = {}
         for column, (day, label) in enumerate(zip(DAYS, DAY_LABELS)):
-            cell = ctk.CTkFrame(day_row, fg_color="transparent")
+            day_frame.grid_columnconfigure(column, weight=1, uniform="days")
+            cell = ctk.CTkFrame(day_frame, fg_color="transparent")
             cell.grid(row=0, column=column, padx=2, sticky="ew")
-            day_row.grid_columnconfigure(column, weight=1)
             ctk.CTkLabel(cell, text=label).pack()
-            entry = ctk.CTkEntry(cell, width=42)
-            entry.pack()
-            entry.bind("<FocusOut>", self._daily_grid_changed)
-            entry.bind("<Return>", self._daily_grid_changed)
+            entry = ctk.CTkEntry(cell, width=55)
+            entry.pack(fill=tk.X)
+            entry.bind("<FocusOut>", self._daily_changed)
+            entry.bind("<Return>", self._daily_changed)
             self.daily_entries[day] = entry
-        self.capacity_summary = ctk.CTkLabel(form, text="")
-        self.capacity_summary.pack(fill=tk.X, padx=10, pady=(2, 0))
-        self._set_daily_entries(default_daily_capacity(SchedulePattern.STANDARD))
-
-        self._label(form, "Hourly Billing Rate ($)")
-        self.entry_cost = ctk.CTkEntry(form)
-        self.entry_cost.insert(0, "0")
-        self.entry_cost.pack(fill=tk.X, padx=10)
-        self._label(form, "Assign to Team")
-        self.combo_team = ctk.CTkOptionMenu(form, values=["None"])
-        self.combo_team.set("None")
-        self.combo_team.pack(fill=tk.X, padx=10)
-
-        self._label(form, "Project Availability")
-        self.project_frame = ctk.CTkFrame(form, fg_color="transparent")
-        self.project_frame.pack(fill=tk.X, padx=10)
-        if not self.active_project_ids:
-            ctk.CTkLabel(self.project_frame, text="No active projects").pack(
-                anchor=tk.W)
-        for project_id in self.active_project_ids:
-            variable = ctk.BooleanVar(value=False)
-            ctk.CTkCheckBox(self.project_frame, text=project_id,
-                            variable=variable).pack(side=tk.LEFT, padx=(0, 10),
-                                                   pady=2)
-            self.project_vars[project_id] = variable
-
-        self.resource_problem = ctk.CTkLabel(form, text="", text_color="#c0392b",
-                                             wraplength=330, height=18)
-        self.resource_problem.pack(fill=tk.X, padx=10, pady=(6, 0))
-        self.resource_actions = ctk.CTkFrame(form, fg_color="transparent")
-        self.resource_actions.pack(fill=tk.X, padx=10, pady=(6, 12))
-        self.save_resource_button = ctk.CTkButton(
-            self.resource_actions, text="Add Resource",
-            command=self._save_resource)
-        self.save_resource_button.pack(side=tk.LEFT, fill=tk.X, expand=True,
-                                       padx=(0, 3))
-        self.clear_resource_button = ctk.CTkButton(
-            self.resource_actions, text="Clear", command=self._clear_form)
-        self.clear_resource_button.pack(side=tk.RIGHT, fill=tk.X, expand=True,
-                                        padx=(3, 0))
-
-        catalog = ctk.CTkFrame(self.tab_resources)
-        catalog.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        ctk.CTkLabel(catalog, text="SAVED RESOURCES CATALOG",
-                     font=("Arial", 16, "bold")).pack(pady=(10, 4))
-        filter_row = ctk.CTkFrame(catalog, fg_color="transparent")
-        filter_row.pack(fill=tk.X, padx=10, pady=(0, 6))
-        ctk.CTkLabel(filter_row, text="Search / Filter:").pack(side=tk.LEFT)
-        self.resource_filter_var = ctk.StringVar(value="")
-        self.resource_filter_entry = ctk.CTkEntry(
-            filter_row, textvariable=self.resource_filter_var,
-            placeholder_text="Filter by name or role...")
-        self.resource_filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True,
-                                        padx=(8, 0))
-        self.resource_filter_var.trace_add(
-            "write", lambda *_args: self._refresh_resource_list())
-        self.list_frame = ctk.CTkScrollableFrame(catalog)
-        self.list_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
-        self.resource_cards = []
-        self._refresh_resource_list()
-
-    def _number(self, entry, label: str, default: float) -> float:
-        text = entry.get().strip()
-        try:
-            value = float(text) if text else default
-        except ValueError as error:
-            raise ValueError(f"{label} must be a number.") from error
-        if value < 0:
-            raise ValueError(f"{label} cannot be negative.")
-        return value
+        _field(tab, "Day-by-Day Capacity", day_frame, 5)
+        self.capacity_summary = ctk.CTkLabel(tab, text="", anchor=tk.W)
+        self.capacity_summary.grid(row=6, column=1, padx=(0, 12), sticky="w")
+        self.rate_entry = ctk.CTkEntry(tab)
+        _field(tab, "Hourly Rate ($)", self.rate_entry, 7)
 
     def _daily_values(self):
         values = {}
         for day, entry in self.daily_entries.items():
-            value = self._number(entry, f"{day.title()} capacity", 0)
+            value = _number(entry, f"{day.title()} capacity")
             if value > 24:
                 raise ValueError("Daily capacity cannot exceed 24 hours.")
             values[day] = value
         return values
 
-    def _set_daily_entries(self, values):
+    def _set_daily(self, values):
         self._updating_capacity = True
         for day, entry in self.daily_entries.items():
-            entry.delete(0, tk.END)
-            entry.insert(0, f"{values.get(day, 0):g}")
+            _set_entry(entry, f"{values[day]:g}")
         self._updating_capacity = False
-        self._update_capacity_summary(values)
-
-    def _update_capacity_summary(self, values):
         weekly = sum(values.values())
         self.capacity_summary.configure(
             text=f"{weekly:g} hours/week | {weekly / FTE_WEEKLY_HOURS:.2f} FTE")
 
-    def _schedule_changed(self, value):
-        pattern = SchedulePattern.read(value)
-        values = default_daily_capacity(pattern)
-        self._set_daily_entries(values)
-        self._set_capacity_entry(sum(values.values()))
+    def _apply_pattern(self, value):
+        values = default_daily_capacity(SchedulePattern.read(value))
+        self._set_daily(values)
+        self._set_capacity_value(sum(values.values()))
 
-    def _set_capacity_entry(self, weekly):
-        unit = self.combo_capacity_unit.get()
-        active = len([entry for entry in self.daily_entries.values()
-                      if self._number(entry, "Daily capacity", 0) > 0]) or 1
+    def _set_capacity_value(self, weekly):
+        unit = self.capacity_unit.get()
+        active = len([value for value in self._daily_values().values() if value]) or 1
         value = (weekly / FTE_WEEKLY_HOURS if unit == "FTE"
                  else weekly / active if unit == "Daily Hours" else weekly)
-        self.entry_capacity.delete(0, tk.END)
-        self.entry_capacity.insert(0, f"{value:.2f}".rstrip("0").rstrip("."))
+        _set_entry(self.capacity_entry, f"{value:.2f}".rstrip("0").rstrip("."))
 
-    def _capacity_unit_changed(self, _value=None):
+    def _unit_changed(self, _value=None):
         try:
-            self._set_capacity_entry(sum(self._daily_values().values()))
+            self._set_capacity_value(sum(self._daily_values().values()))
         except ValueError as error:
-            self.resource_problem.configure(text=str(error))
+            self.fail(str(error))
 
-    def _capacity_entry_changed(self, _event=None):
+    def _capacity_changed(self, _event=None):
         try:
-            value = self._number(self.entry_capacity, "Capacity", 0)
-            pattern = SchedulePattern.read(self.combo_schedule.get())
+            value = _number(self.capacity_entry, "Capacity")
+            pattern = SchedulePattern.read(self.schedule_menu.get())
             if pattern == SchedulePattern.CUSTOM:
                 current = self._daily_values()
-                active = len([hours for hours in current.values() if hours]) or 7
-                target = (value * FTE_WEEKLY_HOURS
-                          if self.combo_capacity_unit.get() == "FTE"
-                          else value * active
-                          if self.combo_capacity_unit.get() == "Daily Hours"
-                          else value)
                 total = sum(current.values())
-                values = ({day: hours * target / total
-                           for day, hours in current.items()} if total else
-                          dict.fromkeys(DAYS, target / 7))
+                active = len([hours for hours in current.values() if hours]) or 7
+                target = (value * FTE_WEEKLY_HOURS if self.capacity_unit.get() == "FTE"
+                          else value * active if self.capacity_unit.get() == "Daily Hours"
+                          else value)
+                values = ({day: hours * target / total for day, hours in current.items()}
+                          if total else dict.fromkeys(DAYS, target / 7))
             else:
-                values = capacity_from_entry(
-                    pattern, value, self.combo_capacity_unit.get())
-            self._set_daily_entries(values)
+                values = capacity_from_entry(pattern, value,
+                                             self.capacity_unit.get())
+            self._set_daily(values)
         except ValueError as error:
-            self.resource_problem.configure(text=str(error))
+            self.fail(str(error))
 
-    def _daily_grid_changed(self, _event=None):
+    def _daily_changed(self, _event=None):
         if self._updating_capacity:
             return
         try:
             values = self._daily_values()
+            self.schedule_menu.set(SchedulePattern.CUSTOM.value)
+            self._set_daily(values)
+            self._set_capacity_value(sum(values.values()))
         except ValueError as error:
-            self.resource_problem.configure(text=str(error))
-            return
-        self.combo_schedule.set(SchedulePattern.CUSTOM.value)
-        self._update_capacity_summary(values)
-        self._set_capacity_entry(sum(values.values()))
+            self.fail(str(error))
 
-    def _save_resource(self):
-        resource_type = (ResourceType.NAMED if self.combo_type.get().startswith("Named")
-                         else ResourceType.GENERIC)
-        role = self.entry_role.get().strip() or "General"
-        name = self.entry_name.get().strip()
-        if not name and resource_type == ResourceType.GENERIC:
+    def _build_days_off(self):
+        tab = self.tabs["Days Off"]
+        bar = ctk.CTkFrame(tab, fg_color="transparent")
+        bar.pack(fill=tk.X, padx=8, pady=8)
+        self.day_off_start = ctk.CTkEntry(bar, placeholder_text="Start YYYY-MM-DD")
+        self.day_off_start.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        self.day_off_end = ctk.CTkEntry(bar, placeholder_text="End YYYY-MM-DD")
+        self.day_off_end.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        self.day_off_reason = ctk.CTkEntry(bar, placeholder_text="Reason")
+        self.day_off_reason.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        ctk.CTkButton(bar, text="+ Add Range", width=100,
+                      command=self._add_day_off).pack(side=tk.LEFT, padx=3)
+        self.days_off_table = ctk.CTkScrollableFrame(tab)
+        self.days_off_table.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        self._render_days_off()
+
+    def _add_day_off(self):
+        try:
+            item = DaysOffRange(date.fromisoformat(self.day_off_start.get().strip()),
+                                date.fromisoformat(self.day_off_end.get().strip()),
+                                self.day_off_reason.get())
+        except ValueError as error:
+            self.fail(f"Invalid days-off range: {error}")
+            return
+        self.days_off.append(item)
+        for entry in (self.day_off_start, self.day_off_end, self.day_off_reason):
+            entry.delete(0, tk.END)
+        self._render_days_off()
+
+    def _render_days_off(self):
+        for widget in self.days_off_table.winfo_children():
+            widget.destroy()
+        headers = ("Start Date", "End Date", "Reason", "Actions")
+        for column, header in enumerate(headers):
+            self.days_off_table.grid_columnconfigure(column, weight=1)
+            ctk.CTkLabel(self.days_off_table, text=header,
+                         font=("Arial", 10, "bold")).grid(
+                             row=0, column=column, padx=5, pady=5, sticky="w")
+        for row, item in enumerate(self.days_off, start=1):
+            for column, text in enumerate((item.start_date.isoformat(),
+                                           item.end_date.isoformat(), item.reason)):
+                ctk.CTkLabel(self.days_off_table, text=text).grid(
+                    row=row, column=column, padx=5, pady=5, sticky="w")
+            ctk.CTkButton(
+                self.days_off_table, text="Delete", width=70,
+                command=lambda index=row - 1: self._delete_day_off(index)).grid(
+                    row=row, column=3, padx=5, pady=5)
+
+    def _delete_day_off(self, index):
+        self.days_off.pop(index)
+        self._render_days_off()
+
+    def _build_teams(self):
+        tab = self.tabs["Assigned Teams"]
+        self.teams_table = ctk.CTkScrollableFrame(tab)
+        self.teams_table.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        headers = ("Assign", "Team Name", "Schedule Pattern", "Allocation / Split %")
+        for column, header in enumerate(headers):
+            self.teams_table.grid_columnconfigure(column, weight=(2 if column == 1 else 1))
+            ctk.CTkLabel(self.teams_table, text=header,
+                         font=("Arial", 10, "bold")).grid(
+                             row=0, column=column, padx=5, pady=5, sticky="w")
+        for row, team in enumerate(self.repo.teams.values(), start=1):
+            ratio = self.resource.team_memberships.get(team.id, 0) if self.resource else 0
+            assigned = ctk.BooleanVar(value=ratio > 0)
+            split = ctk.StringVar(value=f"{ratio * 100:g}" if ratio else "100")
+            ctk.CTkCheckBox(self.teams_table, text="", variable=assigned,
+                            width=24).grid(row=row, column=0, padx=5, pady=5)
+            ctk.CTkLabel(self.teams_table, text=team.name).grid(
+                row=row, column=1, padx=5, pady=5, sticky="w")
+            ctk.CTkLabel(self.teams_table,
+                         text=_schedule_short(team.schedule_pattern)).grid(
+                             row=row, column=2, padx=5, pady=5, sticky="w")
+            ctk.CTkEntry(self.teams_table, textvariable=split, width=80).grid(
+                row=row, column=3, padx=5, pady=5)
+            self.team_controls[team.id] = (assigned, split)
+
+    def _build_tasks(self):
+        tab = self.tabs["Assigned Tasks (Read-Only)"]
+        ctk.CTkLabel(
+            tab, text="Task assignment is managed via the Gantt / Task Scheduler view.",
+            font=("Arial", 12, "bold")).pack(pady=18)
+        headers = ("Task ID", "Task Name", "Project", "Start Date", "End Date",
+                   "Allocated Hours")
+        table = ctk.CTkFrame(tab, fg_color="transparent")
+        table.pack(fill=tk.X, padx=10)
+        for column, header in enumerate(headers):
+            table.grid_columnconfigure(column, weight=1)
+            ctk.CTkLabel(table, text=header,
+                         font=("Arial", 10, "bold")).grid(
+                             row=0, column=column, padx=4, sticky="w")
+
+    def _load_resource(self):
+        _set_entry(self.name_entry, self.resource.name)
+        self.type_menu.set(TYPE_LABELS[self.resource.resource_type])
+        _set_entry(self.role_entry, self.resource.role_type)
+        self.schedule_menu.set(self.resource.schedule_pattern.value)
+        self._set_daily(self.resource.daily_capacity_hours)
+        self._set_capacity_value(self.resource.weekly_capacity_hours)
+        _set_entry(self.rate_entry, f"{self.resource.cost_per_hour:g}")
+
+    def save_and_apply(self):
+        kind = TYPE_VALUES[self.type_menu.get()]
+        role = self.role_entry.get().strip() or "General"
+        name = self.name_entry.get().strip()
+        if not name and kind == ResourceType.GENERIC:
             name = self.repo.next_placeholder_name(role)
         if not name:
-            self.resource_problem.configure(
-                text="Resource Name is required for a named person.")
+            self.fail("Resource Name is required for a named person.")
             return
         try:
             daily = self._daily_values()
-            cost = self._number(self.entry_cost, "Hourly billing rate", 0)
+            rate = _number(self.rate_entry, "Hourly rate")
+            allocations = {}
+            for team_id, (assigned, split) in self.team_controls.items():
+                if assigned.get():
+                    value = float(split.get().strip().rstrip("%"))
+                    if value < 0 or value > 100:
+                        raise ValueError("Team splits must be between 0 and 100%.")
+                    allocations[team_id] = value / 100
         except ValueError as error:
-            self.resource_problem.configure(text=str(error))
+            self.fail(str(error))
             return
-
-        project_ids = [project_id for project_id, variable
-                       in self.project_vars.items() if variable.get()]
-        selected_team = self._team_id_for_name(self.combo_team.get())
-        if self.editing_resource_id:
-            resource = self.repo.resources[self.editing_resource_id]
-            project_ids = [project_id for project_id in resource.assigned_project_ids
-                           if project_id not in self.project_vars] + project_ids
+        if self.resource:
+            resource = self.resource
             resource.name = name
-            resource.resource_type = resource_type
+            resource.resource_type = kind
             resource.role_type = role
-            resource.schedule_pattern = SchedulePattern.read(
-                self.combo_schedule.get())
+            resource.schedule_pattern = SchedulePattern.read(self.schedule_menu.get())
             resource.set_daily_capacity(daily, preserve_pattern=True)
-            resource.cost_per_hour = cost
-            resource.assigned_project_ids = project_ids
+            resource.cost_per_hour = rate
+            resource.days_off = list(self.days_off)
+            resource.team_memberships = allocations
             logger.info("Updated resource %r (%s)", resource.name, resource.id)
         else:
             resource = Resource(
-                id=self.repo.new_id("res"), name=name,
-                resource_type=resource_type, role_type=role,
-                cost_per_hour=cost, assigned_project_ids=project_ids,
-                schedule_pattern=SchedulePattern.read(self.combo_schedule.get()),
-                daily_capacity_hours=daily)
+                id=self.repo.new_id("res"), name=name, resource_type=kind,
+                role_type=role, schedule_pattern=SchedulePattern.read(
+                    self.schedule_menu.get()), daily_capacity_hours=daily,
+                cost_per_hour=rate, team_memberships=allocations,
+                days_off=list(self.days_off))
             self.repo.add_resource(resource)
-        if (not self.editing_resource_id
-                or selected_team != self.editing_resource_team_id):
-            for team_id in list(resource.team_memberships):
-                self.repo.set_team_allocation(resource.id, team_id, 0)
-            if selected_team:
-                self.repo.set_team_allocation(resource.id, selected_team, 100)
-        self._clear_form()
-        self._refresh_resource_list()
-        self._refresh_team_list()
+        if self.on_apply:
+            self.on_apply(resource.id)
+        self.destroy()
 
-    def _team_id_for_name(self, name):
-        return next((team.id for team in self.repo.teams.values()
-                     if team.name == name), None)
 
-    def _edit_resource(self, resource_id: str):
-        resource = self.repo.resources[resource_id]
-        self.editing_resource_id = resource_id
-        self.entry_name.delete(0, tk.END)
-        self.entry_name.insert(0, resource.name)
-        self.combo_type.set("Named (Person)" if resource.resource_type == ResourceType.NAMED
-                            else "Generic (Role Placeholder)")
-        self.entry_role.delete(0, tk.END)
-        self.entry_role.insert(0, resource.role_type)
-        self.combo_schedule.set(resource.schedule_pattern.value)
-        self._set_daily_entries(resource.daily_capacity_hours)
-        self._set_capacity_entry(resource.weekly_capacity_hours)
-        self.entry_cost.delete(0, tk.END)
-        self.entry_cost.insert(0, str(resource.cost_per_hour))
-        team_id = next(iter(resource.team_memberships), None)
-        self.editing_resource_team_id = team_id
-        self.combo_team.set(self.repo.teams[team_id].name
-                            if team_id in self.repo.teams else "None")
-        for project_id, variable in self.project_vars.items():
-            variable.set(project_id in resource.assigned_project_ids)
-        self.save_resource_button.configure(text="Update Resource")
-        self.resource_problem.configure(text="")
+class TeamEditorModal(BaseEditorModal):
+    def __init__(self, master, repo, team=None, on_apply=None):
+        self.repo = repo
+        self.team = team
+        self.allocations = {
+            resource.id: resource.team_memberships.get(team.id, 0) * 100
+            for resource in repo.resources.values()
+            if team and resource.team_memberships.get(team.id, 0) > 0
+        }
+        self.member_split_vars = {}
+        title = f"Team Editor: {team.name}" if team else "Create Team"
+        super().__init__(master, title,
+                         ("General Settings", "Team Members & Split Matrix",
+                          "Assigned Tasks"), on_apply)
+        self._build_general()
+        self._build_members()
+        self._build_tasks()
+        if team:
+            self._load_team()
+        else:
+            self._mode_changed()
 
-    def _delete_resource(self, resource_id: str):
-        if not messagebox.askyesno("Delete Resource",
-                                   "Delete this resource from the project pool?"):
+    def _build_general(self):
+        tab = self.tabs["General Settings"]
+        tab.grid_columnconfigure(1, weight=1)
+        self.name_entry = ctk.CTkEntry(tab)
+        _field(tab, "Team Name", self.name_entry, 0)
+        self.schedule_menu = ctk.CTkOptionMenu(
+            tab, values=[pattern.value for pattern in SchedulePattern],
+            command=lambda _value: self._update_team_summary())
+        self.schedule_menu.set(SchedulePattern.STANDARD.value)
+        _field(tab, "Default Team Schedule Pattern", self.schedule_menu, 1)
+        self.mode = ctk.StringVar(value="Dynamic")
+        mode_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        ctk.CTkRadioButton(
+            mode_frame, text="Dynamic (Calculated from Assigned Members)",
+            variable=self.mode, value="Dynamic", command=self._mode_changed).pack(
+                anchor=tk.W, pady=2)
+        ctk.CTkRadioButton(
+            mode_frame, text="Fixed Team Capacity (Manual Override)",
+            variable=self.mode, value="Fixed", command=self._mode_changed).pack(
+                anchor=tk.W, pady=2)
+        _field(tab, "Capacity Calculation Mode", mode_frame, 2)
+        fixed_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        self.fixed_unit = ctk.CTkSegmentedButton(
+            fixed_frame, values=list(CAPACITY_UNITS),
+            command=lambda _value: self._update_team_summary())
+        self.fixed_unit.set("Weekly Hours")
+        self.fixed_unit.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.fixed_entry = ctk.CTkEntry(fixed_frame, width=90)
+        self.fixed_entry.pack(side=tk.RIGHT, padx=(8, 0))
+        self.fixed_entry.bind("<KeyRelease>",
+                              lambda _event: self._update_team_summary())
+        _field(tab, "Fixed Capacity", fixed_frame, 3)
+
+    def _mode_changed(self):
+        state = "normal" if self.mode.get() == "Fixed" else "disabled"
+        self.fixed_entry.configure(state=state)
+        self.fixed_unit.configure(state=state)
+        if hasattr(self, "team_capacity_summary"):
+            self._update_team_summary()
+
+    def _build_members(self):
+        tab = self.tabs["Team Members & Split Matrix"]
+        add_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        add_bar.pack(fill=tk.X, padx=8, pady=8)
+        self.member_menu = ctk.CTkOptionMenu(add_bar, values=["Select Resource to Add..."])
+        self.member_menu.set("Select Resource to Add...")
+        self.member_menu.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        self.add_split_entry = ctk.CTkEntry(add_bar, width=90,
+                                            placeholder_text="Split %")
+        self.add_split_entry.insert(0, "100")
+        self.add_split_entry.pack(side=tk.LEFT, padx=6)
+        ctk.CTkButton(add_bar, text="+ Add to Team", width=110,
+                      command=self._add_member).pack(side=tk.LEFT, padx=(6, 0))
+        self.member_table = ctk.CTkScrollableFrame(tab)
+        self.member_table.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
+        self.team_capacity_summary = ctk.CTkLabel(tab, text="", anchor=tk.W,
+                                                  justify=tk.LEFT)
+        self.team_capacity_summary.pack(fill=tk.X, padx=12, pady=(0, 8))
+        self._render_members()
+
+    def _available_member_names(self):
+        return [resource.name for resource in self.repo.resources.values()
+                if resource.id not in self.allocations]
+
+    def _resource_for_name(self, name):
+        return next((resource for resource in self.repo.resources.values()
+                     if resource.name == name), None)
+
+    def _add_member(self):
+        resource = self._resource_for_name(self.member_menu.get())
+        if not resource:
+            self.fail("Select a resource to add.")
             return
-        self.repo.remove_resource(resource_id)
-        self._refresh_resource_list()
-        self._refresh_team_list()
-
-    def _swap_generic(self, generic_id: str, named_id: str):
-        self.repo.swap_generic(generic_id, named_id)
-        self._refresh_resource_list()
-        self._refresh_team_list()
-
-    def _refresh_resource_list(self):
-        for widget in self.list_frame.winfo_children():
-            widget.destroy()
-        self.resource_cards = []
-        query = self.resource_filter_var.get().strip().lower()
-        for resource in self.repo.resources.values():
-            if query and query not in resource.name.lower() and query not in resource.role_type.lower():
-                continue
-            card = ctk.CTkFrame(self.list_frame, border_width=1)
-            card.pack(fill=tk.X, pady=6, padx=5)
-            self.resource_cards.append(card)
-            header = ctk.CTkFrame(card, fg_color="transparent")
-            header.pack(fill=tk.X, padx=10, pady=(8, 2))
-            tag = resource.resource_type.value.upper()
-            color = "#27ae60" if resource.resource_type == ResourceType.NAMED else "#e67e22"
-            ctk.CTkLabel(header, text=f"[{tag}]", text_color=color,
-                         font=("Arial", 11, "bold")).pack(side=tk.LEFT)
-            ctk.CTkLabel(header, text=resource.name,
-                         font=("Arial", 14, "bold")).pack(side=tk.LEFT, padx=8)
-            ctk.CTkLabel(header, text=f"{resource.fte:.2f} FTE  ({resource.weekly_capacity_hours:g}h/wk)",
-                         font=("Arial", 12, "bold")).pack(side=tk.RIGHT)
-
-            teams = ", ".join(self.repo.teams[team_id].name
-                              for team_id in resource.team_memberships
-                              if team_id in self.repo.teams) or "None"
-            projects = ", ".join(resource.assigned_project_ids) or "None"
-            details = ctk.CTkFrame(card, fg_color="transparent")
-            details.pack(fill=tk.X, padx=10)
-            ctk.CTkLabel(details, text=f"Role: {resource.role_type}",
-                         anchor=tk.W).grid(row=0, column=0, sticky="w")
-            ctk.CTkLabel(details, text=f"Schedule: {resource.schedule_pattern.value}",
-                         anchor=tk.W).grid(row=0, column=1, padx=18, sticky="w")
-            ctk.CTkLabel(details, text=f"Team: {teams}", anchor=tk.W).grid(
-                row=1, column=0, sticky="w")
-            ctk.CTkLabel(details, text=f"Projects: {projects}", anchor=tk.W).grid(
-                row=1, column=1, padx=18, sticky="w")
-            details.grid_columnconfigure(1, weight=1)
-
-            allocation = sum(resource.team_memberships.values())
-            allocated_hours = resource.weekly_capacity_hours * allocation
-            overbooked = allocation > 1
-            status = ctk.CTkFrame(card, fg_color="transparent")
-            status.pack(fill=tk.X, padx=10, pady=(4, 3))
-            status_text = (f"{allocation * 100:.0f}% OVERBOOKED" if overbooked else
-                           f"{allocation * 100:.0f}% ({allocated_hours:g}h/"
-                           f"{resource.weekly_capacity_hours:g}h)")
-            ctk.CTkLabel(status, text=f"Allocation Status: {status_text}",
-                         text_color="#c0392b" if overbooked else "#27ae60").pack(
-                             side=tk.LEFT)
-            progress = ctk.CTkProgressBar(
-                status, progress_color="#c0392b" if overbooked else "#27ae60")
-            progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
-            progress.set(min(allocation, 1.0))
-
-            actions = ctk.CTkFrame(card, fg_color="transparent")
-            actions.pack(fill=tk.X, padx=10, pady=(2, 8))
-            ctk.CTkButton(actions, text="Delete", width=58,
-                          command=lambda rid=resource.id: self._delete_resource(rid)).pack(
-                              side=tk.RIGHT, padx=2)
-            ctk.CTkButton(actions, text="Edit", width=48,
-                          command=lambda rid=resource.id: self._edit_resource(rid)).pack(
-                              side=tk.RIGHT, padx=2)
-            replacements = self.repo.named_resources(excluding=resource.id)
-            if resource.resource_type == ResourceType.GENERIC and replacements:
-                choices = {item.name: item.id for item in replacements}
-                selector = ctk.CTkComboBox(
-                    actions, values=list(choices), width=130,
-                    command=lambda name, gid=resource.id, ids=choices:
-                        self._swap_generic(gid, ids[name]), state="readonly")
-                selector.set("Swap with...")
-                selector.pack(side=tk.RIGHT, padx=2)
-
-    def _clear_form(self):
-        self.editing_resource_id = None
-        self.editing_resource_team_id = None
-        for entry in (self.entry_name, self.entry_role, self.entry_cost):
-            entry.delete(0, tk.END)
-        self.entry_cost.insert(0, "0")
-        self.combo_type.set("Named (Person)")
-        self.combo_schedule.set(SchedulePattern.STANDARD.value)
-        self.combo_capacity_unit.set("Weekly Hours")
-        self._set_daily_entries(default_daily_capacity(SchedulePattern.STANDARD))
-        self._set_capacity_entry(40)
-        self.combo_team.configure(values=["None"] + [team.name
-                                  for team in self.repo.teams.values()])
-        self.combo_team.set("None")
-        for variable in self.project_vars.values():
-            variable.set(False)
-        self.save_resource_button.configure(text="Add Resource")
-        self.resource_problem.configure(text="")
-
-    def _setup_teams_tab(self):
-        form = ctk.CTkScrollableFrame(self.tab_teams, width=365)
-        form.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
-        ctk.CTkLabel(form, text="CREATE TEAM POOL",
-                     font=("Arial", 16, "bold")).pack(pady=10)
-        self._label(form, "Team Name")
-        self.entry_team_name = ctk.CTkEntry(form)
-        self.entry_team_name.pack(fill=tk.X, padx=10)
-        self._label(form, "Team Schedule Pattern")
-        self.combo_team_schedule = ctk.CTkOptionMenu(
-            form, values=[pattern.value for pattern in SchedulePattern])
-        self.combo_team_schedule.set(SchedulePattern.STANDARD.value)
-        self.combo_team_schedule.pack(fill=tk.X, padx=10)
-        self._label(form, "Capacity Calculation Mode")
-        self.team_capacity_mode = ctk.StringVar(value="Calculated from Assigned Members")
-        for value in ("Calculated from Assigned Members", "Fixed Team Capacity"):
-            ctk.CTkRadioButton(form, text=value, value=value,
-                               variable=self.team_capacity_mode,
-                               command=self._team_mode_changed).pack(
-                                   anchor=tk.W, padx=15, pady=3)
-        self._label(form, "Fixed Daily/Weekly Capacity (Fixed Mode Only)")
-        fixed_row = ctk.CTkFrame(form, fg_color="transparent")
-        fixed_row.pack(fill=tk.X, padx=10)
-        self.entry_team_fixed_daily = ctk.CTkEntry(
-            fixed_row, placeholder_text="Daily hours")
-        self.entry_team_fixed_daily.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.entry_team_fixed_weekly = ctk.CTkEntry(
-            fixed_row, placeholder_text="Weekly hours")
-        self.entry_team_fixed_weekly.pack(side=tk.RIGHT, fill=tk.X,
-                                          expand=True, padx=(6, 0))
-        self.team_problem = ctk.CTkLabel(form, text="", text_color="#c0392b",
-                                         wraplength=330)
-        self.team_problem.pack(fill=tk.X, padx=10, pady=(8, 0))
-        self.save_team_button = ctk.CTkButton(
-            form, text="Create Team", command=self._save_team_form)
-        self.save_team_button.pack(fill=tk.X, padx=10, pady=(8, 4))
-        ctk.CTkButton(form, text="Clear", command=self._clear_team_form).pack(
-            fill=tk.X, padx=10, pady=(0, 12))
-        self._team_mode_changed()
-
-        team_catalog = ctk.CTkFrame(self.tab_teams)
-        team_catalog.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True,
-                          padx=10, pady=10)
-        ctk.CTkLabel(team_catalog, text="SAVED TEAM POOLS & MEMBER MATRIX",
-                     font=("Arial", 16, "bold")).pack(pady=(10, 4))
-        self.team_list_frame = ctk.CTkScrollableFrame(team_catalog)
-        self.team_list_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
-        self.team_split_vars = {}
-        self._refresh_team_list()
-
-    def _team_mode_changed(self):
-        state = ("normal" if self.team_capacity_mode.get() == "Fixed Team Capacity"
-                 else "disabled")
-        self.entry_team_fixed_daily.configure(state=state)
-        self.entry_team_fixed_weekly.configure(state=state)
-
-    def _save_team_form(self):
-        name = self.entry_team_name.get().strip()
-        if not name:
-            self.team_problem.configure(text="Enter a team name.")
-            return
-        fixed = self.team_capacity_mode.get() == "Fixed Team Capacity"
-        pattern = SchedulePattern.read(self.combo_team_schedule.get())
         try:
-            daily = self._number(self.entry_team_fixed_daily,
-                                 "Fixed daily capacity", 0)
-            weekly = self._number(self.entry_team_fixed_weekly,
-                                  "Fixed weekly capacity", 0)
+            split = _number(self.add_split_entry, "Split percentage", 100)
+            if split > 100:
+                raise ValueError("Split percentage cannot exceed 100%.")
         except ValueError as error:
-            self.team_problem.configure(text=str(error))
+            self.fail(str(error))
             return
-        fixed_daily = (capacity_from_entry(pattern, daily, "Daily Hours")
-                       if daily else capacity_from_entry(
-                           pattern, weekly, "Weekly Hours"))
-        if self.editing_team_id:
-            team = self.repo.teams[self.editing_team_id]
+        self.allocations[resource.id] = split
+        self._render_members()
+
+    def _remove_member(self, resource_id):
+        self.allocations.pop(resource_id, None)
+        self._render_members()
+
+    def _split_changed(self, resource_id, variable):
+        text = variable.get().strip().rstrip("%")
+        try:
+            value = float(text) if text else 0
+        except ValueError:
+            return
+        if 0 <= value <= 100:
+            self.allocations[resource_id] = value
+            self._update_team_summary()
+
+    def _render_members(self):
+        for widget in self.member_table.winfo_children():
+            widget.destroy()
+        available = self._available_member_names()
+        self.member_menu.configure(values=available or ["Select Resource to Add..."])
+        self.member_menu.set(available[0] if available else "Select Resource to Add...")
+        headers = ("Member Name", "Type", "Role", "Schedule", "Member Capacity",
+                   "Team Split %", "Actions")
+        widths = (150, 75, 100, 110, 135, 90, 80)
+        for column, (header, width) in enumerate(zip(headers, widths)):
+            self.member_table.grid_columnconfigure(column, weight=1, minsize=width)
+            ctk.CTkLabel(self.member_table, text=header,
+                         font=("Arial", 10, "bold")).grid(
+                             row=0, column=column, padx=4, pady=5, sticky="w")
+        self.member_split_vars = {}
+        for row, (resource_id, split) in enumerate(self.allocations.items(), start=1):
+            resource = self.repo.resources.get(resource_id)
+            if not resource:
+                continue
+            values = (resource.name, resource.resource_type.value.upper(),
+                      resource.role_type, _schedule_short(resource.schedule_pattern),
+                      f"{resource.weekly_capacity_hours:g}h/wk ({resource.fte:.2f} FTE)")
+            for column, value in enumerate(values):
+                ctk.CTkLabel(self.member_table, text=value, anchor=tk.W,
+                             wraplength=widths[column] - 8).grid(
+                                 row=row, column=column, padx=4, pady=5,
+                                 sticky="w")
+            variable = ctk.StringVar(value=f"{split:g}")
+            ctk.CTkEntry(self.member_table, textvariable=variable,
+                         width=75).grid(row=row, column=5, padx=4, pady=5)
+            variable.trace_add(
+                "write", lambda *_args, key=resource_id, var=variable:
+                    self._split_changed(key, var))
+            self.member_split_vars[resource_id] = variable
+            ctk.CTkButton(
+                self.member_table, text="Remove", width=70,
+                command=lambda key=resource_id: self._remove_member(key)).grid(
+                    row=row, column=6, padx=4, pady=5)
+        self._update_team_summary()
+
+    def _calculated_daily(self):
+        return {
+            day: sum(self.repo.resources[resource_id].daily_capacity_hours[day]
+                     * split / 100
+                     for resource_id, split in self.allocations.items()
+                     if resource_id in self.repo.resources)
+            for day in DAYS
+        }
+
+    def _update_team_summary(self):
+        label = "Aggregated Daily Capacity"
+        if self.mode.get() == "Fixed":
+            try:
+                value = _number(self.fixed_entry, "Fixed capacity")
+                daily = capacity_from_entry(
+                    SchedulePattern.read(self.schedule_menu.get()), value,
+                    self.fixed_unit.get())
+            except ValueError:
+                daily = dict.fromkeys(DAYS, 0.0)
+            label = "Fixed Daily Capacity"
+        else:
+            daily = self._calculated_daily()
+        weekly = sum(daily.values())
+        self.team_capacity_summary.configure(
+            text=(f"{label}: " + " | ".join(
+                f"{day_label}: {daily[day]:g}h"
+                for day, day_label in zip(DAYS, DAY_LABELS)) +
+                f"\nTotal Weekly Team Capacity: "
+                f"{weekly / FTE_WEEKLY_HOURS:.2f} FTE ({weekly:g} hours/week)"))
+
+    def _build_tasks(self):
+        tab = self.tabs["Assigned Tasks"]
+        ctk.CTkLabel(
+            tab, text="Task allocation to teams is managed via the Gantt / Task Scheduler view.",
+            font=("Arial", 12, "bold")).pack(pady=18)
+        headers = ("Task ID", "Task Name", "Project", "Start Date", "End Date",
+                   "Allocated Team Hours")
+        table = ctk.CTkFrame(tab, fg_color="transparent")
+        table.pack(fill=tk.X, padx=10)
+        for column, header in enumerate(headers):
+            table.grid_columnconfigure(column, weight=1)
+            ctk.CTkLabel(table, text=header,
+                         font=("Arial", 10, "bold")).grid(
+                             row=0, column=column, padx=4, sticky="w")
+
+    def _load_team(self):
+        _set_entry(self.name_entry, self.team.name)
+        self.schedule_menu.set(self.team.schedule_pattern.value)
+        self.mode.set("Fixed" if self.team.is_fixed_capacity else "Dynamic")
+        self.fixed_unit.set("Weekly Hours")
+        self.fixed_entry.configure(state="normal")
+        _set_entry(self.fixed_entry, f"{self.team.fixed_hours:g}")
+        self._mode_changed()
+
+    def save_and_apply(self):
+        name = self.name_entry.get().strip()
+        if not name:
+            self.fail("Team Name is required.")
+            return
+        pattern = SchedulePattern.read(self.schedule_menu.get())
+        fixed = self.mode.get() == "Fixed"
+        try:
+            value = _number(self.fixed_entry, "Fixed capacity") if fixed else 0
+            daily = capacity_from_entry(pattern, value, self.fixed_unit.get())
+        except ValueError as error:
+            self.fail(str(error))
+            return
+        if self.team:
+            team = self.team
             team.name = name
             team.schedule_pattern = pattern
             team.is_fixed_capacity = fixed
-            team.fixed_daily_hours = fixed_daily
-            team.fixed_hours = sum(fixed_daily.values())
+            team.fixed_daily_hours = daily
+            team.fixed_hours = sum(daily.values())
             logger.info("Updated resource team %r (%s)", team.name, team.id)
         else:
-            self.repo.add_team(TeamPool(
-                id=self.repo.new_id("team"), name=name,
-                schedule_pattern=pattern, is_fixed_capacity=fixed,
-                fixed_daily_hours=fixed_daily))
-        self._clear_team_form()
-        self._refresh_team_list()
-        self._clear_form()
+            team = TeamPool(id=self.repo.new_id("team"), name=name,
+                            schedule_pattern=pattern, is_fixed_capacity=fixed,
+                            fixed_daily_hours=daily)
+            self.repo.add_team(team)
+        for resource in self.repo.resources.values():
+            split = self.allocations.get(resource.id, 0)
+            if split:
+                resource.team_memberships[team.id] = split / 100
+            else:
+                resource.team_memberships.pop(team.id, None)
+        if self.on_apply:
+            self.on_apply(team.id)
+        self.destroy()
 
-    def _edit_team(self, team_id):
-        team = self.repo.teams[team_id]
-        self.editing_team_id = team_id
-        self.entry_team_name.delete(0, tk.END)
-        self.entry_team_name.insert(0, team.name)
-        self.combo_team_schedule.set(team.schedule_pattern.value)
-        self.team_capacity_mode.set("Fixed Team Capacity" if team.is_fixed_capacity
-                                    else "Calculated from Assigned Members")
-        self._team_mode_changed()
-        active = [value for value in team.fixed_daily_hours.values() if value]
-        daily = active[0] if active and len(set(active)) == 1 else 0
-        self.entry_team_fixed_daily.configure(state="normal")
-        self.entry_team_fixed_daily.delete(0, tk.END)
-        self.entry_team_fixed_daily.insert(0, f"{daily:g}")
-        self.entry_team_fixed_weekly.configure(state="normal")
-        self.entry_team_fixed_weekly.delete(0, tk.END)
-        self.entry_team_fixed_weekly.insert(0, f"{team.fixed_hours:g}")
-        self._team_mode_changed()
-        self.save_team_button.configure(text="Update Team")
 
-    def _clear_team_form(self):
-        self.editing_team_id = None
-        self.entry_team_name.delete(0, tk.END)
-        self.combo_team_schedule.set(SchedulePattern.STANDARD.value)
-        self.team_capacity_mode.set("Calculated from Assigned Members")
-        for entry in (self.entry_team_fixed_daily, self.entry_team_fixed_weekly):
-            entry.configure(state="normal")
-            entry.delete(0, tk.END)
-        self._team_mode_changed()
-        self.save_team_button.configure(text="Create Team")
-        self.team_problem.configure(text="")
+class ResourceSettingsWindow(ctk.CTkToplevel):
+    GEOMETRY = "1250x760"
+    RESOURCE_COLUMNS = (
+        ("#", 45, 0, tk.CENTER),
+        ("Type", 85, 1, tk.W),
+        ("Resource Name", 180, 3, tk.W),
+        ("Role / Skill", 130, 2, tk.W),
+        ("Schedule", 125, 2, tk.W),
+        ("Capacity", 100, 1, tk.W),
+        ("Assigned Teams", 160, 2, tk.W),
+        ("Days Off Active", 160, 2, tk.W),
+    )
+    TEAM_COLUMNS = (
+        ("#", 45, 0, tk.CENTER),
+        ("Team Name", 210, 3, tk.W),
+        ("Schedule Pattern", 150, 2, tk.W),
+        ("Capacity Mode", 155, 2, tk.W),
+        ("Total Capacity", 155, 2, tk.W),
+        ("Member Count", 100, 1, tk.W),
+        ("Daily Summary", 150, 2, tk.W),
+    )
 
-    def _save_allocations(self, team_id, entries):
-        try:
-            allocations = {resource_id: self._number(
-                entry, "Team split percentage", 0)
-                for resource_id, entry in entries.items()}
-            if any(value > 100 for value in allocations.values()):
-                raise ValueError("Team split percentage cannot exceed 100.")
-        except ValueError as error:
-            self.team_problem.configure(text=str(error))
-            return
-        for resource_id, percentage in allocations.items():
-            self.repo.set_team_allocation(resource_id, team_id, percentage)
-        self.team_problem.configure(text="")
-        self._refresh_team_list()
-        self._refresh_resource_list()
+    def __init__(self, master, repo, active_project_ids=None,
+                 on_save: Optional[Callable] = None, **kwargs):
+        super().__init__(master, **kwargs)
+        self.repo = repo
+        self.active_project_ids = list(active_project_ids or [])
+        self.on_save = on_save
+        self.selected_resource_id = None
+        self.selected_team_id = None
+        self.resource_rows = []
+        self.team_rows = []
+        self.title("Resource Settings - Manage Resources & Teams")
+        self.geometry(self.GEOMETRY)
+        self.minsize(1050, 620)
+        self.transient(master.winfo_toplevel())
+        self.bind("<Escape>", lambda _event: self.destroy())
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill=tk.BOTH, expand=True, padx=14, pady=14)
+        self.tab_resources = self.tabview.add("Resources")
+        self.tab_teams = self.tabview.add("Teams")
+        self._build_resources_tab()
+        self._build_teams_tab()
+        self._refresh_resources()
+        self._refresh_teams()
+        logger.info("Opened Resource Settings with %d resources and %d teams",
+                    len(repo.resources), len(repo.teams))
+        grab_when_visible(self)
 
-    def _delete_team(self, team_id: str):
-        if not messagebox.askyesno("Delete Team", "Delete this team pool?"):
-            return
-        self.repo.remove_team(team_id)
-        self._refresh_team_list()
-        self._clear_form()
+    def _build_resources_tab(self):
+        footer = self._footer(
+            self.tab_resources, "Create New Resource",
+            self._create_resource, self._edit_resource, self._delete_resource,
+            "resource")
+        self.resource_footer = footer
+        filters = ctk.CTkFrame(self.tab_resources, fg_color="transparent")
+        filters.pack(fill=tk.X, padx=6, pady=(6, 4))
+        ctk.CTkLabel(filters, text="SEARCH & FILTER:").pack(side=tk.LEFT)
+        self.resource_search = ctk.StringVar(value="")
+        ctk.CTkEntry(filters, textvariable=self.resource_search,
+                     placeholder_text="Search resource name or role...").pack(
+                         side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+        ctk.CTkLabel(filters, text="FILTER TYPE:").pack(side=tk.LEFT)
+        self.resource_type_filter = ctk.CTkOptionMenu(
+            filters, values=["All Types", "Named", "Generic"],
+            command=lambda _value: self._refresh_resources(), width=120)
+        self.resource_type_filter.set("All Types")
+        self.resource_type_filter.pack(side=tk.LEFT, padx=(8, 0))
+        self.resource_search.trace_add(
+            "write", lambda *_args: self._refresh_resources())
+        self.resource_grid = DataGrid(
+            self.tab_resources, self.RESOURCE_COLUMNS,
+            self._select_resource, border_width=1)
+        self.resource_grid.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
 
-    @staticmethod
-    def _daily_summary(values):
-        active = [(index, DAY_LABELS[index], values[day])
-                  for index, day in enumerate(DAYS) if values[day] > 0]
-        if not active:
-            return "0h/day"
-        hours = {value for _index, _label, value in active}
-        if len(hours) != 1:
-            return f"{sum(values.values()):g}h/week (custom)"
-        indices = [index for index, _label, _value in active]
-        labels = [label for _index, label, _value in active]
-        days = (f"{labels[0]}-{labels[-1]}"
-                if indices == list(range(indices[0], indices[-1] + 1))
-                else ", ".join(labels))
-        return f"{active[0][2]:g}h/day ({days})"
+    def _build_teams_tab(self):
+        footer = self._footer(
+            self.tab_teams, "Create New Team", self._create_team,
+            self._edit_team, self._delete_team, "team")
+        self.team_footer = footer
+        filters = ctk.CTkFrame(self.tab_teams, fg_color="transparent")
+        filters.pack(fill=tk.X, padx=6, pady=(6, 4))
+        ctk.CTkLabel(filters, text="SEARCH & FILTER:").pack(side=tk.LEFT)
+        self.team_search = ctk.StringVar(value="")
+        ctk.CTkEntry(filters, textvariable=self.team_search,
+                     placeholder_text="Search team name...").pack(
+                         side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+        self.team_search.trace_add("write", lambda *_args: self._refresh_teams())
+        self.team_grid = DataGrid(
+            self.tab_teams, self.TEAM_COLUMNS, self._select_team,
+            border_width=1)
+        self.team_grid.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
 
-    def _update_team_summary(self, team, resources, widgets):
-        daily = team.calculate_daily_capacity(resources)
-        weekly = sum(daily.values())
-        widgets["weekly"].configure(
-            text=f"{weekly:g}h/week  |  {weekly / FTE_WEEKLY_HOURS:.2f} FTE")
-        for day, label in widgets["badges"].items():
-            label.configure(text=f"{daily[day]:g}h")
+    def _footer(self, tab, create_text, create, edit, delete, prefix):
+        footer = ctk.CTkFrame(tab)
+        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=6)
+        ctk.CTkButton(footer, text=create_text, command=create).pack(
+            side=tk.LEFT, padx=6, pady=6)
+        edit_button = ctk.CTkButton(
+            footer, text="Edit Selected", command=edit, state="disabled")
+        edit_button.pack(side=tk.LEFT, padx=6, pady=6)
+        delete_button = ctk.CTkButton(
+            footer, text="Delete Selected", command=delete, state="disabled")
+        delete_button.pack(side=tk.LEFT, padx=6, pady=6)
+        ctk.CTkButton(footer, text="Close", command=self.destroy).pack(
+            side=tk.RIGHT, padx=6, pady=6)
+        ctk.CTkButton(footer, text="Save Changes",
+                      command=self._save_changes).pack(
+                          side=tk.RIGHT, padx=6, pady=6)
+        setattr(self, f"{prefix}_edit_button", edit_button)
+        setattr(self, f"{prefix}_delete_button", delete_button)
+        return footer
 
-    def _live_split_changed(self, team, resource, variable,
-                            contribution_label, weekly_label, summary_widgets,
-                            resources):
-        text = variable.get().strip().rstrip("%")
-        try:
-            percentage = float(text) if text else 0.0
-        except ValueError:
-            return
-        if percentage < 0 or percentage > 100:
-            return
-        self.repo.set_team_allocation(resource.id, team.id, percentage)
-        contribution = team.member_contribution(resource)
-        contribution_label.configure(text=self._daily_summary(contribution))
-        weekly_label.configure(text=f"{sum(contribution.values()):g}h/week")
-        self._update_team_summary(team, resources, summary_widgets)
-        self._refresh_resource_list()
-        if percentage == 0:
-            self.after_idle(self._refresh_team_list)
+    def _save_changes(self):
+        logger.info("Saving resource settings changes")
+        if self.on_save:
+            self.on_save()
 
-    def _refresh_team_list(self):
-        for widget in self.team_list_frame.winfo_children():
-            widget.destroy()
-        self.team_split_vars = {}
-        self.team_cards = {}
+    def _resource_days_off(self, resource):
+        if not resource.days_off:
+            return "None"
+        return ", ".join(
+            f"{item.start_date.isoformat()}–{item.end_date.isoformat()}"
+            for item in resource.days_off)
+
+    def _refresh_resources(self, select_id=None):
+        self.resource_grid.clear()
+        query = self.resource_search.get().strip().lower()
+        type_filter = self.resource_type_filter.get()
+        resources = []
+        for resource in self.repo.resources.values():
+            if query and query not in resource.name.lower() and query not in resource.role_type.lower():
+                continue
+            if type_filter == "Named" and resource.resource_type != ResourceType.NAMED:
+                continue
+            if type_filter == "Generic" and resource.resource_type != ResourceType.GENERIC:
+                continue
+            resources.append(resource)
+        self.resource_rows = [item.id for item in resources]
+        for index, resource in enumerate(resources, start=1):
+            teams = ", ".join(self.repo.teams[team_id].name
+                              for team_id in resource.team_memberships
+                              if team_id in self.repo.teams) or "None"
+            self.resource_grid.add_row(resource.id, (
+                str(index),
+                (f"[{resource.resource_type.value.upper()}]",
+                 "#27ae60" if resource.resource_type == ResourceType.NAMED
+                 else "#e67e22"),
+                resource.name,
+                resource.role_type, _schedule_short(resource.schedule_pattern),
+                f"{resource.fte:.2f} FTE", teams,
+                self._resource_days_off(resource)))
+        self._select_resource(select_id if select_id in self.resource_rows else None)
+
+    def _refresh_teams(self, select_id=None):
+        self.team_grid.clear()
+        query = self.team_search.get().strip().lower()
+        teams = [team for team in self.repo.teams.values()
+                 if not query or query in team.name.lower()]
         resources = list(self.repo.resources.values())
-        for team in self.repo.teams.values():
-            card = ctk.CTkFrame(self.team_list_frame, border_width=1)
-            card.pack(fill=tk.X, pady=8, padx=5)
+        self.team_rows = [item.id for item in teams]
+        for index, team in enumerate(teams, start=1):
+            daily = team.calculate_daily_capacity(resources)
+            weekly = sum(daily.values())
+            members = sum(resource.team_memberships.get(team.id, 0) > 0
+                          for resource in resources)
+            self.team_grid.add_row(team.id, (
+                str(index), team.name, _schedule_short(team.schedule_pattern),
+                "Fixed Capacity" if team.is_fixed_capacity else "Member-Calculated",
+                f"{weekly / FTE_WEEKLY_HOURS:.2f} FTE ({weekly:g}h/wk)",
+                f"{members} Member" + ("s" if members != 1 else ""),
+                _daily_summary(daily)))
+        self._select_team(select_id if select_id in self.team_rows else None)
 
-            parameters = ctk.CTkFrame(card, border_width=1)
-            parameters.pack(fill=tk.X, padx=10, pady=(10, 6))
-            parameters.grid_columnconfigure(1, weight=1)
-            parameters.grid_columnconfigure(3, weight=1)
-            mode = ("Fixed Capacity Override" if team.is_fixed_capacity
-                    else "Dynamic (Member-Calculated)")
-            values = (("Team", team.name),
-                      ("Schedule", team.schedule_pattern.value),
-                      ("Capacity Mode", mode))
-            for row, (key, value) in enumerate(values):
-                ctk.CTkLabel(parameters, text=f"{key}:",
-                             font=("Arial", 11, "bold")).grid(
-                                 row=row, column=0, padx=(10, 5), pady=3,
-                                 sticky="w")
-                ctk.CTkLabel(parameters, text=value, anchor=tk.W).grid(
-                    row=row, column=1, columnspan=3, padx=(0, 10), pady=3,
-                    sticky="ew")
-            ctk.CTkLabel(parameters, text="Weekly Capacity:",
-                         font=("Arial", 11, "bold")).grid(
-                             row=3, column=0, padx=(10, 5), pady=3, sticky="w")
-            weekly_label = ctk.CTkLabel(parameters, text="", anchor=tk.W)
-            weekly_label.grid(row=3, column=1, columnspan=3, padx=(0, 10),
-                              pady=3, sticky="ew")
+    def _select_resource(self, resource_id):
+        self.selected_resource_id = resource_id
+        state = "normal" if resource_id else "disabled"
+        self.resource_edit_button.configure(state=state)
+        self.resource_delete_button.configure(state=state)
+        if resource_id and self.resource_grid.selected_id != resource_id:
+            self.resource_grid.select(resource_id, notify=False)
 
-            badge_bar = ctk.CTkFrame(card, fg_color="transparent")
-            badge_bar.pack(fill=tk.X, padx=10, pady=(0, 8))
-            badges = {}
-            for column, (day, day_label) in enumerate(zip(DAYS, DAY_LABELS)):
-                badge_bar.grid_columnconfigure(column, weight=1, uniform="days")
-                badge = ctk.CTkFrame(badge_bar, border_width=1, corner_radius=8)
-                badge.grid(row=0, column=column, padx=3, sticky="ew")
-                ctk.CTkLabel(badge, text=day_label,
-                             font=("Arial", 10, "bold")).pack(pady=(3, 0))
-                value_label = ctk.CTkLabel(badge, text="")
-                value_label.pack(pady=(0, 3))
-                badges[day] = value_label
-            summary_widgets = {"weekly": weekly_label, "badges": badges}
-            self._update_team_summary(team, resources, summary_widgets)
+    def _select_team(self, team_id):
+        self.selected_team_id = team_id
+        state = "normal" if team_id else "disabled"
+        self.team_edit_button.configure(state=state)
+        self.team_delete_button.configure(state=state)
+        if team_id and self.team_grid.selected_id != team_id:
+            self.team_grid.select(team_id, notify=False)
 
-            headers = ("Member Name", "Role", "Schedule", "Split %",
-                       "Daily Contributed", "Weekly Contributed")
-            min_widths = (160, 110, 110, 70, 120, 90)
-            weights = (3, 2, 2, 1, 2, 1)
-            table = ctk.CTkFrame(card, fg_color="transparent")
-            table.pack(fill=tk.X, padx=10, pady=(2, 6))
-            for column, (header, width, weight) in enumerate(
-                    zip(headers, min_widths, weights)):
-                table.grid_columnconfigure(column, weight=weight,
-                                            minsize=width)
-                sticky = "e" if column == 5 else "w"
-                ctk.CTkLabel(table, text=header,
-                             font=("Arial", 10, "bold")).grid(
-                                 row=0, column=column, padx=5, pady=5,
-                                 sticky=sticky)
-            members = [resource for resource in resources
-                       if resource.team_memberships.get(team.id, 0) > 0]
-            separators = []
-            if not members:
-                ctk.CTkLabel(table, text="No members assigned").grid(
-                    row=1, column=0, columnspan=len(headers), padx=5, pady=10,
-                    sticky="w")
-            for member_index, resource in enumerate(members):
-                row = member_index * 2 + 1
-                contribution = team.member_contribution(resource)
-                ctk.CTkLabel(table, text=resource.name, anchor=tk.W,
-                             wraplength=155).grid(
-                    row=row, column=0, padx=5, pady=5, sticky="w")
-                ctk.CTkLabel(table, text=resource.role_type, anchor=tk.W,
-                             wraplength=105).grid(
-                    row=row, column=1, padx=5, pady=5, sticky="w")
-                ctk.CTkLabel(table, text=resource.schedule_pattern.value,
-                             anchor=tk.W, wraplength=105).grid(
-                    row=row, column=2, padx=5, pady=5, sticky="w")
-                variable = ctk.StringVar(
-                    value=f"{resource.team_memberships.get(team.id, 0) * 100:g}")
-                entry = ctk.CTkEntry(table, width=65, textvariable=variable,
-                                     justify=tk.CENTER)
-                entry.grid(row=row, column=3, padx=5, pady=5)
-                contribution_label = ctk.CTkLabel(
-                    table, text=self._daily_summary(contribution),
-                    anchor=tk.CENTER, wraplength=115)
-                contribution_label.grid(row=row, column=4, padx=5, pady=5)
-                weekly_label_member = ctk.CTkLabel(
-                    table, text=f"{sum(contribution.values()):g}h/week",
-                    anchor=tk.E)
-                weekly_label_member.grid(row=row, column=5, padx=5, pady=5,
-                                         sticky="e")
-                variable.trace_add(
-                    "write", lambda *_args, t=team, r=resource, v=variable,
-                    daily_label=contribution_label,
-                    week_label=weekly_label_member, summary=summary_widgets,
-                    members_all=resources:
-                    self._live_split_changed(t, r, v, daily_label, week_label,
-                                             summary, members_all))
-                self.team_split_vars[(team.id, resource.id)] = variable
-                if member_index < len(members) - 1:
-                    separator = ctk.CTkFrame(table, height=1,
-                                             fg_color=("gray75", "gray35"))
-                    separator.grid(row=row + 1, column=0, columnspan=len(headers),
-                                   sticky="ew", padx=5)
-                    separators.append(separator)
-            actions = ctk.CTkFrame(card, fg_color="transparent")
-            actions.pack(fill=tk.X, padx=10, pady=(0, 8))
-            ctk.CTkButton(actions, text="Delete Team", width=90,
-                          command=lambda tid=team.id: self._delete_team(tid)).pack(
-                              side=tk.RIGHT, padx=2)
-            ctk.CTkButton(actions, text="Edit Team", width=80,
-                          command=lambda tid=team.id: self._edit_team(tid)).pack(
-                              side=tk.RIGHT, padx=2)
-            self.team_cards[team.id] = {
-                "card": card, "parameters": parameters,
-                "badge_bar": badge_bar, "badges": badges, "table": table,
-                "headers": headers, "min_widths": min_widths,
-                "separators": separators,
-            }
+    def _create_resource(self):
+        self.resource_editor = ResourceEditorModal(
+            self, self.repo, on_apply=self._resource_applied)
+
+    def _edit_resource(self):
+        if self.selected_resource_id:
+            self.resource_editor = ResourceEditorModal(
+                self, self.repo, self.repo.resources[self.selected_resource_id],
+                self._resource_applied)
+
+    def _resource_applied(self, resource_id):
+        self._refresh_resources(resource_id)
+        self._refresh_teams()
+
+    def _delete_resource(self):
+        if not self.selected_resource_id:
+            return
+        resource = self.repo.resources[self.selected_resource_id]
+        if messagebox.askyesno("Delete Resource",
+                               f"Delete {resource.name} from the resource pool?"):
+            self.repo.remove_resource(resource.id)
+            self._refresh_resources()
+            self._refresh_teams()
+
+    def _create_team(self):
+        self.team_editor = TeamEditorModal(
+            self, self.repo, on_apply=self._team_applied)
+
+    def _edit_team(self):
+        if self.selected_team_id:
+            self.team_editor = TeamEditorModal(
+                self, self.repo, self.repo.teams[self.selected_team_id],
+                self._team_applied)
+
+    def _team_applied(self, team_id):
+        self._refresh_teams(team_id)
+        self._refresh_resources()
+
+    def _delete_team(self):
+        if not self.selected_team_id:
+            return
+        team = self.repo.teams[self.selected_team_id]
+        if messagebox.askyesno("Delete Team",
+                               f"Delete {team.name} from the resource pool?"):
+            self.repo.remove_team(team.id)
+            self._refresh_teams()
+            self._refresh_resources()
