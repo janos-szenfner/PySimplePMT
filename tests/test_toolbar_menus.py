@@ -120,7 +120,7 @@ class TestMenuContents(unittest.TestCase):
 
         self.assertEqual(labels(items),
                          ['Project Settings...', 'Calendar Settings...',
-                          'Gantt Settings...'])
+                          'Resource Settings...', 'Gantt Settings...'])
         for item in items:
             self.assertNotIn('submenu', item)
 

@@ -87,6 +87,20 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertTrue(dialog.winfo_exists())
         self.assertTrue(hasattr(dialog, 'task_color_entry'))
 
+    def test_the_resource_settings_dialog_builds_both_tabs(self):
+        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        dialog = ResourceSettingsWindow(
+            self.root, ResourceRepository(),
+            active_project_ids=[self.project.name],
+        )
+
+        self.assertTrue(dialog.winfo_exists())
+        self.assertEqual(dialog.tabview.get(), "Resources")
+        self.assertIn(self.project.name, dialog.project_vars)
+        self.assertTrue(hasattr(dialog, "team_list_frame"))
+
     def test_the_settings_dialog_opens_on_the_saved_colours(self):
         """
         Not on the theme's, which would discard what was chosen before.

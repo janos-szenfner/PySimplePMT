@@ -1208,6 +1208,8 @@ class Toolbar(ctk.CTkFrame):
                 'items': [
                     {"text": "Project Settings...", "command": self.edit_project_info},
                     {"text": "Calendar Settings...", "command": self.edit_holidays},
+                    {"text": "Resource Settings...",
+                     "command": self.open_resource_settings},
                     {"text": "Gantt Settings...",
                      "command": self.open_gantt_chart_settings},
                 ],
@@ -2495,6 +2497,26 @@ class Toolbar(ctk.CTkFrame):
             return
         self.theme_controller.toggle()
     
+    def open_resource_settings(self):
+        """Open the resource and team settings dialog."""
+        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        try:
+            repository.load_from_file()
+        except (OSError, ValueError, TypeError) as error:
+            logger.exception("Could not load resource settings")
+            messagebox.showerror(
+                "Resource Settings",
+                f"Could not load resource settings:\n{error}"
+            )
+            return
+        ResourceSettingsWindow(
+            self.winfo_toplevel(), repository,
+            active_project_ids=[self.project.name],
+        )
+
     def open_gantt_chart_settings(self):
         """Open the Gantt chart settings dialog."""
         if self.gantt_chart:
