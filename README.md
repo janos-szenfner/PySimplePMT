@@ -2434,7 +2434,7 @@ An earlier version of these tests used an invented schema, which let the
 importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ### Test Status
-1474 tests, all passing.
+2198 tests passing, with 1 display-dependent test skipped when its required environment is unavailable.
 
 ## Known Limitations
 
@@ -2448,7 +2448,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 4. **Subdivision names come from the `holidays` package**, so a region it has no name for is listed by its code
 5. **XLSX Import**: Reads cached formula results. A workbook generated without a calculation pass has empty date columns; rows carrying a duration and predecessors are rescheduled from the plan's start date instead, and rows carrying neither are skipped
 6. **XLSX Export**: The `Responsible (A)` column is written empty - the model has no owner field - and hierarchy below the phase level is flattened, since the layout has one grouping column
-7. **No resources**: A task has no owner or assignee, so nothing is levelled and nothing is costed
+7. **No task resource assignments yet**: resources, teams, schedules, capacity and leave are managed in Resource Settings, but a task has no owner or assignee yet, so nothing is levelled and nothing is costed
 8. **GAN Export of a per-task calendar**: a `.gan` file holds one calendar, so a task following a named calendar of its own is written with its duration counted against the plan's calendar instead. The dates survive; the number of days shown against that task in GanttProject does not match the one shown here. Export to MS Project where the per-task calendars matter
 9. **GAN Export of a worked weekend**: a `<date>` entry only ever takes a day off, so a day the plan works that its own week says it should not cannot be expressed. Those days are counted and logged rather than written wrong
 10. **MS Project Export is MSPDI, not `.mpp`**: nothing outside Project writes the binary format. The `.xml` opens with File -> Open. Task colours have no field in MSPDI and are dropped; everything that decides a date goes across
@@ -2470,6 +2470,8 @@ Done:
 - [x] Timeline zoom/pan
 - [x] Undo/Redo functionality
 - [x] Copy, Cut and Paste
+- [x] Undo for paste
+- [x] Settings and preferences dialogs
 - [x] Work item hierarchy with completion roll-up
 - [x] Types preserved when indenting and outdenting between levels
 - [x] Chart rows aligned to the task list
@@ -2486,17 +2488,15 @@ Done:
 
 Still to do:
 
-- [ ] Resource management
+- [ ] Resource management — **In progress**
 - [ ] Filtering and grouping
 - [ ] Recursive copy of a whole branch
-- [ ] Undo for paste
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
-- [ ] Settings/preferences dialog
 - [ ] Resource levelling off the back of the float analysis
 
 ---
 
 **Project Status**: Active Development
-**Version**: 1.58.2
-**Last Updated**: 2026-08-26
+**Version**: 1.64.3
+**Last Updated**: 2026-08-29
