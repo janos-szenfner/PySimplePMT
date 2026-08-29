@@ -95,6 +95,15 @@ class TestTheGuideCovers(unittest.TestCase):
                        'critical path', 'float'):
             self.assertIn(phrase, body, phrase)
 
+    def test_resource_management_and_capacity_statuses_are_explained(self):
+        body = self.body()
+        for phrase in ("resource settings", "named resources",
+                       "generic resources", "team members & split matrix",
+                       "days off", "200%", "free (neutral)",
+                       "optimal (green)", "full capacity (yellow)",
+                       "over capacitated (red)"):
+            self.assertIn(phrase, body, phrase)
+
     def test_import_and_export_formats_are_listed(self):
         """A reader looking for "can it read X" should find the answer."""
         body = self.body()

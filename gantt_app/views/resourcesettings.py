@@ -11,6 +11,7 @@ from gantt_app.resource_model import (
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views import dialogs as messagebox
+from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible, take_grab
 
 
@@ -70,6 +71,16 @@ def _daily_summary(values):
             if indices == list(range(indices[0], indices[-1] + 1))
             else ", ".join(labels))
     return f"{active[0][2]:g}h/day ({days})"
+
+
+def allocation_status(percentage):
+    if percentage == 0:
+        return "Free", ("#f3f4f6", "#343638"), "#9ca3af"
+    if percentage <= 80:
+        return "Optimal", ("#dcfce7", "#17452a"), "#27ae60"
+    if percentage <= 100:
+        return "Full capacity", ("#fef3c7", "#5c4813"), "#d4a017"
+    return "Over capacitated", ("#fee2e2", "#5c2020"), "#e74c3c"
 
 
 class DataGrid(ctk.CTkScrollableFrame):
@@ -294,12 +305,22 @@ class ResourceEditorModal(BaseEditorModal):
         tab = self.tabs["Days Off"]
         bar = ctk.CTkFrame(tab, fg_color="transparent")
         bar.pack(fill=tk.X, padx=8, pady=8)
-        self.day_off_start = ctk.CTkEntry(bar, placeholder_text="Start YYYY-MM-DD")
-        self.day_off_start.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
-        self.day_off_end = ctk.CTkEntry(bar, placeholder_text="End YYYY-MM-DD")
-        self.day_off_end.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
-        self.day_off_reason = ctk.CTkEntry(bar, placeholder_text="Reason")
-        self.day_off_reason.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        start_field = ctk.CTkFrame(bar, fg_color="transparent")
+        start_field.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        ctk.CTkLabel(start_field, text="Start Date", anchor=tk.W).pack(fill=tk.X)
+        self.day_off_start = DateEntry(start_field)
+        self.day_off_start.pack(fill=tk.X)
+        end_field = ctk.CTkFrame(bar, fg_color="transparent")
+        end_field.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        ctk.CTkLabel(end_field, text="End Date", anchor=tk.W).pack(fill=tk.X)
+        self.day_off_end = DateEntry(end_field)
+        self.day_off_end.pack(fill=tk.X)
+        reason_field = ctk.CTkFrame(bar, fg_color="transparent")
+        reason_field.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        ctk.CTkLabel(reason_field, text="Reason", anchor=tk.W).pack(fill=tk.X)
+        self.day_off_reason = ctk.CTkEntry(
+            reason_field, placeholder_text="Vacation / Sick Leave")
+        self.day_off_reason.pack(fill=tk.X)
         ctk.CTkButton(bar, text="+ Add Range", width=100,
                       command=self._add_day_off).pack(side=tk.LEFT, padx=3)
         self.days_off_table = ctk.CTkScrollableFrame(tab)
@@ -407,8 +428,8 @@ class ResourceEditorModal(BaseEditorModal):
             for team_id, (assigned, split) in self.team_controls.items():
                 if assigned.get():
                     value = float(split.get().strip().rstrip("%"))
-                    if value < 0 or value > 100:
-                        raise ValueError("Team splits must be between 0 and 100%.")
+                    if value < 0:
+                        raise ValueError("Team splits cannot be negative.")
                     allocations[team_id] = value / 100
         except ValueError as error:
             self.fail(str(error))
@@ -534,8 +555,6 @@ class TeamEditorModal(BaseEditorModal):
             return
         try:
             split = _number(self.add_split_entry, "Split percentage", 100)
-            if split > 100:
-                raise ValueError("Split percentage cannot exceed 100%.")
         except ValueError as error:
             self.fail(str(error))
             return
@@ -546,14 +565,25 @@ class TeamEditorModal(BaseEditorModal):
         self.allocations.pop(resource_id, None)
         self._render_members()
 
+    def _paint_member_row(self, resource_id, percentage):
+        widgets = getattr(self, "member_row_widgets", {}).get(resource_id)
+        if not widgets:
+            return
+        status, fill, border = allocation_status(percentage)
+        for label in widgets["labels"]:
+            label.configure(fg_color=fill)
+        widgets["entry"].configure(border_color=border)
+        widgets["entry"]._allocation_status = status
+
     def _split_changed(self, resource_id, variable):
         text = variable.get().strip().rstrip("%")
         try:
             value = float(text) if text else 0
         except ValueError:
             return
-        if 0 <= value <= 100:
+        if value >= 0:
             self.allocations[resource_id] = value
+            self._paint_member_row(resource_id, value)
             self._update_team_summary()
 
     def _render_members(self):
@@ -571,6 +601,7 @@ class TeamEditorModal(BaseEditorModal):
                          font=("Arial", 10, "bold")).grid(
                              row=0, column=column, padx=4, pady=5, sticky="w")
         self.member_split_vars = {}
+        self.member_row_widgets = {}
         for row, (resource_id, split) in enumerate(self.allocations.items(), start=1):
             resource = self.repo.resources.get(resource_id)
             if not resource:
@@ -578,22 +609,31 @@ class TeamEditorModal(BaseEditorModal):
             values = (resource.name, resource.resource_type.value.upper(),
                       resource.role_type, _schedule_short(resource.schedule_pattern),
                       f"{resource.weekly_capacity_hours:g}h/wk ({resource.fte:.2f} FTE)")
+            row_labels = []
             for column, value in enumerate(values):
-                ctk.CTkLabel(self.member_table, text=value, anchor=tk.W,
-                             wraplength=widths[column] - 8).grid(
-                                 row=row, column=column, padx=4, pady=5,
-                                 sticky="w")
+                label = ctk.CTkLabel(
+                    self.member_table, text=value, anchor=tk.W,
+                    wraplength=widths[column] - 8, corner_radius=4)
+                label.grid(row=row, column=column, padx=4, pady=5,
+                           sticky="nsew")
+                row_labels.append(label)
             variable = ctk.StringVar(value=f"{split:g}")
-            ctk.CTkEntry(self.member_table, textvariable=variable,
-                         width=75).grid(row=row, column=5, padx=4, pady=5)
+            split_entry = ctk.CTkEntry(
+                self.member_table, textvariable=variable, width=75)
+            split_entry.grid(row=row, column=5, padx=4, pady=5)
             variable.trace_add(
                 "write", lambda *_args, key=resource_id, var=variable:
                     self._split_changed(key, var))
             self.member_split_vars[resource_id] = variable
-            ctk.CTkButton(
+            remove_button = ctk.CTkButton(
                 self.member_table, text="Remove", width=70,
-                command=lambda key=resource_id: self._remove_member(key)).grid(
-                    row=row, column=6, padx=4, pady=5)
+                command=lambda key=resource_id: self._remove_member(key))
+            remove_button.grid(row=row, column=6, padx=4, pady=5)
+            self.member_row_widgets[resource_id] = {
+                "labels": row_labels, "entry": split_entry,
+                "remove": remove_button,
+            }
+            self._paint_member_row(resource_id, split)
         self._update_team_summary()
 
     def _calculated_daily(self):
@@ -789,7 +829,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             footer, text="Edit Selected", command=edit, state="disabled")
         edit_button.pack(side=tk.LEFT, padx=6, pady=6)
         delete_button = ctk.CTkButton(
-            footer, text="Delete Selected", command=delete, state="disabled")
+            footer, text="Delete Selected", command=delete, state="disabled",
+            fg_color="#e74c3c", hover_color="#c0392b")
         delete_button.pack(side=tk.LEFT, padx=6, pady=6)
         ctk.CTkButton(footer, text="Close", command=self.destroy).pack(
             side=tk.RIGHT, padx=6, pady=6)

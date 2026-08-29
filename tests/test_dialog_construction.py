@@ -129,9 +129,12 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_resource_editor_adds_and_removes_days_off(self):
         from gantt_app.resource_model import ResourceRepository
+        from gantt_app.views.datepicker import DateEntry
         from gantt_app.views.resourcesettings import ResourceEditorModal
 
         dialog = ResourceEditorModal(self.root, ResourceRepository())
+        self.assertIsInstance(dialog.day_off_start, DateEntry)
+        self.assertIsInstance(dialog.day_off_end, DateEntry)
         dialog.day_off_start.insert(0, "2026-08-10")
         dialog.day_off_end.insert(0, "2026-08-20")
         dialog.day_off_reason.insert(0, "Vacation")
@@ -199,6 +202,39 @@ class TestDialogConstruction(unittest.TestCase):
 
         self.assertEqual(dialog.allocations, {resource.id: 50})
         self.assertIn("20 hours/week", dialog.team_capacity_summary.cget("text"))
+
+    def test_team_split_keeps_200_percent_and_marks_over_capacity(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool,
+        )
+        from gantt_app.views.resourcesettings import TeamEditorModal
+
+        repository = ResourceRepository()
+        resource = Resource(
+            id="john", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager", team_memberships={"qa": 1.0})
+        team = TeamPool(id="qa", name="Core QA")
+        repository.add_resource(resource)
+        repository.add_team(team)
+        dialog = TeamEditorModal(self.root, repository, team)
+
+        dialog.member_split_vars[resource.id].set("200")
+
+        self.assertEqual(dialog.allocations[resource.id], 200)
+        self.assertIn("80 hours/week", dialog.team_capacity_summary.cget("text"))
+        entry = dialog.member_row_widgets[resource.id]["entry"]
+        self.assertEqual(entry._allocation_status, "Over capacitated")
+        self.assertEqual(entry.cget("border_color"), "#e74c3c")
+
+    def test_allocation_status_boundaries(self):
+        from gantt_app.views.resourcesettings import allocation_status
+
+        self.assertEqual(allocation_status(0)[0], "Free")
+        self.assertEqual(allocation_status(1)[0], "Optimal")
+        self.assertEqual(allocation_status(80)[0], "Optimal")
+        self.assertEqual(allocation_status(81)[0], "Full capacity")
+        self.assertEqual(allocation_status(100)[0], "Full capacity")
+        self.assertEqual(allocation_status(101)[0], "Over capacitated")
 
     def test_fixed_team_editor_summary_uses_fixed_capacity(self):
         from gantt_app.resource_model import ResourceRepository, SchedulePattern
@@ -299,6 +335,10 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.resource_footer.pack_info()["side"], "bottom")
         self.assertEqual(dialog.resource_edit_button.cget("state"), "disabled")
         self.assertEqual(dialog.resource_delete_button.cget("state"), "disabled")
+        for button in (dialog.resource_delete_button,
+                       dialog.team_delete_button):
+            self.assertEqual(button.cget("fg_color"), "#e74c3c")
+            self.assertEqual(button.cget("hover_color"), "#c0392b")
 
     def test_resource_settings_save_changes_uses_project_callback(self):
         from gantt_app.resource_model import ResourceRepository

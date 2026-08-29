@@ -53,7 +53,7 @@ class TestResourceModel(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.resource(weekly_capacity_hours=-1)
         with self.assertRaises(ValueError):
-            self.resource(team_memberships={"team_1": 1.01})
+            self.resource(team_memberships={"team_1": -0.01})
 
     def test_dynamic_team_capacity_uses_member_percentages(self):
         team = TeamPool(id="team_1", name="Core QA")
@@ -82,10 +82,23 @@ class TestResourceModel(unittest.TestCase):
         self.assertEqual(repository.resources["res_1"].team_memberships,
                          {"team_1": 0.6})
 
+        repository.set_team_allocation("res_1", "team_1", 200)
+        self.assertEqual(repository.resources["res_1"].team_memberships,
+                         {"team_1": 2.0})
+        self.assertEqual(repository.teams["team_1"].calculate_effective_capacity(
+            list(repository.resources.values())), 80)
+
         repository.set_team_allocation("res_1", "team_1", 0)
         self.assertEqual(repository.resources["res_1"].team_memberships, {})
         with self.assertRaises(ValueError):
-            repository.set_team_allocation("res_1", "team_1", 101)
+            repository.set_team_allocation("res_1", "team_1", -1)
+
+    def test_over_capacity_allocation_survives_serialization(self):
+        resource = self.resource(team_memberships={"team_1": 2.0})
+
+        restored = Resource.from_dict(resource.to_dict())
+
+        self.assertEqual(restored.team_memberships, {"team_1": 2.0})
 
     def test_removing_team_cleans_every_resource_membership(self):
         repository = ResourceRepository()

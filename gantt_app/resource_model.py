@@ -146,8 +146,8 @@ class Resource:
             raise ValueError("Resource ID and name are required")
         if self.weekly_capacity_hours < 0 or self.cost_per_hour < 0:
             raise ValueError("Capacity and cost cannot be negative")
-        if any(ratio < 0 or ratio > 1 for ratio in self.team_memberships.values()):
-            raise ValueError("Team allocation ratios must be between 0 and 1")
+        if any(ratio < 0 for ratio in self.team_memberships.values()):
+            raise ValueError("Team allocation ratios cannot be negative")
         daily = (self.daily_capacity_hours or
                  distribute_weekly_capacity(self.schedule_pattern,
                                             self.weekly_capacity_hours))
@@ -358,8 +358,8 @@ class ResourceRepository:
             raise KeyError(resource_id)
         if team_id not in self.teams:
             raise KeyError(team_id)
-        if percentage < 0 or percentage > 100:
-            raise ValueError("Team allocation must be between 0 and 100 percent")
+        if percentage < 0:
+            raise ValueError("Team allocation cannot be negative")
         memberships = self.resources[resource_id].team_memberships
         if percentage == 0:
             memberships.pop(team_id, None)

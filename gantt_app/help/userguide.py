@@ -673,6 +673,73 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Resource Settings: people, placeholders and teams",
+        [
+            "Settings > Resource Settings opens the resource pool stored with "
+            "the project. Resources are separate from tasks: Named resources "
+            "describe known people, Generic resources hold a role until the "
+            "person is known, and Teams aggregate the capacity contributed by "
+            "their members.",
+
+            "The Resources and Teams tabs are tables. Search and filter the "
+            "rows, click one to select it, then use Edit Selected or Delete "
+            "Selected. Create New opens an editor. Save & Apply updates the "
+            "resource pool in memory; Save Changes writes it into the same "
+            "project JSON as the tasks. Close leaves the in-memory changes in "
+            "the plan, so the ordinary File > Save also writes them.",
+
+            "A Generic resource may be left unnamed. It is named from its "
+            "role, such as DevOps Placeholder #1, and can later be replaced "
+            "without losing its project identity. Deleting a resource removes "
+            "it from every team matrix.",
+        ],
+    ),
+    (
+        "Resource schedules, capacity and days off",
+        [
+            "The General Settings tab defines a resource's role, hourly rate, "
+            "schedule and capacity. Standard works Monday to Friday, Full Week "
+            "works all seven days, Weekend Only works Saturday and Sunday, "
+            "24/7 Continuous carries 24 hours every day, and Custom accepts an "
+            "independent number for each weekday.",
+
+            "Capacity can be entered as FTE, daily hours or weekly hours. One "
+            "FTE is 40 hours per week. Changing the unit converts the same "
+            "capacity rather than changing its meaning. Editing one of the "
+            "seven day boxes makes the schedule Custom and recalculates the "
+            "weekly total and FTE.",
+
+            "Days Off records any number of dated leave or downtime ranges. "
+            "Choose the start and end with the calendar buttons or type them "
+            "as YYYY-MM-DD, add an optional reason, and add the range. These "
+            "ranges are saved with the resource in the project file.",
+        ],
+    ),
+    (
+        "Team membership, split percentages and capacity status",
+        [
+            "A team can calculate capacity from its members or use a fixed "
+            "manual limit. The Team Members & Split Matrix tab adds Named or "
+            "Generic resources and states what percentage of each person's "
+            "daily capacity contributes to this team. The daily and weekly "
+            "team totals recalculate while the percentage is typed.",
+
+            "A split may exceed 100%. That is not shortened or capped: 200% "
+            "means twice the member's capacity and is calculated as 200%, not "
+            "20%. The row colour reports the resulting capacity state:",
+
+            "0% - Free (neutral).",
+            "1-80% - Optimal (green).",
+            "81-100% - Full capacity (yellow).",
+            "Above 100% - Over capacitated (red).",
+
+            "Set a split to 0% or use Remove to take the member out of the "
+            "team. Task assignment is not part of Resource Settings yet; the "
+            "Assigned Tasks tabs are read-only placeholders for the future "
+            "Gantt / Task Scheduler workflow.",
+        ],
+    ),
+    (
         "Project Settings",
         [
             "Settings > Project Settings holds what the whole plan is built "
@@ -720,8 +787,8 @@ GUIDE_SECTIONS = (
             "Five menus run across the top. File is the plan's own file - "
             "new, open, save, save as. Actions is what is done to a plan "
             "rather than to its file: importing and exporting. Settings "
-            "holds the three panels that describe the whole plan - the "
-            "project, the calendar, and how the chart is drawn. Edit "
+            "holds the panels that describe the whole plan - the project, "
+            "calendar, resources, and how the chart is drawn. Edit "
             "creates rows and changes them, and carries undo, redo and the "
             "clipboard. View is about this window: the appearance, the "
             "critical path report, and this guide.",
