@@ -97,7 +97,7 @@ class TestDialogConstruction(unittest.TestCase):
         )
 
         self.assertTrue(dialog.winfo_exists())
-        self.assertEqual(dialog.tabview.get(), "Resources")
+        self.assertEqual(dialog.tabview.get(), "Resources (Named & Generic)")
         self.assertIn(self.project.name, dialog.project_vars)
         self.assertTrue(hasattr(dialog, "team_list_frame"))
 
@@ -130,6 +130,54 @@ class TestDialogConstruction(unittest.TestCase):
         resource = next(iter(repository.resources.values()))
         self.assertEqual(resource.name, "DevOps Placeholder #1")
         self.assertIs(resource.resource_type, ResourceType.GENERIC)
+
+    def test_resource_catalog_filters_by_role_and_has_status_bar(self):
+        import customtkinter as ctk
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        repository.add_resource(Resource(
+            id="qa", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager"))
+        repository.add_resource(Resource(
+            id="ops", name="Jane Doe", resource_type=ResourceType.NAMED,
+            role_type="DevOps"))
+        dialog = ResourceSettingsWindow(self.root, repository)
+
+        self.assertEqual(len(dialog.resource_cards), 2)
+        dialog.resource_filter_var.set("qa")
+        self.assertEqual(len(dialog.resource_cards), 1)
+
+        def descendants(widget):
+            children = widget.winfo_children()
+            return children + [nested for child in children
+                               for nested in descendants(child)]
+
+        self.assertTrue(any(isinstance(widget, ctk.CTkProgressBar)
+                            for widget in descendants(dialog.resource_cards[0])))
+
+    def test_team_split_recalculates_as_the_box_changes(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        resource = Resource(
+            id="john", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager")
+        team = TeamPool(id="qa", name="Core QA")
+        repository.add_resource(resource)
+        repository.add_team(team)
+        dialog = ResourceSettingsWindow(self.root, repository)
+
+        dialog.team_split_vars[(team.id, resource.id)].set("50")
+
+        self.assertEqual(resource.team_memberships, {team.id: 0.5})
+        self.assertEqual(team.calculate_effective_capacity([resource]), 20)
 
     def test_the_settings_dialog_opens_on_the_saved_colours(self):
         """

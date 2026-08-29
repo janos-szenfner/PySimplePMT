@@ -39,8 +39,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
-        self.tab_resources = self.tabview.add("Resources")
-        self.tab_teams = self.tabview.add("Teams")
+        self.tab_resources = self.tabview.add("Resources (Named & Generic)")
+        self.tab_teams = self.tabview.add("Teams & Allocation Matrix")
         self._setup_resources_tab()
         self._setup_teams_tab()
         logger.info("Opened Resource Settings with %d resources and %d teams",
@@ -56,7 +56,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
     def _setup_resources_tab(self):
         form = ctk.CTkScrollableFrame(self.tab_resources, width=365)
         form.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
-        ctk.CTkLabel(form, text="Resource Details",
+        ctk.CTkLabel(form, text="CREATE / EDIT RESOURCE",
                      font=("Arial", 16, "bold")).pack(pady=10)
 
         self._label(form, "Resource Name")
@@ -140,9 +140,24 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         ctk.CTkButton(form, text="Clear", command=self._clear_form).pack(
             fill=tk.X, padx=10, pady=(0, 12))
 
-        self.list_frame = ctk.CTkScrollableFrame(self.tab_resources)
-        self.list_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True,
-                             padx=10, pady=10)
+        catalog = ctk.CTkFrame(self.tab_resources)
+        catalog.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        ctk.CTkLabel(catalog, text="SAVED RESOURCES CATALOG",
+                     font=("Arial", 16, "bold")).pack(pady=(10, 4))
+        filter_row = ctk.CTkFrame(catalog, fg_color="transparent")
+        filter_row.pack(fill=tk.X, padx=10, pady=(0, 6))
+        ctk.CTkLabel(filter_row, text="Search / Filter:").pack(side=tk.LEFT)
+        self.resource_filter_var = ctk.StringVar(value="")
+        self.resource_filter_entry = ctk.CTkEntry(
+            filter_row, textvariable=self.resource_filter_var,
+            placeholder_text="Filter by name or role...")
+        self.resource_filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True,
+                                        padx=(8, 0))
+        self.resource_filter_var.trace_add(
+            "write", lambda *_args: self._refresh_resource_list())
+        self.list_frame = ctk.CTkScrollableFrame(catalog)
+        self.list_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+        self.resource_cards = []
         self._refresh_resource_list()
 
     def _number(self, entry, label: str, default: float) -> float:
@@ -328,41 +343,74 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
     def _refresh_resource_list(self):
         for widget in self.list_frame.winfo_children():
             widget.destroy()
+        self.resource_cards = []
+        query = self.resource_filter_var.get().strip().lower()
         for resource in self.repo.resources.values():
-            card = ctk.CTkFrame(self.list_frame)
-            card.pack(fill=tk.X, pady=5, padx=5)
+            if query and query not in resource.name.lower() and query not in resource.role_type.lower():
+                continue
+            card = ctk.CTkFrame(self.list_frame, border_width=1)
+            card.pack(fill=tk.X, pady=6, padx=5)
+            self.resource_cards.append(card)
+            header = ctk.CTkFrame(card, fg_color="transparent")
+            header.pack(fill=tk.X, padx=10, pady=(8, 2))
             tag = resource.resource_type.value.upper()
             color = "#27ae60" if resource.resource_type == ResourceType.NAMED else "#e67e22"
+            ctk.CTkLabel(header, text=f"[{tag}]", text_color=color,
+                         font=("Arial", 11, "bold")).pack(side=tk.LEFT)
+            ctk.CTkLabel(header, text=resource.name,
+                         font=("Arial", 14, "bold")).pack(side=tk.LEFT, padx=8)
+            ctk.CTkLabel(header, text=f"{resource.fte:.2f} FTE  ({resource.weekly_capacity_hours:g}h/wk)",
+                         font=("Arial", 12, "bold")).pack(side=tk.RIGHT)
+
             teams = ", ".join(self.repo.teams[team_id].name
                               for team_id in resource.team_memberships
                               if team_id in self.repo.teams) or "None"
             projects = ", ".join(resource.assigned_project_ids) or "None"
-            active_hours = resource.average_active_day_hours
-            schedule = (f"{resource.schedule_pattern.value} | "
-                        f"{active_hours:.2f}h/active day | "
-                        f"{resource.weekly_capacity_hours:g}h/week")
-            ctk.CTkLabel(card, text=f"[{tag}]", text_color=color,
-                         font=("Arial", 11, "bold")).pack(side=tk.LEFT, padx=8)
-            text = (f"{resource.name} | {resource.role_type}\n[{schedule}] | "
-                    f"Team: {teams} | Projects: {projects} | "
-                    "Workload: No assignments")
-            ctk.CTkLabel(card, text=text, anchor=tk.W, justify=tk.LEFT).pack(
-                side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-            ctk.CTkButton(card, text="Delete", width=58,
+            details = ctk.CTkFrame(card, fg_color="transparent")
+            details.pack(fill=tk.X, padx=10)
+            ctk.CTkLabel(details, text=f"Role: {resource.role_type}",
+                         anchor=tk.W).grid(row=0, column=0, sticky="w")
+            ctk.CTkLabel(details, text=f"Schedule: {resource.schedule_pattern.value}",
+                         anchor=tk.W).grid(row=0, column=1, padx=18, sticky="w")
+            ctk.CTkLabel(details, text=f"Team: {teams}", anchor=tk.W).grid(
+                row=1, column=0, sticky="w")
+            ctk.CTkLabel(details, text=f"Projects: {projects}", anchor=tk.W).grid(
+                row=1, column=1, padx=18, sticky="w")
+            details.grid_columnconfigure(1, weight=1)
+
+            allocation = sum(resource.team_memberships.values())
+            allocated_hours = resource.weekly_capacity_hours * allocation
+            overbooked = allocation > 1
+            status = ctk.CTkFrame(card, fg_color="transparent")
+            status.pack(fill=tk.X, padx=10, pady=(4, 3))
+            status_text = (f"{allocation * 100:.0f}% OVERBOOKED" if overbooked else
+                           f"{allocation * 100:.0f}% ({allocated_hours:g}h/"
+                           f"{resource.weekly_capacity_hours:g}h)")
+            ctk.CTkLabel(status, text=f"Allocation Status: {status_text}",
+                         text_color="#c0392b" if overbooked else "#27ae60").pack(
+                             side=tk.LEFT)
+            progress = ctk.CTkProgressBar(
+                status, progress_color="#c0392b" if overbooked else "#27ae60")
+            progress.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+            progress.set(min(allocation, 1.0))
+
+            actions = ctk.CTkFrame(card, fg_color="transparent")
+            actions.pack(fill=tk.X, padx=10, pady=(2, 8))
+            ctk.CTkButton(actions, text="Delete", width=58,
                           command=lambda rid=resource.id: self._delete_resource(rid)).pack(
-                              side=tk.RIGHT, padx=(2, 8), pady=5)
-            ctk.CTkButton(card, text="Edit", width=48,
+                              side=tk.RIGHT, padx=2)
+            ctk.CTkButton(actions, text="Edit", width=48,
                           command=lambda rid=resource.id: self._edit_resource(rid)).pack(
-                              side=tk.RIGHT, padx=2, pady=5)
+                              side=tk.RIGHT, padx=2)
             replacements = self.repo.named_resources(excluding=resource.id)
             if resource.resource_type == ResourceType.GENERIC and replacements:
                 choices = {item.name: item.id for item in replacements}
                 selector = ctk.CTkComboBox(
-                    card, values=list(choices), width=130,
+                    actions, values=list(choices), width=130,
                     command=lambda name, gid=resource.id, ids=choices:
                         self._swap_generic(gid, ids[name]), state="readonly")
                 selector.set("Swap with...")
-                selector.pack(side=tk.RIGHT, padx=2, pady=5)
+                selector.pack(side=tk.RIGHT, padx=2)
 
     def _clear_form(self):
         self.editing_resource_id = None
@@ -386,7 +434,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
     def _setup_teams_tab(self):
         form = ctk.CTkScrollableFrame(self.tab_teams, width=365)
         form.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
-        ctk.CTkLabel(form, text="Team Pool Details",
+        ctk.CTkLabel(form, text="CREATE TEAM POOL",
                      font=("Arial", 16, "bold")).pack(pady=10)
         self._label(form, "Team Name")
         self.entry_team_name = ctk.CTkEntry(form)
@@ -423,9 +471,14 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             fill=tk.X, padx=10, pady=(0, 12))
         self._team_mode_changed()
 
-        self.team_list_frame = ctk.CTkScrollableFrame(self.tab_teams)
-        self.team_list_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True,
-                                  padx=10, pady=10)
+        team_catalog = ctk.CTkFrame(self.tab_teams)
+        team_catalog.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True,
+                          padx=10, pady=10)
+        ctk.CTkLabel(team_catalog, text="SAVED TEAM POOLS & MEMBER MATRIX",
+                     font=("Arial", 16, "bold")).pack(pady=(10, 4))
+        self.team_list_frame = ctk.CTkScrollableFrame(team_catalog)
+        self.team_list_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+        self.team_split_vars = {}
         self._refresh_team_list()
 
     def _team_mode_changed(self):
@@ -524,63 +577,95 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self._refresh_team_list()
         self._clear_form()
 
+    def _team_summary_text(self, team, resources):
+        daily = team.calculate_daily_capacity(resources)
+        weekly = sum(daily.values())
+        mode = ("Fixed Capacity Override" if team.is_fixed_capacity
+                else "Dynamic (Member-Calculated)")
+        day_text = " | ".join(
+            f"{label}:{daily[day]:g}h"
+            for day, label in zip(DAYS, DAY_LABELS))
+        return (f"TEAM: {team.name}\n"
+                f"Schedule: {team.schedule_pattern.value} | "
+                f"Cap: {weekly / FTE_WEEKLY_HOURS:.2f} FTE ({weekly:g}h/wk)\n"
+                f"Capacity Mode: {mode}\nDaily Capacity: {day_text}")
+
+    def _live_split_changed(self, team, resource, variable,
+                            contribution_label, weekly_label, summary_label,
+                            resources):
+        text = variable.get().strip().rstrip("%")
+        try:
+            percentage = float(text) if text else 0.0
+        except ValueError:
+            return
+        if percentage < 0 or percentage > 100:
+            return
+        self.repo.set_team_allocation(resource.id, team.id, percentage)
+        contribution = team.member_contribution(resource)
+        contribution_label.configure(text=" | ".join(
+            f"{label}:{contribution[day]:g}h"
+            for day, label in zip(DAYS, DAY_LABELS)))
+        weekly_label.configure(text=f"{sum(contribution.values()):g}h")
+        summary_label.configure(text=self._team_summary_text(team, resources))
+        self._refresh_resource_list()
+
     def _refresh_team_list(self):
         for widget in self.team_list_frame.winfo_children():
             widget.destroy()
+        self.team_split_vars = {}
         resources = list(self.repo.resources.values())
         for team in self.repo.teams.values():
-            card = ctk.CTkFrame(self.team_list_frame)
+            card = ctk.CTkFrame(self.team_list_frame, border_width=1)
             card.pack(fill=tk.X, pady=8, padx=5)
-            daily = team.calculate_daily_capacity(resources)
             heading = ctk.CTkFrame(card, fg_color="transparent")
-            heading.pack(fill=tk.X, padx=10, pady=(8, 2))
-            ctk.CTkLabel(
-                heading,
-                text=(f"{team.name} | {team.schedule_pattern.value}\n"
-                      f"Daily: " + " | ".join(
-                          f"{label} {daily[day]:g}h"
-                          for day, label in zip(DAYS, DAY_LABELS)) +
-                      f"\nWeekly: {sum(daily.values()):g}h | "
-                      f"{sum(daily.values()) / FTE_WEEKLY_HOURS:.2f} FTE"),
-                font=("Arial", 13, "bold"), justify=tk.LEFT,
-                anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            ctk.CTkButton(heading, text="Delete", width=58,
-                          command=lambda tid=team.id: self._delete_team(tid)).pack(
-                              side=tk.RIGHT, padx=2)
-            ctk.CTkButton(heading, text="Edit", width=48,
-                          command=lambda tid=team.id: self._edit_team(tid)).pack(
-                              side=tk.RIGHT, padx=2)
+            heading.pack(fill=tk.X, padx=10, pady=(8, 4))
+            summary_label = ctk.CTkLabel(
+                heading, text=self._team_summary_text(team, resources),
+                font=("Arial", 12, "bold"), justify=tk.LEFT, anchor=tk.W)
+            summary_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-            headers = ("Member", "Schedule", "Daily Capacity", "Split %",
+            headers = ("Member", "Role", "Schedule", "Capacity", "Split %",
                        "Contributed Daily", "Contributed Weekly")
             table = ctk.CTkFrame(card, fg_color="transparent")
-            table.pack(fill=tk.X, padx=10, pady=(5, 8))
+            table.pack(fill=tk.X, padx=10, pady=(5, 6))
             for column, header in enumerate(headers):
                 table.grid_columnconfigure(column, weight=1)
                 ctk.CTkLabel(table, text=header,
                              font=("Arial", 10, "bold")).grid(
                                  row=0, column=column, padx=3, sticky="w")
-            entries = {}
             for row, resource in enumerate(resources, start=1):
                 contribution = team.member_contribution(resource)
                 ctk.CTkLabel(table, text=resource.name).grid(
                     row=row, column=0, padx=3, sticky="w")
-                ctk.CTkLabel(table, text=resource.schedule_pattern.value).grid(
+                ctk.CTkLabel(table, text=resource.role_type).grid(
                     row=row, column=1, padx=3, sticky="w")
-                ctk.CTkLabel(table, text="/".join(
-                    f"{resource.daily_capacity_hours[day]:g}"
-                    for day in DAYS)).grid(row=row, column=2, padx=3, sticky="w")
-                entry = ctk.CTkEntry(table, width=55)
-                entry.insert(0, f"{resource.team_memberships.get(team.id, 0) * 100:g}")
-                entry.grid(row=row, column=3, padx=3)
-                entries[resource.id] = entry
-                ctk.CTkLabel(table, text="/".join(
-                    f"{contribution[day]:g}" for day in DAYS)).grid(
-                        row=row, column=4, padx=3, sticky="w")
-                ctk.CTkLabel(table, text=f"{sum(contribution.values()):g}h").grid(
-                    row=row, column=5, padx=3, sticky="w")
-            ctk.CTkButton(
-                card, text="Save Member Splits", width=130,
-                command=lambda tid=team.id, values=entries:
-                    self._save_allocations(tid, values)).pack(
-                        anchor=tk.E, padx=10, pady=(0, 8))
+                ctk.CTkLabel(table, text=resource.schedule_pattern.value).grid(
+                    row=row, column=2, padx=3, sticky="w")
+                ctk.CTkLabel(table, text=f"{resource.weekly_capacity_hours:g}h/wk").grid(
+                    row=row, column=3, padx=3, sticky="w")
+                variable = ctk.StringVar(
+                    value=f"{resource.team_memberships.get(team.id, 0) * 100:g}")
+                entry = ctk.CTkEntry(table, width=55, textvariable=variable)
+                entry.grid(row=row, column=4, padx=3)
+                contribution_label = ctk.CTkLabel(table, text=" | ".join(
+                    f"{label}:{contribution[day]:g}h"
+                    for day, label in zip(DAYS, DAY_LABELS)))
+                contribution_label.grid(row=row, column=5, padx=3, sticky="w")
+                weekly_label = ctk.CTkLabel(
+                    table, text=f"{sum(contribution.values()):g}h")
+                weekly_label.grid(row=row, column=6, padx=3, sticky="w")
+                variable.trace_add(
+                    "write", lambda *_args, t=team, r=resource, v=variable,
+                    daily_label=contribution_label, week_label=weekly_label,
+                    team_label=summary_label, members=resources:
+                    self._live_split_changed(t, r, v, daily_label, week_label,
+                                             team_label, members))
+                self.team_split_vars[(team.id, resource.id)] = variable
+            actions = ctk.CTkFrame(card, fg_color="transparent")
+            actions.pack(fill=tk.X, padx=10, pady=(0, 8))
+            ctk.CTkButton(actions, text="Delete Team", width=90,
+                          command=lambda tid=team.id: self._delete_team(tid)).pack(
+                              side=tk.RIGHT, padx=2)
+            ctk.CTkButton(actions, text="Edit Team", width=80,
+                          command=lambda tid=team.id: self._edit_team(tid)).pack(
+                              side=tk.RIGHT, padx=2)
