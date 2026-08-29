@@ -172,12 +172,108 @@ class TestDialogConstruction(unittest.TestCase):
         team = TeamPool(id="qa", name="Core QA")
         repository.add_resource(resource)
         repository.add_team(team)
+        repository.set_team_allocation(resource.id, team.id, 100)
         dialog = ResourceSettingsWindow(self.root, repository)
 
         dialog.team_split_vars[(team.id, resource.id)].set("50")
 
         self.assertEqual(resource.team_memberships, {team.id: 0.5})
         self.assertEqual(team.calculate_effective_capacity([resource]), 20)
+
+    def test_new_team_does_not_acquire_existing_generic_resource(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        resource = Resource(
+            id="generic", name="DevOps Placeholder #1",
+            resource_type=ResourceType.GENERIC, role_type="DevOps")
+        repository.add_resource(resource)
+        dialog = ResourceSettingsWindow(self.root, repository)
+        dialog.entry_team_name.insert(0, "Infrastructure")
+
+        dialog._save_team_form()
+
+        team = next(iter(repository.teams.values()))
+        self.assertEqual(resource.team_memberships, {})
+        self.assertNotIn((team.id, resource.id), dialog.team_split_vars)
+
+    def test_zero_team_split_removes_member_from_matrix(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        resource = Resource(
+            id="generic", name="DevOps Placeholder #1",
+            resource_type=ResourceType.GENERIC, role_type="DevOps",
+            team_memberships={"team": 0.5})
+        team = TeamPool(id="team", name="Infrastructure")
+        repository.add_resource(resource)
+        repository.add_team(team)
+        dialog = ResourceSettingsWindow(self.root, repository)
+
+        dialog.team_split_vars[(team.id, resource.id)].set("0")
+        self.root.update_idletasks()
+
+        self.assertEqual(resource.team_memberships, {})
+        self.assertNotIn((team.id, resource.id), dialog.team_split_vars)
+
+    def test_team_card_uses_badges_and_strict_member_columns(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        team = TeamPool(id="team", name="Core QA")
+        repository.add_team(team)
+        for resource_id, name, role in (
+                ("john", "John Doe", "QA Manager"),
+                ("jane", "Jane Smith", "QA Tester")):
+            repository.add_resource(Resource(
+                id=resource_id, name=name, resource_type=ResourceType.NAMED,
+                role_type=role, team_memberships={team.id: 0.5}))
+        dialog = ResourceSettingsWindow(self.root, repository)
+        layout = dialog.team_cards[team.id]
+
+        self.assertEqual(tuple(layout["badges"]),
+                         ("mon", "tue", "wed", "thu", "fri", "sat", "sun"))
+        self.assertEqual(layout["headers"],
+                         ("Member Name", "Role", "Schedule", "Split %",
+                          "Daily Contributed", "Weekly Contributed"))
+        self.assertEqual(layout["min_widths"], (160, 110, 110, 70, 120, 90))
+        self.assertEqual(len(layout["separators"]), 1)
+
+    def test_daily_contribution_summary_does_not_print_seven_days(self):
+        from gantt_app.resource_model import DAYS
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        standard = dict(zip(DAYS, [4, 4, 4, 4, 4, 0, 0]))
+        custom = dict(zip(DAYS, [8, 4, 8, 4, 0, 0, 0]))
+
+        self.assertEqual(ResourceSettingsWindow._daily_summary(standard),
+                         "4h/day (Mon-Fri)")
+        self.assertEqual(ResourceSettingsWindow._daily_summary(custom),
+                         "24h/week (custom)")
+
+    def test_resource_actions_follow_compact_project_availability(self):
+        import customtkinter as ctk
+        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        dialog = ResourceSettingsWindow(
+            self.root, ResourceRepository(), active_project_ids=["Project A"])
+
+        self.assertIsInstance(dialog.project_frame, ctk.CTkFrame)
+        self.assertNotIsInstance(dialog.project_frame, ctk.CTkScrollableFrame)
+        self.assertIs(dialog.save_resource_button.master,
+                      dialog.resource_actions)
+        self.assertIs(dialog.clear_resource_button.master,
+                      dialog.resource_actions)
 
     def test_the_settings_dialog_opens_on_the_saved_colours(self):
         """

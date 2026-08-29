@@ -121,24 +121,32 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.combo_team.pack(fill=tk.X, padx=10)
 
         self._label(form, "Project Availability")
-        project_frame = ctk.CTkScrollableFrame(form, height=80)
-        project_frame.pack(fill=tk.X, padx=10)
+        self.project_frame = ctk.CTkFrame(form, fg_color="transparent")
+        self.project_frame.pack(fill=tk.X, padx=10)
         if not self.active_project_ids:
-            ctk.CTkLabel(project_frame, text="No active projects").pack(anchor=tk.W)
+            ctk.CTkLabel(self.project_frame, text="No active projects").pack(
+                anchor=tk.W)
         for project_id in self.active_project_ids:
             variable = ctk.BooleanVar(value=False)
-            ctk.CTkCheckBox(project_frame, text=project_id,
-                            variable=variable).pack(anchor=tk.W, pady=2)
+            ctk.CTkCheckBox(self.project_frame, text=project_id,
+                            variable=variable).pack(side=tk.LEFT, padx=(0, 10),
+                                                   pady=2)
             self.project_vars[project_id] = variable
 
         self.resource_problem = ctk.CTkLabel(form, text="", text_color="#c0392b",
-                                             wraplength=330)
-        self.resource_problem.pack(fill=tk.X, padx=10, pady=(8, 0))
+                                             wraplength=330, height=18)
+        self.resource_problem.pack(fill=tk.X, padx=10, pady=(6, 0))
+        self.resource_actions = ctk.CTkFrame(form, fg_color="transparent")
+        self.resource_actions.pack(fill=tk.X, padx=10, pady=(6, 12))
         self.save_resource_button = ctk.CTkButton(
-            form, text="Add Resource", command=self._save_resource)
-        self.save_resource_button.pack(fill=tk.X, padx=10, pady=(8, 4))
-        ctk.CTkButton(form, text="Clear", command=self._clear_form).pack(
-            fill=tk.X, padx=10, pady=(0, 12))
+            self.resource_actions, text="Add Resource",
+            command=self._save_resource)
+        self.save_resource_button.pack(side=tk.LEFT, fill=tk.X, expand=True,
+                                       padx=(0, 3))
+        self.clear_resource_button = ctk.CTkButton(
+            self.resource_actions, text="Clear", command=self._clear_form)
+        self.clear_resource_button.pack(side=tk.RIGHT, fill=tk.X, expand=True,
+                                        padx=(3, 0))
 
         catalog = ctk.CTkFrame(self.tab_resources)
         catalog.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -577,21 +585,32 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self._refresh_team_list()
         self._clear_form()
 
-    def _team_summary_text(self, team, resources):
+    @staticmethod
+    def _daily_summary(values):
+        active = [(index, DAY_LABELS[index], values[day])
+                  for index, day in enumerate(DAYS) if values[day] > 0]
+        if not active:
+            return "0h/day"
+        hours = {value for _index, _label, value in active}
+        if len(hours) != 1:
+            return f"{sum(values.values()):g}h/week (custom)"
+        indices = [index for index, _label, _value in active]
+        labels = [label for _index, label, _value in active]
+        days = (f"{labels[0]}-{labels[-1]}"
+                if indices == list(range(indices[0], indices[-1] + 1))
+                else ", ".join(labels))
+        return f"{active[0][2]:g}h/day ({days})"
+
+    def _update_team_summary(self, team, resources, widgets):
         daily = team.calculate_daily_capacity(resources)
         weekly = sum(daily.values())
-        mode = ("Fixed Capacity Override" if team.is_fixed_capacity
-                else "Dynamic (Member-Calculated)")
-        day_text = " | ".join(
-            f"{label}:{daily[day]:g}h"
-            for day, label in zip(DAYS, DAY_LABELS))
-        return (f"TEAM: {team.name}\n"
-                f"Schedule: {team.schedule_pattern.value} | "
-                f"Cap: {weekly / FTE_WEEKLY_HOURS:.2f} FTE ({weekly:g}h/wk)\n"
-                f"Capacity Mode: {mode}\nDaily Capacity: {day_text}")
+        widgets["weekly"].configure(
+            text=f"{weekly:g}h/week  |  {weekly / FTE_WEEKLY_HOURS:.2f} FTE")
+        for day, label in widgets["badges"].items():
+            label.configure(text=f"{daily[day]:g}h")
 
     def _live_split_changed(self, team, resource, variable,
-                            contribution_label, weekly_label, summary_label,
+                            contribution_label, weekly_label, summary_widgets,
                             resources):
         text = variable.get().strip().rstrip("%")
         try:
@@ -602,65 +621,124 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             return
         self.repo.set_team_allocation(resource.id, team.id, percentage)
         contribution = team.member_contribution(resource)
-        contribution_label.configure(text=" | ".join(
-            f"{label}:{contribution[day]:g}h"
-            for day, label in zip(DAYS, DAY_LABELS)))
-        weekly_label.configure(text=f"{sum(contribution.values()):g}h")
-        summary_label.configure(text=self._team_summary_text(team, resources))
+        contribution_label.configure(text=self._daily_summary(contribution))
+        weekly_label.configure(text=f"{sum(contribution.values()):g}h/week")
+        self._update_team_summary(team, resources, summary_widgets)
         self._refresh_resource_list()
+        if percentage == 0:
+            self.after_idle(self._refresh_team_list)
 
     def _refresh_team_list(self):
         for widget in self.team_list_frame.winfo_children():
             widget.destroy()
         self.team_split_vars = {}
+        self.team_cards = {}
         resources = list(self.repo.resources.values())
         for team in self.repo.teams.values():
             card = ctk.CTkFrame(self.team_list_frame, border_width=1)
             card.pack(fill=tk.X, pady=8, padx=5)
-            heading = ctk.CTkFrame(card, fg_color="transparent")
-            heading.pack(fill=tk.X, padx=10, pady=(8, 4))
-            summary_label = ctk.CTkLabel(
-                heading, text=self._team_summary_text(team, resources),
-                font=("Arial", 12, "bold"), justify=tk.LEFT, anchor=tk.W)
-            summary_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-            headers = ("Member", "Role", "Schedule", "Capacity", "Split %",
-                       "Contributed Daily", "Contributed Weekly")
+            parameters = ctk.CTkFrame(card, border_width=1)
+            parameters.pack(fill=tk.X, padx=10, pady=(10, 6))
+            parameters.grid_columnconfigure(1, weight=1)
+            parameters.grid_columnconfigure(3, weight=1)
+            mode = ("Fixed Capacity Override" if team.is_fixed_capacity
+                    else "Dynamic (Member-Calculated)")
+            values = (("Team", team.name),
+                      ("Schedule", team.schedule_pattern.value),
+                      ("Capacity Mode", mode))
+            for row, (key, value) in enumerate(values):
+                ctk.CTkLabel(parameters, text=f"{key}:",
+                             font=("Arial", 11, "bold")).grid(
+                                 row=row, column=0, padx=(10, 5), pady=3,
+                                 sticky="w")
+                ctk.CTkLabel(parameters, text=value, anchor=tk.W).grid(
+                    row=row, column=1, columnspan=3, padx=(0, 10), pady=3,
+                    sticky="ew")
+            ctk.CTkLabel(parameters, text="Weekly Capacity:",
+                         font=("Arial", 11, "bold")).grid(
+                             row=3, column=0, padx=(10, 5), pady=3, sticky="w")
+            weekly_label = ctk.CTkLabel(parameters, text="", anchor=tk.W)
+            weekly_label.grid(row=3, column=1, columnspan=3, padx=(0, 10),
+                              pady=3, sticky="ew")
+
+            badge_bar = ctk.CTkFrame(card, fg_color="transparent")
+            badge_bar.pack(fill=tk.X, padx=10, pady=(0, 8))
+            badges = {}
+            for column, (day, day_label) in enumerate(zip(DAYS, DAY_LABELS)):
+                badge_bar.grid_columnconfigure(column, weight=1, uniform="days")
+                badge = ctk.CTkFrame(badge_bar, border_width=1, corner_radius=8)
+                badge.grid(row=0, column=column, padx=3, sticky="ew")
+                ctk.CTkLabel(badge, text=day_label,
+                             font=("Arial", 10, "bold")).pack(pady=(3, 0))
+                value_label = ctk.CTkLabel(badge, text="")
+                value_label.pack(pady=(0, 3))
+                badges[day] = value_label
+            summary_widgets = {"weekly": weekly_label, "badges": badges}
+            self._update_team_summary(team, resources, summary_widgets)
+
+            headers = ("Member Name", "Role", "Schedule", "Split %",
+                       "Daily Contributed", "Weekly Contributed")
+            min_widths = (160, 110, 110, 70, 120, 90)
+            weights = (3, 2, 2, 1, 2, 1)
             table = ctk.CTkFrame(card, fg_color="transparent")
-            table.pack(fill=tk.X, padx=10, pady=(5, 6))
-            for column, header in enumerate(headers):
-                table.grid_columnconfigure(column, weight=1)
+            table.pack(fill=tk.X, padx=10, pady=(2, 6))
+            for column, (header, width, weight) in enumerate(
+                    zip(headers, min_widths, weights)):
+                table.grid_columnconfigure(column, weight=weight,
+                                            minsize=width)
+                sticky = "e" if column == 5 else "w"
                 ctk.CTkLabel(table, text=header,
                              font=("Arial", 10, "bold")).grid(
-                                 row=0, column=column, padx=3, sticky="w")
-            for row, resource in enumerate(resources, start=1):
+                                 row=0, column=column, padx=5, pady=5,
+                                 sticky=sticky)
+            members = [resource for resource in resources
+                       if resource.team_memberships.get(team.id, 0) > 0]
+            separators = []
+            if not members:
+                ctk.CTkLabel(table, text="No members assigned").grid(
+                    row=1, column=0, columnspan=len(headers), padx=5, pady=10,
+                    sticky="w")
+            for member_index, resource in enumerate(members):
+                row = member_index * 2 + 1
                 contribution = team.member_contribution(resource)
-                ctk.CTkLabel(table, text=resource.name).grid(
-                    row=row, column=0, padx=3, sticky="w")
-                ctk.CTkLabel(table, text=resource.role_type).grid(
-                    row=row, column=1, padx=3, sticky="w")
-                ctk.CTkLabel(table, text=resource.schedule_pattern.value).grid(
-                    row=row, column=2, padx=3, sticky="w")
-                ctk.CTkLabel(table, text=f"{resource.weekly_capacity_hours:g}h/wk").grid(
-                    row=row, column=3, padx=3, sticky="w")
+                ctk.CTkLabel(table, text=resource.name, anchor=tk.W,
+                             wraplength=155).grid(
+                    row=row, column=0, padx=5, pady=5, sticky="w")
+                ctk.CTkLabel(table, text=resource.role_type, anchor=tk.W,
+                             wraplength=105).grid(
+                    row=row, column=1, padx=5, pady=5, sticky="w")
+                ctk.CTkLabel(table, text=resource.schedule_pattern.value,
+                             anchor=tk.W, wraplength=105).grid(
+                    row=row, column=2, padx=5, pady=5, sticky="w")
                 variable = ctk.StringVar(
                     value=f"{resource.team_memberships.get(team.id, 0) * 100:g}")
-                entry = ctk.CTkEntry(table, width=55, textvariable=variable)
-                entry.grid(row=row, column=4, padx=3)
-                contribution_label = ctk.CTkLabel(table, text=" | ".join(
-                    f"{label}:{contribution[day]:g}h"
-                    for day, label in zip(DAYS, DAY_LABELS)))
-                contribution_label.grid(row=row, column=5, padx=3, sticky="w")
-                weekly_label = ctk.CTkLabel(
-                    table, text=f"{sum(contribution.values()):g}h")
-                weekly_label.grid(row=row, column=6, padx=3, sticky="w")
+                entry = ctk.CTkEntry(table, width=65, textvariable=variable,
+                                     justify=tk.CENTER)
+                entry.grid(row=row, column=3, padx=5, pady=5)
+                contribution_label = ctk.CTkLabel(
+                    table, text=self._daily_summary(contribution),
+                    anchor=tk.CENTER, wraplength=115)
+                contribution_label.grid(row=row, column=4, padx=5, pady=5)
+                weekly_label_member = ctk.CTkLabel(
+                    table, text=f"{sum(contribution.values()):g}h/week",
+                    anchor=tk.E)
+                weekly_label_member.grid(row=row, column=5, padx=5, pady=5,
+                                         sticky="e")
                 variable.trace_add(
                     "write", lambda *_args, t=team, r=resource, v=variable,
-                    daily_label=contribution_label, week_label=weekly_label,
-                    team_label=summary_label, members=resources:
+                    daily_label=contribution_label,
+                    week_label=weekly_label_member, summary=summary_widgets,
+                    members_all=resources:
                     self._live_split_changed(t, r, v, daily_label, week_label,
-                                             team_label, members))
+                                             summary, members_all))
                 self.team_split_vars[(team.id, resource.id)] = variable
+                if member_index < len(members) - 1:
+                    separator = ctk.CTkFrame(table, height=1,
+                                             fg_color=("gray75", "gray35"))
+                    separator.grid(row=row + 1, column=0, columnspan=len(headers),
+                                   sticky="ew", padx=5)
+                    separators.append(separator)
             actions = ctk.CTkFrame(card, fg_color="transparent")
             actions.pack(fill=tk.X, padx=10, pady=(0, 8))
             ctk.CTkButton(actions, text="Delete Team", width=90,
@@ -669,3 +747,9 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             ctk.CTkButton(actions, text="Edit Team", width=80,
                           command=lambda tid=team.id: self._edit_team(tid)).pack(
                               side=tk.RIGHT, padx=2)
+            self.team_cards[team.id] = {
+                "card": card, "parameters": parameters,
+                "badge_bar": badge_bar, "badges": badges, "table": table,
+                "headers": headers, "min_widths": min_widths,
+                "separators": separators,
+            }
