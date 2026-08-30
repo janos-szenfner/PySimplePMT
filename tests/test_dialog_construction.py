@@ -450,6 +450,47 @@ class TestDialogConstruction(unittest.TestCase):
         dialog._hotkey_create()
         self.assertIsNotNone(getattr(dialog, "team_editor", None))
 
+    def test_double_click_opens_resource_editor(self):
+        from unittest import mock
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        repository.add_resource(Resource(
+            id="qa", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager"))
+        dialog = ResourceSettingsWindow(self.root, repository)
+
+        with mock.patch.object(dialog.resource_grid.tree, "identify_row",
+                               return_value="qa"):
+            dialog.resource_grid._on_double_click(
+                mock.Mock(y=10))
+
+        self.assertIsNotNone(getattr(dialog, "resource_editor", None))
+        self.assertEqual(dialog.selected_resource_id, "qa")
+
+    def test_double_click_opens_team_editor(self):
+        from unittest import mock
+        from gantt_app.resource_model import (
+            ResourceRepository, TeamPool,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        repository.add_team(TeamPool(id="qa", name="Core QA"))
+        dialog = ResourceSettingsWindow(self.root, repository)
+        dialog.tabview.set("Teams")
+
+        with mock.patch.object(dialog.team_grid.tree, "identify_row",
+                               return_value="qa"):
+            dialog.team_grid._on_double_click(
+                mock.Mock(y=10))
+
+        self.assertIsNotNone(getattr(dialog, "team_editor", None))
+        self.assertEqual(dialog.selected_team_id, "qa")
+
     def test_resource_settings_save_changes_uses_project_callback(self):
         from gantt_app.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow

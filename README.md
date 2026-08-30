@@ -185,7 +185,8 @@ member count and a daily summary. Search narrows either table, and the Resources
 tab can also filter Named or Generic entries.
 
 Clicking a row highlights it and enables **Edit Selected**, **Copy Selected**
-and the red **Delete Selected** action. **Create New Resource** and **Create
+and the red **Delete Selected** action. A quick double-click on a row opens
+its editor, just like the task list grid. **Create New Resource** and **Create
 New Team** open dedicated modal editors, or press `⌥⌘.` on a Mac and
 `Ctrl+Alt+.` elsewhere to open the editor for whichever tab is active.
 **Paste** is enabled once a row of the same kind has been copied.
@@ -2586,5 +2587,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.64.6
+**Version**: 1.64.7
 **Last Updated**: 2026-08-30

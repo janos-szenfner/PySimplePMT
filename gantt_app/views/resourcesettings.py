@@ -87,10 +87,12 @@ def allocation_status(percentage):
 
 
 class DataGrid(ctk.CTkFrame):
-    def __init__(self, master, columns, on_select, **kwargs):
+    def __init__(self, master, columns, on_select, on_double_click=None,
+                 **kwargs):
         super().__init__(master, **kwargs)
         self.columns = columns
         self.on_select = on_select
+        self.on_double_click = on_double_click
         self._selected_id = None
         self._row_ids = []
         self.tree = ttk.Treeview(
@@ -109,6 +111,8 @@ class DataGrid(ctk.CTkFrame):
                 f"#{index}", width=width, minwidth=width,
                 anchor=anchor, stretch=weight > 0)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        if on_double_click:
+            self.tree.bind("<Double-1>", self._on_double_click)
         self._configure_style()
 
     @property
@@ -145,6 +149,12 @@ class DataGrid(ctk.CTkFrame):
         if selection:
             self._selected_id = selection[0]
             self.on_select(selection[0])
+
+    def _on_double_click(self, event):
+        item_id = self.tree.identify_row(event.y)
+        if item_id and self.on_double_click:
+            self.on_double_click(item_id)
+        return "break"
 
     def select(self, item_id, notify=True):
         if item_id not in self.tree.get_children():
@@ -821,7 +831,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             "write", lambda *_args: self._refresh_resources())
         self.resource_grid = DataGrid(
             self.tab_resources, self.RESOURCE_COLUMNS,
-            self._select_resource, border_width=1)
+            self._select_resource, on_double_click=self._edit_resource,
+            border_width=1)
         self.resource_grid.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
 
     def _build_teams_tab(self):
@@ -839,7 +850,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.team_search.trace_add("write", lambda *_args: self._refresh_teams())
         self.team_grid = DataGrid(
             self.tab_teams, self.TEAM_COLUMNS, self._select_team,
-            border_width=1)
+            on_double_click=self._edit_team, border_width=1)
         self.team_grid.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
 
     def _footer(self, tab, create_text, create, edit, delete, prefix):
@@ -955,7 +966,9 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.resource_editor = ResourceEditorModal(
             self, self.repo, on_apply=self._resource_applied)
 
-    def _edit_resource(self):
+    def _edit_resource(self, resource_id=None):
+        if resource_id:
+            self._select_resource(resource_id)
         if self.selected_resource_id:
             self.resource_editor = ResourceEditorModal(
                 self, self.repo, self.repo.resources[self.selected_resource_id],
@@ -979,7 +992,9 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.team_editor = TeamEditorModal(
             self, self.repo, on_apply=self._team_applied)
 
-    def _edit_team(self):
+    def _edit_team(self, team_id=None):
+        if team_id:
+            self._select_team(team_id)
         if self.selected_team_id:
             self.team_editor = TeamEditorModal(
                 self, self.repo, self.repo.teams[self.selected_team_id],
