@@ -340,6 +340,116 @@ class TestDialogConstruction(unittest.TestCase):
             self.assertEqual(button.cget("fg_color"), "#e74c3c")
             self.assertEqual(button.cget("hover_color"), "#c0392b")
 
+    def test_resource_settings_copy_paste_buttons_start_disabled(self):
+        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        dialog = ResourceSettingsWindow(self.root, ResourceRepository())
+
+        self.assertEqual(dialog.resource_copy_button.cget("state"), "disabled")
+        self.assertEqual(dialog.resource_paste_button.cget("state"), "disabled")
+        self.assertEqual(dialog.team_copy_button.cget("state"), "disabled")
+        self.assertEqual(dialog.team_paste_button.cget("state"), "disabled")
+
+    def test_copy_paste_resource_creates_an_independent_duplicate(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        repository.add_resource(Resource(
+            id="qa", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager",
+            daily_capacity_hours=dict(zip(
+                ("mon", "tue", "wed", "thu", "fri", "sat", "sun"),
+                (8, 8, 8, 8, 8, 0, 0))),
+            team_memberships={"team_1": 0.5},
+            assigned_project_ids=["Project A"]))
+        dialog = ResourceSettingsWindow(self.root, repository)
+        dialog.resource_grid.select("qa")
+
+        dialog._copy_resource("qa")
+        dialog._paste_resource()
+
+        self.assertEqual(len(repository.resources), 2)
+        original = repository.resources["qa"]
+        copied = [resource for resource in repository.resources.values()
+                  if resource.id != "qa"][0]
+        self.assertEqual(copied.name, "John Doe (Copy)")
+        self.assertEqual(copied.role_type, original.role_type)
+        self.assertEqual(copied.resource_type, original.resource_type)
+        self.assertEqual(copied.daily_capacity_hours,
+                         original.daily_capacity_hours)
+        self.assertEqual(copied.team_memberships, original.team_memberships)
+        self.assertEqual(copied.assigned_project_ids, [])
+        self.assertNotEqual(copied.id, original.id)
+
+    def test_copy_paste_team_keeps_settings_but_not_members(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool,
+        )
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        team = TeamPool(
+            id="qa", name="Core QA", is_fixed_capacity=True,
+            fixed_hours=160, schedule_pattern="24/7 Operation")
+        repository.add_team(team)
+        repository.add_resource(Resource(
+            id="john", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager", team_memberships={team.id: 1.0}))
+        dialog = ResourceSettingsWindow(self.root, repository)
+        dialog.team_grid.select("qa")
+
+        dialog._copy_team("qa")
+        dialog._paste_team()
+
+        self.assertEqual(len(repository.teams), 2)
+        self.assertEqual(
+            [resource for resource in repository.resources.values()][0]
+            .team_memberships, {"qa": 1.0})
+        copied = [team for team in repository.teams.values()
+                  if team.id != "qa"][0]
+        self.assertEqual(copied.name, "Core QA (Copy)")
+        self.assertTrue(copied.is_fixed_capacity)
+        self.assertEqual(copied.fixed_hours, 160)
+        self.assertNotEqual(copied.id, "qa")
+
+    def test_copy_paste_avoids_duplicate_names(self):
+        from gantt_app.resource_model import Resource, ResourceRepository, ResourceType
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        repository.add_resource(Resource(
+            id="qa", name="John Doe", resource_type=ResourceType.NAMED,
+            role_type="QA Manager"))
+        repository.add_resource(Resource(
+            id="qa2", name="John Doe (Copy)", resource_type=ResourceType.NAMED,
+            role_type="QA Manager"))
+        dialog = ResourceSettingsWindow(self.root, repository)
+        dialog.resource_grid.select("qa")
+
+        dialog._copy_resource("qa")
+        dialog._paste_resource()
+
+        names = {resource.name for resource in repository.resources.values()}
+        self.assertIn("John Doe (Copy 2)", names)
+
+    def test_keyboard_shortcut_opens_editor_for_active_tab(self):
+        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        dialog = ResourceSettingsWindow(self.root, ResourceRepository())
+
+        dialog._hotkey_create()
+        self.assertIsNotNone(getattr(dialog, "resource_editor", None))
+
+        dialog.team_editor = None
+        dialog.tabview.set("Teams")
+        dialog._hotkey_create()
+        self.assertIsNotNone(getattr(dialog, "team_editor", None))
+
     def test_resource_settings_save_changes_uses_project_callback(self):
         from gantt_app.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow

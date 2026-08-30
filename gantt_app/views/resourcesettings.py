@@ -1,9 +1,12 @@
+import copy
 import tkinter as tk
 from datetime import date
+from tkinter import ttk
 from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
 
+from gantt_app.shortcuts import bind_all
 from gantt_app.resource_model import (
     DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, DaysOffRange, Resource,
     ResourceRepository, ResourceType, SchedulePattern, TeamPool,
@@ -83,55 +86,72 @@ def allocation_status(percentage):
     return "Over capacitated", ("#fee2e2", "#5c2020"), "#e74c3c"
 
 
-class DataGrid(ctk.CTkScrollableFrame):
+class DataGrid(ctk.CTkFrame):
     def __init__(self, master, columns, on_select, **kwargs):
         super().__init__(master, **kwargs)
         self.columns = columns
         self.on_select = on_select
-        self.row_widgets = {}
-        self.selected_id = None
-        for column, (_name, width, weight, _anchor) in enumerate(columns):
-            self.grid_columnconfigure(column, weight=weight, minsize=width)
-        self._header()
+        self._selected_id = None
+        self._row_ids = []
+        self.tree = ttk.Treeview(
+            self, show="headings",
+            columns=tuple(f"#{index}" for index in range(len(columns))))
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self.tree.yview)
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=self.scrollbar.set)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        for index, (name, width, weight, anchor) in enumerate(columns):
+            self.tree.heading(f"#{index}", text=name, anchor=anchor)
+            self.tree.column(
+                f"#{index}", width=width, minwidth=width,
+                anchor=anchor, stretch=weight > 0)
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        self._configure_style()
 
-    def _header(self):
-        for column, (name, _width, _weight, anchor) in enumerate(self.columns):
-            ctk.CTkLabel(self, text=name, font=("Arial", 10, "bold"),
-                         anchor=anchor, fg_color=("gray80", "gray25")).grid(
-                             row=0, column=column, padx=1, pady=(0, 2),
-                             sticky="nsew")
+    @property
+    def selected_id(self):
+        return self._selected_id
+
+    def _configure_style(self):
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("DataGrid.Treeview", rowheight=24)
+        style.configure(
+            "DataGrid.Treeview.Heading",
+            font=("Arial", 10, "bold"))
+        self.tree.configure(style="DataGrid.Treeview")
 
     def clear(self):
-        for widgets in self.row_widgets.values():
-            for widget in widgets:
-                widget.destroy()
-        self.row_widgets = {}
-        self.selected_id = None
+        self.tree.delete(*self.tree.get_children())
+        self._row_ids = []
+        self._selected_id = None
 
     def add_row(self, item_id, values):
-        row = len(self.row_widgets) + 1
-        widgets = []
-        for column, (value, specification) in enumerate(zip(values, self.columns)):
-            _name, width, _weight, anchor = specification
-            text, text_color = value if isinstance(value, tuple) else (value, None)
-            options = {"text_color": text_color} if text_color else {}
-            label = ctk.CTkLabel(
-                self, text=text, anchor=anchor, justify=tk.LEFT,
-                wraplength=max(width - 10, 40), fg_color="transparent",
-                **options)
-            label.grid(row=row, column=column, padx=1, pady=1, sticky="nsew")
-            label.bind("<Button-1>", lambda _event, key=item_id: self.select(key))
-            widgets.append(label)
-        self.row_widgets[item_id] = widgets
+        display_values = []
+        for value in values:
+            text = value[0] if isinstance(value, tuple) else value
+            display_values.append(text)
+        self.tree.insert("", "end", iid=item_id, values=tuple(display_values))
+        self._row_ids.append(item_id)
+
+    def _on_select(self, _event):
+        selection = self.tree.selection()
+        if selection:
+            self._selected_id = selection[0]
+            self.on_select(selection[0])
 
     def select(self, item_id, notify=True):
-        if item_id not in self.row_widgets:
+        if item_id not in self.tree.get_children():
             return
-        for key, widgets in self.row_widgets.items():
-            color = ("#b9d8f2", "#24577a") if key == item_id else "transparent"
-            for widget in widgets:
-                widget.configure(fg_color=color)
-        self.selected_id = item_id
+        self.tree.selection_set(item_id)
+        self.tree.focus(item_id)
+        self._selected_id = item_id
         if notify:
             self.on_select(item_id)
 
@@ -759,11 +779,13 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.selected_team_id = None
         self.resource_rows = []
         self.team_rows = []
+        self.clipboard = None
         self.title("Resource Settings - Manage Resources & Teams")
         self.geometry(self.GEOMETRY)
         self.minsize(1050, 620)
         self.transient(master.winfo_toplevel())
         self.bind("<Escape>", lambda _event: self.destroy())
+        self._bind_shortcuts()
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill=tk.BOTH, expand=True, padx=14, pady=14)
         self.tab_resources = self.tabview.add("Resources")
@@ -828,6 +850,13 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         edit_button = ctk.CTkButton(
             footer, text="Edit Selected", command=edit, state="disabled")
         edit_button.pack(side=tk.LEFT, padx=6, pady=6)
+        copy_button = ctk.CTkButton(
+            footer, text="Copy Selected", command=self._copy_selected,
+            state="disabled")
+        copy_button.pack(side=tk.LEFT, padx=6, pady=6)
+        paste_button = ctk.CTkButton(
+            footer, text="Paste", command=self._paste, state="disabled")
+        paste_button.pack(side=tk.LEFT, padx=6, pady=6)
         delete_button = ctk.CTkButton(
             footer, text="Delete Selected", command=delete, state="disabled",
             fg_color="#e74c3c", hover_color="#c0392b")
@@ -838,6 +867,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                       command=self._save_changes).pack(
                           side=tk.RIGHT, padx=6, pady=6)
         setattr(self, f"{prefix}_edit_button", edit_button)
+        setattr(self, f"{prefix}_copy_button", copy_button)
+        setattr(self, f"{prefix}_paste_button", paste_button)
         setattr(self, f"{prefix}_delete_button", delete_button)
         return footer
 
@@ -909,6 +940,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.resource_delete_button.configure(state=state)
         if resource_id and self.resource_grid.selected_id != resource_id:
             self.resource_grid.select(resource_id, notify=False)
+        self._refresh_button_states()
 
     def _select_team(self, team_id):
         self.selected_team_id = team_id
@@ -917,6 +949,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.team_delete_button.configure(state=state)
         if team_id and self.team_grid.selected_id != team_id:
             self.team_grid.select(team_id, notify=False)
+        self._refresh_button_states()
 
     def _create_resource(self):
         self.resource_editor = ResourceEditorModal(
@@ -965,3 +998,135 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.repo.remove_team(team.id)
             self._refresh_teams()
             self._refresh_resources()
+
+    def _bind_shortcuts(self):
+        bind_all(self, 'c', self._hotkey_copy)
+        bind_all(self, 'v', self._hotkey_paste)
+        bind_all(self, 'i', self._hotkey_create, alt=True)
+
+    def _is_focus_in_entry(self):
+        try:
+            focus = self.focus_get()
+        except KeyError:
+            return False
+        return isinstance(focus, (tk.Entry, ctk.CTkEntry))
+
+    def _hotkey_copy(self, _event=None):
+        if self._is_focus_in_entry():
+            return None
+        self._copy_selected()
+        return 'break'
+
+    def _hotkey_paste(self, _event=None):
+        if self._is_focus_in_entry():
+            return None
+        self._paste()
+        return 'break'
+
+    def _hotkey_create(self, _event=None):
+        if self.tabview.get() == "Resources":
+            self._create_resource()
+        else:
+            self._create_team()
+        return 'break'
+
+    def _unique_resource_name(self, name):
+        names = {resource.name for resource in self.repo.resources.values()}
+        return self._unique_name(name, names)
+
+    def _unique_team_name(self, name):
+        names = {team.name for team in self.repo.teams.values()}
+        return self._unique_name(name, names)
+
+    @staticmethod
+    def _unique_name(name, existing):
+        if name not in existing:
+            return name
+        base = name
+        suffix = " (Copy)"
+        if base.endswith(suffix):
+            base = base[:-len(suffix)]
+            start = 2
+        else:
+            start = 1
+        candidate = f"{base}{suffix}" if start == 1 else name
+        if candidate not in existing:
+            return candidate
+        index = start + 1
+        while True:
+            candidate = f"{base} (Copy {index})"
+            if candidate not in existing:
+                return candidate
+            index += 1
+
+    def _copy_selected(self):
+        if self.tabview.get() == "Resources":
+            self._copy_resource(self.selected_resource_id)
+        else:
+            self._copy_team(self.selected_team_id)
+
+    def _copy_resource(self, resource_id):
+        if not resource_id or resource_id not in self.repo.resources:
+            return
+        resource = self.repo.resources[resource_id]
+        self.clipboard = {
+            "kind": "resource",
+            "data": resource.to_dict(),
+        }
+        logger.info("Copied resource %r (%s)", resource.name, resource_id)
+        self._refresh_button_states()
+
+    def _copy_team(self, team_id):
+        if not team_id or team_id not in self.repo.teams:
+            return
+        team = self.repo.teams[team_id]
+        self.clipboard = {
+            "kind": "team",
+            "data": team.to_dict(),
+        }
+        logger.info("Copied team %r (%s)", team.name, team_id)
+        self._refresh_button_states()
+
+    def _paste(self):
+        if self.tabview.get() == "Resources":
+            self._paste_resource()
+        else:
+            self._paste_team()
+
+    def _paste_resource(self):
+        if not self.clipboard or self.clipboard.get("kind") != "resource":
+            return
+        data = copy.deepcopy(self.clipboard["data"])
+        data["id"] = self.repo.new_id("res")
+        data["name"] = self._unique_resource_name(data["name"])
+        data["assigned_project_ids"] = []
+        resource = Resource.from_dict(data)
+        self.repo.add_resource(resource)
+        logger.info("Pasted resource as %r (%s)", resource.name, resource.id)
+        self._refresh_resources(resource.id)
+
+    def _paste_team(self):
+        if not self.clipboard or self.clipboard.get("kind") != "team":
+            return
+        data = copy.deepcopy(self.clipboard["data"])
+        data["id"] = self.repo.new_id("team")
+        data["name"] = self._unique_team_name(data["name"])
+        team = TeamPool(**data)
+        self.repo.add_team(team)
+        logger.info("Pasted team as %r (%s)", team.name, team.id)
+        self._refresh_teams(team.id)
+
+    def _refresh_button_states(self):
+        if self.selected_resource_id:
+            self.resource_copy_button.configure(state="normal")
+        else:
+            self.resource_copy_button.configure(state="disabled")
+        if self.selected_team_id:
+            self.team_copy_button.configure(state="normal")
+        else:
+            self.team_copy_button.configure(state="disabled")
+        paste_kind = self.clipboard.get("kind") if self.clipboard else None
+        self.resource_paste_button.configure(
+            state="normal" if paste_kind == "resource" else "disabled")
+        self.team_paste_button.configure(
+            state="normal" if paste_kind == "team" else "disabled")

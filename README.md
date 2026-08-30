@@ -19,7 +19,7 @@ This is a complete implementation of a project management tool with:
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
-- **Resource Settings**: Settings → Resource Settings manages Named people, Generic role placeholders and Team pools in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity, hourly rates, days off and team splits; everything is stored inside the project JSON. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
+- **Resource Settings**: Settings → Resource Settings manages Named people, Generic role placeholders and Team pools in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity, hourly rates, days off and team splits; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘I` on a Mac (`Ctrl+Alt+I` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
 - **Retype in the grid**: Double-click the **Type** cell for a dropdown of every type. Picking one stores it — one undo step, and the editor shows it. Choosing `Milestone` sets the milestone flag with it, so the editor opens with the switch on; choosing anything else clears it again
 - **New task from the keyboard**: `⌥⌘I` on a Mac, `Ctrl+Alt+I` elsewhere, creates a task beside the row the cursor is on and opens its editor. With no cursor it goes at the end of the plan
@@ -184,9 +184,16 @@ teams and days off. Team rows show schedule, calculation mode, total capacity,
 member count and a daily summary. Search narrows either table, and the Resources
 tab can also filter Named or Generic entries.
 
-Clicking a row highlights it and enables **Edit Selected** and the red
-**Delete Selected** action. **Create New Resource** and **Create New Team** open
-dedicated modal editors. **Save & Apply** updates the project in memory;
+Clicking a row highlights it and enables **Edit Selected**, **Copy Selected**
+and the red **Delete Selected** action. **Create New Resource** and **Create
+New Team** open dedicated modal editors, or press `⌥⌘I` on a Mac and
+`Ctrl+Alt+I` elsewhere to open the editor for whichever tab is active.
+**Paste** is enabled once a row of the same kind has been copied.
+Copying a resource duplicates its schedule, capacity, days off and team
+memberships but not its task assignments; copying a team duplicates its
+schedule and capacity settings without bringing its members. The grids use a
+virtualised tree view so opening the window and switching tabs stay fast even
+with large resource pools. **Save & Apply** updates the project in memory;
 **Save Changes** uses the ordinary project save command, and **File → Save**
 will write the same state as well.
 
@@ -2579,5 +2586,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.64.4
-**Last Updated**: 2026-08-29
+**Version**: 1.64.5
+**Last Updated**: 2026-08-30
