@@ -762,7 +762,7 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
         )
 
         self.assertEqual(sequences('.', alt=True),
-                         (f"<{MODIFIER}-{ALT}-.>",))
+                         (f"<{MODIFIER}-{ALT}-period>",))
         self.assertEqual(accelerator('.', alt=True),
                          '⌥⌘.' if IS_MACOS else 'Ctrl+Alt+.')
 

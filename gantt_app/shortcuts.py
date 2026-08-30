@@ -51,6 +51,12 @@ SHIFT_LABEL = '⇧' if IS_MACOS else 'Shift'
 ALT = 'Option' if IS_MACOS else 'Alt'
 ALT_LABEL = '⌥' if IS_MACOS else 'Alt'
 
+#: Characters that need Tk's keysym name rather than the glyph in bindings.
+#:
+#: Tk event sequences name keys by keysym, so a period is <period>, not <.>.
+#: This maps the character shown to the user to the name passed to bind.
+KEYSYM_NAMES = {'.': 'period'}
+
 
 def _held(shift: bool, alt: bool) -> list:
     """
@@ -152,9 +158,10 @@ def sequences(key: str, shift: bool = False, alt: bool = False) -> tuple:
     has to say so.
     """
     held = '-'.join(_held(shift, alt))
-    if len(key) == 1 and key.isalpha():
-        return (f"<{held}-{key.lower()}>", f"<{held}-{key.upper()}>")
-    return (f"<{held}-{key}>",)
+    bind_key = KEYSYM_NAMES.get(key, key)
+    if len(bind_key) == 1 and bind_key.isalpha():
+        return (f"<{held}-{bind_key.lower()}>", f"<{held}-{bind_key.upper()}>")
+    return (f"<{held}-{bind_key}>",)
 
 
 #: Where each letter sits on a Mac keyboard, by macOS virtual keycode.
@@ -258,8 +265,10 @@ def is_key(event, key: str) -> bool:
     key the keycode names, which is the one thing Option cannot change.
     """
     wanted = key.lower()
+    bind_name = KEYSYM_NAMES.get(key, key).lower()
+    accepted = {wanted, bind_name}
     for reported in (getattr(event, 'keysym', ''), getattr(event, 'char', '')):
-        if isinstance(reported, str) and reported.lower() == wanted:
+        if isinstance(reported, str) and reported.lower() in accepted:
             return True
 
     if IS_MACOS and wanted in MAC_KEYCODES:
