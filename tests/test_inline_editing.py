@@ -722,7 +722,7 @@ class TestTheEditorCanRetypeAnyRow(InlineEditingTestCase):
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
 class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
     """
-    Option+Command+I on a Mac, Ctrl+Alt+I elsewhere.
+    Option+Command+. on a Mac, Ctrl+Alt+. elsewhere.
 
     WHY THESE EXIST:
     ================
@@ -761,13 +761,13 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
             ALT, IS_MACOS, MODIFIER, accelerator, sequences,
         )
 
-        self.assertEqual(sequences('i', alt=True),
-                         (f"<{MODIFIER}-{ALT}-i>", f"<{MODIFIER}-{ALT}-I>"))
-        self.assertEqual(accelerator('I', alt=True),
-                         '⌥⌘I' if IS_MACOS else 'Ctrl+Alt+I')
+        self.assertEqual(sequences('.', alt=True),
+                         (f"<{MODIFIER}-{ALT}-.>",))
+        self.assertEqual(accelerator('.', alt=True),
+                         '⌥⌘.' if IS_MACOS else 'Ctrl+Alt+.')
 
-    def test_it_does_not_collide_with_italic(self):
-        """Plain Cmd+I is already bound to italic, so this one holds Option."""
+    def test_it_does_not_collide_with_plain_period(self):
+        """Plain Cmd+. is not bound, but this shortcut still requires Option."""
         from gantt_app.shortcuts import sequences
 
-        self.assertNotEqual(set(sequences('i')), set(sequences('i', alt=True)))
+        self.assertNotEqual(set(sequences('.')), set(sequences('.', alt=True)))

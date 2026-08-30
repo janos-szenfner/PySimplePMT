@@ -1002,7 +1002,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
     def _bind_shortcuts(self):
         bind_all(self, 'c', self._hotkey_copy)
         bind_all(self, 'v', self._hotkey_paste)
-        bind_all(self, 'i', self._hotkey_create, alt=True)
+        bind_all(self, '.', self._hotkey_create, alt=True)
 
     def _is_focus_in_entry(self):
         try:

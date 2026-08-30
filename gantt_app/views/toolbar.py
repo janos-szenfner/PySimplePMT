@@ -2634,9 +2634,8 @@ class Toolbar(ctk.CTkFrame):
         bind_shortcut(window, 'F2', self._hotkey_link)
         bind_shortcut(window, 'F2', self._hotkey_unlink, shift=True)
 
-        # A new task where the cursor is, editor and all. Option+Command+I
-        # on a Mac, Ctrl+Alt+I elsewhere: plain Cmd+I is italic, which is
-        # already bound above.
+        # A new task where the cursor is, editor and all. Option+Command+.
+        # on a Mac, Ctrl+Alt+. elsewhere: plain Cmd+. is not bound elsewhere.
         #
         # Bound three times, each one narrower than the last, because Option
         # is a compose key on macOS and what arrives there depends on the Tk
@@ -2647,8 +2646,8 @@ class Toolbar(ctk.CTkFrame):
         #   the plain sequence   - wherever Option leaves the keystroke
         #                          alone, which is everywhere but a Mac
         #   the modifier catch   - Tk matches Command and Option itself and
-        #                          is_key works out whether the key was I,
-        #                          so a dead circumflex still lands
+        #                          is_key works out whether the key was period,
+        #                          so an ellipsis still lands
         #   the last-resort net  - for a keystroke that reaches neither of
         #                          those, which is what was still being
         #                          reported. The modifiers are read out of
@@ -2656,7 +2655,7 @@ class Toolbar(ctk.CTkFrame):
         #                          from where it sits on the keyboard. Mac
         #                          only, since it is a Mac fault: see
         #                          _any_key_pressed.
-        bind_shortcut(window, 'I', self._hotkey_new_task, alt=True)
+        bind_shortcut(window, '.', self._hotkey_new_task, alt=True)
         window.bind(any_key_with(alt=True), self._alt_key_pressed, add='+')
         if IS_MACOS:
             window.bind('<KeyPress>', self._any_key_pressed, add='+')
@@ -2682,7 +2681,7 @@ class Toolbar(ctk.CTkFrame):
         the keycode that machine sent - which is the thing that cannot be
         worked out from here, and the thing shortcuts.is_key needs to know.
         """
-        if is_key(event, 'I'):
+        if is_key(event, '.'):
             return self._hotkey_new_task(event)
 
         logger.debug("Option held with keysym=%r char=%r keycode=%r; "
@@ -2716,9 +2715,7 @@ class Toolbar(ctk.CTkFrame):
         and a legible I would have been taken by one of the sequences
         above; what gets this far has lost one or the other, so demanding
         both back would be demanding exactly what has gone missing. Plain
-        Cmd+I cannot arrive here either - <Command-i> is bound for italic
-        and Tk prefers it, running the one most specific binding a window
-        has for an event and no other.
+        Cmd+. is not bound to anything here, so it is also ignored.
 
         Every keystroke that reaches this point with the modifier held is
         logged with what it was carrying. If the shortcut ever fails again,
@@ -2736,7 +2733,7 @@ class Toolbar(ctk.CTkFrame):
                      getattr(event, 'keycode', None),
                      getattr(event, 'state', None))
 
-        if not is_key(event, 'I'):
+        if not is_key(event, '.'):
             logger.debug("The modifier held with keysym=%r char=%r "
                          "keycode=%r state=%r; not the new-task shortcut",
                          *described)

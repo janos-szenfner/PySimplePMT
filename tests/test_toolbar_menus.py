@@ -278,9 +278,9 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
 
     WHY THESE EXIST:
     ================
-    Option+I on a US layout is the dead key for a circumflex. The event can
-    arrive carrying keysym 'dead_circumflex' and a char of 'ˆ', so a binding
-    written <Command-Option-i> never matches - there is no 'i' left in the
+    Option+. on a US layout produces an ellipsis. The event can arrive
+    carrying keysym 'ellipsis' and a char of '…', so a binding written
+    <Command-Option-period> may not match - there is no period left in the
     event by the time Tk looks. Which of those a given Tk hands over differs
     by version, so the key is identified from any of the three things that
     can name it.
@@ -299,18 +299,18 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
         """What a Tk that leaves the keystroke alone reports."""
         from gantt_app.shortcuts import is_key
 
-        self.assertTrue(is_key(self.event(keysym='i', char='i'), 'I'))
-        self.assertTrue(is_key(self.event(keysym='I', char='I'), 'I'))
+        self.assertTrue(is_key(self.event(keysym='period', char='.'), '.'))
+        self.assertTrue(is_key(self.event(keysym='Period', char='.'), '.'))
 
     def test_the_character_is_accepted(self):
         """Where the keysym is something else but the char survives."""
         from gantt_app.shortcuts import is_key
 
-        self.assertTrue(is_key(self.event(keysym='Key-34', char='i'), 'I'))
+        self.assertTrue(is_key(self.event(keysym='Key-47', char='.'), '.'))
 
-    def test_the_composed_dead_key_is_still_the_i_key(self):
+    def test_the_composed_dead_key_is_still_the_period_key(self):
         """
-        The case that was failing: neither keysym nor char says 'i'.
+        The case that was failing: neither keysym nor char says '.'.
 
         The keycode names the physical key, which is the one thing Option
         cannot change.
@@ -321,15 +321,15 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
             self.skipTest("the keycode fallback is macOS only")
 
         self.assertTrue(is_key(
-            self.event(keysym='dead_circumflex', char='ˆ',
-                       keycode=MAC_KEYCODES['i']), 'I'))
+            self.event(keysym='ellipsis', char='…',
+                       keycode=MAC_KEYCODES['.']), '.'))
 
     def test_another_key_held_with_option_is_not_it(self):
         """Or every Option shortcut would make a task."""
         from gantt_app.shortcuts import is_key
 
         self.assertFalse(is_key(self.event(keysym='j', char='∆',
-                                           keycode=38), 'I'))
+                                           keycode=38), '.'))
 
     def test_the_catch_all_names_the_modifiers(self):
         """Tk matches those itself; only the key is left to us."""
@@ -338,7 +338,7 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
         self.assertEqual(any_key_with(alt=True),
                          f"<{MODIFIER}-{ALT}-KeyPress>")
 
-    def test_the_toolbar_routes_the_i_key_through(self):
+    def test_the_toolbar_routes_the_period_key_through(self):
         """And leaves every other Option keystroke alone."""
         from unittest import mock
 
@@ -348,7 +348,8 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
         stub.task_list = mock.Mock(spec=['create_task_at_cursor'])
 
         self.assertEqual(
-            Toolbar._alt_key_pressed(stub, self.event(keysym='i', char='i')),
+            Toolbar._alt_key_pressed(stub, self.event(keysym='period',
+                                                       char='.')),
             'break')
         stub.task_list.create_task_at_cursor.assert_called_once_with()
 
@@ -366,15 +367,15 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
 
     WHY THESE EXIST:
     ================
-    Two goes at Cmd+Option+I had already been made, and on the machine it
+    Two goes at Cmd+Option+. had already been made, and on the machine it
     was reported from it still did nothing - so the assumption both of them
     rest on, that Tk will match a sequence naming Command and Option, is
     the one left to drop. This reads the modifiers out of the event's state
     instead, and identifies the key by where it sits on the keyboard.
 
     Every keystroke in the window passes through it, so what it does *not*
-    do matters as much: plain Cmd+I is italic, and a net that caught it
-    would create a task every time somebody emphasised a row.
+    do matters as much: plain Cmd+. is not bound, so the net only acts when
+    the physical period key is held with the shortcut modifiers.
     """
 
     def event(self, **fields):
@@ -410,14 +411,14 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
             return Toolbar._any_key_pressed(stub, event)
 
     def test_the_shortcut_is_caught(self):
-        """Both modifiers and the I key, however the key is spelt."""
+        """Both modifiers and the period key, however the key is spelt."""
         from gantt_app.shortcuts import MAC_KEYCODES
 
         stub = self.toolbar()
 
-        answer = self.call(stub, self.event(keysym='dead_circumflex',
-                                            char='ˆ',
-                                            keycode=MAC_KEYCODES['i'] << 16))
+        answer = self.call(stub, self.event(keysym='ellipsis',
+                                            char='…',
+                                            keycode=MAC_KEYCODES['.'] << 16))
 
         self.assertEqual(answer, 'break')
         stub.task_list.create_task_at_cursor.assert_called_once_with()
@@ -427,17 +428,16 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
         Losing the Option bit is one of the ways this can go wrong.
 
         Insisting on it would be insisting on the thing that has gone
-        missing. Cmd+I stays italic all the same: <Command-i> is bound for
-        it, and Tk runs the one most specific binding a window has for an
-        event - so plain Cmd+I never reaches here to be mistaken for this.
+        missing. Plain Cmd+. is not bound to anything here, so the net still
+        identifies the key from its keycode when the Option bit is lost.
         """
         from gantt_app.shortcuts import COMMAND_BIT, MAC_KEYCODES
 
         stub = self.toolbar()
 
-        answer = self.call(stub, self.event(keysym='dead_circumflex',
-                                            char='ˆ', state=COMMAND_BIT,
-                                            keycode=MAC_KEYCODES['i']))
+        answer = self.call(stub, self.event(keysym='ellipsis',
+                                            char='…', state=COMMAND_BIT,
+                                            keycode=MAC_KEYCODES['.']))
 
         self.assertEqual(answer, 'break')
         stub.task_list.create_task_at_cursor.assert_called_once_with()
@@ -448,8 +448,8 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
 
         stub = self.toolbar()
 
-        answer = self.call(stub, self.event(keysym='i', char='i', state=0,
-                                            keycode=MAC_KEYCODES['i']))
+        answer = self.call(stub, self.event(keysym='period', char='.', state=0,
+                                            keycode=MAC_KEYCODES['.']))
 
         self.assertIsNone(answer)
         stub.task_list.create_task_at_cursor.assert_not_called()

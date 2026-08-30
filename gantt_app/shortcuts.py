@@ -97,13 +97,13 @@ def accelerator(key: str, shift: bool = False, alt: bool = False) -> str:
     'Ctrl+B'
     >>> accelerator('F2', shift=True)   # on Windows or Linux
     'Ctrl+Shift+F2'
-    >>> accelerator('I', alt=True)      # on Windows or Linux
-    'Ctrl+Alt+I'
+    >>> accelerator('.', alt=True)      # on Windows or Linux
+    'Ctrl+Alt+.'
 
     DEVELOPMENT NOTES:
     ------------------
     A Mac writes the modifiers as symbols with nothing between them and in
-    a fixed order - ⌥ before ⌘, so Option+Command+I is written ⌥⌘I however
+    a fixed order - ⌥ before ⌘, so Option+Command+. is written ⌥⌘. however
     it is said out loud.
     """
     name = 'Enter' if key in ('Return', 'KP_Enter') else key
@@ -140,8 +140,8 @@ def sequences(key: str, shift: bool = False, alt: bool = False) -> tuple:
     ('<Command-b>', '<Command-B>')
     >>> sequences('F2', shift=True)     # on macOS
     ('<Command-Shift-F2>',)
-    >>> sequences('i', alt=True)        # on macOS
-    ('<Command-Option-i>', '<Command-Option-I>')
+    >>> sequences('.', alt=True)        # on macOS
+    ('<Command-Option-period>',)
 
     DEVELOPMENT NOTES:
     ------------------
@@ -162,7 +162,7 @@ def sequences(key: str, shift: bool = False, alt: bool = False) -> tuple:
 #: Only the letters this application binds. macOS virtual keycodes name a
 #: physical position rather than a character, so they are the same whatever
 #: the keyboard layout produces - which is the point of having them here.
-MAC_KEYCODES = {'b': 11, 'i': 34, 'u': 32}
+MAC_KEYCODES = {'b': 11, 'i': 34, 'u': 32, '.': 47}
 
 #: The bits Tk sets in an event's state for the modifiers a shortcut holds.
 #:
@@ -248,10 +248,10 @@ def is_key(event, key: str) -> bool:
     DEVELOPMENT NOTES:
     ------------------
     Option is a compose key on macOS: it does not modify a keystroke so much
-    as replace it. Option+I on a US layout is the dead key for a circumflex,
-    so the event can arrive carrying keysym 'dead_circumflex' and a char of
-    'ˆ' - and a binding written <Command-Option-i> never matches, because by
-    the time Tk looks there is no 'i' in the event to match against.
+    as replace it. Option+. on a US layout produces an ellipsis, so the event
+    can arrive carrying keysym 'ellipsis' and a char of '…' - and a binding
+    written <Command-Option-period> may not match, because by the time Tk
+    looks there is no period in the event to match against.
 
     Which of those a given Tk hands over differs by version, so all three
     are accepted: the keysym, the character, and - on a Mac - the physical
@@ -270,8 +270,8 @@ def is_key(event, key: str) -> bool:
             # underneath it. The low bits are shifted away rather than
             # compared: an equality against the packed forms only matched
             # when the character underneath happened to be zero, which for
-            # Option+I - a dead circumflex on a US layout, and something
-            # else again on others - it is not.
+            # Option+. - an ellipsis on a US layout, and something else again
+            # on others - it is not.
             virtual = MAC_KEYCODES[wanted]
             return virtual in (keycode,
                                (keycode >> 16) & 0xFFFF,

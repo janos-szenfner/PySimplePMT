@@ -800,7 +800,7 @@ GUIDE_SECTIONS = (
             "Every button says what it is if you rest the pointer on it, "
             "which is the fastest way to learn the row.",
 
-            "Option+Command+I on a Mac, Ctrl+Alt+I elsewhere, makes a new "
+            "Option+Command+. on a Mac, Ctrl+Alt+. elsewhere, makes a new "
             "task and opens its editor. It goes beside the row the cursor "
             "is on; in a list nobody has clicked in yet it goes at the end "
             "of the plan.",

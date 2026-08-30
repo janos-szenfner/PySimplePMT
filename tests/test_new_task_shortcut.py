@@ -3,7 +3,7 @@ Tests that the new-task shortcut is actually bound to the window.
 
 WHY THIS MODULE EXISTS:
 ======================
-Cmd+Option+I creates a task where the cursor is. It had been written twice
+Cmd+Option+. creates a task where the cursor is. It had been written twice
 and reported as doing nothing both times, and every test of it checked the
 handlers rather than the bindings - so a shortcut that was never wired to the
 window at all would have passed all of them.
@@ -15,9 +15,9 @@ something bound for the keystroke to land on.
 DEVELOPMENT NOTES:
 ------------------
 The sequences cannot be compared as they were written. Tk stores a binding
-under a name of its own choosing - <Command-Option-i> comes back as
-<Mod1-Mod2-Key-i> - so these ask how many key bindings arrived and that the
-catch-all is among them, rather than matching the spelling.
+under a name of its own choosing - <Command-Option-period> comes back as
+<Mod1-Mod2-Key-period> - so these ask how many key bindings arrived and that
+the catch-all is among them, rather than matching the spelling.
 
 Needs a display.
 """
@@ -95,10 +95,10 @@ class TestTheShortcutReachesTheWindow(unittest.TestCase):
         How Tk spells these sequences once it has stored them.
 
         Bound to a window of their own and read straight back, because Tk
-        renames a binding as it takes it - <Command-Option-i> comes back as
-        <Mod1-Mod2-Key-i> - and the renaming differs by platform. Asking Tk
-        rather than writing the answer down keeps this test about what is
-        bound rather than about how this Tk happens to spell it.
+        renames a binding as it takes it - <Command-Option-period> comes back
+        as <Mod1-Mod2-Key-period> - and the renaming differs by platform.
+        Asking Tk rather than writing the answer down keeps this test about
+        what is bound rather than about how this Tk happens to spell it.
         """
         import tkinter as tk
 
@@ -111,11 +111,11 @@ class TestTheShortcutReachesTheWindow(unittest.TestCase):
         finally:
             scratch.destroy()
 
-    def test_the_letter_is_bound_with_both_modifiers(self):
-        """The plain sequence, in both cases; see shortcuts.sequences."""
+    def test_the_period_is_bound_with_both_modifiers(self):
+        """The plain sequence; see shortcuts.sequences."""
         from gantt_app.shortcuts import sequences
 
-        expected = self.stored(*sequences('I', alt=True))
+        expected = self.stored(*sequences('.', alt=True))
 
         self.assertTrue(expected <= set(self.bindings()),
                         (expected, self.bindings()))
