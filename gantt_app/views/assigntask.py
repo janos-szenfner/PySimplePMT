@@ -1,8 +1,8 @@
 """
 Resource assignment tab for the task create/edit dialog.
 
-This version uses a custom multi-column picker for resources and teams, and
-shows the selected assignments in a list with per-row clear buttons.
+The dropdown is an inline widget, not a separate window, so the search field
+filters it live and selecting a row adds the assignment immediately.
 """
 import tkinter as tk
 from tkinter import ttk
@@ -56,19 +56,12 @@ def _type_badge(entity) -> str:
     return "[GENERIC]"
 
 
-def _entity_schedule(entity) -> str:
-    if isinstance(entity, TeamPool):
-        return _schedule_short(entity.schedule_pattern)
-    return _schedule_short(entity.schedule_pattern)
-
-
 def _workload_text(entity, resources: List[Resource]) -> Tuple[str, str, float]:
     """Return (display text, colour, percentage) for the weekly workload cell."""
     if isinstance(entity, TeamPool):
         capacity = entity.calculate_effective_capacity(resources)
         if capacity <= 0:
             return "0 / 0 hrs", theme.now(theme.GRID_TEXT), 0.0
-        # Teams show capacity and, as a rough indicator, 0% current load
         return (f"0 / {capacity:g} hrs (0%)",
                 theme.now(theme.GRID_TEXT), 0.0)
     used, capacity = _resource_load(entity)
@@ -80,34 +73,32 @@ def _workload_text(entity, resources: List[Resource]) -> Tuple[str, str, float]:
     return f"{badge} {text}", colour, pct
 
 
-class ResourcePicker(ctk.CTkToplevel):
+class ResourceDropdown(ctk.CTkFrame):
     """
-    A custom searchable, multi-column dropdown for choosing a resource or team.
+    An inline dropdown for choosing a resource or team.
+
+    The dropdown lives inside the Resource tab. It is hidden by default and
+    shown when the user types in the search field or clicks the arrow.
     """
 
-    def __init__(self, master, project, on_select: Callable[[str], None],
-                 initial_search: str = ""):
-        super().__init__(master)
+    def __init__(self, parent: ctk.CTkFrame, project,
+                 search_var: tk.StringVar,
+                 on_select: Callable[[str], None]) -> None:
+        super().__init__(parent, border_width=1,
+                         border_color=theme.now(theme.DASH_KPI_BORDER))
         self.project = project
+        self.search_var = search_var
         self.on_select = on_select
         self.repo = getattr(project, "resource_repository", ResourceRepository())
+        self._all_rows: List[Tuple[str, str, str, str, float, str]] = []
         self._selected_id: Optional[str] = None
-        self._all_rows: List[Tuple[str, str, str, str, str]] = []
+        self._build()
+        self._load_rows()
 
-        self.title("Select Resource or Team")
-        self.geometry("700x450")
-        self.transient(master)
-        self.grab_set()
-
-        self.search_var = tk.StringVar(value=initial_search)
-        self.search_var.trace_add("write", self._on_search)
-        ctk.CTkEntry(self, textvariable=self.search_var,
-                     placeholder_text="Type to filter...").pack(
-            fill=tk.X, padx=10, pady=(10, 10))
-
+    def _build(self) -> None:
         columns = ("entity", "schedule", "workload")
         self.tree = ttk.Treeview(
-            self, columns=columns, show="headings", height=14,
+            self, columns=columns, show="headings", height=8,
             selectmode="browse", style="DataGrid.Treeview")
         self.tree.heading("entity", text="Entity Name & Type")
         self.tree.heading("schedule", text="Work Schedule Pattern")
@@ -115,19 +106,11 @@ class ResourcePicker(ctk.CTkToplevel):
         self.tree.column("entity", width=240)
         self.tree.column("schedule", width=160)
         self.tree.column("workload", width=240)
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<Double-1>", self._on_double_click)
 
-        ctk.CTkButton(self, text="Select", command=self._confirm).pack(
-            side=tk.RIGHT, padx=10, pady=(0, 10))
-        ctk.CTkButton(self, text="Cancel", command=self.destroy).pack(
-            side=tk.RIGHT, padx=10, pady=(0, 10))
-
-        self._load_rows()
-        self._on_search()
-
-        # Basic row-colour tags
+        # Row colour tags for the Treeview
         self.tree.tag_configure("over", background="#ffebee",
                                 foreground="#b71c1c")
         self.tree.tag_configure("near", background="#fff8e1",
@@ -139,33 +122,41 @@ class ResourcePicker(ctk.CTkToplevel):
         resources = list(self.repo.resources.values())
         for entity in sorted(resources, key=lambda r: r.name.lower()):
             badge = _type_badge(entity)
-            schedule = _entity_schedule(entity)
+            schedule = _schedule_short(entity.schedule_pattern)
             workload, colour, pct = _workload_text(entity, resources)
             self._all_rows.append((
                 entity.id,
                 f"{entity.name}  {badge}",
                 schedule,
                 workload,
+                pct,
                 _row_tag(pct)))
         for entity in sorted(self.repo.teams.values(),
                              key=lambda t: t.name.lower()):
             badge = _type_badge(entity)
-            schedule = _entity_schedule(entity)
+            schedule = _schedule_short(entity.schedule_pattern)
             workload, colour, pct = _workload_text(entity, resources)
             self._all_rows.append((
                 entity.id,
                 f"{entity.name}  {badge}",
                 schedule,
                 workload,
+                pct,
                 _row_tag(pct)))
 
-    def _on_search(self, *_) -> None:
+    def apply_filter(self, text: str = "") -> None:
+        """Populate the tree with the rows that match *text*."""
         self.tree.delete(*self.tree.get_children())
-        text = self.search_var.get().strip().lower()
+        text = text.strip().lower()
         for row in self._all_rows:
             if not text or text in row[1].lower() or text in row[2].lower():
                 self.tree.insert("", "end", iid=row[0], values=row[1:4],
-                                 tags=(row[4],))
+                                 tags=(row[5],))
+
+    def select_first(self) -> Optional[str]:
+        """Return the id of the first visible row, or None."""
+        children = self.tree.get_children()
+        return children[0] if children else None
 
     def _on_tree_select(self, _event=None) -> None:
         selection = self.tree.selection()
@@ -177,7 +168,6 @@ class ResourcePicker(ctk.CTkToplevel):
     def _confirm(self) -> None:
         if self._selected_id:
             self.on_select(self._selected_id)
-        self.destroy()
 
 
 def _row_tag(pct: float) -> str:
@@ -213,28 +203,33 @@ class TaskResourceTab(ctk.CTkFrame):
 
         search_frame = ctk.CTkFrame(self, border_width=1,
                                     border_color=theme.now(theme.DASH_KPI_BORDER))
-        search_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+        search_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
         search_frame.columnconfigure(0, weight=1)
 
         self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self._on_search)
         self.search_entry = ctk.CTkEntry(
             search_frame, textvariable=self.search_var,
             placeholder_text="🔍 Select Resource / Team...",
             border_width=0)
         self.search_entry.grid(row=0, column=0, sticky=tk.EW, padx=(8, 0))
-        self.search_entry.bind("<Return>", self._open_picker)
+        self.search_entry.bind("<FocusIn>", self._show_dropdown)
+        self.search_entry.bind("<Return>", self._confirm_first)
 
         arrow = ctk.CTkButton(
             search_frame, text="▼", width=30, border_width=0,
-            command=self._open_picker)
+            command=self._toggle_dropdown)
         arrow.grid(row=0, column=1, padx=(0, 4))
 
+        self.dropdown = ResourceDropdown(self, self.project, self.search_var,
+                                         self._on_picked)
+        self.dropdown_visible = False
+
         self._header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._header_frame.pack(fill=tk.X, padx=10, pady=(4, 0))
-        self._header_frame.columnconfigure(0, weight=0)
+        self._header_frame.pack(fill=tk.X, padx=10, pady=(8, 0))
         ctk.CTkLabel(self._header_frame, text="Entity Name & Type",
                      font=("Arial", 10, "bold"),
-                     width=200, anchor=tk.W).grid(row=0, column=0, padx=4)
+                     width=240, anchor=tk.W).grid(row=0, column=0, padx=4)
         ctk.CTkLabel(self._header_frame, text="Schedule",
                      font=("Arial", 10, "bold"),
                      width=160, anchor=tk.W).grid(row=0, column=1, padx=4)
@@ -256,6 +251,41 @@ class TaskResourceTab(ctk.CTkFrame):
         self._rows_frame = self.scroller.content
 
     # ------------------------------------------------------------------
+    # Dropdown control
+    # ------------------------------------------------------------------
+
+    def _show_dropdown(self, _event=None) -> None:
+        if not self.dropdown_visible:
+            self.dropdown.pack(fill=tk.X, padx=10, pady=(0, 8), before=self._header_frame)
+            self.dropdown_visible = True
+            self._on_search()
+
+    def _hide_dropdown(self) -> None:
+        if self.dropdown_visible:
+            self.dropdown.pack_forget()
+            self.dropdown_visible = False
+
+    def _toggle_dropdown(self) -> None:
+        if self.dropdown_visible:
+            self._hide_dropdown()
+        else:
+            self._show_dropdown()
+
+    def _on_search(self, *_args) -> None:
+        """Filter the dropdown as the user types."""
+        text = self.search_var.get()
+        self.dropdown.apply_filter(text)
+        if text.strip():
+            self._show_dropdown()
+
+    def _confirm_first(self, _event=None) -> None:
+        """Pick the first filtered row when Enter is pressed."""
+        first = self.dropdown.select_first()
+        if first:
+            self._on_picked(first)
+        self._hide_dropdown()
+
+    # ------------------------------------------------------------------
     # Rows
     # ------------------------------------------------------------------
 
@@ -270,18 +300,12 @@ class TaskResourceTab(ctk.CTkFrame):
 
             row = ctk.CTkFrame(self._rows_frame, fg_color="transparent")
             row.pack(fill=tk.X, pady=2)
-            row.columnconfigure(0, weight=0)
-            row.columnconfigure(1, weight=0)
-            row.columnconfigure(2, weight=0)
-            row.columnconfigure(3, weight=0)
-            row.columnconfigure(4, weight=0)
-            row.columnconfigure(5, weight=0)
 
             badge = _type_badge(entity)
             ctk.CTkLabel(row, text=f"{entity.name}  {badge}",
-                         width=200, anchor=tk.W).grid(row=0, column=0, padx=4)
+                         width=240, anchor=tk.W).grid(row=0, column=0, padx=4)
 
-            schedule = _entity_schedule(entity)
+            schedule = _schedule_short(entity.schedule_pattern)
             ctk.CTkLabel(row, text=schedule, width=160,
                          anchor=tk.W).grid(row=0, column=1, padx=4)
 
@@ -325,16 +349,13 @@ class TaskResourceTab(ctk.CTkFrame):
     # Add / remove
     # ------------------------------------------------------------------
 
-    def _open_picker(self, _event=None) -> None:
-        ResourcePicker(
-            self.winfo_toplevel(), self.project, self._on_picked,
-            initial_search=self.search_var.get().strip())
-
     def _on_picked(self, entity_id: str) -> None:
         # Avoid duplicates for now; later we can allow split per entity.
         if any(a.get("resource_id") == entity_id for a in self._assignments):
+            self._hide_dropdown()
             return
         self.search_var.set("")
+        self._hide_dropdown()
         self._assignments.append({
             "resource_id": entity_id,
             "estimated_hours": 0.0,

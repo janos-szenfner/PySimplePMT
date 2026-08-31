@@ -137,3 +137,20 @@ class TestTaskResourceTab(unittest.TestCase):
         tab.update_idletasks()
         tab._on_picked("r1")
         self.assertEqual(len(tab.get_assignments()), 1)
+
+    def test_dropdown_filters_on_search(self):
+        tab = TaskResourceTab(self.root, self.project, self.task)
+        tab.update_idletasks()
+        tab.search_var.set("Core")
+        tab._on_search()
+        children = tab.dropdown.tree.get_children()
+        self.assertEqual(children, ("t1",))
+
+    def test_enter_selects_first_filtered_resource(self):
+        tab = TaskResourceTab(self.root, self.project, self.task)
+        tab.update_idletasks()
+        tab.search_var.set("Core")
+        tab._on_search()
+        tab._confirm_first()
+        ids = [a["resource_id"] for a in tab.get_assignments()]
+        self.assertEqual(ids, ["r1", "t1"])

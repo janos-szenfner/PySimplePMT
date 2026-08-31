@@ -174,6 +174,12 @@ class EditTaskDialog(TaskFormDialog):
             self.task.details = details
             self.task.color = self.color_entry.get()
             self.task.resource_assignments = self.resource_tab.get_assignments()
+            logger.info(
+                "Task %s %r has %d resource assignment(s)",
+                self.task.id, self.task.name,
+                len(self.task.resource_assignments))
+            logger.debug("Assignments for %s: %r", self.task.id,
+                         self.task.resource_assignments)
             if self._dependency_editor is not None:
                 # Untouched tab means untouched links
                 self.task.dependencies = self._dependency_editor.get_links()
@@ -202,7 +208,9 @@ class EditTaskDialog(TaskFormDialog):
                     details=new_task.details,
                     resource_assignments=list(new_task.resource_assignments),
                 ):
-                    logger.info("Edited task %s %r", new_task.id, new_task.name)
+                    logger.info("Edited task %s %r with %d resource assignment(s)",
+                                new_task.id, new_task.name,
+                                len(new_task.resource_assignments))
                     logger.debug(
                         "Recorded status change for task '%s': %s -> %s",
                         old_task.id, old_task.status, new_task.status
@@ -211,7 +219,9 @@ class EditTaskDialog(TaskFormDialog):
                         self.on_save(new_task)
                     return True
 
-            logger.info("Edited task %s %r", self.task.id, self.task.name)
+            logger.info("Edited task %s %r with %d resource assignment(s)",
+                        self.task.id, self.task.name,
+                        len(self.task.resource_assignments))
             if self.on_save:
                 self.on_save(self.task)
             return True
@@ -428,6 +438,10 @@ class CreateTaskDialog(TaskFormDialog):
                 resource_assignments=list(assignments),
             )
             task.__post_init__()
+            logger.info("Created task %s %r with %d resource assignment(s)",
+                        task.id, task.name, len(task.resource_assignments))
+            logger.debug("Assignments for %s: %r", task.id,
+                         task.resource_assignments)
             logger.debug("Created task %r with status %s", task.name,
                          task.status)
 
