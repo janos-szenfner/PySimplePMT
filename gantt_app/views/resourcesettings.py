@@ -6,7 +6,9 @@ from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
 
-from gantt_app.shortcuts import bind_all
+from gantt_app.shortcuts import (
+    IS_MACOS, any_key_with, bind_all, is_key, modifiers_held,
+)
 from gantt_app.resource_model import (
     DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, DaysOffRange, Resource,
     ResourceRepository, ResourceType, SchedulePattern, TeamPool,
@@ -595,11 +597,18 @@ class TeamEditorModal(BaseEditorModal):
         self.allocations.pop(resource_id, None)
         self._render_members()
 
-    def _paint_member_row(self, resource_id, percentage):
+    def _paint_member_row(self, resource_id, split):
         widgets = getattr(self, "member_row_widgets", {}).get(resource_id)
         if not widgets:
             return
-        status, fill, border = allocation_status(percentage)
+        resource = self.repo.resources.get(resource_id)
+        current_team_id = self.team.id if self.team else None
+        other_total = sum(
+            ratio for team_id, ratio in (resource.team_memberships or {}).items()
+            if team_id != current_team_id
+        ) if resource else 0.0
+        total_percentage = (other_total + split / 100.0) * 100.0
+        status, fill, border = allocation_status(total_percentage)
         for label in widgets["labels"]:
             label.configure(fg_color=fill)
         widgets["entry"].configure(border_color=border)
@@ -1018,6 +1027,22 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         bind_all(self, 'c', self._hotkey_copy)
         bind_all(self, 'v', self._hotkey_paste)
         bind_all(self, '.', self._hotkey_create, alt=True)
+        # The direct binding above can miss Option+. on macOS because the
+        # Option key changes the character (ellipsis on US layouts). Add the
+        # same catch-all nets the main toolbar uses for this shortcut.
+        self.bind(any_key_with(alt=True), self._alt_key_pressed, add='+')
+        if IS_MACOS:
+            self.bind('<KeyPress>', self._any_key_pressed, add='+')
+
+    def _alt_key_pressed(self, event):
+        if is_key(event, '.'):
+            return self._hotkey_create(event)
+        return None
+
+    def _any_key_pressed(self, event):
+        if is_key(event, '.') and modifiers_held(event, alt=True):
+            return self._hotkey_create(event)
+        return None
 
     def _is_focus_in_entry(self):
         try:
