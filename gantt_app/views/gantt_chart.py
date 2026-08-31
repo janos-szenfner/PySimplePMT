@@ -487,9 +487,6 @@ class GanttChart(ctk.CTkFrame):
         where its first row actually is, which it can only do once it is on
         screen with rows in it.
         """
-        if self._row_offset is not None:
-            return self._row_offset
-
         try:
             rows_top, settled = self._task_rows_top()
             frame_top = self.chart_frame.winfo_rooty()
@@ -508,7 +505,6 @@ class GanttChart(ctk.CTkFrame):
         # axis - so the axis keeps its room and the panes go slightly out.
         offset = max(offset, CHART_TOP_MARGIN)
 
-        self._row_offset = offset
         logger.debug("Chart rows start %dpx down, to match the task list",
                      offset)
         return offset
