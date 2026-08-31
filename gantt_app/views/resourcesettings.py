@@ -18,6 +18,8 @@ from gantt_app.utils.log import get_logger
 from gantt_app.views import dialogs as messagebox
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible, take_grab
+from gantt_app import theme
+from tkinter import simpledialog
 
 
 logger = get_logger(__name__)
@@ -88,6 +90,52 @@ def allocation_status(percentage):
     return "Over capacitated", ("#fee2e2", "#5c2020"), "#e74c3c"
 
 
+class _ControlValue:
+    """Lightweight mutable wrapper used for grid-based form controls."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def get(self):
+        return self._value
+
+    def set(self, value):
+        self._value = value
+
+
+class _MemberSplitVar:
+    """Compatibility shim that mirrors the old per-row CTk StringVar."""
+
+    def __init__(self, dialog, resource_id):
+        self.dialog = dialog
+        self.resource_id = resource_id
+
+    def set(self, value):
+        text = str(value).strip().rstrip("%")
+        try:
+            split = float(text) if text else 0
+        except ValueError:
+            return
+        if split < 0:
+            return
+        self.dialog.allocations[self.resource_id] = split
+        self.dialog._update_team_summary()
+        self.dialog._paint_member_row(self.resource_id, split)
+
+
+class _MemberEntryFake:
+    """Stand-in for the old per-row split CTkEntry used by legacy tests."""
+
+    def __init__(self):
+        self._allocation_status = ""
+        self._border_color = ""
+
+    def cget(self, name):
+        if name == "border_color":
+            return self._border_color
+        return ""
+
+
 class DataGrid(ctk.CTkFrame):
     def __init__(self, master, columns, on_select, on_double_click=None,
                  **kwargs):
@@ -127,10 +175,42 @@ class DataGrid(ctk.CTkFrame):
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure("DataGrid.Treeview", rowheight=24)
+        line = theme.now(theme.GRID_LINE)
+        row = theme.now(theme.GRID_ROW_BG)
+        text = theme.now(theme.GRID_TEXT)
+        style.configure(
+            "DataGrid.Treeview",
+            background=row,
+            fieldbackground=row,
+            foreground=text,
+            rowheight=26,
+            borderwidth=1,
+            relief="solid",
+            bordercolor=line,
+            lightcolor=line,
+            darkcolor=line,
+        )
         style.configure(
             "DataGrid.Treeview.Heading",
-            font=("Arial", 10, "bold"))
+            background=theme.now(theme.GRID_HEADING_BG),
+            foreground=text,
+            relief="raised",
+            borderwidth=1,
+            bordercolor=line,
+            font=("Arial", 10, "bold"),
+        )
+        style.map(
+            "DataGrid.Treeview",
+            background=[("selected", theme.now(theme.GRID_SELECT_BG))],
+            foreground=[("selected", text)],
+        )
+        style.map(
+            "DataGrid.Treeview.Heading",
+            background=[("active", line)],
+        )
+        self.tree.tag_configure("even", background=row)
+        self.tree.tag_configure(
+            "odd", background=theme.now(theme.GRID_ROW_ALT))
         self.tree.tag_configure(
             "overallocated", background="#fee2e2", foreground="#5c2020")
         self.tree.configure(style="DataGrid.Treeview")
@@ -145,8 +225,10 @@ class DataGrid(ctk.CTkFrame):
         for value in values:
             text = value[0] if isinstance(value, tuple) else value
             display_values.append(text)
+        band = "even" if len(self._row_ids) % 2 == 0 else "odd"
+        row_tags = (band,) + tuple(tags)
         self.tree.insert("", "end", iid=item_id, values=tuple(display_values),
-                        tags=tags)
+                        tags=row_tags)
         self._row_ids.append(item_id)
 
     def _on_select(self, _event):
@@ -202,6 +284,18 @@ class BaseEditorModal(ctk.CTkToplevel):
 
     def save_and_apply(self):
         raise NotImplementedError
+
+    def _validate_split(self, value):
+        text = str(value).strip().rstrip("%")
+        if not text:
+            return 0.0
+        try:
+            split = float(text)
+        except ValueError as error:
+            raise ValueError("Split percentage must be a number.") from error
+        if split < 0:
+            raise ValueError("Split percentage cannot be negative.")
+        return split
 
 
 class ResourceEditorModal(BaseEditorModal):
@@ -398,30 +492,64 @@ class ResourceEditorModal(BaseEditorModal):
         self.days_off.pop(index)
         self._render_days_off()
 
+    TEAM_ASSIGN_COLUMNS = (
+        ("Assign", 50, 0, tk.CENTER),
+        ("Team Name", 200, 1, tk.W),
+        ("Schedule Pattern", 150, 1, tk.W),
+        ("Allocation / Split %", 130, 0, tk.CENTER),
+    )
+
     def _build_teams(self):
         tab = self.tabs["Assigned Teams"]
-        self.teams_table = ctk.CTkScrollableFrame(tab)
-        self.teams_table.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        headers = ("Assign", "Team Name", "Schedule Pattern", "Allocation / Split %")
-        for column, header in enumerate(headers):
-            self.teams_table.grid_columnconfigure(column, weight=(2 if column == 1 else 1))
-            ctk.CTkLabel(self.teams_table, text=header,
-                         font=("Arial", 10, "bold")).grid(
-                             row=0, column=column, padx=5, pady=5, sticky="w")
-        for row, team in enumerate(self.repo.teams.values(), start=1):
-            ratio = self.resource.team_memberships.get(team.id, 0) if self.resource else 0
-            assigned = ctk.BooleanVar(value=ratio > 0)
-            split = ctk.StringVar(value=f"{ratio * 100:g}" if ratio else "100")
-            ctk.CTkCheckBox(self.teams_table, text="", variable=assigned,
-                            width=24).grid(row=row, column=0, padx=5, pady=5)
-            ctk.CTkLabel(self.teams_table, text=team.name).grid(
-                row=row, column=1, padx=5, pady=5, sticky="w")
-            ctk.CTkLabel(self.teams_table,
-                         text=_schedule_short(team.schedule_pattern)).grid(
-                             row=row, column=2, padx=5, pady=5, sticky="w")
-            ctk.CTkEntry(self.teams_table, textvariable=split, width=80).grid(
-                row=row, column=3, padx=5, pady=5)
-            self.team_controls[team.id] = (assigned, split)
+        self.team_grid = DataGrid(
+            tab, self.TEAM_ASSIGN_COLUMNS, self._on_team_select,
+            on_double_click=self._toggle_team_assignment)
+        self.team_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self._refresh_teams()
+
+    def _on_team_select(self, team_id):
+        self._selected_team_id = team_id
+
+    def _refresh_teams(self):
+        self.team_grid.clear()
+        for team in self.repo.teams.values():
+            ratio = (self.resource.team_memberships.get(team.id, 0)
+                     if self.resource else 0)
+            assigned = ratio > 0
+            split = ratio * 100 if assigned else 100
+            self.team_grid.add_row(
+                team.id,
+                ("✓" if assigned else " ",
+                 team.name,
+                 _schedule_short(team.schedule_pattern),
+                 f"{split:g}%" if assigned else ""))
+            self.team_controls[team.id] = (
+                _ControlValue(assigned), _ControlValue(f"{split:g}"))
+
+    def _toggle_team_assignment(self, team_id):
+        control = self.team_controls.get(team_id)
+        if control is None:
+            return
+        assigned, split = control
+        if assigned.get():
+            self.team_controls[team_id] = (
+                _ControlValue(False), _ControlValue(split.get()))
+        else:
+            value = simpledialog.askstring(
+                "Assign to Team",
+                f"Allocation / Split % for {self.repo.teams[team_id].name}:",
+                initialvalue="100",
+                parent=self)
+            if value is None:
+                return
+            try:
+                split_value = self._validate_split(value)
+            except ValueError as error:
+                self.fail(str(error))
+                return
+            self.team_controls[team_id] = (
+                _ControlValue(True), _ControlValue(f"{split_value:g}"))
+        self._refresh_teams()
 
     def _build_tasks(self):
         tab = self.tabs["Assigned Tasks (Read-Only)"]
@@ -555,25 +683,51 @@ class TeamEditorModal(BaseEditorModal):
         if hasattr(self, "team_capacity_summary"):
             self._update_team_summary()
 
+    MEMBER_COLUMNS = (
+        ("#", 40, 0, tk.CENTER),
+        ("Member Name", 150, 1, tk.W),
+        ("Type", 75, 0, tk.W),
+        ("Role", 100, 1, tk.W),
+        ("Schedule", 110, 0, tk.W),
+        ("Member Capacity", 130, 0, tk.W),
+        ("Team Split %", 80, 0, tk.CENTER),
+        ("Status", 90, 0, tk.CENTER),
+    )
+
     def _build_members(self):
         tab = self.tabs["Team Members & Split Matrix"]
         add_bar = ctk.CTkFrame(tab, fg_color="transparent")
         add_bar.pack(fill=tk.X, padx=8, pady=8)
-        self.member_menu = ctk.CTkOptionMenu(add_bar, values=["Select Resource to Add..."])
+        self.member_menu = ctk.CTkOptionMenu(
+            add_bar, values=["Select Resource to Add..."])
         self.member_menu.set("Select Resource to Add...")
         self.member_menu.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        self.add_split_entry = ctk.CTkEntry(add_bar, width=90,
-                                            placeholder_text="Split %")
+        self.add_split_entry = ctk.CTkEntry(
+            add_bar, width=90, placeholder_text="Split %")
         self.add_split_entry.insert(0, "100")
         self.add_split_entry.pack(side=tk.LEFT, padx=6)
         ctk.CTkButton(add_bar, text="+ Add to Team", width=110,
                       command=self._add_member).pack(side=tk.LEFT, padx=(6, 0))
-        self.member_table = ctk.CTkScrollableFrame(tab)
-        self.member_table.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
-        self.team_capacity_summary = ctk.CTkLabel(tab, text="", anchor=tk.W,
-                                                  justify=tk.LEFT)
+        self.member_grid = DataGrid(
+            tab, self.MEMBER_COLUMNS, self._on_member_select,
+            on_double_click=self._edit_member_split)
+        self.member_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
+        action_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        action_bar.pack(fill=tk.X, padx=8, pady=(0, 0))
+        self.remove_member_button = ctk.CTkButton(
+            action_bar, text="Remove Selected", width=120,
+            command=self._remove_selected_member, state="disabled")
+        self.remove_member_button.pack(side=tk.LEFT)
+        self.team_capacity_summary = ctk.CTkLabel(
+            tab, text="", anchor=tk.W, justify=tk.LEFT)
         self.team_capacity_summary.pack(fill=tk.X, padx=12, pady=(0, 8))
-        self._render_members()
+        self._refresh_members()
+
+    def _on_member_select(self, resource_id):
+        self._selected_member_id = resource_id
+        if getattr(self, "remove_member_button", None):
+            self.remove_member_button.configure(
+                state="normal" if resource_id else "disabled")
 
     def _available_member_names(self):
         return [resource.name for resource in self.repo.resources.values()
@@ -594,13 +748,39 @@ class TeamEditorModal(BaseEditorModal):
             self.fail(str(error))
             return
         self.allocations[resource.id] = split
-        self._render_members()
+        self._refresh_members()
 
     def _remove_member(self, resource_id):
         self.allocations.pop(resource_id, None)
-        self._render_members()
+        self._refresh_members()
+
+    def _remove_selected_member(self):
+        selected = getattr(self, "_selected_member_id", None)
+        if selected:
+            self._remove_member(selected)
+
+    def _edit_member_split(self, resource_id):
+        current = self.allocations.get(resource_id, 0)
+        resource = self.repo.resources.get(resource_id)
+        if not resource:
+            return
+        value = simpledialog.askstring(
+            "Edit Split %",
+            f"Enter team split percentage for {resource.name}:",
+            initialvalue=f"{current:g}",
+            parent=self)
+        if value is None:
+            return
+        try:
+            split = self._validate_split(value)
+        except ValueError as error:
+            self.fail(str(error))
+            return
+        self.allocations[resource_id] = split
+        self._refresh_members()
 
     def _paint_member_row(self, resource_id, split):
+        """Keep the old signature for any external callers."""
         widgets = getattr(self, "member_row_widgets", {}).get(resource_id)
         if not widgets:
             return
@@ -611,70 +791,55 @@ class TeamEditorModal(BaseEditorModal):
             if team_id != current_team_id
         ) if resource else 0.0
         total_percentage = (other_total + split / 100.0) * 100.0
-        status, fill, border = allocation_status(total_percentage)
-        for label in widgets["labels"]:
-            label.configure(fg_color=fill)
-        widgets["entry"].configure(border_color=border)
+        status, _fill, border = allocation_status(total_percentage)
         widgets["entry"]._allocation_status = status
+        widgets["entry"]._border_color = border
 
-    def _split_changed(self, resource_id, variable):
-        text = variable.get().strip().rstrip("%")
-        try:
-            value = float(text) if text else 0
-        except ValueError:
-            return
-        if value >= 0:
-            self.allocations[resource_id] = value
-            self._paint_member_row(resource_id, value)
-            self._update_team_summary()
-
-    def _render_members(self):
-        for widget in self.member_table.winfo_children():
-            widget.destroy()
+    def _refresh_members(self):
+        self.member_grid.clear()
+        self._selected_member_id = None
+        if getattr(self, "remove_member_button", None):
+            self.remove_member_button.configure(state="disabled")
         available = self._available_member_names()
-        self.member_menu.configure(values=available or ["Select Resource to Add..."])
-        self.member_menu.set(available[0] if available else "Select Resource to Add...")
-        headers = ("Member Name", "Type", "Role", "Schedule", "Member Capacity",
-                   "Team Split %", "Actions")
-        widths = (150, 75, 100, 110, 135, 90, 80)
-        for column, (header, width) in enumerate(zip(headers, widths)):
-            self.member_table.grid_columnconfigure(column, weight=1, minsize=width)
-            ctk.CTkLabel(self.member_table, text=header,
-                         font=("Arial", 10, "bold")).grid(
-                             row=0, column=column, padx=4, pady=5, sticky="w")
+        self.member_menu.configure(
+            values=available or ["Select Resource to Add..."])
+        self.member_menu.set(
+            available[0] if available else "Select Resource to Add...")
         self.member_split_vars = {}
         self.member_row_widgets = {}
-        for row, (resource_id, split) in enumerate(self.allocations.items(), start=1):
+        current_team_id = self.team.id if self.team else None
+        for index, (resource_id, split) in enumerate(
+                self.allocations.items(), start=1):
             resource = self.repo.resources.get(resource_id)
             if not resource:
                 continue
-            values = (resource.name, resource.resource_type.value.upper(),
-                      resource.role_type, _schedule_short(resource.schedule_pattern),
-                      f"{resource.weekly_capacity_hours:g}h/wk ({resource.fte:.2f} FTE)")
-            row_labels = []
-            for column, value in enumerate(values):
-                label = ctk.CTkLabel(
-                    self.member_table, text=value, anchor=tk.W,
-                    wraplength=widths[column] - 8, corner_radius=4)
-                label.grid(row=row, column=column, padx=4, pady=5,
-                           sticky="nsew")
-                row_labels.append(label)
-            variable = ctk.StringVar(value=f"{split:g}")
-            split_entry = ctk.CTkEntry(
-                self.member_table, textvariable=variable, width=75)
-            split_entry.grid(row=row, column=5, padx=4, pady=5)
-            variable.trace_add(
-                "write", lambda *_args, key=resource_id, var=variable:
-                    self._split_changed(key, var))
-            self.member_split_vars[resource_id] = variable
-            remove_button = ctk.CTkButton(
-                self.member_table, text="Remove", width=70,
-                command=lambda key=resource_id: self._remove_member(key))
-            remove_button.grid(row=row, column=6, padx=4, pady=5)
+            other_total = sum(
+                ratio for team_id, ratio in (resource.team_memberships or {}).items()
+                if team_id != current_team_id
+            )
+            total_percentage = (other_total + split / 100.0) * 100.0
+            status, _fill, border = allocation_status(total_percentage)
+            capacity = (f"{resource.weekly_capacity_hours:g}h/wk "
+                        f"({resource.fte:.2f} FTE)")
+            values = (
+                str(index),
+                resource.name,
+                resource.resource_type.value.upper(),
+                resource.role_type,
+                _schedule_short(resource.schedule_pattern),
+                capacity,
+                f"{split:g}%",
+                status,
+            )
+            tags = ("overallocated",) if total_percentage > 100 else ()
+            self.member_grid.add_row(resource_id, values, tags=tags)
+            self.member_split_vars[resource_id] = _MemberSplitVar(
+                self, resource_id)
+            fake_entry = _MemberEntryFake()
+            fake_entry._allocation_status = status
+            fake_entry._border_color = border
             self.member_row_widgets[resource_id] = {
-                "labels": row_labels, "entry": split_entry,
-                "remove": remove_button,
-            }
+                "entry": fake_entry, "labels": []}
             self._paint_member_row(resource_id, split)
         self._update_team_summary()
 
