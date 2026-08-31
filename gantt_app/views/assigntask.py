@@ -250,28 +250,28 @@ class TaskResourceTab(ctk.CTkFrame):
 
         ctk.CTkLabel(self._header_frame, text="Entity Name & Type",
                      font=("Arial", 10, "bold"),
-                     anchor=tk.W).grid(
-                         row=0, column=0, padx=4, sticky=tk.EW)
+                     width=240, anchor=tk.W).grid(
+                         row=0, column=0, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Schedule",
                      font=("Arial", 10, "bold"),
-                     anchor=tk.W).grid(
-                         row=0, column=1, padx=4, sticky=tk.EW)
+                     width=160, anchor=tk.W).grid(
+                         row=0, column=1, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Workload",
                      font=("Arial", 10, "bold"),
-                     anchor=tk.W).grid(
-                         row=0, column=2, padx=4, sticky=tk.EW)
+                     width=240, anchor=tk.W).grid(
+                         row=0, column=2, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Effort (hrs)",
                      font=("Arial", 10, "bold"),
-                     anchor=tk.W).grid(
-                         row=0, column=3, padx=4, sticky=tk.EW)
+                     width=70, anchor=tk.W).grid(
+                         row=0, column=3, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Split (%)",
                      font=("Arial", 10, "bold"),
-                     anchor=tk.W).grid(
-                         row=0, column=4, padx=4, sticky=tk.EW)
+                     width=60, anchor=tk.W).grid(
+                         row=0, column=4, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Action",
                      font=("Arial", 10, "bold"),
-                     anchor=tk.CENTER).grid(
-                         row=0, column=5, padx=4, sticky=tk.EW)
+                     width=70, anchor=tk.CENTER).grid(
+                         row=0, column=5, padx=4, sticky=tk.W)
 
         self.scroller = ScrollFrame(self)
         self.scroller.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
@@ -333,22 +333,22 @@ class TaskResourceTab(ctk.CTkFrame):
 
             badge = _type_badge(entity)
             ctk.CTkLabel(row, text=f"{entity.name}  {badge}",
-                         anchor=tk.W).grid(
-                row=0, column=0, padx=4, sticky=tk.EW)
+                         width=240, anchor=tk.W).grid(
+                row=0, column=0, padx=4, sticky=tk.W)
 
             schedule = _schedule_short(entity.schedule_pattern)
-            ctk.CTkLabel(row, text=schedule,
+            ctk.CTkLabel(row, text=schedule, width=160,
                          anchor=tk.W).grid(
-                row=0, column=1, padx=4, sticky=tk.EW)
+                row=0, column=1, padx=4, sticky=tk.W)
 
             resources = list(self.repo.resources.values())
             effort = float(assignment.get('estimated_hours', 0.0))
             workload, colour, _ = _projected_workload_text(
                 entity, resources, effort)
-            workload_label = ctk.CTkLabel(row, text=workload,
+            workload_label = ctk.CTkLabel(row, text=workload, width=240,
                                           text_color=colour,
                                           anchor=tk.W)
-            workload_label.grid(row=0, column=2, padx=4, sticky=tk.EW)
+            workload_label.grid(row=0, column=2, padx=4, sticky=tk.W)
             self._workload_labels[index] = workload_label
 
             effort = ctk.CTkEntry(row, width=70)
