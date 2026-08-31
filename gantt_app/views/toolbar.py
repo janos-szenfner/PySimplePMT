@@ -986,6 +986,8 @@ class Toolbar(ctk.CTkFrame):
         #: How to build the dashboard when it is first asked for; see
         #: set_dashboard_factory
         self._dashboard_factory = None
+        #: Tracks View > Grid View Only; toggled from the menu.
+        self.grid_view_only_var = ctk.BooleanVar(value=False)
 
         # Create UI
         self._create_ui()
@@ -1136,6 +1138,18 @@ class Toolbar(ctk.CTkFrame):
                 new_item['label'] = item['text']
                 new_item['type'] = 'submenu'
                 new_item['items'] = self._convert_items_to_new_format(item['submenu'])
+            elif item.get('type') == 'toggle':
+                # A checkable menu item; its variable is needed for the
+                # checkmark and for the command to read the new state. The
+                # variable is named as a string so the menu definition can be
+                # read without instantiating the toolbar.
+                new_item['label'] = item['text']
+                new_item['type'] = 'toggle'
+                variable = item.get('variable')
+                if isinstance(variable, str):
+                    variable = getattr(self, variable, None)
+                new_item['variable'] = variable
+                new_item['command'] = item.get('command')
             elif 'command' in item:
                 # This is an action item
                 new_item['label'] = item['text']
@@ -1251,6 +1265,9 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Always Night (dark)",
                          "command": self.use_dark_theme},
                     ]},
+                    {"text": "Grid View Only", "type": "toggle",
+                     "variable": "grid_view_only_var",
+                     "command": self.toggle_grid_view_only},
                     {"text": "Charts", "submenu": [
                         {"text": "Gantt Chart", "command": self.show_gantt_chart},
                         {"text": "Dashboard", "command": self.show_dashboard},
@@ -2398,6 +2415,7 @@ class Toolbar(ctk.CTkFrame):
         if not self._showing(self.gantt_chart):
             self.content_panes.add(self.gantt_chart, weight=3)
             logger.info("Showing the Gantt chart")
+        self.grid_view_only_var.set(False)
 
     def show_dashboard(self):
         """Put the dashboard in the right-hand pane instead of the chart."""
@@ -2419,6 +2437,19 @@ class Toolbar(ctk.CTkFrame):
             logger.info("Showing the dashboard")
 
         self.dashboard_frame.refresh()
+        self.grid_view_only_var.set(False)
+
+    def toggle_grid_view_only(self):
+        """Show only the task list, or restore the Gantt chart."""
+        if self.content_panes is None or self.gantt_chart is None:
+            return
+        if self.grid_view_only_var.get():
+            self._hide_pane(self.gantt_chart)
+            self._hide_pane(self.dashboard_frame)
+            logger.info("Grid view only enabled")
+        else:
+            self.show_gantt_chart()
+            logger.info("Grid view only disabled")
 
     def set_undo_redo_manager(self, manager: UndoRedoManager):
         """Set the undo/redo manager."""
