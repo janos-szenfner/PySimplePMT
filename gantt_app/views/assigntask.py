@@ -10,6 +10,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
+from gantt_app import theme
 from gantt_app.resource_model import (
     FTE_WEEKLY_HOURS, Resource, ResourceRepository, ResourceType, TeamPool,
 )
@@ -84,7 +85,8 @@ class ResourcePicker(ctk.CTkToplevel):
     A custom searchable, multi-column dropdown for choosing a resource or team.
     """
 
-    def __init__(self, master, project, on_select: Callable[[str], None]):
+    def __init__(self, master, project, on_select: Callable[[str], None],
+                 initial_search: str = ""):
         super().__init__(master)
         self.project = project
         self.on_select = on_select
@@ -97,13 +99,11 @@ class ResourcePicker(ctk.CTkToplevel):
         self.transient(master)
         self.grab_set()
 
-        ctk.CTkLabel(self, text="Search:", anchor=tk.W).pack(
-            fill=tk.X, padx=10, pady=(10, 0))
-        self.search_var = tk.StringVar()
+        self.search_var = tk.StringVar(value=initial_search)
         self.search_var.trace_add("write", self._on_search)
         ctk.CTkEntry(self, textvariable=self.search_var,
                      placeholder_text="Type to filter...").pack(
-            fill=tk.X, padx=10, pady=(0, 10))
+            fill=tk.X, padx=10, pady=(10, 10))
 
         columns = ("entity", "schedule", "workload")
         self.tree = ttk.Treeview(
@@ -210,13 +210,49 @@ class TaskResourceTab(ctk.CTkFrame):
             self, text="ASSIGNMENTS", font=("Arial", 12, "bold"),
             anchor=tk.W).pack(fill=tk.X, padx=10, pady=(10, 4))
 
+        search_frame = ctk.CTkFrame(self, border_width=1,
+                                    border_color=theme.now(theme.DASH_KPI_BORDER))
+        search_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+        search_frame.columnconfigure(0, weight=1)
+
+        self.search_var = tk.StringVar()
+        self.search_entry = ctk.CTkEntry(
+            search_frame, textvariable=self.search_var,
+            placeholder_text="🔍 Select Resource / Team...",
+            border_width=0)
+        self.search_entry.grid(row=0, column=0, sticky=tk.EW, padx=(8, 0))
+        self.search_entry.bind("<Return>", self._open_picker)
+
+        arrow = ctk.CTkButton(
+            search_frame, text="▼", width=30, border_width=0,
+            command=self._open_picker)
+        arrow.grid(row=0, column=1, padx=(0, 4))
+
+        self._header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self._header_frame.pack(fill=tk.X, padx=10, pady=(4, 0))
+        self._header_frame.columnconfigure(0, weight=0)
+        ctk.CTkLabel(self._header_frame, text="Entity Name & Type",
+                     font=("Arial", 10, "bold"),
+                     width=200, anchor=tk.W).grid(row=0, column=0, padx=4)
+        ctk.CTkLabel(self._header_frame, text="Schedule",
+                     font=("Arial", 10, "bold"),
+                     width=160, anchor=tk.W).grid(row=0, column=1, padx=4)
+        ctk.CTkLabel(self._header_frame, text="Workload",
+                     font=("Arial", 10, "bold"),
+                     width=240, anchor=tk.W).grid(row=0, column=2, padx=4)
+        ctk.CTkLabel(self._header_frame, text="Effort (hrs)",
+                     font=("Arial", 10, "bold"),
+                     width=70, anchor=tk.W).grid(row=0, column=3, padx=4)
+        ctk.CTkLabel(self._header_frame, text="Split (%)",
+                     font=("Arial", 10, "bold"),
+                     width=60, anchor=tk.W).grid(row=0, column=4, padx=4)
+        ctk.CTkLabel(self._header_frame, text="Action",
+                     font=("Arial", 10, "bold"),
+                     width=70, anchor=tk.W).grid(row=0, column=5, padx=4)
+
         self.scroller = ScrollFrame(self)
         self.scroller.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
         self._rows_frame = self.scroller.content
-
-        ctk.CTkButton(
-            self, text="+ Add Resource / Team",
-            command=self._open_picker).pack(anchor=tk.W, padx=10, pady=(0, 10))
 
     # ------------------------------------------------------------------
     # Rows
@@ -288,13 +324,16 @@ class TaskResourceTab(ctk.CTkFrame):
     # Add / remove
     # ------------------------------------------------------------------
 
-    def _open_picker(self) -> None:
-        ResourcePicker(self.winfo_toplevel(), self.project, self._on_picked)
+    def _open_picker(self, _event=None) -> None:
+        ResourcePicker(
+            self.winfo_toplevel(), self.project, self._on_picked,
+            initial_search=self.search_var.get().strip())
 
     def _on_picked(self, entity_id: str) -> None:
         # Avoid duplicates for now; later we can allow split per entity.
         if any(a.get("resource_id") == entity_id for a in self._assignments):
             return
+        self.search_var.set("")
         self._assignments.append({
             "resource_id": entity_id,
             "estimated_hours": 0.0,
