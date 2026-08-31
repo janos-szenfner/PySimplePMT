@@ -219,18 +219,18 @@ class TaskResourceTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _cell(parent: ctk.CTkFrame, child: tk.Widget,
-              width: int, column: int,
-              padx: int = 4) -> ctk.CTkFrame:
-        """Create a fixed-size cell frame and place the widget inside it."""
+    def _cell(parent: ctk.CTkFrame, factory: Callable[[ctk.CTkFrame], tk.Widget],
+              width: int, column: int, padx: int = 4) -> ctk.CTkFrame:
+        """Create a fixed-size cell frame and put the factory widget inside it."""
         cell = ctk.CTkFrame(
             parent, width=width, height=30,
             fg_color=theme.now(theme.GRID_ROW_BG),
             corner_radius=0, border_width=0)
         cell.grid_propagate(False)
         cell.pack_propagate(False)
-        cell.grid(row=0, column=column, padx=padx, sticky=tk.W)
+        child = factory(cell)
         child.place(relx=0.0, rely=0.5, anchor=tk.W)
+        cell.grid(row=0, column=column, padx=padx, sticky=tk.W)
         return cell
 
     def _build(self) -> None:
@@ -269,39 +269,39 @@ class TaskResourceTab(ctk.CTkFrame):
 
         self._cell(
             self._header_frame,
-            ctk.CTkLabel(self._header_frame, text="Entity Name & Type",
-                         font=("Arial", 10, "bold"), width=240,
-                         anchor=tk.W),
+            lambda c: ctk.CTkLabel(c, text="Entity Name & Type",
+                                   font=("Arial", 10, "bold"), width=240,
+                                   anchor=tk.W),
             240, 0)
         self._cell(
             self._header_frame,
-            ctk.CTkLabel(self._header_frame, text="Schedule",
-                         font=("Arial", 10, "bold"), width=160,
-                         anchor=tk.W),
+            lambda c: ctk.CTkLabel(c, text="Schedule",
+                                   font=("Arial", 10, "bold"), width=160,
+                                   anchor=tk.W),
             160, 1)
         self._cell(
             self._header_frame,
-            ctk.CTkLabel(self._header_frame, text="Workload",
-                         font=("Arial", 10, "bold"), width=240,
-                         anchor=tk.W),
+            lambda c: ctk.CTkLabel(c, text="Workload",
+                                   font=("Arial", 10, "bold"), width=240,
+                                   anchor=tk.W),
             240, 2)
         self._cell(
             self._header_frame,
-            ctk.CTkLabel(self._header_frame, text="Effort (hrs)",
-                         font=("Arial", 10, "bold"), width=70,
-                         anchor=tk.W),
+            lambda c: ctk.CTkLabel(c, text="Effort (hrs)",
+                                   font=("Arial", 10, "bold"), width=70,
+                                   anchor=tk.W),
             70, 3)
         self._cell(
             self._header_frame,
-            ctk.CTkLabel(self._header_frame, text="Split (%)",
-                         font=("Arial", 10, "bold"), width=60,
-                         anchor=tk.W),
+            lambda c: ctk.CTkLabel(c, text="Split (%)",
+                                   font=("Arial", 10, "bold"), width=60,
+                                   anchor=tk.W),
             60, 4)
         self._cell(
             self._header_frame,
-            ctk.CTkLabel(self._header_frame, text="Action",
-                         font=("Arial", 10, "bold"), width=70,
-                         anchor=tk.CENTER),
+            lambda c: ctk.CTkLabel(c, text="Action",
+                                   font=("Arial", 10, "bold"), width=70,
+                                   anchor=tk.CENTER),
             70, 5)
 
         self.scroller = ScrollFrame(self)
@@ -368,46 +368,63 @@ class TaskResourceTab(ctk.CTkFrame):
             badge = _type_badge(entity)
             cells.append(self._cell(
                 row,
-                ctk.CTkLabel(row, text=f"{entity.name}  {badge}",
-                             width=240, anchor=tk.W),
+                lambda c: ctk.CTkLabel(c, text=f"{entity.name}  {badge}",
+                                       width=240, anchor=tk.W),
                 240, 0))
 
             schedule = _schedule_short(entity.schedule_pattern)
             cells.append(self._cell(
                 row,
-                ctk.CTkLabel(row, text=schedule, width=160,
-                             anchor=tk.W),
+                lambda c: ctk.CTkLabel(c, text=schedule, width=160,
+                                       anchor=tk.W),
                 160, 1))
 
             resources = list(self.repo.resources.values())
             effort = float(assignment.get('estimated_hours', 0.0))
             workload, colour, _ = _projected_workload_text(
                 entity, resources, effort)
-            workload_label = ctk.CTkLabel(row, text=workload, width=240,
-                                          text_color=colour,
-                                          anchor=tk.W)
-            cells.append(self._cell(row, workload_label, 240, 2))
-            self._workload_labels[index] = workload_label
+            workload_label = [None]
 
-            effort_entry = ctk.CTkEntry(row, width=70)
-            effort_entry.insert(
-                0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
-            cells.append(self._cell(row, effort_entry, 70, 3))
-            effort_entry._entry.bind(
+            def make_workload(cell):
+                workload_label[0] = ctk.CTkLabel(
+                    cell, text=workload, width=240, text_color=colour,
+                    anchor=tk.W)
+                return workload_label[0]
+
+            cells.append(self._cell(row, make_workload, 240, 2))
+            self._workload_labels[index] = workload_label[0]
+
+            effort_entry = [None]
+
+            def make_effort(cell):
+                effort_entry[0] = ctk.CTkEntry(cell, width=70)
+                effort_entry[0].insert(
+                    0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
+                return effort_entry[0]
+
+            cells.append(self._cell(row, make_effort, 70, 3))
+            effort_entry[0]._entry.bind(
                 "<KeyRelease>", self._make_updater(
-                    index, "estimated_hours", effort_entry))
+                    index, "estimated_hours", effort_entry[0]))
 
-            split_entry = ctk.CTkEntry(row, width=60)
-            split_entry.insert(
-                0, f"{float(assignment.get('resource_split', 0.0)):g}")
-            cells.append(self._cell(row, split_entry, 60, 4))
-            split_entry._entry.bind(
+            split_entry = [None]
+
+            def make_split(cell):
+                split_entry[0] = ctk.CTkEntry(cell, width=60)
+                split_entry[0].insert(
+                    0, f"{float(assignment.get('resource_split', 0.0)):g}")
+                return split_entry[0]
+
+            cells.append(self._cell(row, make_split, 60, 4))
+            split_entry[0]._entry.bind(
                 "<KeyRelease>", self._make_updater(
-                    index, "resource_split", split_entry))
+                    index, "resource_split", split_entry[0]))
 
-            clear_btn = ctk.CTkButton(row, text="Clear", width=70,
-                                      command=lambda i=index: self._remove(i))
-            cells.append(self._cell(row, clear_btn, 70, 5))
+            cells.append(self._cell(
+                row,
+                lambda c: ctk.CTkButton(c, text="Clear", width=70,
+                                        command=lambda i=index: self._remove(i)),
+                70, 5))
 
             self._row_cells.append(cells)
 
