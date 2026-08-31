@@ -2,6 +2,24 @@
 
 A cross-platform desktop application for project management with Gantt chart visualization, drag-and-drop task management, and support for importing MS Project, GanttProject, Mermaid and Excel files.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Implemented Features](#implemented-features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Sample Data](#sample-data)
+- [Data Models](#data-models)
+- [File Formats](#file-formats)
+- [Configuration](#configuration)
+- [Key Technical Decisions](#key-technical-decisions)
+- [Error Handling](#error-handling)
+- [Testing](#testing)
+- [Known Limitations](#known-limitations)
+- [Future Enhancements](#future-enhancements)
+
 ## Overview
 
 This is a complete implementation of a project management tool with:
