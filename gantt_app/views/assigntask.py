@@ -200,6 +200,7 @@ class TaskResourceTab(ctk.CTkFrame):
         self._assignments: List[Dict[str, object]] = []
         super().__init__(parent, fg_color="transparent")
         self._build()
+        self.set_values(task)
 
     # ------------------------------------------------------------------
     # Building the widgets

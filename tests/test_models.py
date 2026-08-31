@@ -304,6 +304,44 @@ class TestTask(unittest.TestCase):
         task = Task.from_dict(data)
         self.assertEqual(task.status, "Active")
 
+    def test_task_resource_assignments_round_trip(self):
+        """Resource assignments survive to_dict and from_dict."""
+        assignments = [
+            {'resource_id': 'r1', 'estimated_hours': 10.5,
+             'resource_split': 50.0},
+            {'resource_id': 't1', 'estimated_hours': 2.0,
+             'resource_split': 25.0},
+        ]
+        task = Task(
+            id="test", name="Test", start_date=self.start_date,
+            resource_assignments=assignments)
+
+        task_dict = task.to_dict()
+        self.assertEqual(task_dict['resource_assignments'], assignments)
+
+        restored = Task.from_dict(task_dict)
+        self.assertEqual(restored.resource_assignments, assignments)
+
+    def test_task_from_dict_legacy_resource_fields(self):
+        """Files saved with the old single resource fields are converted."""
+        data = {
+            'id': 'test', 'name': 'Test',
+            'start_date': self.start_date.isoformat(),
+            'progress': 0,
+            'dependencies': [],
+            'color': '#1f6aa5',
+            'is_milestone': False,
+            'resource_id': 'r1',
+            'estimated_hours': 8.0,
+            'resource_split': 100.0,
+        }
+        task = Task.from_dict(data)
+        self.assertEqual(task.resource_assignments, [{
+            'resource_id': 'r1',
+            'estimated_hours': 8.0,
+            'resource_split': 100.0,
+        }])
+
 
 class TestProject(unittest.TestCase):
     """Test cases for the Project class."""
