@@ -170,6 +170,23 @@ class ResourceDropdown(ctk.CTkFrame):
             self.on_select(self._selected_id)
 
 
+def _projected_workload_text(entity, resources: List[Resource],
+                              effort: float) -> Tuple[str, str, float]:
+    """Projected load after adding this assignment's effort hours."""
+    if isinstance(entity, TeamPool):
+        capacity = entity.calculate_effective_capacity(resources)
+        current_used = 0.0
+    else:
+        current_used, capacity = _resource_load(entity)
+    new_used = current_used + effort
+    badge, colour, pct = _status_badge(new_used, capacity)
+    if pct > 100:
+        text = f"{new_used:g} / {capacity:g} hrs ({pct:.0f}% OVERLOADED)"
+    else:
+        text = f"{new_used:g} / {capacity:g} hrs ({pct:.0f}% loaded)"
+    return f"{badge} {text}", colour, pct
+
+
 def _row_tag(pct: float) -> str:
     if pct > 100:
         return "over"
@@ -188,6 +205,7 @@ class TaskResourceTab(ctk.CTkFrame):
         self.task = task
         self.repo = getattr(project, "resource_repository", ResourceRepository())
         self._assignments: List[Dict[str, object]] = []
+        self._workload_labels: Dict[int, ctk.CTkLabel] = {}
         super().__init__(parent, fg_color="transparent")
         self._build()
         self.set_values(task)
@@ -299,6 +317,7 @@ class TaskResourceTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def _refresh_rows(self) -> None:
+        self._workload_labels.clear()
         for child in list(self._rows_frame.winfo_children()):
             child.destroy()
 
@@ -322,9 +341,14 @@ class TaskResourceTab(ctk.CTkFrame):
                          anchor=tk.W).grid(row=0, column=1, padx=4, sticky=tk.W)
 
             resources = list(self.repo.resources.values())
-            workload, colour, _ = _workload_text(entity, resources)
-            ctk.CTkLabel(row, text=workload, width=240, text_color=colour,
-                         anchor=tk.W).grid(row=0, column=2, padx=4, sticky=tk.W)
+            effort = float(assignment.get('estimated_hours', 0.0))
+            workload, colour, _ = _projected_workload_text(
+                entity, resources, effort)
+            workload_label = ctk.CTkLabel(row, text=workload, width=240,
+                                          text_color=colour,
+                                          anchor=tk.W)
+            workload_label.grid(row=0, column=2, padx=4, sticky=tk.W)
+            self._workload_labels[index] = workload_label
 
             effort = ctk.CTkEntry(row, width=70)
             effort.insert(0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
@@ -350,7 +374,22 @@ class TaskResourceTab(ctk.CTkFrame):
             except ValueError:
                 value = 0.0
             self._assignments[index][key] = value
+            if index in self._workload_labels:
+                self._update_projected_workload(index)
         return _update
+
+    def _update_projected_workload(self, index: int) -> None:
+        if index not in self._workload_labels:
+            return
+        entity = self._entity_by_id(self._assignments[index]["resource_id"])
+        if entity is None:
+            return
+        resources = list(self.repo.resources.values())
+        effort = float(self._assignments[index].get("estimated_hours", 0.0))
+        workload, colour, _ = _projected_workload_text(
+            entity, resources, effort)
+        self._workload_labels[index].configure(text=workload,
+                                               text_color=colour)
 
     def _entity_by_id(self, entity_id: str):
         if entity_id in self.repo.resources:
