@@ -2441,11 +2441,12 @@ class Toolbar(ctk.CTkFrame):
         self.dashboard_frame.refresh()
         self.grid_view_only_var.set(False)
 
-    def toggle_grid_view_only(self):
+    def toggle_grid_view_only(self, _state=None):
         """Show only the task list, or restore the Gantt chart."""
         if self.content_panes is None or self.gantt_chart is None:
             return
-        if self.grid_view_only_var.get():
+        enabled = _state if _state is not None else self.grid_view_only_var.get()
+        if enabled:
             self._hide_pane(self.gantt_chart)
             self._hide_pane(self.dashboard_frame)
             logger.info("Grid view only enabled")
