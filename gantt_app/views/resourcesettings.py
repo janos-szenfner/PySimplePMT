@@ -296,6 +296,7 @@ class ResourceEditorModal(BaseEditorModal):
         self.resource = resource
         self.days_off = list(resource.days_off) if resource else []
         self.team_controls = {}
+        self._selected_team_id = None
         self._updating_capacity = False
         title = f"Resource Editor: {resource.name}" if resource else "Create Resource"
         super().__init__(master, title,
@@ -511,10 +512,60 @@ class ResourceEditorModal(BaseEditorModal):
             tab, self.TEAM_ASSIGN_COLUMNS, self._on_team_select,
             on_double_click=self._toggle_team_assignment)
         self.team_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        controls = ctk.CTkFrame(tab, fg_color="transparent")
+        controls.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        self._add_team_id = None
+        self._team_name_to_id = {}
+        self._add_team_menu = ctk.CTkOptionMenu(
+            controls, values=["(no teams to add)"], width=180,
+            command=self._on_add_team_selected)
+        self._add_team_menu.pack(side=tk.LEFT, padx=(0, 4))
+        self._add_split_entry = ctk.CTkEntry(
+            controls, width=70, placeholder_text="100%")
+        self._add_split_entry.insert(0, "100")
+        self._add_split_entry.pack(side=tk.LEFT, padx=4)
+        self._add_button = ctk.CTkButton(
+            controls, text="Add", width=80, command=self._on_add_team,
+            state="disabled")
+        self._add_button.pack(side=tk.LEFT, padx=4)
+        self._remove_button = ctk.CTkButton(
+            controls, text="Remove", width=80, command=self._on_remove_team,
+            state="disabled")
+        self._remove_button.pack(side=tk.LEFT, padx=4)
+
         self._refresh_teams()
 
     def _on_team_select(self, team_id):
         self._selected_team_id = team_id
+        self._update_team_controls()
+
+    def _on_add_team_selected(self, team_name):
+        self._add_team_id = self._team_name_to_id.get(team_name)
+
+    def _update_team_controls(self):
+        unassigned = [team for team in self.repo.teams.values()
+                      if not self.team_controls[team.id][0].get()]
+        self._team_name_to_id = {team.name: team.id for team in unassigned}
+        if unassigned:
+            names = [team.name for team in unassigned]
+            self._add_team_menu.configure(values=names)
+            if self._add_team_id not in self._team_name_to_id.values():
+                self._add_team_id = unassigned[0].id
+            self._add_team_menu.set(next(
+                team.name for team in unassigned
+                if team.id == self._add_team_id))
+            self._add_button.configure(state="normal")
+        else:
+            self._add_team_menu.configure(values=["(no teams to add)"])
+            self._add_team_menu.set("(no teams to add)")
+            self._add_team_id = None
+            self._add_button.configure(state="disabled")
+
+        remove_state = "normal" if (self._selected_team_id and
+            self.team_controls[self._selected_team_id][0].get()) else "disabled"
+        self._remove_button.configure(state=remove_state)
 
     def _refresh_teams(self):
         self.team_grid.clear()
@@ -531,6 +582,7 @@ class ResourceEditorModal(BaseEditorModal):
                  f"{split:g}%" if assigned else ""))
             self.team_controls[team.id] = (
                 _ControlValue(assigned), _ControlValue(f"{split:g}"))
+        self._update_team_controls()
 
     def _toggle_team_assignment(self, team_id):
         control = self.team_controls.get(team_id)
@@ -555,6 +607,35 @@ class ResourceEditorModal(BaseEditorModal):
                 return
             self.team_controls[team_id] = (
                 _ControlValue(True), _ControlValue(f"{split_value:g}"))
+        self._refresh_teams()
+
+    def _on_add_team(self):
+        team_id = self._add_team_id
+        if not team_id:
+            return
+        if self.team_controls[team_id][0].get():
+            return
+        text = self._add_split_entry.get().strip().rstrip("%")
+        try:
+            split = self._validate_split(text)
+        except ValueError as error:
+            self.fail(str(error))
+            return
+        self.team_controls[team_id] = (
+            _ControlValue(True), _ControlValue(f"{split:g}"))
+        self._add_split_entry.delete(0, tk.END)
+        self._add_split_entry.insert(0, "100")
+        self._refresh_teams()
+
+    def _on_remove_team(self):
+        team_id = self._selected_team_id
+        if not team_id:
+            return
+        if not self.team_controls[team_id][0].get():
+            return
+        split = self.team_controls[team_id][1]
+        self.team_controls[team_id] = (
+            _ControlValue(False), _ControlValue(split.get()))
         self._refresh_teams()
 
     def _build_tasks(self):
