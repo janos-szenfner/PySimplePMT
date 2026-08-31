@@ -224,7 +224,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertIn("80 hours/week", dialog.team_capacity_summary.cget("text"))
         entry = dialog.member_row_widgets[resource.id]["entry"]
         self.assertEqual(entry._allocation_status, "Over capacitated")
-        self.assertEqual(entry.cget("border_color"), "#2196f3")
+        self.assertEqual(entry.cget("border_color"), "#ef4444")
 
     def test_allocation_status_boundaries(self):
         from gantt_app.views.resourcesettings import allocation_status

@@ -82,12 +82,21 @@ def _daily_summary(values):
 
 def allocation_status(percentage):
     if percentage == 0:
-        return "Free", ("#f3f4f6", "#343638"), "#9ca3af"
+        return "Free", ("#dcfce7", "#14532d"), "#22c55e"
     if percentage <= 80:
-        return "Optimal", ("#dcfce7", "#17452a"), "#27ae60"
+        return "Optimal", ("#dcfce7", "#14532d"), "#22c55e"
     if percentage <= 100:
-        return "Full capacity", ("#fef3c7", "#5c4813"), "#d4a017"
-    return "Over capacitated", ("#e3f2fd", "#000000"), "#2196f3"
+        return "Full capacity", ("#fef3c7", "#713f12"), "#eab308"
+    return "Over capacitated", ("#fee2e2", "#7f1d1d"), "#ef4444"
+
+
+def _allocation_tag(percentage: float) -> str:
+    """Tag name for the DataGrid row colour of an allocation percentage."""
+    if percentage > 100:
+        return "overallocated"
+    if percentage >= 81:
+        return "fully_allocated"
+    return "available"
 
 
 class _ControlValue:
@@ -176,7 +185,17 @@ class DataGrid(ctk.CTkFrame):
         self.tree.tag_configure(
             "odd", background=theme.now(theme.GRID_ROW_ALT))
         self.tree.tag_configure(
-            "overallocated", background="#e3f2fd", foreground="#000000")
+            "available",
+            background=theme.now(("#dcfce7", "#14532d")),
+            foreground=theme.now(("#14532d", "#dcfce7")))
+        self.tree.tag_configure(
+            "fully_allocated",
+            background=theme.now(("#fef3c7", "#713f12")),
+            foreground=theme.now(("#713f12", "#fef3c7")))
+        self.tree.tag_configure(
+            "overallocated",
+            background=theme.now(("#fee2e2", "#7f1d1d")),
+            foreground=theme.now(("#7f1d1d", "#fee2e2")))
         self.tree.configure(style="DataGrid.Treeview")
 
     def clear(self):
@@ -813,8 +832,8 @@ class TeamEditorModal(BaseEditorModal):
                 f"{split:g}%",
                 status,
             )
-            tags = ("overallocated",) if total_percentage > 100 else ()
-            self.member_grid.add_row(resource_id, values, tags=tags)
+            tag = _allocation_tag(total_percentage)
+            self.member_grid.add_row(resource_id, values, tags=(tag,))
             self.member_split_vars[resource_id] = _MemberSplitVar(
                 self, resource_id)
             fake_entry = _MemberEntryFake()
@@ -1071,10 +1090,13 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                               if team_id in self.repo.teams) or "None"
             allocation = sum(resource.team_memberships.values())
             allocated_fte = allocation * resource.fte
-            over = allocated_fte > resource.fte
+            percentage = (allocated_fte / resource.fte * 100
+                          if resource.fte else 0.0)
+            over = percentage > 100
             total_text = (f"{allocated_fte:.2f} FTE"
                           if not over
                           else f"{allocated_fte:.2f} FTE (Over)")
+            tag = _allocation_tag(percentage)
             self.resource_grid.add_row(
                 resource.id,
                 (str(index),
@@ -1088,7 +1110,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                  total_text,
                  teams,
                  self._resource_days_off(resource)),
-                tags=("overallocated",) if over else ())
+                tags=(tag,))
         self._select_resource(select_id if select_id in self.resource_rows else None)
 
     def _refresh_teams(self, select_id=None):
@@ -1103,12 +1125,18 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             weekly = sum(daily.values())
             members = sum(resource.team_memberships.get(team.id, 0) > 0
                           for resource in resources)
+            team_over = any(
+                (sum(resource.team_memberships.values()) * resource.fte)
+                > resource.fte
+                for resource in resources
+                if resource.team_memberships.get(team.id, 0) > 0)
             self.team_grid.add_row(team.id, (
                 str(index), team.name, _schedule_short(team.schedule_pattern),
                 "Fixed Capacity" if team.is_fixed_capacity else "Member-Calculated",
                 f"{weekly / FTE_WEEKLY_HOURS:.2f} FTE ({weekly:g}h/wk)",
                 f"{members} Member" + ("s" if members != 1 else ""),
-                _daily_summary(daily)))
+                _daily_summary(daily)),
+                tags=("overallocated",) if team_over else ())
         self._select_team(select_id if select_id in self.team_rows else None)
 
     def _select_resource(self, resource_id):
