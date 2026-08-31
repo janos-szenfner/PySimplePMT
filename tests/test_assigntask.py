@@ -169,3 +169,24 @@ class TestTaskResourceTab(unittest.TestCase):
         entry = SimpleNamespace(get=lambda: "50")
         tab._make_updater(0, "resource_split", entry)(None)
         self.assertEqual(tab.get_assignments()[0]["resource_split"], 50.0)
+
+    def test_assignment_cells_align(self):
+        from gantt_app.models import Task
+        task = Task(
+            id="002", name="Align",
+            start_date=datetime(2026, 1, 1),
+            resource_assignments=[
+                {"resource_id": "r1", "estimated_hours": 8.0,
+                 "resource_split": 50.0},
+                {"resource_id": "t1", "estimated_hours": 16.0,
+                 "resource_split": 100.0},
+            ])
+        tab = TaskResourceTab(self.root, self.project, task)
+        tab.update_idletasks()
+        self.assertEqual(len(tab._row_cells), 2)
+        first = tab._row_cells[0]
+        for row in tab._row_cells:
+            self.assertEqual(len(row), len(first))
+            for i, cell in enumerate(row):
+                self.assertEqual(cell.winfo_width(), first[i].winfo_width())
+                self.assertEqual(cell.winfo_x(), first[i].winfo_x())
