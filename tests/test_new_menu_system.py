@@ -194,8 +194,10 @@ class TestMenuStructure(unittest.TestCase):
         self.assertTrue(any(entry.startswith('Paste')
                             for entry in edit_items),
                         "Paste not found in Edit menu")
-        self.assertIn('Undo', edit_items, "Undo not found in Edit menu")
-        self.assertIn('Redo', edit_items, "Redo not found in Edit menu")
+        self.assertTrue(any(label.startswith('Undo') for label in edit_items),
+                        "Undo not found in Edit menu")
+        self.assertTrue(any(label.startswith('Redo') for label in edit_items),
+                        "Redo not found in Edit menu")
 
     def test_edit_menu_has_create_submenu(self):
         """
@@ -260,8 +262,8 @@ class TestMenuStructure(unittest.TestCase):
         
         # Check that Edit menu has all items
         edit_items = [item.get('label', item.get('text', '')) for item in converted['Edit']]
-        self.assertIn('Undo', edit_items)
-        self.assertIn('Redo', edit_items)
+        self.assertTrue(any(label.startswith('Undo') for label in edit_items))
+        self.assertTrue(any(label.startswith('Redo') for label in edit_items))
         self.assertTrue(any(label.startswith('Cut') for label in edit_items))
         self.assertTrue(any(entry.startswith('Copy')
                             for entry in edit_items))

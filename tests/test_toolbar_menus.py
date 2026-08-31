@@ -201,7 +201,9 @@ class TestMenuContents(unittest.TestCase):
         from gantt_app.shortcuts import accelerator
 
         self.assertEqual(labels(find(self.tree, 'Edit')['items']),
-                         ['Create', 'Undo', 'Redo',
+                         ['Create',
+                          f"Undo  ({accelerator('Z')})",
+                          f"Redo  ({accelerator('Z', shift=True)})",
                           f"Cut  ({accelerator('X')})",
                           f"Copy  ({accelerator('C')})",
                           f"Paste  ({accelerator('V')})"])

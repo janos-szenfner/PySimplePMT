@@ -1176,6 +1176,12 @@ than no caption, and the two drift the moment they are written separately.
 Both letter cases are bound, since Tk reports the upper case one under caps
 lock.
 
+- **Undo**: `Command + Z` (⌘ + Z) on macOS, `Ctrl + Z` on Windows and Linux
+- **Redo**: `Command + Shift + Z` (⌘ + ⇧ + Z) on macOS,
+  `Ctrl + Shift + Z` on Windows and Linux
+- **Cut / Copy / Paste**: the platform's modifier plus X, C and V
+- **Bold / Italic / Underline**: the platform's modifier plus B, I and U
+
 One thing worth knowing when testing this: Tk stores a binding under a
 spelling of its own choosing — `<Command-b>` comes back as `<Mod1-Key-b>` —
 so a test cannot check the modifier by reading the binding back. Which
@@ -2587,5 +2593,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.64.10
+**Version**: 1.64.11
 **Last Updated**: 2026-08-31

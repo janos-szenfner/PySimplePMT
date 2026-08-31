@@ -543,7 +543,9 @@ GUIDE_SECTIONS = (
             "the window - Command+B, I and U on a Mac, Ctrl+B, I and U "
             "everywhere else. Every shortcut in the application follows "
             "that rule, and the hover text names whichever key this machine "
-            "actually answers to.",
+            "actually answers to. Undo is Command+Z (⌘+Z) and Redo is "
+            "Command+Shift+Z (⌘+⇧+Z) on a Mac; Ctrl+Z and Ctrl+Shift+Z "
+            "everywhere else.",
 
             "The presets apply a whole look in one press: Financial "
             "Milestone is a yellow fill with bold black text, Work Complete "

@@ -1241,8 +1241,10 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Subtask...", "command": self.add_subtask},
                         {"text": "Milestone...", "command": self.add_milestone},
                     ]},
-                    {"text": "Undo", "command": self.undo},
-                    {"text": "Redo", "command": self.redo},
+                    {"text": f"Undo  ({accelerator('Z')})",
+                     "command": self.undo},
+                    {"text": f"Redo  ({accelerator('Z', shift=True)})",
+                     "command": self.redo},
                     # The key each one answers to, written the way this
                     # platform writes it: Cmd on a Mac, Ctrl elsewhere. See
                     # gantt_app.shortcuts, which also binds them
@@ -2465,7 +2467,7 @@ class Toolbar(ctk.CTkFrame):
             if hasattr(self, 'redo_btn') and self.redo_btn:
                 self.redo_btn.configure(state=tk.NORMAL if self.undo_redo_manager.can_redo() else tk.DISABLED)
     
-    def undo(self):
+    def undo(self, _event=None):
         """Undo the last action."""
         if self.undo_redo_manager and self.undo_redo_manager.can_undo():
             if self.undo_redo_manager.undo():
@@ -2473,8 +2475,8 @@ class Toolbar(ctk.CTkFrame):
                 self.update_undo_redo_buttons()
                 if self.on_project_changed:
                     self.on_project_changed()
-    
-    def redo(self):
+
+    def redo(self, _event=None):
         """Redo the last undone action."""
         if self.undo_redo_manager and self.undo_redo_manager.can_redo():
             if self.undo_redo_manager.redo():
@@ -2690,6 +2692,9 @@ class Toolbar(ctk.CTkFrame):
         window.bind(any_key_with(alt=True), self._alt_key_pressed, add='+')
         if IS_MACOS:
             window.bind('<KeyPress>', self._any_key_pressed, add='+')
+
+        bind_shortcut(window, 'z', self.undo)
+        bind_shortcut(window, 'z', self.redo, shift=True)
 
     def _hotkey_link(self, _event=None):
         """Link the selected rows from the keyboard."""
