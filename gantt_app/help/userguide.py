@@ -371,6 +371,41 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Resource tab: assigning work to people, placeholders and teams",
+        [
+            "The Resource tab is where a task is assigned to one or more "
+            "resources or teams. Open it from the task editor, next to "
+            "Notes and Dependency.",
+
+            "Search the dropdown to find a resource or team. The dropdown "
+            "lists the name, work schedule and current weekly workload. "
+            "Click a row or press Enter to add it to the task. The same "
+            "resource or team can only be assigned once to the same task.",
+
+            "Each assignment shows: Entity (resource or team with type "
+            "badge), Schedule pattern, Workload (the projected load once "
+            "this assignment's effort is added), Effort in hours, Split "
+            "percentage, and a Clear button to remove the assignment.",
+
+            "Effort (hrs) - the total hours this assignment is expected to "
+            "take. Changing it updates the projected workload immediately "
+            "so you can see the impact before saving.",
+
+            "Split (%) - the share of daily capacity the resource should "
+            "allocate to this task. 100% means the resource works on this "
+            "task for a full share of its day while the task is active.",
+
+            "The Workload colour shows Free (green), Optimal (green), "
+            "Full capacity (yellow) or Over capacitated (red) after the "
+            "assignment's effort is added. Overloaded means the resource "
+            "would be asked for more hours than its schedule allows.",
+
+            "Clear removes an assignment. Nothing is saved until the task "
+            "editor is closed with Apply or OK; until then you can still "
+            "Cancel.",
+        ],
+    ),
+    (
         "Critical path and float",
         [
             "There are two ways to ask. The critical path button on the "
@@ -736,9 +771,9 @@ GUIDE_SECTIONS = (
             "Above 100% - Over capacitated (red).",
 
             "Set a split to 0% or use Remove to take the member out of the "
-            "team. Task assignment is not part of Resource Settings yet; the "
-            "Assigned Tasks tabs are read-only placeholders for the future "
-            "Gantt / Task Scheduler workflow.",
+            "team. Assigning a resource to an actual task is done from the "
+            "task editor's Resource tab, not here; the Assigned Tasks tabs "
+            "show which tasks currently reference this resource or team.",
         ],
     ),
     (

@@ -1,0 +1,7 @@
+# Development and test dependencies for PySimplePMT.
+#
+# Install alongside the runtime and build dependencies:
+#   pip install -r requirements.txt -r requirements-build.txt -r requirements-dev.txt
+
+pytest>=8.0
+pytest-bdd>=7.0
