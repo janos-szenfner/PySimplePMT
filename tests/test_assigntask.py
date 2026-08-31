@@ -1,9 +1,9 @@
 """
 Tests for the resource assignment tab and its helpers.
 """
-import tkinter as tk
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
 
 from gantt_app.models import Task, Project
 from gantt_app.resource_model import (
@@ -159,13 +159,13 @@ class TestTaskResourceTab(unittest.TestCase):
     def test_effort_field_change_updates_assignment(self):
         tab = TaskResourceTab(self.root, self.project, self.task)
         tab.update_idletasks()
-        var = tk.StringVar(value="300")
-        tab._make_updater(0, "estimated_hours", var)(None)
+        entry = SimpleNamespace(get=lambda: "300")
+        tab._make_updater(0, "estimated_hours", entry)(None)
         self.assertEqual(tab.get_assignments()[0]["estimated_hours"], 300.0)
 
     def test_split_field_change_updates_assignment(self):
         tab = TaskResourceTab(self.root, self.project, self.task)
         tab.update_idletasks()
-        var = tk.StringVar(value="50")
-        tab._make_updater(0, "resource_split", var)(None)
+        entry = SimpleNamespace(get=lambda: "50")
+        tab._make_updater(0, "resource_split", entry)(None)
         self.assertEqual(tab.get_assignments()[0]["resource_split"], 50.0)
