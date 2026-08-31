@@ -131,6 +131,8 @@ class DataGrid(ctk.CTkFrame):
         style.configure(
             "DataGrid.Treeview.Heading",
             font=("Arial", 10, "bold"))
+        self.tree.tag_configure(
+            "overallocated", background="#fee2e2", foreground="#5c2020")
         self.tree.configure(style="DataGrid.Treeview")
 
     def clear(self):
@@ -138,12 +140,13 @@ class DataGrid(ctk.CTkFrame):
         self._row_ids = []
         self._selected_id = None
 
-    def add_row(self, item_id, values):
+    def add_row(self, item_id, values, tags=()):
         display_values = []
         for value in values:
             text = value[0] if isinstance(value, tuple) else value
             display_values.append(text)
-        self.tree.insert("", "end", iid=item_id, values=tuple(display_values))
+        self.tree.insert("", "end", iid=item_id, values=tuple(display_values),
+                        tags=tags)
         self._row_ids.append(item_id)
 
     def _on_select(self, _event):
@@ -771,12 +774,13 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
     RESOURCE_COLUMNS = (
         ("#", 45, 0, tk.CENTER),
         ("Type", 85, 1, tk.W),
-        ("Resource Name", 180, 3, tk.W),
-        ("Role / Skill", 130, 2, tk.W),
-        ("Schedule", 125, 2, tk.W),
-        ("Capacity", 100, 1, tk.W),
-        ("Assigned Teams", 160, 2, tk.W),
-        ("Days Off Active", 160, 2, tk.W),
+        ("Resource Name", 160, 3, tk.W),
+        ("Role / Skill", 120, 2, tk.W),
+        ("Schedule", 110, 2, tk.W),
+        ("Capacity", 90, 1, tk.W),
+        ("Total Allocation", 110, 1, tk.W),
+        ("Assigned Teams", 150, 2, tk.W),
+        ("Days Off Active", 130, 2, tk.W),
     )
     TEAM_COLUMNS = (
         ("#", 45, 0, tk.CENTER),
@@ -787,6 +791,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         ("Member Count", 100, 1, tk.W),
         ("Daily Summary", 150, 2, tk.W),
     )
+
 
     def __init__(self, master, repo, active_project_ids=None,
                  on_save: Optional[Callable] = None, **kwargs):
@@ -922,15 +927,26 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             teams = ", ".join(self.repo.teams[team_id].name
                               for team_id in resource.team_memberships
                               if team_id in self.repo.teams) or "None"
-            self.resource_grid.add_row(resource.id, (
-                str(index),
-                (f"[{resource.resource_type.value.upper()}]",
-                 "#27ae60" if resource.resource_type == ResourceType.NAMED
-                 else "#e67e22"),
-                resource.name,
-                resource.role_type, _schedule_short(resource.schedule_pattern),
-                f"{resource.fte:.2f} FTE", teams,
-                self._resource_days_off(resource)))
+            allocation = sum(resource.team_memberships.values())
+            allocated_fte = allocation * resource.fte
+            over = allocated_fte > resource.fte
+            total_text = (f"{allocated_fte:.2f} FTE"
+                          if not over
+                          else f"{allocated_fte:.2f} FTE (Over)")
+            self.resource_grid.add_row(
+                resource.id,
+                (str(index),
+                 (f"[{resource.resource_type.value.upper()}]",
+                  "#27ae60" if resource.resource_type == ResourceType.NAMED
+                  else "#e67e22"),
+                 resource.name,
+                 resource.role_type,
+                 _schedule_short(resource.schedule_pattern),
+                 f"{resource.fte:.2f} FTE",
+                 total_text,
+                 teams,
+                 self._resource_days_off(resource)),
+                tags=("overallocated",) if over else ())
         self._select_resource(select_id if select_id in self.resource_rows else None)
 
     def _refresh_teams(self, select_id=None):
