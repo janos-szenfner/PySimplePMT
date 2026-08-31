@@ -375,13 +375,11 @@ def initialise_ttk_styles() -> None:
 
     style_treeview('DataGrid.Treeview', row_height=26,
                    heading_font=('Arial', 10, 'bold'))
-    style_treeview('Gantt.Treeview', row_height=26,
-                   heading_padding=(0, 3, 0, 4))
+    style_treeview('Gantt.Treeview', row_height=26)
 
 
 def style_treeview(style_name: str, row_height: Optional[int] = None,
-                   font=None, heading_font=None,
-                   heading_padding=None) -> None:
+                   font=None, heading_font=None) -> None:
     """
     Colour a ttk Treeview style for the appearance in force.
 
@@ -435,8 +433,6 @@ def style_treeview(style_name: str, row_height: Optional[int] = None,
     }
     if heading_font is not None:
         heading_options['font'] = heading_font
-    if heading_padding is not None:
-        heading_options['padding'] = heading_padding
     style.configure(f'{style_name}.Heading', **heading_options)
 
     style.map(style_name,
