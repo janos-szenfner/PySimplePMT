@@ -1384,6 +1384,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     def _build_resource_tab(self, tab):
         """Build the Resource assignment tab."""
         self.resource_tab = TaskResourceTab(tab, self.project, self.template)
+        self.resource_tab.pack(fill=tk.BOTH, expand=True)
 
     def _on_tab_changed(self):
         """Fill the Dependency tab in the first time it is opened."""

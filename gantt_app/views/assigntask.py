@@ -1,12 +1,12 @@
 """
 Resource assignment tab for the task create/edit dialog.
 
-The tab lives in its own module because the widgetry and the workload
-arithmetic for a task-to-resource assignment are sizeable enough to pull
-out of the already-long task form.
+This version uses a custom multi-column picker for resources and teams, and
+shows the selected assignments in a list with per-row clear buttons.
 """
 import tkinter as tk
-from typing import Dict, List, Optional, Tuple
+from tkinter import ttk
+from typing import Callable, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
@@ -15,341 +15,308 @@ from gantt_app.resource_model import (
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.resourcesettings import _schedule_short
+from gantt_app.views.scrollframe import ScrollFrame
 
 logger = get_logger(__name__)
 
 
 def _resource_load(resource: Resource) -> Tuple[float, float]:
-    """Current allocation for a resource: (used hours, capacity hours)."""
+    """Current team-allocation load for a resource: (used, capacity)."""
     capacity = resource.weekly_capacity_hours
     if not capacity:
         return 0.0, 0.0
-    ratio = sum(resource.team_memberships.values())
-    used = ratio * capacity
+    used = sum(resource.team_memberships.values()) * capacity
     return used, capacity
 
 
-def _load_status(used: float, capacity: float) -> Tuple[float, str]:
-    """Return the load percentage and a status message."""
+def _team_load(team: TeamPool, resources: List[Resource]) -> Tuple[float, float]:
+    """Current team capacity: (used placeholder, capacity hours)."""
+    capacity = team.calculate_effective_capacity(resources)
+    return 0.0, capacity
+
+
+def _status_badge(used: float, capacity: float) -> Tuple[str, str, float]:
+    """Return (badge, text colour, percentage) for a load."""
     if capacity <= 0:
-        return 0.0, "N/A"
+        return "⚪", theme.now(theme.GRID_TEXT), 0.0
     pct = used / capacity * 100.0
     if pct > 100:
-        return pct, f"{used:g} / {capacity:g} hrs ({pct:.0f}% OVERLOADED)"
+        return "🔴", "#ff6b6b", pct
     if pct >= 85:
-        return pct, f"{used:g} / {capacity:g} hrs ({pct:.0f}% loaded)"
-    return pct, f"{used:g} / {capacity:g} hrs ({pct:.0f}% loaded)"
+        return "🟡", "#f1c40f", pct
+    return "🟢", "#2ecc71", pct
 
 
-def _load_badge(used: float, capacity: float) -> str:
-    """A single-character traffic-light badge for the dropdown."""
-    if capacity <= 0:
-        return "⚪"
-    pct = used / capacity * 100.0
+def _type_badge(entity) -> str:
+    if isinstance(entity, TeamPool):
+        return "[TEAM]"
+    if entity.resource_type == ResourceType.NAMED:
+        return "[NAMED]"
+    return "[GENERIC]"
+
+
+def _entity_schedule(entity) -> str:
+    if isinstance(entity, TeamPool):
+        return _schedule_short(entity.schedule_pattern)
+    return _schedule_short(entity.schedule_pattern)
+
+
+def _workload_text(entity, resources: List[Resource]) -> Tuple[str, str, float]:
+    """Return (display text, colour, percentage) for the weekly workload cell."""
+    if isinstance(entity, TeamPool):
+        capacity = entity.calculate_effective_capacity(resources)
+        if capacity <= 0:
+            return "0 / 0 hrs", theme.now(theme.GRID_TEXT), 0.0
+        # Teams show capacity and, as a rough indicator, 0% current load
+        return (f"0 / {capacity:g} hrs (0%)",
+                theme.now(theme.GRID_TEXT), 0.0)
+    used, capacity = _resource_load(entity)
+    badge, colour, pct = _status_badge(used, capacity)
     if pct > 100:
-        return "🔴"
+        text = f"{used:g} / {capacity:g} hrs ({pct:.0f}% OVERLOADED)"
+    else:
+        text = f"{used:g} / {capacity:g} hrs ({pct:.0f}% loaded)"
+    return f"{badge} {text}", colour, pct
+
+
+class ResourcePicker(ctk.CTkToplevel):
+    """
+    A custom searchable, multi-column dropdown for choosing a resource or team.
+    """
+
+    def __init__(self, master, project, on_select: Callable[[str], None]):
+        super().__init__(master)
+        self.project = project
+        self.on_select = on_select
+        self.repo = getattr(project, "resource_repository", ResourceRepository())
+        self._selected_id: Optional[str] = None
+        self._all_rows: List[Tuple[str, str, str, str, str]] = []
+
+        self.title("Select Resource or Team")
+        self.geometry("700x450")
+        self.transient(master)
+        self.grab_set()
+
+        ctk.CTkLabel(self, text="Search:", anchor=tk.W).pack(
+            fill=tk.X, padx=10, pady=(10, 0))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self._on_search)
+        ctk.CTkEntry(self, textvariable=self.search_var,
+                     placeholder_text="Type to filter...").pack(
+            fill=tk.X, padx=10, pady=(0, 10))
+
+        columns = ("entity", "schedule", "workload")
+        self.tree = ttk.Treeview(
+            self, columns=columns, show="headings", height=14,
+            selectmode="browse", style="DataGrid.Treeview")
+        self.tree.heading("entity", text="Entity Name & Type")
+        self.tree.heading("schedule", text="Work Schedule Pattern")
+        self.tree.heading("workload", text="Weekly Workload")
+        self.tree.column("entity", width=240)
+        self.tree.column("schedule", width=160)
+        self.tree.column("workload", width=240)
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        self.tree.bind("<Double-1>", self._on_double_click)
+
+        ctk.CTkButton(self, text="Select", command=self._confirm).pack(
+            side=tk.RIGHT, padx=10, pady=(0, 10))
+        ctk.CTkButton(self, text="Cancel", command=self.destroy).pack(
+            side=tk.RIGHT, padx=10, pady=(0, 10))
+
+        self._load_rows()
+        self._on_search()
+
+        # Basic row-colour tags
+        self.tree.tag_configure("over", background="#ffebee",
+                                foreground="#b71c1c")
+        self.tree.tag_configure("near", background="#fff8e1",
+                                foreground="#9c6c0a")
+        self.tree.tag_configure("ok", background="#e8f5e9",
+                                foreground="#1b5e20")
+
+    def _load_rows(self) -> None:
+        resources = list(self.repo.resources.values())
+        for entity in sorted(resources, key=lambda r: r.name.lower()):
+            badge = _type_badge(entity)
+            schedule = _entity_schedule(entity)
+            workload, colour, pct = _workload_text(entity, resources)
+            self._all_rows.append((
+                entity.id,
+                f"{entity.name}  {badge}",
+                schedule,
+                workload,
+                _row_tag(pct)))
+        for entity in sorted(self.repo.teams.values(),
+                             key=lambda t: t.name.lower()):
+            badge = _type_badge(entity)
+            schedule = _entity_schedule(entity)
+            workload, colour, pct = _workload_text(entity, resources)
+            self._all_rows.append((
+                entity.id,
+                f"{entity.name}  {badge}",
+                schedule,
+                workload,
+                _row_tag(pct)))
+
+    def _on_search(self, *_) -> None:
+        self.tree.delete(*self.tree.get_children())
+        text = self.search_var.get().strip().lower()
+        for row in self._all_rows:
+            if not text or text in row[1].lower() or text in row[2].lower():
+                self.tree.insert("", "end", iid=row[0], values=row[1:4],
+                                 tags=(row[4],))
+
+    def _on_tree_select(self, _event=None) -> None:
+        selection = self.tree.selection()
+        self._selected_id = selection[0] if selection else None
+
+    def _on_double_click(self, _event=None) -> None:
+        self._confirm()
+
+    def _confirm(self) -> None:
+        if self._selected_id:
+            self.on_select(self._selected_id)
+        self.destroy()
+
+
+def _row_tag(pct: float) -> str:
+    if pct > 100:
+        return "over"
     if pct >= 85:
-        return "🟡"
-    return "🟢"
+        return "near"
+    return "ok"
 
 
-class TaskResourceTab:
+class TaskResourceTab(ctk.CTkFrame):
     """
     The Resource tab shown in the task create/edit dialog.
-
-    It offers a searchable dropdown of resources and teams, fields for the
-    estimated effort and the daily split, and a real-time preview of the
-    impact on the selected assignee's workload.
     """
 
     def __init__(self, parent: ctk.CTkFrame, project, task) -> None:
-        self.parent = parent
         self.project = project
         self.task = task
         self.repo = getattr(project, "resource_repository", ResourceRepository())
-        self._option_to_id: Dict[str, str] = {}
-        self._id_to_data: Dict[str, Tuple[str, str, float, float]] = {}
-        self._selected_id: Optional[str] = None
+        self._assignments: List[Dict[str, object]] = []
+        super().__init__(parent, fg_color="transparent")
         self._build()
-        self._populate_dropdown()
 
     # ------------------------------------------------------------------
     # Building the widgets
     # ------------------------------------------------------------------
 
     def _build(self) -> None:
-        """Create the tab's controls."""
-        pad = {"padx": 10, "pady": (8, 0)}
-
         ctk.CTkLabel(
-            self.parent, text="ASSIGNEE", font=("Arial", 12, "bold"),
-            anchor=tk.W).pack(fill=tk.X, **pad)
+            self, text="ASSIGNMENTS", font=("Arial", 12, "bold"),
+            anchor=tk.W).pack(fill=tk.X, padx=10, pady=(10, 4))
 
-        ctk.CTkLabel(
-            self.parent, text="Search resource or team:", anchor=tk.W
-        ).pack(fill=tk.X, padx=10, pady=(4, 0))
+        self.scroller = ScrollFrame(self)
+        self.scroller.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
+        self._rows_frame = self.scroller.content
 
-        self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", self._on_search)
-        self.search_entry = ctk.CTkEntry(
-            self.parent, textvariable=self.search_var,
-            placeholder_text="Type to filter...")
-        self.search_entry.pack(fill=tk.X, padx=10, pady=(2, 4))
-
-        self.assignee_menu = ctk.CTkOptionMenu(
-            self.parent, values=["(no resources)"], width=300,
-            command=self._on_assignee_selected)
-        self.assignee_menu.pack(fill=tk.X, padx=10, pady=(0, 8))
-
-        ctk.CTkLabel(
-            self.parent, text="ASSIGNMENT PARAMETERS", font=("Arial", 12, "bold"),
-            anchor=tk.W).pack(fill=tk.X, **pad)
-
-        params = ctk.CTkFrame(self.parent, fg_color="transparent")
-        params.pack(fill=tk.X, padx=10, pady=(4, 0))
-        params.columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(params, text="Estimated Effort (hrs):", anchor=tk.W
-                     ).grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
-        self.effort_entry = ctk.CTkEntry(params, width=80)
-        self.effort_entry.insert(0, "0.0")
-        self.effort_entry.grid(row=0, column=1, sticky=tk.W)
-
-        ctk.CTkLabel(params, text="Daily Split (%):", anchor=tk.W
-                     ).grid(row=1, column=0, sticky=tk.W, padx=(0, 8), pady=(6, 0))
-        self.split_entry = ctk.CTkEntry(params, width=80)
-        self.split_entry.insert(0, "0")
-        self.split_entry.grid(row=1, column=1, sticky=tk.W, pady=(6, 0))
-
-        self.effort_entry.bind("<KeyRelease>", self._on_param_changed)
-        self.split_entry.bind("<KeyRelease>", self._on_param_changed)
-
-        ctk.CTkLabel(
-            self.parent, text="IMPACT PREVIEW", font=("Arial", 12, "bold"),
-            anchor=tk.W).pack(fill=tk.X, **pad)
-
-        self.preview_label = ctk.CTkLabel(
-            self.parent, text="", justify=tk.LEFT, anchor=tk.W,
-            wraplength=560)
-        self.preview_label.pack(fill=tk.X, padx=10, pady=(4, 8))
-
-        self.clear_button = ctk.CTkButton(
-            self.parent, text="Clear Assignment", command=self._clear_assignment)
-        self.clear_button.pack(anchor=tk.W, padx=10, pady=(0, 8))
+        ctk.CTkButton(
+            self, text="+ Add Resource / Team",
+            command=self._open_picker).pack(anchor=tk.W, padx=10, pady=(0, 10))
 
     # ------------------------------------------------------------------
-    # Populating and filtering the dropdown
+    # Rows
     # ------------------------------------------------------------------
 
-    def _collect_options(self) -> List[Tuple[str, str, str, str, float, float]]:
-        """Build the flat list of dropdown options, sorted by type."""
-        options: List[Tuple[str, str, str, str, float, float]] = []
+    def _refresh_rows(self) -> None:
+        for child in list(self._rows_frame.winfo_children()):
+            child.destroy()
 
-        for resource in sorted(
-                self.repo.resources.values(), key=lambda r: r.name.lower()):
-            used, capacity = _resource_load(resource)
-            badge = _load_badge(used, capacity)
-            option = (f"{badge} [NAMED] {resource.name}" if
-                      resource.resource_type == ResourceType.NAMED else
-                      f"{badge} [GENERIC] {resource.name}")
-            schedule = _schedule_short(resource.schedule_pattern)
-            options.append((
-                resource.id, option, schedule, f"{used:g} / {capacity:g} hrs",
-                used, capacity))
+        for index, assignment in enumerate(self._assignments):
+            entity = self._entity_by_id(assignment.get("resource_id", ""))
+            if entity is None:
+                continue
 
-        for team in sorted(
-                self.repo.teams.values(), key=lambda t: t.name.lower()):
-            all_resources = list(self.repo.resources.values())
-            weekly = team.calculate_effective_capacity(all_resources)
-            option = f"⚪ [TEAM] {team.name}"
-            schedule = _schedule_short(team.schedule_pattern)
-            options.append((
-                team.id, option, schedule,
-                f"{weekly / FTE_WEEKLY_HOURS:.2f} FTE ({weekly:g}h/wk)",
-                0.0, weekly))
+            row = ctk.CTkFrame(self._rows_frame, fg_color="transparent")
+            row.pack(fill=tk.X, pady=2)
+            row.columnconfigure(0, weight=0)
+            row.columnconfigure(1, weight=0)
+            row.columnconfigure(2, weight=0)
+            row.columnconfigure(3, weight=0)
+            row.columnconfigure(4, weight=0)
+            row.columnconfigure(5, weight=0)
 
-        return options
+            badge = _type_badge(entity)
+            ctk.CTkLabel(row, text=f"{entity.name}  {badge}",
+                         width=200, anchor=tk.W).grid(row=0, column=0, padx=4)
 
-    def _populate_dropdown(self) -> None:
-        """Fill the dropdown and the lookup maps."""
-        raw = self._collect_options()
-        self._option_to_id = {row[1]: row[0] for row in raw}
-        self._id_to_data = {
-            row[0]: (row[1], row[2], row[3], row[4], row[5])
-            for row in raw
-        }
-        values = [r[1] for r in raw]
-        if not values:
-            values = ["(no resources)"]
-        self.assignee_menu.configure(values=values)
-        self._on_search()
+            schedule = _entity_schedule(entity)
+            ctk.CTkLabel(row, text=schedule, width=160,
+                         anchor=tk.W).grid(row=0, column=1, padx=4)
 
-    def _on_search(self, *_) -> None:
-        """Filter the dropdown options by the search field."""
-        text = self.search_var.get().strip().lower()
-        all_options = [r[1] for r in self._collect_options()]
-        if not all_options:
-            self.assignee_menu.configure(values=["(no resources)"])
-            return
-        if not text:
-            self.assignee_menu.configure(values=all_options)
-            return
-        filtered = [o for o in all_options if text in o.lower()]
-        if not filtered:
-            filtered = ["(no match)"]
-        self.assignee_menu.configure(values=filtered)
+            resources = list(self.repo.resources.values())
+            workload, colour, _ = _workload_text(entity, resources)
+            ctk.CTkLabel(row, text=workload, text_color=colour,
+                         width=240, anchor=tk.W).grid(row=0, column=2, padx=4)
 
-    def _on_assignee_selected(self, option: str) -> None:
-        """A resource or team was picked from the menu."""
-        self._selected_id = self._option_to_id.get(option)
-        self._update_preview()
+            effort = ctk.CTkEntry(row, width=70)
+            effort.insert(0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
+            effort.grid(row=0, column=3, padx=4)
+            effort.bind("<KeyRelease>", self._make_updater(index, "estimated_hours", effort))
 
-    def _on_param_changed(self, _event=None) -> None:
-        """Effort or split changed; refresh the preview."""
-        self._update_preview()
+            split = ctk.CTkEntry(row, width=60)
+            split.insert(0, f"{float(assignment.get('resource_split', 0.0)):g}")
+            split.grid(row=0, column=4, padx=4)
+            split.bind("<KeyRelease>", self._make_updater(index, "resource_split", split))
 
-    def _clear_assignment(self) -> None:
-        """Reset every assignment field."""
-        self._selected_id = None
-        self.search_var.set("")
-        self.effort_entry.delete(0, tk.END)
-        self.effort_entry.insert(0, "0.0")
-        self.split_entry.delete(0, tk.END)
-        self.split_entry.insert(0, "0")
-        self.assignee_menu.set(self.assignee_menu._values[0] if
-                               self.assignee_menu._values else "(no resources)")
-        self._update_preview()
+            ctk.CTkButton(row, text="Clear", width=70,
+                          command=lambda i=index: self._remove(i)).grid(
+                row=0, column=5, padx=4)
 
-    # ------------------------------------------------------------------
-    # Preview
-    # ------------------------------------------------------------------
-
-    def _update_preview(self) -> None:
-        """Write the impact preview from the current selection."""
-        if not self._selected_id:
-            self.preview_label.configure(text="No assignee selected.")
-            return
-
-        data = self._id_to_data.get(self._selected_id)
-        if not data:
-            self.preview_label.configure(text="Selected assignee not found.")
-            return
-
-        name, schedule, load_text, used, capacity = data
-        entity = self._entity_by_id(self._selected_id)
-        if entity is None:
-            self.preview_label.configure(text="Selected assignee not found.")
-            return
-
-        split = self._read_split()
-        effort = self._read_effort()
-        duration = self.task.duration_days or 0
-
-        lines = [f"Selected: {name}",
-                 f"Schedule: {schedule}",
-                 f"Current load: {load_text}"]
-
-        if isinstance(entity, Resource):
-            daily = entity.average_active_day_hours
-            task_daily = daily * split / 100.0 if split >= 0 else 0.0
-            total_task_hours = task_daily * duration if duration > 0 else 0.0
-            new_used = used + task_daily * (entity.weekly_capacity_hours /
-                                            entity.average_active_day_hours
-                                            if entity.average_active_day_hours
-                                            else 0.0)
-            # Above is a rough weekly aggregation for the preview only.
-            # The clearer number for the user is the projected total load.
-            projected_pct = 0.0
-            if capacity > 0:
-                projected_pct = (used + task_daily * 5) / capacity * 100.0
-            # using 5 working days as the weekly window for the preview
-
-            color = "🟢"
-            if projected_pct > 100:
-                color = "🔴"
-            elif projected_pct >= 85:
-                color = "🟡"
-
-            lines.append(
-                f"This task: {effort:g} hrs, {split:g}% split, "
-                f"{task_daily:g}h/day over {duration:g} working days")
-            lines.append(
-                f"New projected load: {used:g} + {task_daily * 5:g} = "
-                f"{used + task_daily * 5:g} / {capacity:g} hrs "
-                f"({projected_pct:.0f}%) {color}")
-
-            if projected_pct > 100:
-                lines.append(
-                    f"⚠️ Warning: this assignment will overload {entity.name}.")
-        else:
-            # For a team we can only show the capacity and the task size.
-            lines.append(
-                f"This task: {effort:g} hrs over {duration:g} working days")
-            if capacity > 0:
-                pct = (effort / capacity * 100.0) if effort else 0.0
-                lines.append(
-                    f"As a share of the team's weekly capacity: {pct:.0f}%")
-
-        self.preview_label.configure(text="\n".join(lines))
+    def _make_updater(self, index: int, key: str, widget: ctk.CTkEntry):
+        def _update(_event=None):
+            text = widget.get().strip().rstrip("%")
+            try:
+                value = float(text) if text else 0.0
+            except ValueError:
+                value = 0.0
+            self._assignments[index][key] = value
+        return _update
 
     def _entity_by_id(self, entity_id: str):
-        """Return the Resource or TeamPool with the given id."""
         if entity_id in self.repo.resources:
             return self.repo.resources[entity_id]
         if entity_id in self.repo.teams:
             return self.repo.teams[entity_id]
         return None
 
-    def _read_split(self) -> float:
-        text = self.split_entry.get().strip().rstrip("%")
-        if not text:
-            return 0.0
-        try:
-            return float(text)
-        except ValueError:
-            return 0.0
+    # ------------------------------------------------------------------
+    # Add / remove
+    # ------------------------------------------------------------------
 
-    def _read_effort(self) -> float:
-        text = self.effort_entry.get().strip()
-        if not text:
-            return 0.0
-        try:
-            return float(text)
-        except ValueError:
-            return 0.0
+    def _open_picker(self) -> None:
+        ResourcePicker(self.winfo_toplevel(), self.project, self._on_picked)
+
+    def _on_picked(self, entity_id: str) -> None:
+        # Avoid duplicates for now; later we can allow split per entity.
+        if any(a.get("resource_id") == entity_id for a in self._assignments):
+            return
+        self._assignments.append({
+            "resource_id": entity_id,
+            "estimated_hours": 0.0,
+            "resource_split": 100.0,
+        })
+        self._refresh_rows()
+
+    def _remove(self, index: int) -> None:
+        del self._assignments[index]
+        self._refresh_rows()
 
     # ------------------------------------------------------------------
     # Public API for the form
     # ------------------------------------------------------------------
 
-    def get_values(self) -> Dict[str, object]:
-        """Return the current assignment values."""
-        return {
-            "resource_id": self._selected_id,
-            "estimated_hours": self._read_effort(),
-            "resource_split": self._read_split(),
-        }
+    def get_assignments(self) -> List[Dict[str, object]]:
+        """Return the current assignment list."""
+        return list(self._assignments)
 
     def set_values(self, task) -> None:
         """Seed the tab from an existing task."""
-        self.effort_entry.delete(0, tk.END)
-        self.effort_entry.insert(0, f"{task.estimated_hours:g}")
-        self.split_entry.delete(0, tk.END)
-        self.split_entry.insert(0, f"{task.resource_split:g}")
-
-        if task.resource_id and task.resource_id in self._id_to_data:
-            self._selected_id = task.resource_id
-            option = self._id_to_data[task.resource_id][0]
-            self.search_var.set("")
-            self._on_search()
-            # the filtered values should now include the option
-            current = self.assignee_menu._values
-            if option in current:
-                self.assignee_menu.set(option)
-            else:
-                self.assignee_menu.configure(values=current + [option])
-                self.assignee_menu.set(option)
-        else:
-            self._selected_id = None
-
-        self._update_preview()
+        self._assignments = [
+            dict(a) for a in getattr(task, "resource_assignments", [])
+        ]
+        self._refresh_rows()
