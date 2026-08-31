@@ -57,20 +57,20 @@ MARGIN_RIGHT = 60
 #: look away from the bars to read a date. gantt_chart floors its
 #: row alignment at this, so the panes go slightly out of line rather than
 #: drawing bars over the dates; see GanttChart._first_row_offset.
-MARGIN_TOP = 70
+MARGIN_TOP = 63
 
 #: Room below the last row. Small now: the dates used to live down here.
 MARGIN_BOTTOM = 30
 
 #: Where the chart's title sits, as the centre of its line. Above the
 #: calendar strip and clear of it; see HEADER_MONTH_HEIGHT for the budget.
-TITLE_BASELINE = 16
+TITLE_BASELINE = 12
 
 #: The two tiers of the strip, in pixels, measured up from the plot top.
 #:
 #: Sized so the title and both tiers fit inside MARGIN_TOP, which is what
 #: keeps the chart's rows level with the task list's. The list reserves
-#: about 70px above its first row - a heading label and the column titles -
+#: about 63px above its first row - a heading label and the column titles -
 #: and the chart floors its row alignment at MARGIN_TOP, so a strip needing
 #: more than that does not make the chart taller: it pushes every bar down
 #: and out of line with the list beside it, which is what a first attempt
@@ -163,6 +163,7 @@ class ChartLayout:
     #: closing rules run between.
     plot_left: float = 0.0
     plot_right: float = 0.0
+    top_margin: int = MARGIN_TOP
     title: str = ""
     empty_message: Optional[str] = None
 
@@ -521,7 +522,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         return top_margin + index * row_height + row_height / 2
 
     layout = ChartLayout(width=width, height=height, settings=resolved,
-                         title=title)
+                         top_margin=top_margin, title=title)
 
     positions = {task.id: index for index, task in enumerate(tasks)}
     critical = {t.id for t in project.get_critical_path()}
@@ -694,7 +695,8 @@ def _svg_date_header(layout: 'ChartLayout', s: Dict[str, Any],
     bands and cells worked out in _build_date_header - and nothing else;
     that is the same split every other part of this chart already uses.
     """
-    plot_top = MARGIN_TOP - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
+    top = layout.top_margin
+    plot_top = top - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
     band_bottom = plot_top + HEADER_MONTH_HEIGHT
     cell_bottom = band_bottom + HEADER_CELL_HEIGHT
     chart_bottom = layout.height - MARGIN_BOTTOM
@@ -1005,7 +1007,8 @@ def _draw_date_header(draw, layout: 'ChartLayout', s: Dict[str, Any],
     from costing anything - the labels went from one full date every 82px to
     one number every 22px, and the number of *text* draws barely moved.
     """
-    plot_top = MARGIN_TOP - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
+    top = layout.top_margin
+    plot_top = top - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
     band_bottom = plot_top + HEADER_MONTH_HEIGHT
     cell_bottom = band_bottom + HEADER_CELL_HEIGHT
     chart_bottom = layout.height - MARGIN_BOTTOM
