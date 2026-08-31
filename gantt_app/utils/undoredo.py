@@ -1116,6 +1116,9 @@ class ProjectStateTracker:
             # it back on the plan's calendar and stripped its formatting.
             'calendar_id': kwargs.get('calendar_id', task.calendar_id),
             'style': kwargs.get('style', task.style),
+            'resource_id': kwargs.get('resource_id', task.resource_id),
+            'estimated_hours': kwargs.get('estimated_hours', task.estimated_hours),
+            'resource_split': kwargs.get('resource_split', task.resource_split),
         }
 
         new_task = Task(**new_task_data)

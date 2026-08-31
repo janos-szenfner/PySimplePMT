@@ -1123,7 +1123,7 @@ class TestWhereTheFieldsSit(DialogTestCase):
 
         self.assertEqual(
             list(dialog.tabs._segmented_button._buttons_dict.keys()),
-            ["General", "Notes", "Dependency"])
+            ["General", "Notes", "Dependency", "Resource"])
 
     def test_the_notes_box_is_on_that_tab(self):
         """

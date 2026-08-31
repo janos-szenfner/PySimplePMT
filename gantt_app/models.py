@@ -555,6 +555,9 @@ class Task:
     #: gantt_app.taskstyle, which is also where the defaults a summary row
     #: gets without asking are folded in.
     style: TaskStyle = field(default_factory=TaskStyle)
+    resource_id: Optional[str] = None
+    estimated_hours: float = 0.0
+    resource_split: float = 100.0
     
     def __post_init__(self):
         """
@@ -1027,6 +1030,9 @@ class Task:
             'scheduling_options': self.scheduling_options,
             'details': self.details,
             'calendar_id': self.calendar_id,
+            'resource_id': self.resource_id,
+            'estimated_hours': self.estimated_hours,
+            'resource_split': self.resource_split,
             # None for a row nobody has formatted, which is nearly all of
             # them; see TaskStyle.to_dict
             'style': self.style.to_dict(),
@@ -1115,6 +1121,9 @@ class Task:
             scheduling_options=scheduling_options,
             details=data.get('details', ''),
             calendar_id=data.get('calendar_id') or None,
+            resource_id=data.get('resource_id'),
+            estimated_hours=data.get('estimated_hours', 0.0),
+            resource_split=data.get('resource_split', 100.0),
             # Absent in every plan saved before formatting existed, which
             # opens with plain rows rather than failing
             style=TaskStyle.from_any(data.get('style')),

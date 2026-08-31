@@ -173,6 +173,10 @@ class EditTaskDialog(TaskFormDialog):
             self.task.calendar_id = self.chosen_calendar_id()
             self.task.details = details
             self.task.color = self.color_entry.get()
+            resource_values = self.resource_tab.get_values()
+            self.task.resource_id = resource_values["resource_id"]
+            self.task.estimated_hours = resource_values["estimated_hours"]
+            self.task.resource_split = resource_values["resource_split"]
             if self._dependency_editor is not None:
                 # Untouched tab means untouched links
                 self.task.dependencies = self._dependency_editor.get_links()
@@ -199,6 +203,9 @@ class EditTaskDialog(TaskFormDialog):
                     scheduling_options=new_task.scheduling_options,
                     calendar_id=new_task.calendar_id,
                     details=new_task.details,
+                    resource_id=new_task.resource_id,
+                    estimated_hours=new_task.estimated_hours,
+                    resource_split=new_task.resource_split,
                 ):
                     logger.info("Edited task %s %r", new_task.id, new_task.name)
                     logger.debug(
@@ -400,6 +407,7 @@ class CreateTaskDialog(TaskFormDialog):
                                                   "earliest begin date")
 
             details = self.details_text.get("1.0", tk.END).strip()
+            resource_values = self.resource_tab.get_values()
 
             task = Task(
                 id=self.project.next_task_id(),
@@ -422,6 +430,9 @@ class CreateTaskDialog(TaskFormDialog):
                 scheduling_options=self.scheduling_options_var.get(),
                 calendar_id=self.chosen_calendar_id(),
                 details=details,
+                resource_id=resource_values["resource_id"],
+                estimated_hours=resource_values["estimated_hours"],
+                resource_split=resource_values["resource_split"],
             )
             task.__post_init__()
             logger.debug("Created task %r with status %s", task.name,
