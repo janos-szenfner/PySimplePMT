@@ -209,7 +209,7 @@ class DataGrid(ctk.CTkFrame):
             text = value[0] if isinstance(value, tuple) else value
             display_values.append(text)
         band = "even" if len(self._row_ids) % 2 == 0 else "odd"
-        row_tags = tuple(tags) + (band,)
+        row_tags = tuple(tags) if tags else (band,)
         self.tree.insert("", "end", iid=item_id, values=tuple(display_values),
                         tags=row_tags)
         self._row_ids.append(item_id)
