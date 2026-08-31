@@ -1,6 +1,7 @@
 """
 Tests for the resource assignment tab and its helpers.
 """
+import tkinter as tk
 import unittest
 from datetime import datetime
 
@@ -154,3 +155,17 @@ class TestTaskResourceTab(unittest.TestCase):
         tab._confirm_first()
         ids = [a["resource_id"] for a in tab.get_assignments()]
         self.assertEqual(ids, ["r1", "t1"])
+
+    def test_effort_field_change_updates_assignment(self):
+        tab = TaskResourceTab(self.root, self.project, self.task)
+        tab.update_idletasks()
+        var = tk.StringVar(value="300")
+        tab._make_updater(0, "estimated_hours", var)(None)
+        self.assertEqual(tab.get_assignments()[0]["estimated_hours"], 300.0)
+
+    def test_split_field_change_updates_assignment(self):
+        tab = TaskResourceTab(self.root, self.project, self.task)
+        tab.update_idletasks()
+        var = tk.StringVar(value="50")
+        tab._make_updater(0, "resource_split", var)(None)
+        self.assertEqual(tab.get_assignments()[0]["resource_split"], 50.0)

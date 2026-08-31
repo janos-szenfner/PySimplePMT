@@ -227,24 +227,27 @@ class TaskResourceTab(ctk.CTkFrame):
 
         self._header_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._header_frame.pack(fill=tk.X, padx=10, pady=(8, 0))
+        for col, width in enumerate((240, 160, 240, 70, 60, 70)):
+            self._header_frame.columnconfigure(col, minsize=width, weight=0)
+
         ctk.CTkLabel(self._header_frame, text="Entity Name & Type",
                      font=("Arial", 10, "bold"),
-                     width=240, anchor=tk.W).grid(row=0, column=0, padx=4)
+                     anchor=tk.W).grid(row=0, column=0, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Schedule",
                      font=("Arial", 10, "bold"),
-                     width=160, anchor=tk.W).grid(row=0, column=1, padx=4)
+                     anchor=tk.W).grid(row=0, column=1, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Workload",
                      font=("Arial", 10, "bold"),
-                     width=240, anchor=tk.W).grid(row=0, column=2, padx=4)
+                     anchor=tk.W).grid(row=0, column=2, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Effort (hrs)",
                      font=("Arial", 10, "bold"),
-                     width=70, anchor=tk.W).grid(row=0, column=3, padx=4)
+                     anchor=tk.W).grid(row=0, column=3, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Split (%)",
                      font=("Arial", 10, "bold"),
-                     width=60, anchor=tk.W).grid(row=0, column=4, padx=4)
+                     anchor=tk.W).grid(row=0, column=4, padx=4, sticky=tk.W)
         ctk.CTkLabel(self._header_frame, text="Action",
                      font=("Arial", 10, "bold"),
-                     width=70, anchor=tk.W).grid(row=0, column=5, padx=4)
+                     anchor=tk.W).grid(row=0, column=5, padx=4, sticky=tk.W)
 
         self.scroller = ScrollFrame(self)
         self.scroller.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
@@ -300,37 +303,43 @@ class TaskResourceTab(ctk.CTkFrame):
 
             row = ctk.CTkFrame(self._rows_frame, fg_color="transparent")
             row.pack(fill=tk.X, pady=2)
+            for col, width in enumerate((240, 160, 240, 70, 60, 70)):
+                row.columnconfigure(col, minsize=width, weight=0)
 
             badge = _type_badge(entity)
             ctk.CTkLabel(row, text=f"{entity.name}  {badge}",
-                         width=240, anchor=tk.W).grid(row=0, column=0, padx=4)
+                         anchor=tk.W).grid(row=0, column=0, padx=4, sticky=tk.W)
 
             schedule = _schedule_short(entity.schedule_pattern)
-            ctk.CTkLabel(row, text=schedule, width=160,
-                         anchor=tk.W).grid(row=0, column=1, padx=4)
+            ctk.CTkLabel(row, text=schedule,
+                         anchor=tk.W).grid(row=0, column=1, padx=4, sticky=tk.W)
 
             resources = list(self.repo.resources.values())
             workload, colour, _ = _workload_text(entity, resources)
             ctk.CTkLabel(row, text=workload, text_color=colour,
-                         width=240, anchor=tk.W).grid(row=0, column=2, padx=4)
+                         anchor=tk.W).grid(row=0, column=2, padx=4, sticky=tk.W)
 
-            effort = ctk.CTkEntry(row, width=70)
-            effort.insert(0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
-            effort.grid(row=0, column=3, padx=4)
-            effort.bind("<KeyRelease>", self._make_updater(index, "estimated_hours", effort))
+            effort_var = tk.StringVar(
+                value=f"{float(assignment.get('estimated_hours', 0.0)):g}")
+            effort = ctk.CTkEntry(row, textvariable=effort_var, width=70)
+            effort.grid(row=0, column=3, padx=4, sticky=tk.W)
+            effort_var.trace_add("write", self._make_updater(
+                index, "estimated_hours", effort_var))
 
-            split = ctk.CTkEntry(row, width=60)
-            split.insert(0, f"{float(assignment.get('resource_split', 0.0)):g}")
-            split.grid(row=0, column=4, padx=4)
-            split.bind("<KeyRelease>", self._make_updater(index, "resource_split", split))
+            split_var = tk.StringVar(
+                value=f"{float(assignment.get('resource_split', 0.0)):g}")
+            split = ctk.CTkEntry(row, textvariable=split_var, width=60)
+            split.grid(row=0, column=4, padx=4, sticky=tk.W)
+            split_var.trace_add("write", self._make_updater(
+                index, "resource_split", split_var))
 
             ctk.CTkButton(row, text="Clear", width=70,
                           command=lambda i=index: self._remove(i)).grid(
-                row=0, column=5, padx=4)
+                row=0, column=5, padx=4, sticky=tk.W)
 
-    def _make_updater(self, index: int, key: str, widget: ctk.CTkEntry):
-        def _update(_event=None):
-            text = widget.get().strip().rstrip("%")
+    def _make_updater(self, index: int, key: str, var: tk.StringVar):
+        def _update(*_args):
+            text = var.get().strip().rstrip("%")
             try:
                 value = float(text) if text else 0.0
             except ValueError:
