@@ -170,44 +170,8 @@ class DataGrid(ctk.CTkFrame):
         return self._selected_id
 
     def _configure_style(self):
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-        line = theme.now(theme.GRID_LINE)
+        """Configure only the per-instance tags and style name."""
         row = theme.now(theme.GRID_ROW_BG)
-        text = theme.now(theme.GRID_TEXT)
-        style.configure(
-            "DataGrid.Treeview",
-            background=row,
-            fieldbackground=row,
-            foreground=text,
-            rowheight=26,
-            borderwidth=1,
-            relief="solid",
-            bordercolor=line,
-            lightcolor=line,
-            darkcolor=line,
-        )
-        style.configure(
-            "DataGrid.Treeview.Heading",
-            background=theme.now(theme.GRID_HEADING_BG),
-            foreground=text,
-            relief="raised",
-            borderwidth=1,
-            bordercolor=line,
-            font=("Arial", 10, "bold"),
-        )
-        style.map(
-            "DataGrid.Treeview",
-            background=[("selected", theme.now(theme.GRID_SELECT_BG))],
-            foreground=[("selected", text)],
-        )
-        style.map(
-            "DataGrid.Treeview.Heading",
-            background=[("active", line)],
-        )
         self.tree.tag_configure("even", background=row)
         self.tree.tag_configure(
             "odd", background=theme.now(theme.GRID_ROW_ALT))

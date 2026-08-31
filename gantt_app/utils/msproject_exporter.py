@@ -61,6 +61,7 @@ Lag is written in tenths of a minute, which is the unit MSPDI counts every
 duration-like number in, whatever LagFormat says the reader should display.
 """
 
+import os
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -487,12 +488,22 @@ def export_project_to_msproject(project: Project, filepath: str) -> bool:
     >>> export_project_to_msproject(project, "/path/to/output.xml")
     True
     """
+    temp_path = Path(f"{filepath}.tmp")
     try:
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as handle:
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_path, 'w', encoding='utf-8') as handle:
             handle.write(generate_msproject_content(project))
+        if path.exists():
+            os.replace(path, Path(f"{filepath}.bak"))
+        os.replace(temp_path, path)
         logger.info("Exported %r to %s", project.name, filepath)
         return True
     except Exception:
         logger.exception("Could not export %r to %s", project.name, filepath)
         return False
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass

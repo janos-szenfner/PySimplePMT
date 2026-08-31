@@ -83,6 +83,7 @@ print(content)
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -647,16 +648,21 @@ def export_project_to_mermaid(project: Project, filepath: str,
     can be rendered by any Mermaid-compatible renderer (GitHub, GitLab,
     VS Code with Mermaid plugin, etc.).
     """
+    temp_path = Path(f"{filepath}.tmp")
     try:
         # Create parent directories if they don't exist
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate Mermaid content
         content = generate_mermaid_content(project, include_date_format)
         
-        # Write to file
-        with open(filepath, 'w', encoding='utf-8') as f:
+        # Write to file atomically, preserving the previous file as a backup
+        with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(content)
+        if path.exists():
+            os.replace(path, Path(f"{filepath}.bak"))
+        os.replace(temp_path, path)
         
         return True
         
@@ -665,3 +671,8 @@ def export_project_to_mermaid(project: Project, filepath: str,
         import traceback
         traceback.print_exc()
         return False
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass

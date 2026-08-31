@@ -47,6 +47,7 @@ gan_importer reads back therefore comes home renumbered from 1, which is what
 GanttProject would have done with it too.
 """
 
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -423,12 +424,22 @@ def export_project_to_gan(project: Project, filepath: str) -> bool:
     >>> export_project_to_gan(project, "/path/to/output.gan")
     True
     """
+    temp_path = Path(f"{filepath}.tmp")
     try:
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as handle:
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_path, 'w', encoding='utf-8') as handle:
             handle.write(generate_gan_content(project))
+        if path.exists():
+            os.replace(path, Path(f"{filepath}.bak"))
+        os.replace(temp_path, path)
         logger.info("Exported %r to %s", project.name, filepath)
         return True
     except Exception:
         logger.exception("Could not export %r to %s", project.name, filepath)
         return False
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass

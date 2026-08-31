@@ -1189,6 +1189,12 @@ class Project:
         """
         return self.calendars.resolve(task.calendar_id, self.calendar)
 
+    def __setattr__(self, name: str, value) -> None:
+        """Invalidate the ID index whenever the task list is replaced."""
+        super().__setattr__(name, value)
+        if name == 'tasks' and hasattr(self, '_id_to_task'):
+            self._id_to_task = None
+
     def __post_init__(self):
         """Update project dates based on tasks if not set."""
         direction = str(self.schedule_from or SCHEDULE_FROM_START).lower()
@@ -1201,6 +1207,8 @@ class Project:
         #: nor compared when two projects are tested for equality.
         self._analysis_cache = None
         self._analysis_signature_seen = None
+        #: Lookup dict for get_task_by_id, invalidated by add/remove/renumber.
+        self._id_to_task: Optional[Dict[str, Task]] = None
 
         if self.tasks:
             self._update_dates()
@@ -1311,11 +1319,13 @@ class Project:
                     # Parent was not in this project; treat as a root task
                     task.task_type = "Task"
 
+        self._id_to_task = None
         return mapping
 
     def add_task(self, task: Task):
         """Add a task to the project and update dates."""
         self.tasks.append(task)
+        self._id_to_task = None
         self._update_dates()
 
     def _children_by_parent(self) -> Dict[Optional[str], List[Task]]:
@@ -1962,16 +1972,20 @@ class Project:
                 task.remove_dependency(subtask_id)
         
         if len(self.tasks) < initial_count:
+            self._id_to_task = None
             self._update_dates()
             return True
         return False
     
+    def _rebuild_id_index(self):
+        """Build the task ID lookup dict from self.tasks."""
+        self._id_to_task = {task.id: task for task in self.tasks}
+
     def get_task_by_id(self, task_id: str) -> Optional[Task]:
         """Get a task by its ID."""
-        for task in self.tasks:
-            if task.id == task_id:
-                return task
-        return None
+        if self._id_to_task is None:
+            self._rebuild_id_index()
+        return self._id_to_task.get(task_id)
     
     def get_dependencies(self, task_id: str) -> List[Task]:
         """Get all tasks that this task depends on."""
@@ -2896,11 +2910,12 @@ class Project:
         
         # Add tasks manually
         project.tasks = [Task.from_dict(task_data) for task_data in data.get('tasks', [])]
-        
+
         # If tasks exist, update project dates based on tasks
         if project.tasks:
+            project._id_to_task = None
             project._update_dates()
-        
+
         return project
     
     def constrained_dates(self, task: Task):
@@ -3240,7 +3255,6 @@ class Project:
             task.duration = max(
                 calendar.working_days_between(new_start, new_end), 1)
 
-        self._update_dates()
         return True
 
     def _pull_branch_after_its_links(self, summary: Task) -> bool:

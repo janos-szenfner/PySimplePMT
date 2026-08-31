@@ -40,6 +40,7 @@ Optional Dependency: needs openpyxl, and says so rather than failing
 obscurely when it is missing.
 """
 
+import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -851,12 +852,22 @@ def export_project_to_xlsx(project: Project, filepath: str) -> bool:
         logger.warning("Install it with: pip install openpyxl")
         return False
 
+    temp_path = Path(f"{filepath}.tmp")
     try:
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
         workbook = _create_tasks_workbook(project)
-        workbook.save(filepath)
+        workbook.save(temp_path)
+        if path.exists():
+            os.replace(path, Path(f"{filepath}.bak"))
+        os.replace(temp_path, path)
         logger.info("Exported %r to %s", project.name, filepath)
         return True
     except Exception:
         logger.exception("Could not export %r to %s", project.name, filepath)
         return False
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass

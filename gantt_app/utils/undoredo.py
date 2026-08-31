@@ -241,6 +241,7 @@ class RemoveTaskCommand(Command):
         if self._previous_tasks is None:
             # Never executed; restore what little is known
             self.project.tasks.insert(self.index, self.task)
+            self.project._id_to_task = None
             self.project._update_dates()
             return True
 
@@ -296,15 +297,17 @@ class UpdateTaskCommand(Command):
         for i, task in enumerate(self.project.tasks):
             if task.id == self.task_id:
                 self.project.tasks[i] = self.new_task
+                self.project._id_to_task = None
                 self.project._update_dates()
                 return True
         return False
-    
+
     def undo(self) -> bool:
         """Restore the task to its original properties."""
         for i, task in enumerate(self.project.tasks):
             if task.id == self.task_id:
                 self.project.tasks[i] = self.old_task
+                self.project._id_to_task = None
                 self.project._update_dates()
                 return True
         return False

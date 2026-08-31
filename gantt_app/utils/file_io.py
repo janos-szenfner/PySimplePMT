@@ -57,35 +57,49 @@ class JSONFileIO:
     @classmethod
     def save_project(cls, project: Project, filepath: str) -> bool:
         """
-        Save a Project object to a JSON file.
-        
+        Save a Project object to a JSON file atomically.
+
         Args:
             project: The Project object to save
             filepath: Path to the JSON file
-            
+
         Returns:
             True if successful, False otherwise
         """
+        temp_path = None
         try:
-            # Convert project to dictionary
             project_dict = project.to_dict()
-            
-            # Create directory if it doesn't exist
-            Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-            
-            # Write JSON file with indentation for readability
-            with open(filepath, 'w', encoding='utf-8') as f:
+            path = Path(filepath)
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            temp_path = path.with_suffix(path.suffix + ".tmp")
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(
-                    project_dict, 
-                    f, 
-                    indent=2, 
+                    project_dict,
+                    f,
+                    indent=2,
                     ensure_ascii=False,
                     default=cls._datetime_serializer
                 )
+
+            bak_path = path.with_suffix(path.suffix + ".bak")
+            if path.exists():
+                try:
+                    os.replace(path, bak_path)
+                except OSError:
+                    pass
+
+            os.replace(temp_path, path)
             return True
         except Exception as e:
             logger.exception(f"Error saving project: {e}")
             return False
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
     
     @classmethod
     def load_project(cls, filepath: str) -> Optional[Project]:

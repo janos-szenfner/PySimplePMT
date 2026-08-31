@@ -99,62 +99,17 @@ class DragDropTaskList(ctk.CTkFrame):
 
     def _apply_grid_style(self):
         """
-        Give the task table a light grey grid.
+        Re-colour the task table's global ttk style for the current theme.
 
         DEVELOPMENT NOTES:
         ------------------
-        ttk.Treeview has no border option, so the grid is drawn by the theme:
-        the 'clam' theme is the only stock one that honours bordercolor and
-        relief on Treeview cells, and alternating row tags supply the
-        horizontal banding. Both are needed - borders alone look flat, and
-        banding alone gives no column separation.
-
-        The style is namespaced under 'Gantt.Treeview' so it cannot disturb
-        any other ttk widget in the application.
+        ``ttk.Style().theme_use('clam')`` is no longer called here; it is
+        process-global and is done once at startup by
+        :func:`gantt_app.theme.initialise_ttk_styles`. This method only
+        re-resolves the named 'Gantt.Treeview' colours when the application
+        appearance changes.
         """
-        style = ttk.Style()
-
-        try:
-            style.theme_use('clam')
-        except tk.TclError:
-            # Fall back to whatever theme is active; banding still applies
-            logger.debug("The 'clam' ttk theme is unavailable; grid lines may "
-                         "not render on this platform")
-
-        line = theme.now(self.GRID_LINE)
-        row = theme.now(self.GRID_ROW_BASE)
-        text = theme.now(self.GRID_TEXT)
-
-        style.configure(
-            'Gantt.Treeview',
-            background=row,
-            fieldbackground=row,
-            foreground=text,
-            rowheight=self.GRID_ROW_HEIGHT,
-            borderwidth=1,
-            relief='solid',
-            bordercolor=line,
-            lightcolor=line,
-            darkcolor=line
-        )
-        style.configure(
-            'Gantt.Treeview.Heading',
-            background=theme.now(self.GRID_HEADING_BG),
-            foreground=text,
-            relief='raised',
-            borderwidth=1,
-            bordercolor=line
-        )
-        style.map(
-            'Gantt.Treeview',
-            background=[('selected', theme.now(self.GRID_SELECT_BG))],
-            foreground=[('selected', text)]
-        )
-        style.map(
-            'Gantt.Treeview.Heading',
-            background=[('active', line)]
-        )
-
+        theme.style_treeview('Gantt.Treeview', row_height=self.GRID_ROW_HEIGHT)
         self.tree.configure(style='Gantt.Treeview')
 
     def _is_search_context(self, task) -> bool:
@@ -527,7 +482,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # Store reference to tree_frame for DnD
         self.tree_frame = tree_frame
 
-        self._apply_grid_style()
+        self.tree.configure(style='Gantt.Treeview')
 
         self._apply_row_tag_colours()
         

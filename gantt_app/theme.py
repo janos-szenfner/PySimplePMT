@@ -337,6 +337,47 @@ def style_chrome() -> None:
         logger.debug("Could not colour the pane divider on this platform")
 
 
+#: Whether the one-time ttk style setup has already run.
+#:
+#: ttk styles and the active theme are process-global. Calling
+#: :func:`initialise_ttk_styles` more than once would keep re-selecting the
+#: theme and wiping the styles that other widgets have configured, so this
+#: flag guards the call.
+_ttk_styles_initialised = False
+
+
+def initialise_ttk_styles() -> None:
+    """
+    One-time ttk setup for the application's Treeview grids.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    ``ttk.Style().theme_use('clam')`` is process-global and resets every
+    configured ttk style when it is called. That used to happen inside every
+    ``DataGrid`` and ``DragDropTaskList`` and wiped the styles other windows
+    had just set. It is only ever called here, once, at application startup,
+    before any widgets are asked to look styled.
+    """
+    global _ttk_styles_initialised
+    if _ttk_styles_initialised:
+        return
+    _ttk_styles_initialised = True
+
+    from tkinter import ttk, TclError
+
+    style = ttk.Style()
+    try:
+        style.theme_use('clam')
+    except TclError:
+        # Fall back to whatever theme is active; grid lines may not render.
+        logger.debug("The 'clam' ttk theme is unavailable; grid lines may "
+                     "not render on this platform")
+
+    style_treeview('DataGrid.Treeview', row_height=26,
+                   heading_font=('Arial', 10, 'bold'))
+    style_treeview('Gantt.Treeview', row_height=26)
+
+
 def style_treeview(style_name: str, row_height: Optional[int] = None,
                    font=None, heading_font=None) -> None:
     """
@@ -366,14 +407,19 @@ def style_treeview(style_name: str, row_height: Optional[int] = None,
     from tkinter import ttk
 
     style = ttk.Style()
+    line = now(GRID_LINE)
 
     options = {
         'background': now(GRID_ROW_BG),
         'fieldbackground': now(GRID_ROW_BG),
         'foreground': now(GRID_TEXT),
+        'rowheight': row_height if row_height is not None else 26,
+        'borderwidth': 1,
+        'relief': 'solid',
+        'bordercolor': line,
+        'lightcolor': line,
+        'darkcolor': line,
     }
-    if row_height is not None:
-        options['rowheight'] = row_height
     if font is not None:
         options['font'] = font
     style.configure(style_name, **options)
@@ -381,6 +427,9 @@ def style_treeview(style_name: str, row_height: Optional[int] = None,
     heading_options = {
         'background': now(GRID_HEADING_BG),
         'foreground': now(GRID_TEXT),
+        'relief': 'raised',
+        'borderwidth': 1,
+        'bordercolor': line,
     }
     if heading_font is not None:
         heading_options['font'] = heading_font

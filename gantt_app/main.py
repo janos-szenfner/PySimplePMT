@@ -100,7 +100,12 @@ class GanttApp(ctk.CTk):
                     self.theme_controller.appearance,
                     self.theme_controller.mode)
         ctk.set_default_color_theme("blue")
-        
+
+        # One-time ttk style setup. This must run before any widgets are
+        # created and before the chrome style is configured, because the
+        # clam theme selection resets every ttk style.
+        theme.initialise_ttk_styles()
+
         # Create project
         self.project = Project(name="New Project")
         
@@ -482,14 +487,9 @@ class GanttApp(ctk.CTk):
         # These will be properly initialized after task_list is created
         self._setup_clipboard_bindings()
 
-        # Again, now that both panes exist.
-        #
-        # The task list selects the 'clam' ttk theme for its grid lines,
-        # and theme_use resets every style configured before it - so the
-        # sash styled at the top of this method was wiped by the pane
-        # built underneath it, and the window opened with clam's own pale
-        # divider and scrollbars until the first theme change put them
-        # right.
+        # Style the ttk scrollbars and pane divider. The 'clam' theme is
+        # selected once at startup by theme.initialise_ttk_styles(), so this
+        # no longer gets reset by a pane creating its own Treeview.
         theme.style_chrome()
     
     def _create_dashboard_frame(self):
@@ -749,7 +749,8 @@ class GanttApp(ctk.CTk):
                 if result is None:  # Cancel - stay open
                     return
                 if result:  # Yes, save
-                    self._save_on_exit()
+                    if not self._save_on_exit():
+                        return
         except Exception:
             logger.exception("Error while preparing to exit; closing anyway")
 
@@ -782,16 +783,26 @@ class GanttApp(ctk.CTk):
         except tk.TclError:
             pass
     
-    def _save_on_exit(self):
-        """Save project when exiting."""
+    def _save_on_exit(self) -> bool:
+        """Save project when exiting. Returns True if saved or not needed."""
         file_path = filedialog.asksaveasfilename(
             defaultextension=".json",
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
             title="Save Project Before Exit"
         )
-        
-        if file_path:
-            save_project(self.project, file_path)
+
+        if not file_path:
+            return True  # User cancelled; don't abort the exit.
+
+        if save_project(self.project, file_path):
+            return True
+
+        messagebox.showerror(
+            "Save Failed",
+            "The project could not be saved. The application will stay open "
+            "so you can try a different location."
+        )
+        return False
 
 
 # Import tkinter modules
