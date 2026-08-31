@@ -87,7 +87,7 @@ def allocation_status(percentage):
         return "Optimal", ("#dcfce7", "#17452a"), "#27ae60"
     if percentage <= 100:
         return "Full capacity", ("#fef3c7", "#5c4813"), "#d4a017"
-    return "Over capacitated", ("#fee2e2", "#5c2020"), "#e74c3c"
+    return "Over capacitated", ("#e3f2fd", "#000000"), "#2196f3"
 
 
 class _ControlValue:
@@ -212,7 +212,7 @@ class DataGrid(ctk.CTkFrame):
         self.tree.tag_configure(
             "odd", background=theme.now(theme.GRID_ROW_ALT))
         self.tree.tag_configure(
-            "overallocated", background="#fee2e2", foreground="#5c2020")
+            "overallocated", background="#e3f2fd", foreground="#000000")
         self.tree.configure(style="DataGrid.Treeview")
 
     def clear(self):
@@ -255,6 +255,15 @@ class DataGrid(ctk.CTkFrame):
 
 class BaseEditorModal(ctk.CTkToplevel):
     GEOMETRY = "900x680"
+
+    TASK_COLUMNS = (
+        ("Task ID", 80, 0, tk.CENTER),
+        ("Task Name", 180, 1, tk.W),
+        ("Project", 120, 1, tk.W),
+        ("Start Date", 110, 0, tk.CENTER),
+        ("End Date", 110, 0, tk.CENTER),
+        ("Allocated Hours", 120, 0, tk.CENTER),
+    )
 
     def __init__(self, master, title, tabs, on_apply):
         super().__init__(master)
@@ -430,6 +439,12 @@ class ResourceEditorModal(BaseEditorModal):
         except ValueError as error:
             self.fail(str(error))
 
+    DAYS_OFF_COLUMNS = (
+        ("Start Date", 120, 0, tk.CENTER),
+        ("End Date", 120, 0, tk.CENTER),
+        ("Reason", 260, 1, tk.W),
+    )
+
     def _build_days_off(self):
         tab = self.tabs["Days Off"]
         bar = ctk.CTkFrame(tab, fg_color="transparent")
@@ -452,9 +467,27 @@ class ResourceEditorModal(BaseEditorModal):
         self.day_off_reason.pack(fill=tk.X)
         ctk.CTkButton(bar, text="+ Add Range", width=100,
                       command=self._add_day_off).pack(side=tk.LEFT, padx=3)
-        self.days_off_table = ctk.CTkScrollableFrame(tab)
-        self.days_off_table.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        self.days_off_grid = DataGrid(
+            tab, self.DAYS_OFF_COLUMNS, self._on_day_off_select,
+            on_double_click=self._delete_day_off_from_grid)
+        self.days_off_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        ctk.CTkButton(
+            tab, text="Delete Selected", width=120,
+            command=self._delete_selected_day_off).pack(
+                side=tk.BOTTOM, anchor=tk.W, padx=8, pady=(0, 8))
+        self._selected_day_off_index = None
         self._render_days_off()
+
+    def _on_day_off_select(self, item_id):
+        self._selected_day_off_index = int(item_id)
+
+    def _delete_day_off_from_grid(self, item_id):
+        self._delete_day_off(int(item_id))
+
+    def _delete_selected_day_off(self):
+        if self._selected_day_off_index is None:
+            return
+        self._delete_day_off(self._selected_day_off_index)
 
     def _add_day_off(self):
         try:
@@ -470,23 +503,13 @@ class ResourceEditorModal(BaseEditorModal):
         self._render_days_off()
 
     def _render_days_off(self):
-        for widget in self.days_off_table.winfo_children():
-            widget.destroy()
-        headers = ("Start Date", "End Date", "Reason", "Actions")
-        for column, header in enumerate(headers):
-            self.days_off_table.grid_columnconfigure(column, weight=1)
-            ctk.CTkLabel(self.days_off_table, text=header,
-                         font=("Arial", 10, "bold")).grid(
-                             row=0, column=column, padx=5, pady=5, sticky="w")
-        for row, item in enumerate(self.days_off, start=1):
-            for column, text in enumerate((item.start_date.isoformat(),
-                                           item.end_date.isoformat(), item.reason)):
-                ctk.CTkLabel(self.days_off_table, text=text).grid(
-                    row=row, column=column, padx=5, pady=5, sticky="w")
-            ctk.CTkButton(
-                self.days_off_table, text="Delete", width=70,
-                command=lambda index=row - 1: self._delete_day_off(index)).grid(
-                    row=row, column=3, padx=5, pady=5)
+        self.days_off_grid.clear()
+        for index, item in enumerate(self.days_off):
+            self.days_off_grid.add_row(
+                str(index),
+                (item.start_date.isoformat(),
+                 item.end_date.isoformat(),
+                 item.reason or ""))
 
     def _delete_day_off(self, index):
         self.days_off.pop(index)
@@ -554,17 +577,12 @@ class ResourceEditorModal(BaseEditorModal):
     def _build_tasks(self):
         tab = self.tabs["Assigned Tasks (Read-Only)"]
         ctk.CTkLabel(
-            tab, text="Task assignment is managed via the Gantt / Task Scheduler view.",
-            font=("Arial", 12, "bold")).pack(pady=18)
-        headers = ("Task ID", "Task Name", "Project", "Start Date", "End Date",
-                   "Allocated Hours")
-        table = ctk.CTkFrame(tab, fg_color="transparent")
-        table.pack(fill=tk.X, padx=10)
-        for column, header in enumerate(headers):
-            table.grid_columnconfigure(column, weight=1)
-            ctk.CTkLabel(table, text=header,
-                         font=("Arial", 10, "bold")).grid(
-                             row=0, column=column, padx=4, sticky="w")
+            tab,
+            text="Task assignment is managed via the Gantt / Task Scheduler view.",
+            font=("Arial", 12, "bold")).pack(pady=(8, 4))
+        self.task_grid = DataGrid(
+            tab, self.TASK_COLUMNS, lambda _id: None)
+        self.task_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
     def _load_resource(self):
         _set_entry(self.name_entry, self.resource.name)
@@ -876,17 +894,12 @@ class TeamEditorModal(BaseEditorModal):
     def _build_tasks(self):
         tab = self.tabs["Assigned Tasks"]
         ctk.CTkLabel(
-            tab, text="Task allocation to teams is managed via the Gantt / Task Scheduler view.",
-            font=("Arial", 12, "bold")).pack(pady=18)
-        headers = ("Task ID", "Task Name", "Project", "Start Date", "End Date",
-                   "Allocated Team Hours")
-        table = ctk.CTkFrame(tab, fg_color="transparent")
-        table.pack(fill=tk.X, padx=10)
-        for column, header in enumerate(headers):
-            table.grid_columnconfigure(column, weight=1)
-            ctk.CTkLabel(table, text=header,
-                         font=("Arial", 10, "bold")).grid(
-                             row=0, column=column, padx=4, sticky="w")
+            tab,
+            text="Task allocation to teams is managed via the Gantt / Task Scheduler view.",
+            font=("Arial", 12, "bold")).pack(pady=(8, 4))
+        self.task_grid = DataGrid(
+            tab, self.TASK_COLUMNS, lambda _id: None)
+        self.task_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
     def _load_team(self):
         _set_entry(self.name_entry, self.team.name)
