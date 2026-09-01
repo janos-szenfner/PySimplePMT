@@ -38,10 +38,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends python3-tk xvfb fonts-dejavu-core
 
+      # requirements-dev.txt carries pytest and pytest-bdd. Without them
+      # run_tests.py says it skipped the pytest-only modules and passes,
+      # so a CI that installs only the runtime dependencies is a CI that
+      # quietly stops running part of the suite.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run the test suite
         run: xvfb-run -a python run_tests.py
