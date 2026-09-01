@@ -108,6 +108,10 @@ class GanttApp(ctk.CTk):
 
         # Create project
         self.project = Project(name="New Project")
+
+        # Dirty-state tracking for unsaved-change protection
+        self.is_dirty = False
+        self._dirty_tracking_suspended = False
         
         # Create undo/redo manager
         self.undo_redo_manager = UndoRedoManager(max_history=100)
@@ -473,12 +477,22 @@ class GanttApp(ctk.CTk):
         # the application would not start at all.
         self.gantt_chart.set_task_list(self.task_list)
         
-        # Create status bar
+        # Footer with status bar and close button
+        self.footer_frame = ctk.CTkFrame(self)
+        self.footer_frame.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
+        self.footer_frame.grid_columnconfigure(0, weight=1)
+
         self.status_bar = ctk.CTkLabel(
-            self, text="Ready", anchor=tk.W,
+            self.footer_frame, text="Ready", anchor=tk.W,
             height=25, padx=10
         )
-        self.status_bar.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
+        self.status_bar.grid(row=0, column=0, sticky=tk.W)
+
+        self.close_button = ctk.CTkButton(
+            self.footer_frame, text="Close", width=80,
+            command=self.on_close
+        )
+        self.close_button.grid(row=0, column=1, sticky=tk.E, padx=(10, 0))
         
         # The clipboard needs a widget to reach the desktop's own
         self.clipboard_manager.set_clipboard_widget(self)
@@ -668,6 +682,10 @@ class GanttApp(ctk.CTk):
         reschedule returns whether anything moved and is a no-op on a settled
         plan, so calling it on every refresh costs a single pass.
         """
+        # Track unsaved changes unless the caller is resetting the project
+        if not self._dirty_tracking_suspended:
+            self.mark_dirty()
+
         # From whichever end the plan is scheduled from; a plan scheduled
         # forward gets exactly what it always got. See Project.apply_schedule.
         if self.project.apply_schedule():
@@ -685,9 +703,8 @@ class GanttApp(ctk.CTk):
             except tk.TclError:
                 logger.debug("The dashboard has gone; not refreshing it")
         
-        # Update window title with project name
-        if self.project.name:
-            self.title(f"Gantt Project Manager - {self.project.name}")
+        # Refresh the title to reflect the current project and dirty state
+        self._update_title()
         
         # Update status bar
         if self.project.tasks:
@@ -725,6 +742,60 @@ class GanttApp(ctk.CTk):
         except Exception:
             pass
 
+    def _update_title(self):
+        """Refresh the window title to show the project name and dirty state."""
+        title = f"Gantt Project Manager - {self.project.name}"
+        if self.is_dirty:
+            title += " *"
+        self.title(title)
+
+    def mark_dirty(self):
+        """Mark the current project as having unsaved changes."""
+        self.is_dirty = True
+        self._update_title()
+
+    def mark_clean(self):
+        """Mark the current project as saved and resume dirty tracking."""
+        self.is_dirty = False
+        self._dirty_tracking_suspended = False
+        self._update_title()
+
+    def check_unsaved_changes(
+        self,
+        title: str = "Unsaved Changes",
+        message: Optional[str] = None,
+    ) -> str:
+        """Prompt the user when there are unsaved changes.
+
+        Returns 'save', 'discard', or 'cancel'.
+        """
+        if not self.is_dirty:
+            return "discard"
+
+        if message is None:
+            message = (
+                "You have unsaved changes in your current project.\n\n"
+                "Do you want to save before proceeding?"
+            )
+
+        response = messagebox.askyesnocancel(
+            title,
+            message,
+            icon="warning",
+        )
+
+        if response is True:
+            return "save"
+        elif response is False:
+            return "discard"
+        else:
+            return "cancel"
+
+    def save_project(self) -> bool:
+        """Save the project and return whether it is now clean."""
+        self.toolbar.save_project()
+        return not self.is_dirty
+
     def on_close(self):
         """
         Handle application close.
@@ -742,18 +813,19 @@ class GanttApp(ctk.CTk):
         main window disappeared.
         """
         try:
-            if self.project.tasks:
-                result = messagebox.askyesnocancel(
-                    "Exit", "Do you want to save your project before exiting?"
-                )
-                if result is None:  # Cancel - stay open
+            action = self.check_unsaved_changes(
+                title="Exit",
+                message="Do you want to save your project before exiting?",
+            )
+            if action == "cancel":
+                return
+            if action == "save":
+                if not self.save_project():
                     return
-                if result:  # Yes, save
-                    if not self._save_on_exit():
-                        return
         except Exception:
             logger.exception("Error while preparing to exit; closing anyway")
 
+        self.mark_clean()
         self._shutdown()
 
     def _shutdown(self):
@@ -783,26 +855,6 @@ class GanttApp(ctk.CTk):
         except tk.TclError:
             pass
     
-    def _save_on_exit(self) -> bool:
-        """Save project when exiting. Returns True if saved or not needed."""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
-            title="Save Project Before Exit"
-        )
-
-        if not file_path:
-            return True  # User cancelled; don't abort the exit.
-
-        if save_project(self.project, file_path):
-            return True
-
-        messagebox.showerror(
-            "Save Failed",
-            "The project could not be saved. The application will stay open "
-            "so you can try a different location."
-        )
-        return False
 
 
 # Import tkinter modules

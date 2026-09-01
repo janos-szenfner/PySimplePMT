@@ -1767,6 +1767,8 @@ class Toolbar(ctk.CTkFrame):
         if save_project(self.project, file_path):
             self.current_file_path = file_path
             messagebox.showinfo("Success", "Project saved successfully!")
+            if hasattr(self.master, 'mark_clean'):
+                self.master.mark_clean()
         else:
             messagebox.showerror("Error", "Failed to save project")
 
@@ -1798,19 +1800,30 @@ class Toolbar(ctk.CTkFrame):
             self.project.resource_repository = project.resource_repository
             
             self._forget_the_previous_plan()
-            
+
             if self.on_project_changed:
                 self.on_project_changed()
+
+            if hasattr(self.master, 'mark_clean'):
+                self.master.mark_clean()
         else:
             messagebox.showerror("Error", "Failed to load project")
-    
+
     def new_project(self):
-        """Create a new empty project."""
+        """Create a new empty project, prompting if there are unsaved changes."""
+        if hasattr(self.master, 'check_unsaved_changes'):
+            action = self.master.check_unsaved_changes()
+            if action == "cancel":
+                return
+            if action == "save":
+                if not self.master.save_project():
+                    return
+
         new_name = tk.simpledialog.askstring(
-            "New Project", "Enter project name:", 
+            "New Project", "Enter project name:",
             parent=self.master, initialvalue="New Project"
         )
-        
+
         if new_name:
             # A new plan has never been saved, so Save has to ask where -
             # writing it over whatever file the last plan came from is the
@@ -1822,12 +1835,15 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = None
             self.project.end_date = None
             self.project.resource_repository = ResourceRepository()
-            
+
             self._forget_the_previous_plan()
-            
+
             if self.on_project_changed:
                 self.on_project_changed()
-    
+
+            if hasattr(self.master, 'mark_clean'):
+                self.master.mark_clean()
+
     def _selected_task_ids(self):
         """
         What is selected in the task list, or an empty list.
