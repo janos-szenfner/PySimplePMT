@@ -59,6 +59,9 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Building version ${version}"
 
+      - name: Install the test dependencies
+        run: pip install -r requirements-dev.txt
+
       - name: Run the test suite
         run: xvfb-run -a python run_tests.py
 
@@ -208,6 +211,9 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Building version ${version} for $(uname -m)"
+
+      - name: Install the test dependencies
+        run: pip install -r requirements-dev.txt
 
       # The macOS runner has a window server, so the widget tests run without
       # a virtual display.
