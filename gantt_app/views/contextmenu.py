@@ -316,18 +316,21 @@ class TaskContextMenu:
         menu = tk.Menu(self.tree, tearoff=0)
         has_task = task_id is not None
 
+        move_ids = self._selection_including(task_id)
         if has_task:
+            selected = set(project.topmost_of(move_ids))
             siblings = project.get_siblings(task_id)
-            position = next(
-                (i for i, task in enumerate(siblings) if task.id == task_id),
-                None,
+            selected_positions = [
+                index for index, task in enumerate(siblings)
+                if task.id in selected
+            ]
+            can_move_up = bool(selected_positions) and min(selected_positions) > 0
+            can_move_down = (
+                bool(selected_positions)
+                and max(selected_positions) < len(siblings) - 1
             )
-            last = len(siblings) - 1
-            can_move_up = position is not None and position > 0
-            can_move_down = position is not None and position < last
         else:
             can_move_up = can_move_down = False
-
         allowed = {
             'top': can_move_up,
             'up': can_move_up,
@@ -339,7 +342,7 @@ class TaskContextMenu:
             menu.add_command(
                 label=label,
                 state=tk.NORMAL if allowed[target] else tk.DISABLED,
-                command=lambda t=target: self._invoke_move(task_id, t),
+                command=lambda t=target: self._invoke_move(move_ids, t),
             )
 
         menu.add_separator()
@@ -496,13 +499,16 @@ class TaskContextMenu:
                          getattr(action, '__name__', action))
             action(*args)
 
-    def _invoke_move(self, task_id, target):
-        """Run a chosen move, reporting a failure rather than swallowing it."""
-        logger.info("Context menu: move task %s to %s", task_id, target)
+    def _invoke_move(self, task_ids, target):
+        """Move every selected row, reporting a failure rather than swallowing it."""
+        chosen = ([task_ids] if isinstance(task_ids, str) else list(task_ids))
+        logger.info("Context menu: move %d selected task(s) to %s",
+                    len(chosen), target)
         try:
-            self._on_move(task_id, target)
+            self._on_move(chosen, target)
         except Exception:
-            logger.exception("Could not move task %s to %s", task_id, target)
+            logger.exception("Could not move selected tasks %s to %s",
+                             chosen, target)
 
     def _selection_including(self, task_id):
         """

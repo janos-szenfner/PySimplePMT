@@ -87,16 +87,13 @@ def the_recent_list_contains_7_projects(settings):
 
 
 @given("the Welcome modal is open", target_fixture="welcome_modal")
-def the_welcome_modal_is_open(settings):
-    import customtkinter as ctk
-
-    root = ctk.CTk()
-    root.withdraw()
-    modal = WelcomeModal(root, settings.recent, lambda _m, _p=None: None)
+def the_welcome_modal_is_open(settings, app):
+    modal = WelcomeModal(app, settings.recent, app._on_welcome_select)
+    modal.withdraw()
     modal.update_idletasks()
     yield modal
     try:
-        root.destroy()
+        modal.destroy()
     except tk.TclError:
         pass
 
@@ -211,10 +208,8 @@ def the_application_closes(app):
 
 @then(parsers.parse('the first recent project is "{name}"'))
 def the_first_recent_project_is(welcome_modal, name):
-    first = welcome_modal.frame_recent.winfo_children()[0]
-    button = first.winfo_children()[0]
-    text = button.cget("text")
-    assert name in text, f"Expected {name!r} in first button text, got {text!r}"
+    text = welcome_modal.recent_project_cards[0]["name"].cget("text")
+    assert name in text, f"Expected {name!r} in first card name, got {text!r}"
 
 
 @then(parsers.parse('the first recent project in the list is "{name}"'))
@@ -224,12 +219,50 @@ def the_first_recent_project_in_the_list_is(app, name):
 
 @then("the first recent project shows the project name, path, and last modified")
 def the_first_recent_project_shows_the_project_details(welcome_modal, project_file):
-    first = welcome_modal.frame_recent.winfo_children()[0]
-    button = first.winfo_children()[0]
-    text = button.cget("text")
-    assert "Recent Project" in text
-    assert project_file in text
-    assert "T" in text or "-" in text
+    card = welcome_modal.recent_project_cards[0]
+    assert card["name"].cget("text") == "Recent Project"
+    assert card["path"].cget("text") == project_file
+    assert card["timestamp"].cget("text")
+    assert "T" not in card["timestamp"].cget("text")
+
+
+@then("the project name is visually emphasized")
+def project_name_is_emphasized(welcome_modal):
+    font = welcome_modal.recent_project_cards[0]["name"].cget("font")
+    assert font.cget("weight") == "bold"
+
+
+@then("the path uses muted text")
+def path_uses_muted_text(welcome_modal):
+    colour = welcome_modal.recent_project_cards[0]["path"].cget("text_color")
+    assert colour != welcome_modal.recent_project_cards[0]["name"].cget("text_color")
+
+
+@then("the timestamp is right aligned")
+def timestamp_is_right_aligned(welcome_modal):
+    assert welcome_modal.recent_project_cards[0]["timestamp"].cget("anchor") == "e"
+
+
+@then("the Recent Projects heading has a divider beneath it")
+def recent_projects_has_divider(welcome_modal):
+    assert welcome_modal.recent_divider.winfo_manager() == "pack"
+    assert welcome_modal.recent_divider.cget("height") == 1
+
+
+@when("the first recent project card is clicked")
+def first_recent_project_card_is_clicked(welcome_modal):
+    card = welcome_modal.recent_project_cards[0]
+    welcome_modal._select("recent", card["path"].cget("text"))
+
+
+@when("the Welcome modal is closed with the window control")
+def welcome_modal_closed_with_window_control(welcome_modal):
+    welcome_modal._on_close()
+
+
+@then("the application remains open")
+def application_remains_open(app):
+    assert app.winfo_exists()
 
 
 @given(parsers.parse('a project file named "{name}" exists as "{filename}"'),

@@ -1385,28 +1385,35 @@ class Toolbar(ctk.CTkFrame):
         if not candidate_parents:
             messagebox.showwarning("No Parent Task", "You need at least one task to create a subtask.")
             return
-        
-        # If only one parent, use it directly
-        if len(candidate_parents) == 1:
+
+        selected = self._selected_task_ids()
+        selected_parent = (
+            self.project.get_task_by_id(selected[0]) if len(selected) == 1
+            else None
+        )
+        if selected_parent is not None and not selected_parent.is_milestone:
+            parent_task = selected_parent
+            logger.info("Creating subtask under selected task %s %r",
+                        parent_task.id, parent_task.name)
+        elif len(candidate_parents) == 1:
             parent_task = candidate_parents[0]
-            dialog = CreateTaskDialog(
-                self.master, self.project,
-                task_type="Subtask",
-                parent_task=parent_task,
-                on_save=self._save_new_task
-            )
-            dialog.wait_window()
+            logger.info("Creating subtask under the only available parent %s",
+                        parent_task.id)
         else:
-            # Let user select parent first, then open full dialog
             parent_task = self._select_parent_task(candidate_parents)
-            if parent_task:
-                dialog = CreateTaskDialog(
-                    self.master, self.project,
-                    task_type="Subtask",
-                    parent_task=parent_task,
-                    on_save=self._save_new_task
-                )
-                dialog.wait_window()
+            if parent_task is None:
+                logger.info("Subtask creation cancelled before choosing a parent")
+                return
+            logger.info("Creating subtask under chosen task %s %r",
+                        parent_task.id, parent_task.name)
+
+        dialog = CreateTaskDialog(
+            self.master, self.project,
+            task_type="Subtask",
+            parent_task=parent_task,
+            on_save=self._save_new_task
+        )
+        dialog.wait_window()
     
     def _candidate_parent_tasks(self) -> List[Task]:
         """

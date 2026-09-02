@@ -1828,8 +1828,12 @@ class DragDropTaskList(ctk.CTkFrame):
         source = self.project.get_task_by_id(self.dragged_task_id)
         target = self.project.get_task_by_id(item)
         if source is None or target is None:
+            logger.debug("Rejected line drop with missing source or target")
             return False
-        return source.parent_task_id == target.parent_task_id
+        valid = not self.project.is_descendant(item, self.dragged_task_id)
+        logger.debug("Line drop target %r for %r is valid=%s",
+                     item, self.dragged_task_id, valid)
+        return valid
 
     def _end_drag(self):
         """Clear every trace of a drag, whether it completed or not."""
@@ -1882,21 +1886,22 @@ class DragDropTaskList(ctk.CTkFrame):
         source_id = self.dragged_task_id
         target_id = self._drop_target
         drop_as_parent = self._drop_as_parent
+        drop_above = self._drop_above
         self._end_drag()
 
         if target_id and drop_as_parent:
             self.reparent_task(source_id, target_id)
         elif target_id:
-            self.move_task_before(source_id, target_id)
+            self.move_task_to_line(source_id, target_id, drop_above)
 
-    def move_task(self, task_id: str, where: str):
+    def move_task(self, task_ids, where: str):
         """
-        Move a task within its siblings and refresh everything.
+        Move selected task branches within their siblings and refresh.
 
         PARAMETERS:
         -----------
-        task_id : str
-            The task to move.
+        task_ids : str or Sequence[str]
+            One task or every selected task to move together.
         where : str
             'top', 'up', 'down' or 'bottom'.
 
@@ -1907,13 +1912,25 @@ class DragDropTaskList(ctk.CTkFrame):
         and this deals only with undo, redrawing and keeping the moved row
         selected.
         """
-        self._apply_reorder(lambda: self.project.move_task(task_id, where),
-                            task_id)
+        chosen = self._as_ids(task_ids)
+        self._apply_reorder(lambda: self.project.move_tasks(chosen, where),
+                            chosen)
 
     def move_task_before(self, task_id: str, target_id: str):
         """Move a task to the position its sibling target_id occupies."""
         self._apply_reorder(
             lambda: self.project.move_task_before(task_id, target_id), task_id
+        )
+
+    def move_task_to_line(self, task_id: str, target_id: str,
+                          above: bool):
+        """Move a task to the exact visible insertion line chosen by a drag."""
+        edge = 'above' if above else 'below'
+        logger.info("Applying drag placement: task=%r target=%r edge=%s",
+                    task_id, target_id, edge)
+        return self._apply_restructure(
+            lambda: self.project.move_task_to_line(task_id, target_id, above),
+            [task_id], "Drag Task",
         )
 
     def reparent_task(self, task_id: str, parent_id: str):
@@ -2295,7 +2312,8 @@ class DragDropTaskList(ctk.CTkFrame):
         before = self.project.structure_snapshot()
 
         if not change():
-            return
+            logger.info("%s made no hierarchy change", label)
+            return False
 
         after = self.project.structure_snapshot()
 
@@ -2327,8 +2345,9 @@ class DragDropTaskList(ctk.CTkFrame):
 
         if self.on_project_changed:
             self.on_project_changed()
+        return True
 
-    def _apply_reorder(self, reorder, task_id: str):
+    def _apply_reorder(self, reorder, task_ids):
         """
         Run a reordering, record it for undo and redraw.
 
@@ -2336,8 +2355,8 @@ class DragDropTaskList(ctk.CTkFrame):
         -----------
         reorder : callable
             Performs the move, returning True when anything changed.
-        task_id : str
-            The task being moved, so it can be reselected afterwards.
+        task_ids : str or Sequence[str]
+            The tasks being moved, so they can be reselected afterwards.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -2354,14 +2373,17 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.project_tracker:
             self.project_tracker.reorder_tasks(before, list(self.project.tasks))
 
-        logger.info("Moved task %s", task_id)
+        chosen = [task_id for task_id in self._as_ids(task_ids)
+                  if self.project.get_task_by_id(task_id) is not None]
+        logger.info("Moved %d selected task(s): %s", len(chosen), chosen)
 
         self.update_task_list()
 
         try:
-            self.tree.selection_set(task_id)
-            self.tree.focus(task_id)
-            self.tree.see(task_id)
+            if chosen:
+                self.tree.selection_set(*chosen)
+                self.tree.focus(chosen[0])
+                self.tree.see(chosen[0])
         except tk.TclError:
             pass
 

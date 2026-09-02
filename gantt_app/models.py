@@ -1404,6 +1404,105 @@ class Project:
             return []
         return [t for t in self.tasks if t.parent_task_id == task.parent_task_id]
 
+    def move_task_to_line(self, task_id: str, target_id: str,
+                          above: bool) -> bool:
+        """Move one task branch to the visible line above or below a target."""
+        task = self.get_task_by_id(task_id)
+        target = self.get_task_by_id(target_id)
+        edge = 'above' if above else 'below'
+        if task is None or target is None or task_id == target_id:
+            logger.warning("Rejected line move for task %r %s target %r",
+                           task_id, edge, target_id)
+            return False
+        if self.is_descendant(target_id, task_id):
+            logger.warning("Rejected line move of %r beside descendant %r",
+                           task_id, target_id)
+            return False
+
+        children = self._children_by_parent()
+        target_children = children.get(target_id, [])
+        if not above and target_children:
+            new_parent_id = target_id
+            insert_at = 0
+        else:
+            new_parent_id = target.parent_task_id
+            target_siblings = children.get(new_parent_id, [])
+            insert_at = target_siblings.index(target) + (0 if above else 1)
+
+        if new_parent_id is not None and self.is_descendant(new_parent_id, task_id):
+            logger.warning("Rejected line move of %r under descendant %r",
+                           task_id, new_parent_id)
+            return False
+
+        old_parent_id = task.parent_task_id
+        old_siblings = children.get(old_parent_id, [])
+        if task in old_siblings:
+            old_index = old_siblings.index(task)
+            old_siblings.remove(task)
+            if old_parent_id == new_parent_id and old_index < insert_at:
+                insert_at -= 1
+
+        new_siblings = children.setdefault(new_parent_id, [])
+        insert_at = max(0, min(insert_at, len(new_siblings)))
+        task.parent_task_id = new_parent_id
+        new_siblings.insert(insert_at, task)
+        self.tasks = self._flatten(children)
+        removed = self.strip_ancestor_links(task_id)
+        logger.info(
+            "Moved task %s %r %s %s %r into parent %r; removed %d "
+            "invalid dependency link(s)",
+            task.id, task.name, edge, target.id, target.name,
+            new_parent_id, len(removed),
+        )
+        return True
+
+    def move_tasks(self, task_ids, where: str) -> bool:
+        """Move every selected task branch as stable sibling groups."""
+        if where not in ('top', 'up', 'down', 'bottom'):
+            raise ValueError(f"Unknown move target: {where!r}")
+
+        selected = set(self._topmost(task_ids))
+        if not selected:
+            return False
+
+        children = self._children_by_parent()
+        moved = False
+        for siblings in children.values():
+            if not any(task.id in selected for task in siblings):
+                continue
+            before = [task.id for task in siblings]
+
+            if where == 'top':
+                siblings[:] = (
+                    [task for task in siblings if task.id in selected]
+                    + [task for task in siblings if task.id not in selected]
+                )
+            elif where == 'bottom':
+                siblings[:] = (
+                    [task for task in siblings if task.id not in selected]
+                    + [task for task in siblings if task.id in selected]
+                )
+            elif where == 'up':
+                for index in range(1, len(siblings)):
+                    if (siblings[index].id in selected
+                            and siblings[index - 1].id not in selected):
+                        siblings[index - 1], siblings[index] = (
+                            siblings[index], siblings[index - 1])
+            else:
+                for index in range(len(siblings) - 2, -1, -1):
+                    if (siblings[index].id in selected
+                            and siblings[index + 1].id not in selected):
+                        siblings[index], siblings[index + 1] = (
+                            siblings[index + 1], siblings[index])
+
+            moved = moved or before != [task.id for task in siblings]
+
+        if moved:
+            self.tasks = self._flatten(children)
+        logger.info("Moved %d selected task branch(es) %s; changed=%s",
+                    len(selected), where, moved)
+        return moved
+
     def move_task(self, task_id: str, where: str) -> bool:
         """
         Move a task within the group of tasks that share its parent.

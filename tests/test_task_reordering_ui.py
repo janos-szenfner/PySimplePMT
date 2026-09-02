@@ -871,18 +871,6 @@ class TestDragGesture(TaskListTestCase):
         self.assertEqual(line.place_info()['x'], '7')
         self.assertEqual(line.place_info()['width'], '280')
 
-    def test_an_invalid_drop_row_gets_no_line(self):
-        """Dragging a sub-task over a root task offers no drop."""
-        self.at({0: "004", 100: "001"})
-        self.rows_at({"001": (0, 100, 300, 26)})
-
-        self.press(0)
-        self.drag(100)
-
-        self.assertIsNone(self.task_list._drop_target)
-        line = self.task_list._drop_line_widget
-        self.assertTrue(line is None or not line.winfo_manager())
-
     def test_dropping_reorders_the_rows(self):
         """A completed drag moves the row to the drop position."""
         self.at({0: "003", 100: "001"})

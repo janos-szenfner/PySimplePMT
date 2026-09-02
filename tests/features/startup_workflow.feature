@@ -55,6 +55,26 @@ Feature: Software startup and project selection
     Given a project file exists in the recent list
     And the Welcome modal is open
     Then the first recent project shows the project name, path, and last modified
+    And the project name is visually emphasized
+    And the path uses muted text
+    And the timestamp is right aligned
+
+  Scenario: Recent Projects has a section divider
+    Given the Welcome modal is open
+    Then the Recent Projects heading has a divider beneath it
+
+  Scenario: A recent project card is clickable
+    Given a project file exists in the recent list
+    And the Welcome modal is open
+    When the first recent project card is clicked
+    Then the project name is "Recent Project"
+
+  Scenario: Closing the Welcome modal starts an empty project
+    Given the Welcome modal is open
+    When the Welcome modal is closed with the window control
+    Then the application remains open
+    And the project has no tasks
+    And the project is clean
 
   Scenario: Command-line file path loads the project directly
     Given a project file named "Command-Line Project" exists as "cmd.json"

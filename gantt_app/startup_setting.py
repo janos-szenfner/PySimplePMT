@@ -155,15 +155,30 @@ class WelcomeModal(ctk.CTkToplevel):
         )
         btn_sample.pack(padx=10, pady=(0, 8), fill=tk.X)
 
-        lbl_recent = ctk.CTkLabel(
-            self,
-            text="Recent Projects:",
-            font=ctk.CTkFont(size=12, weight="bold"),
+        self.recent_section = ctk.CTkFrame(self)
+        self.recent_section.pack(
+            padx=20, pady=(10, 15), fill=tk.BOTH, expand=True
         )
-        lbl_recent.pack(anchor=tk.W, padx=25, pady=(10, 2))
 
-        self.frame_recent = ctk.CTkScrollableFrame(self, height=140)
-        self.frame_recent.pack(padx=20, pady=(0, 15), fill=tk.BOTH, expand=True)
+        lbl_recent = ctk.CTkLabel(
+            self.recent_section,
+            text="Recent Projects:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        lbl_recent.pack(anchor=tk.W, padx=14, pady=(12, 6))
+
+        self.recent_divider = ctk.CTkFrame(
+            self.recent_section, height=1, corner_radius=0,
+            fg_color=("gray75", "gray40"),
+        )
+        self.recent_divider.pack(fill=tk.X, padx=14, pady=(0, 6))
+
+        self.frame_recent = ctk.CTkScrollableFrame(
+            self.recent_section, height=140, fg_color="transparent"
+        )
+        self.frame_recent.pack(
+            padx=8, pady=(0, 8), fill=tk.BOTH, expand=True
+        )
 
         self._build_recent_list()
 
@@ -189,25 +204,81 @@ class WelcomeModal(ctk.CTkToplevel):
             lbl_empty.pack(pady=10)
             return
 
+        self.recent_project_cards = []
         for entry in self.recent_items:
             path = entry.get("path", "")
             name = entry.get("name", "Unknown")
-            last_mod = entry.get("last_modified", "")
-
-            container = ctk.CTkFrame(self.frame_recent, fg_color="transparent")
-            container.pack(fill=tk.X, pady=2)
-
-            text = f"{name}\n{path}\n{last_mod}"
-            btn = ctk.CTkButton(
-                container,
-                text=text,
-                anchor=tk.W,
-                fg_color="transparent",
-                text_color=("gray10", "gray90"),
-                hover_color=("gray70", "gray30"),
-                command=lambda p=path: self._select("recent", p),
+            last_mod = self._format_recent_timestamp(
+                entry.get("last_modified", "")
             )
-            btn.pack(fill=tk.X)
+
+            card = ctk.CTkFrame(
+                self.frame_recent,
+                fg_color="transparent",
+                corner_radius=6,
+                cursor="hand2",
+            )
+            card.pack(fill=tk.X, padx=6, pady=5)
+            card.grid_columnconfigure(0, weight=1)
+
+            name_label = ctk.CTkLabel(
+                card,
+                text=name,
+                anchor=tk.W,
+                font=ctk.CTkFont(size=14, weight="bold"),
+            )
+            name_label.grid(row=0, column=0, sticky=tk.EW, padx=8)
+
+            path_label = ctk.CTkLabel(
+                card,
+                text=path,
+                anchor=tk.W,
+                justify=tk.LEFT,
+                wraplength=400,
+                text_color=("gray40", "gray70"),
+                font=ctk.CTkFont(size=11),
+            )
+            path_label.grid(row=1, column=0, sticky=tk.EW, padx=8, pady=(2, 0))
+
+            timestamp_label = ctk.CTkLabel(
+                card,
+                text=last_mod,
+                anchor=tk.E,
+                text_color=("gray60", "gray60"),
+                font=ctk.CTkFont(size=9),
+            )
+            timestamp_label.grid(
+                row=2, column=0, sticky=tk.E, padx=8, pady=(0, 3)
+            )
+
+            for widget in (card, name_label, path_label, timestamp_label):
+                widget.bind(
+                    "<Button-1>",
+                    lambda _event, p=path: self._select("recent", p),
+                )
+                widget.configure(cursor="hand2")
+
+            self.recent_project_cards.append({
+                "frame": card,
+                "name": name_label,
+                "path": path_label,
+                "timestamp": timestamp_label,
+            })
+            logger.debug("Built recent project card for %r (%s)", name, path)
+
+    def _format_recent_timestamp(self, value: str) -> str:
+        """Format a stored ISO timestamp for the compact recent-project card."""
+        if not value:
+            return ""
+        try:
+            formatted = datetime.fromisoformat(value).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        except (TypeError, ValueError):
+            formatted = str(value)
+        logger.debug("Formatted recent-project timestamp %r as %r",
+                     value, formatted)
+        return formatted
 
     def _select(self, mode: str, payload: Optional[str] = None):
         """Return the user's choice and close the modal."""
@@ -216,7 +287,9 @@ class WelcomeModal(ctk.CTkToplevel):
         self.callback(mode, payload)
 
     def _on_close(self):
-        """If the user closes the launcher with the X, treat it as cancel."""
-        logger.info("Welcome modal closed via window manager; treating as cancel")
+        """Close the launcher into a clean empty project workspace."""
+        logger.info(
+            "Welcome modal closed via window manager; starting empty project"
+        )
         self.destroy()
-        self.callback("cancel", None)
+        self.callback("new", None)
