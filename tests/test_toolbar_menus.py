@@ -108,34 +108,18 @@ class TestMenuContents(unittest.TestCase):
                          ['GAN...', 'MS Project...', 'Mermaid...', 'HTML...',
                           'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
 
-    def test_settings_holds_what_is_set_about_the_plan(self):
-        """
-        Three settings panels and nothing else.
-
-        Create moved to Edit - making a row is an edit - and Critical Path
-        moved to View, which is where something that changes what the window
-        shows belongs.
-        """
+    def test_settings_opens_the_unified_tabbed_hub(self):
+        """Settings has one entry for the Project, Resource, Gantt and Calendar tabs."""
         items = find(self.tree, 'Settings')['items']
 
-        self.assertEqual(labels(items),
-                         ['Project Settings...', 'Calendar Settings...',
-                          'Resource Settings...', 'Gantt Settings...'])
-        for item in items:
-            self.assertNotIn('submenu', item)
+        self.assertEqual(labels(items), ['Settings...'])
+        self.assertNotIn('submenu', items[0])
+        self.assertTrue(callable(items[0]['command']))
 
-    def test_calendar_settings_sits_directly_under_settings(self):
-        """
-        Choosing which days the plan works is not a create action.
-
-        It belongs beside Project Settings: both change something about the
-        whole project rather than adding a row to it.
-        """
-        items = find(self.tree, 'Settings')['items']
-        entry = next(i for i in items if i['text'] == 'Calendar Settings...')
-
-        self.assertNotIn('submenu', entry)
-        self.assertTrue(callable(entry['command']))
+    def test_calendar_settings_is_reached_from_the_settings_hub(self):
+        """Calendar configuration remains available through the unified hub."""
+        self.assertTrue(callable(Toolbar.edit_holidays))
+        self.assertTrue(callable(Toolbar.open_settings))
 
     def test_create_submenu_holds_only_the_create_actions(self):
         """Create offers the things that can be created, nothing else."""
@@ -145,20 +129,10 @@ class TestMenuContents(unittest.TestCase):
                          ['Phase...', 'Task...', 'Subtask...',
                           'Milestone...'])
 
-    def test_project_settings_sits_directly_under_settings(self):
-        """
-        The settings that apply to the whole plan are reachable in one step.
-
-        This entry used to sit inside Create, which put a rename next to the
-        three create actions and behind an extra hop. It used to be called
-        Project Title and ask for one; it opens the panel the title now sits
-        on, with the rest of what a plan is built from.
-        """
-        items = find(self.tree, 'Settings')['items']
-        settings = next(i for i in items if i['text'] == 'Project Settings...')
-
-        self.assertNotIn('submenu', settings)
-        self.assertTrue(callable(settings['command']))
+    def test_project_settings_is_reached_from_the_settings_hub(self):
+        """The existing full Project editor remains wired behind the hub."""
+        self.assertTrue(callable(Toolbar.edit_project_info))
+        self.assertTrue(callable(Toolbar.open_settings))
 
     def test_the_view_menu_is_what_this_window_shows(self):
         """

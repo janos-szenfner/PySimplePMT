@@ -1647,6 +1647,64 @@ class Project:
 
         return removed
 
+    def can_reparent_task(self, task_id: str,
+                          new_parent_id: Optional[str]) -> bool:
+        """Whether a task branch may be moved under a new parent."""
+        task = self.get_task_by_id(task_id)
+        if task is None:
+            logger.debug("Cannot re-parent missing task %r", task_id)
+            return False
+        if new_parent_id is None:
+            allowed = task.parent_task_id is not None
+            logger.debug("Can re-parent task %r to root: %s", task_id, allowed)
+            return allowed
+
+        new_parent = self.get_task_by_id(new_parent_id)
+        if new_parent is None or new_parent.is_milestone:
+            logger.debug("Task %r is not a valid parent for %r",
+                         new_parent_id, task_id)
+            return False
+        if task.parent_task_id == new_parent_id:
+            logger.debug("Task %r is already under %r", task_id, new_parent_id)
+            return False
+        allowed = not self.is_descendant(new_parent_id, task_id)
+        logger.debug("Can re-parent task %r under %r: %s",
+                     task_id, new_parent_id, allowed)
+        return allowed
+
+    def reparent_task(self, task_id: str,
+                      new_parent_id: Optional[str]) -> bool:
+        """Move a task and its complete branch under a different parent."""
+        if not self.can_reparent_task(task_id, new_parent_id):
+            logger.warning("Rejected re-parenting task %r under %r",
+                           task_id, new_parent_id)
+            return False
+
+        task = self.get_task_by_id(task_id)
+        old_parent_id = task.parent_task_id
+        children = self._children_by_parent()
+        old_siblings = children.get(old_parent_id, [])
+        if task in old_siblings:
+            old_siblings.remove(task)
+
+        task.parent_task_id = new_parent_id
+        children.setdefault(new_parent_id, []).append(task)
+        self.tasks = self._flatten(children)
+        removed = self.strip_ancestor_links(task_id)
+        logger.info(
+            "Re-parented task %r from %r to %r with %d descendant(s); "
+            "removed %d invalid dependency link(s)",
+            task_id, old_parent_id, new_parent_id,
+            len(self._descendant_ids(task_id)), len(removed),
+        )
+        return True
+
+    def hierarchy_indent_px(self, task_id: str) -> int:
+        """Return the visual hierarchy indent using the required 24px step."""
+        indent = max(0, self.outline_level(task_id) - 1) * 24
+        logger.debug("Task %r hierarchy indent is %dpx", task_id, indent)
+        return indent
+
     def can_indent(self, task_id: str) -> bool:
         """Whether the task can be moved a level deeper."""
         return self.indent_target(task_id) is not None

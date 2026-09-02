@@ -18,6 +18,7 @@ with other applications, whereas moving a row inside one Treeview is a matter
 of the pointer position, which plain Tk reports perfectly well.
 """
 
+import sys
 import tkinter as tk
 from tkinter import ttk
 # See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
@@ -110,7 +111,9 @@ class DragDropTaskList(ctk.CTkFrame):
         appearance changes.
         """
         theme.style_treeview('Gantt.Treeview', row_height=self.GRID_ROW_HEIGHT)
+        ttk.Style(self.tree).configure('Gantt.Treeview', indent=24)
         self.tree.configure(style='Gantt.Treeview')
+        logger.debug("Applied 24px hierarchy indentation to the task tree")
 
     def _is_search_context(self, task) -> bool:
         """
@@ -363,6 +366,9 @@ class DragDropTaskList(ctk.CTkFrame):
         self._dragging = False
         self._drop_target = None
         self._drop_above = True
+        self._drop_as_parent = False
+        self._drop_parent_item = None
+        self._drop_parent_tags = ()
         self._drop_line_widget = None
 
         #: Called when the rows on show change or scroll; see on_rows_changed
@@ -497,6 +503,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<ButtonRelease-1>', self.on_release)
         self.tree.bind('<B1-Motion>', self.on_drag)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
+        self._bind_hierarchy_hotkeys()
 
         # Right-click menu, which offers the same moves as dragging
         self.context_menu = TaskContextMenu(
@@ -1562,6 +1569,57 @@ class DragDropTaskList(ctk.CTkFrame):
             if task and self.on_task_select:
                 self.on_task_select(task)
     
+    def _bind_hierarchy_hotkeys(self):
+        """Bind native hierarchy shortcuts for the current platform."""
+        bindings = {
+            '<Tab>': self._hotkey_indent,
+            '<Shift-Tab>': self._hotkey_outdent,
+            '<ISO_Left_Tab>': self._hotkey_outdent,
+        }
+        if sys.platform == 'darwin':
+            bindings.update({
+                '<Command-bracketright>': self._hotkey_indent,
+                '<Command-bracketleft>': self._hotkey_outdent,
+                '<Option-Shift-Right>': self._hotkey_indent,
+                '<Option-Shift-Left>': self._hotkey_outdent,
+            })
+        else:
+            bindings.update({
+                '<Control-bracketright>': self._hotkey_indent,
+                '<Control-bracketleft>': self._hotkey_outdent,
+                '<Alt-Shift-Right>': self._hotkey_indent,
+                '<Alt-Shift-Left>': self._hotkey_outdent,
+            })
+
+        bound = []
+        for sequence, callback in bindings.items():
+            try:
+                self.tree.bind(sequence, callback)
+                bound.append(sequence)
+            except tk.TclError:
+                logger.debug("Hierarchy shortcut %s is unsupported by this Tk",
+                             sequence)
+        self._hierarchy_bindings = tuple(bindings)
+        self._active_hierarchy_bindings = tuple(bound)
+        logger.info("Configured %d hierarchy shortcut(s) for %s; %d active",
+                    len(bindings), sys.platform, len(bound))
+
+    def _hotkey_indent(self, _event=None):
+        """Indent the selected rows from a keyboard shortcut."""
+        selected = list(self.tree.selection())
+        logger.info("Indent shortcut invoked for %d row(s)", len(selected))
+        if selected:
+            self.indent_task(selected)
+        return 'break'
+
+    def _hotkey_outdent(self, _event=None):
+        """Outdent the selected rows from a keyboard shortcut."""
+        selected = list(self.tree.selection())
+        logger.info("Outdent shortcut invoked for %d row(s)", len(selected))
+        if selected:
+            self.outdent_task(selected)
+        return 'break'
+
     def on_press(self, event):
         """
         Begin a possible drag.
@@ -1646,7 +1704,18 @@ class DragDropTaskList(ctk.CTkFrame):
         instead, as this first did, said which row was involved but not where
         the dragged one would end up.
         """
-        if item and not self._is_valid_drop(item):
+        self._clear_parent_drop_target()
+        self._drop_as_parent = False
+
+        if item and pointer_y is not None and self._is_valid_parent_drop(item):
+            box = self.tree.bbox(item)
+            if box:
+                _x, y, _width, height = box
+                self._drop_as_parent = y + height / 3 <= pointer_y <= y + 2 * height / 3
+
+        valid = (self._is_valid_parent_drop(item) if self._drop_as_parent
+                 else self._is_valid_drop(item))
+        if item and not valid:
             item = None
 
         self._drop_target = item or None
@@ -1655,7 +1724,12 @@ class DragDropTaskList(ctk.CTkFrame):
             self._hide_drop_line()
             return
 
-        self._show_drop_line(self._drop_target, pointer_y)
+        if self._drop_as_parent:
+            self._hide_drop_line()
+            self._show_parent_drop_target(self._drop_target)
+            self._say("Drop Target: Parent")
+        else:
+            self._show_drop_line(self._drop_target, pointer_y)
 
     def _drop_line(self):
         """The line widget, created on first use."""
@@ -1702,6 +1776,42 @@ class DragDropTaskList(ctk.CTkFrame):
         if self._drop_line_widget is not None:
             self._drop_line_widget.place_forget()
 
+    def _show_parent_drop_target(self, item):
+        """Highlight a row as the parent that will receive the dragged branch."""
+        try:
+            tags = tuple(self.tree.item(item, 'tags'))
+            self._drop_parent_item = item
+            self._drop_parent_tags = tags
+            self.tree.tag_configure('drop_parent', background=self.DROP_LINE_COLOR)
+            self.tree.item(item, tags=tags + ('drop_parent',))
+            logger.debug("Highlighted task %r as parent drop target", item)
+        except tk.TclError:
+            self._drop_parent_item = None
+            self._drop_parent_tags = ()
+
+    def _clear_parent_drop_target(self):
+        """Restore the normal appearance of a parent drop target."""
+        if self._drop_parent_item is not None:
+            logger.debug("Clearing parent drop target %r", self._drop_parent_item)
+            try:
+                self.tree.item(self._drop_parent_item,
+                               tags=self._drop_parent_tags)
+            except tk.TclError:
+                pass
+        self._drop_parent_item = None
+        self._drop_parent_tags = ()
+
+    def _is_valid_parent_drop(self, item):
+        """Whether the dragged branch may be re-parented under this row."""
+        if not item or item == self.dragged_task_id:
+            logger.debug("Rejected parent drop target %r for %r",
+                         item, self.dragged_task_id)
+            return False
+        valid = self.project.can_reparent_task(self.dragged_task_id, item)
+        logger.debug("Parent drop target %r for %r is valid=%s",
+                     item, self.dragged_task_id, valid)
+        return valid
+
     def _is_valid_drop(self, item):
         """
         Whether the dragged task can be dropped onto this row.
@@ -1724,8 +1834,10 @@ class DragDropTaskList(ctk.CTkFrame):
     def _end_drag(self):
         """Clear every trace of a drag, whether it completed or not."""
         self._hide_drop_line()
+        self._clear_parent_drop_target()
         self._drop_target = None
         self._drop_above = True
+        self._drop_as_parent = False
         self.dragged_task_id = None
         self.drag_item = None
         self._drag_origin = None
@@ -1769,9 +1881,12 @@ class DragDropTaskList(ctk.CTkFrame):
 
         source_id = self.dragged_task_id
         target_id = self._drop_target
+        drop_as_parent = self._drop_as_parent
         self._end_drag()
 
-        if target_id:
+        if target_id and drop_as_parent:
+            self.reparent_task(source_id, target_id)
+        elif target_id:
             self.move_task_before(source_id, target_id)
 
     def move_task(self, task_id: str, where: str):
@@ -1799,6 +1914,15 @@ class DragDropTaskList(ctk.CTkFrame):
         """Move a task to the position its sibling target_id occupies."""
         self._apply_reorder(
             lambda: self.project.move_task_before(task_id, target_id), task_id
+        )
+
+    def reparent_task(self, task_id: str, parent_id: str):
+        """Move a task branch under a parent selected by drag-and-drop."""
+        logger.info("Drag re-parent requested: task=%r parent=%r",
+                    task_id, parent_id)
+        self._apply_restructure(
+            lambda: self.project.reparent_task(task_id, parent_id),
+            [task_id], "Re-parent Task",
         )
 
     def _manager(self):

@@ -14,10 +14,12 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.models import Project, Task
+from gantt_app.resource_model import ResourceRepository
 from gantt_app.views.task_list import DragDropTaskList
 from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.toolbar import Toolbar
+from gantt_app.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.views.project_dashboard import ProjectDashboardFrame
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
@@ -78,7 +80,7 @@ class GanttApp(ctk.CTk):
     #: in the dock and the switcher however good the one in the menu is.
     WM_CLASS_NAME = 'pysimplepmt'
 
-    def __init__(self):
+    def __init__(self, show_welcome=False, startup_settings=None, initial_file=None):
         # className is what Tk builds WM_CLASS from, and it can only be given
         # at construction - there is no way to set it on a window that already
         # exists. CustomTkinter forwards it to Tk untouched.
@@ -112,20 +114,28 @@ class GanttApp(ctk.CTk):
         # Dirty-state tracking for unsaved-change protection
         self.is_dirty = False
         self._dirty_tracking_suspended = False
-        
+
+        # Optional startup settings and launcher configuration
+        self.startup_settings = startup_settings
+        self._show_welcome = show_welcome
+        if self.startup_settings is None and (show_welcome or initial_file):
+            self.startup_settings = StartupSettings()
+
         # Create undo/redo manager
         self.undo_redo_manager = UndoRedoManager(max_history=100)
         self.undo_redo_manager.set_project(self.project)
-        
+
         # Create project state tracker for easier undo/redo integration
         self.project_tracker = ProjectStateTracker(self.project, self.undo_redo_manager)
-        
+
         # Create clipboard manager
         self.clipboard_manager = ClipboardManager(self.project)
-        
-        # Create sample data
-        self._create_sample_data()
-        
+
+        # Create sample data only when not showing the welcome dialog and
+        # not asked to load a file at startup
+        if not show_welcome and not initial_file:
+            self._create_sample_data()
+
         # Create UI components
         self._create_ui()
         
@@ -748,16 +758,19 @@ class GanttApp(ctk.CTk):
         if self.is_dirty:
             title += " *"
         self.title(title)
+        logger.debug("Window title updated to %r", title)
 
     def mark_dirty(self):
         """Mark the current project as having unsaved changes."""
         self.is_dirty = True
+        logger.info("Project marked as dirty")
         self._update_title()
 
     def mark_clean(self):
         """Mark the current project as saved and resume dirty tracking."""
         self.is_dirty = False
         self._dirty_tracking_suspended = False
+        logger.info("Project marked as clean")
         self._update_title()
 
     def check_unsaved_changes(
@@ -770,6 +783,7 @@ class GanttApp(ctk.CTk):
         Returns 'save', 'discard', or 'cancel'.
         """
         if not self.is_dirty:
+            logger.debug("No unsaved changes; proceeding without prompt")
             return "discard"
 
         if message is None:
@@ -778,6 +792,7 @@ class GanttApp(ctk.CTk):
                 "Do you want to save before proceeding?"
             )
 
+        logger.info("Prompting user about unsaved changes")
         response = messagebox.askyesnocancel(
             title,
             message,
@@ -785,16 +800,22 @@ class GanttApp(ctk.CTk):
         )
 
         if response is True:
+            logger.info("User chose to save before proceeding")
             return "save"
         elif response is False:
+            logger.info("User chose to discard changes")
             return "discard"
         else:
+            logger.info("User cancelled the unsaved-changes prompt")
             return "cancel"
 
     def save_project(self) -> bool:
         """Save the project and return whether it is now clean."""
+        logger.info("Saving project via toolbar")
         self.toolbar.save_project()
-        return not self.is_dirty
+        clean = not self.is_dirty
+        logger.info("Save complete; project is clean=%s", clean)
+        return clean
 
     def on_close(self):
         """
@@ -857,6 +878,84 @@ class GanttApp(ctk.CTk):
     
 
 
+    def show_welcome_dialog(self):
+        """Display the startup project-selection modal."""
+        logger.info("Showing welcome dialog")
+        if self.startup_settings is None:
+            self.startup_settings = StartupSettings()
+        WelcomeModal(self, self.startup_settings.recent, self._on_welcome_select)
+
+    def _on_welcome_select(self, mode: str, payload: Optional[str] = None):
+        """Handle a choice from the Welcome modal."""
+        logger.info("Welcome selection: mode=%r payload=%r", mode, payload)
+        if mode == "new":
+            self._start_new_project()
+        elif mode == "sample":
+            self._load_sample_project()
+        elif mode == "recent":
+            self._load_recent_project(payload)
+        elif mode == "cancel":
+            self.on_close()
+
+    def _start_new_project(self, name: str = "New Project"):
+        """Initialize a fresh, empty project."""
+        logger.info("Starting new empty project named %r", name)
+        self.toolbar.current_file_path = None
+        self.project.name = name
+        self.project.tasks = []
+        self.project.start_date = None
+        self.project.end_date = None
+        self.project.resource_repository = ResourceRepository()
+
+        self.toolbar._forget_the_previous_plan()
+        self.update_all()
+        self.mark_clean()
+
+    def _load_sample_project(self):
+        """Load the built-in sample project."""
+        logger.info("Loading built-in sample project")
+        self.project.tasks = []
+        self.project.start_date = None
+        self.project.end_date = None
+        self.project.resource_repository = ResourceRepository()
+
+        self._create_sample_data()
+        self.toolbar._forget_the_previous_plan()
+        self.update_all()
+        self.mark_clean()
+
+    def _load_recent_project(self, path: str):
+        """Open a recent project, cleaning the list if it no longer exists."""
+        logger.info("Loading recent project from %r", path)
+        if not path or not os.path.exists(path):
+            logger.warning("Recent project not found: %r", path)
+            messagebox.showwarning(
+                "Project Not Found",
+                f"The project file could not be found:\n{path}\n\n"
+                "It will be removed from the recent list.",
+            )
+            if path and self.startup_settings is not None:
+                self.startup_settings.remove(path)
+            self.show_welcome_dialog()
+            return
+
+        self.toolbar.load_project_path(path)
+
+    def _load_file_path(self, path: str):
+        """Open a project from a file path given at launch."""
+        logger.info("Loading startup file %r", path)
+        if not os.path.exists(path):
+            logger.warning("Startup file not found: %r", path)
+            messagebox.showerror(
+                "File Not Found",
+                f"The project file could not be found:\n{path}",
+            )
+            self.show_welcome_dialog()
+            return
+
+        self.toolbar.load_project_path(path)
+
+
 # Import tkinter modules
 import tkinter as tk
 from tkinter import ttk
@@ -880,8 +979,28 @@ def main():
     if log_path:
         logger.info("Logging to %s", log_path)
 
+    startup_settings = StartupSettings()
+    file_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+
+    logger.info("Startup arguments: %s", file_args)
+
     try:
-        app = GanttApp()
+        if file_args:
+            initial_file = file_args[0]
+            logger.info("Opening file from command line: %r", initial_file)
+            app = GanttApp(
+                startup_settings=startup_settings,
+                initial_file=initial_file,
+            )
+            app._load_file_path(initial_file)
+        else:
+            logger.info("No startup file; opening welcome dialog")
+            app = GanttApp(
+                startup_settings=startup_settings,
+                show_welcome=True,
+            )
+            app.show_welcome_dialog()
+
         app.mainloop()
         logger.info("Application closed")
     except Exception as e:

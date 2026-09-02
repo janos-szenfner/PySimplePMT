@@ -32,8 +32,10 @@ This is a complete implementation of a project management tool with:
 ## Features
 
 - **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and today's column is tinted
-- **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or from the right-click menu (Move to top / up / down / bottom)
-- **Foldable Hierarchy**: A task with sub-tasks shows an expander; the arrow beside a row folds its branch away
+- **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or drop it over the centre of another Task Group to make that group its parent. A parent drop highlights the target and reports `Drop Target: Parent`
+- **Cycle-safe Group Re-parenting**: Entire Task Group branches can be nested inside other groups. A branch carries every descendant, schedule and resource assignment with it; moving a group into itself or one of its descendants is rejected
+- **Cross-platform hierarchy shortcuts**: `Tab` indents and `Shift+Tab` outdents everywhere. macOS also supports `Command+]`, `Command+[`, `Option+Shift+Right`, and `Option+Shift+Left`; Windows/Linux support `Ctrl+]`, `Ctrl+[`, `Alt+Shift+Right`, and `Alt+Shift+Left`
+- **Foldable Hierarchy**: A task with sub-tasks shows an expander; the arrow beside a row folds its branch away. Each nested level uses a 24-pixel indentation step
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
@@ -721,10 +723,10 @@ outside 0 to 100 - which nothing writes, but an imported file can hold -
 cannot pull its parent outside it either.
 
 ### Task List View (`views/task_list.py`)
-- **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. A row moves within its own set of siblings, so a sub-task stays under its parent, and a thin blue line marks the edge it would drop against
+- **Drag-and-Drop**: Rows are reordered by dragging, in plain Tkinter. Dropping near a row edge reorders within the current siblings and draws a thin blue insertion line. Dropping over the middle third of a valid Task Group highlights the whole row as `Drop Target: Parent` and re-parents the complete branch. Self-drops, descendant-drops and milestone targets are rejected before they can change the hierarchy
 - **Context Menu** (`views/contextmenu.py`): Right-click (two-finger click on macOS) any row for Move to top / up / down / bottom, Indent and Outdent, a Create submenu (Phase, Task, Subtask, Milestone), Edit and Delete, Copy, Cut, Paste and Paste as Sub-Task, then Undo and Redo; entries that would do nothing are greyed out. Deleting asks first, says how many sub-tasks go with the task, and is undoable. Right-clicking a row that is already part of a multi-row selection keeps the whole selection, so Copy and Cut act on all of it
 - **Create at a Row**: Create builds the chosen type at the row the menu was opened on — a sub-task inside it, a task or milestone beside it — rather than at the end of the plan. Right-clicking the empty space below the last row opens the menu too, and creates at the end of the plan
-- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. **Neither changes what the row is** — see *The Levels, and Moving Between Them* above. **Both act on every selected row**, as Copy and Cut do, and land them side by side rather than in a staircase: indent runs top to bottom so each row goes under the same sibling, outdent runs bottom to top so the rows keep their order. Selecting a parent and its children moves the branch once, not twice. A branch moves as a whole, one press is one undo, and the moved rows stay selected
+- **Indent / Outdent**: Indent moves a task under the row above it; outdent lifts it beside its parent. **Neither changes what the row is** — see *The Levels, and Moving Between Them* above. **Both act on every selected row**, as Copy and Cut do, and land them side by side rather than in a staircase: indent runs top to bottom so each row goes under the same sibling, outdent runs bottom to top so the rows keep their order. Selecting a parent and its children moves the branch once, not twice. A branch moves as a whole, one press is one undo, and the moved rows stay selected. Keyboard shortcuts are `Tab` / `Shift+Tab`; alternatives are `Command+]` / `Command+[` and `Option+Shift+Right` / `Option+Shift+Left` on macOS, or `Ctrl+]` / `Ctrl+[` and `Alt+Shift+Right` / `Alt+Shift+Left` on Windows and Linux
 - **EditTaskDialog** (`views/taskdialogs.py`): The task form over an existing task. Buttons read Help and Delete (set apart), then Close, Save & Close, Save & New
 - **CreateTaskDialog** (`views/taskdialogs.py`): The same form over a new one, for any of the five work item types
 - **Treeview Display**: ID, Name, Type, Duration (Days), Start Date, End Date, Progress, Dependencies, Milestone. Columns keep whatever width they are dragged to, and the horizontal scrollbar reaches anything that no longer fits
@@ -910,8 +912,9 @@ the whole window when they are what you came for.
 - **File**: opening, creating and saving a plan
 - **Actions**: import and export, each a submenu of formats - what is *done
   to* a plan, rather than the plan's own file
-- **Settings**: the three panels that describe the whole plan - Project,
-  Calendar and **Gantt Settings**
+- **Settings**: one modern tabbed hub for **Project**, **Resource**, **Gantt**
+  and **Calendar** settings; each tab summarizes the current values and opens
+  the existing full editor without removing any specialized controls
 - **Edit**: **Create** first, because everything under it acts on a row that
   has to exist already, then Undo, Redo, Cut, Copy and Paste
 - **View**: what is about this window - the day/night mode, **Critical
@@ -1119,7 +1122,7 @@ on any desktop does:
 - **File**: New Project, Load Project, Save Project, Save Project As
 - **Actions**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
-- **Settings**: Project Settings, Calendar Settings, Resource Settings, Gantt Settings
+- **Settings**: a unified tabbed window with Project, Resource, Gantt and Calendar categories, each linked to its existing full editor
 - **Edit**: Create (Phase, Task, Subtask, Milestone), Undo, Redo, Cut, Copy,
   Paste - the clipboard three carry the key they answer to, written the way
   this platform writes it (`⌘X` on a Mac, `Ctrl+X` elsewhere)
@@ -2611,5 +2614,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.64.36
+**Version**: 1.64.38
 **Last Updated**: 2026-08-31

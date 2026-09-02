@@ -1221,12 +1221,7 @@ class Toolbar(ctk.CTkFrame):
             {
                 'text': 'Settings',
                 'items': [
-                    {"text": "Project Settings...", "command": self.edit_project_info},
-                    {"text": "Calendar Settings...", "command": self.edit_holidays},
-                    {"text": "Resource Settings...",
-                     "command": self.open_resource_settings},
-                    {"text": "Gantt Settings...",
-                     "command": self.open_gantt_chart_settings},
+                    {"text": "Settings...", "command": self.open_settings},
                 ],
             },
             {
@@ -1548,6 +1543,33 @@ class Toolbar(ctk.CTkFrame):
         
         return selected_task[0]
     
+    def open_settings(self, initial_tab="Project"):
+        """Open the unified tabbed settings hub."""
+        from gantt_app.views.settingswindow import SettingsWindow
+
+        existing = getattr(self, '_settings_window', None)
+        try:
+            if existing is not None and existing.winfo_exists():
+                existing.lift()
+                existing.focus_force()
+                existing.tabview.set(initial_tab)
+                logger.info("Focused existing Settings window on %s", initial_tab)
+                return existing
+        except tk.TclError:
+            pass
+
+        logger.info("Opening unified Settings window on %s", initial_tab)
+        self._settings_window = SettingsWindow(
+            self.winfo_toplevel(),
+            self.project,
+            open_project=self.edit_project_info,
+            open_resource=self.open_resource_settings,
+            open_gantt=self.open_gantt_chart_settings,
+            open_calendar=self.edit_holidays,
+            initial_tab=initial_tab,
+        )
+        return self._settings_window
+
     def edit_project_info(self):
         """
         Open the settings that apply to the whole plan.
@@ -1767,24 +1789,30 @@ class Toolbar(ctk.CTkFrame):
         if save_project(self.project, file_path):
             self.current_file_path = file_path
             messagebox.showinfo("Success", "Project saved successfully!")
+            if hasattr(self.master, 'startup_settings'):
+                logger.info("Recording %s in the recent-projects list", file_path)
+                self.master.startup_settings.add(file_path, self.project.name)
             if hasattr(self.master, 'mark_clean'):
                 self.master.mark_clean()
         else:
+            logger.error("Failed to save project to %s", file_path)
             messagebox.showerror("Error", "Failed to save project")
 
     
     def load_project(self):
-        """Load a project from a JSON file."""
-        # Ask for file path
+        """Load a project from a JSON file chosen by the user."""
         file_path = filedialog.askopenfilename(
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
             title="Load Project"
         )
-        
+
         if not file_path:
             return
-        
-        # Load project
+
+        self.load_project_path(file_path)
+
+    def load_project_path(self, file_path: str):
+        """Load a project from a specific JSON file path."""
         logger.info("Loading project from %s", file_path)
         project = load_project(file_path)
         if project:
@@ -1798,25 +1826,33 @@ class Toolbar(ctk.CTkFrame):
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             self.project.resource_repository = project.resource_repository
-            
+
             self._forget_the_previous_plan()
 
             if self.on_project_changed:
                 self.on_project_changed()
 
+            if hasattr(self.master, 'startup_settings'):
+                logger.info("Recording %s in the recent-projects list", file_path)
+                self.master.startup_settings.add(file_path, self.project.name)
+
             if hasattr(self.master, 'mark_clean'):
                 self.master.mark_clean()
         else:
+            logger.error("Failed to load project from %s", file_path)
             messagebox.showerror("Error", "Failed to load project")
 
     def new_project(self):
         """Create a new empty project, prompting if there are unsaved changes."""
+        logger.info("Creating new project via toolbar")
         if hasattr(self.master, 'check_unsaved_changes'):
             action = self.master.check_unsaved_changes()
             if action == "cancel":
+                logger.info("New-project cancelled by user")
                 return
             if action == "save":
                 if not self.master.save_project():
+                    logger.info("New-project cancelled because save failed")
                     return
 
         new_name = tk.simpledialog.askstring(
@@ -1825,6 +1861,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if new_name:
+            logger.info("New project name set to %r", new_name)
             # A new plan has never been saved, so Save has to ask where -
             # writing it over whatever file the last plan came from is the
             # one thing it must not do
@@ -1843,6 +1880,8 @@ class Toolbar(ctk.CTkFrame):
 
             if hasattr(self.master, 'mark_clean'):
                 self.master.mark_clean()
+        else:
+            logger.info("New-project name dialog cancelled")
 
     def _selected_task_ids(self):
         """
