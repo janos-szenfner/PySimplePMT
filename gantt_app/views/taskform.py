@@ -45,6 +45,14 @@ from gantt_app.utils.log import get_logger
 logger = get_logger(__name__)
 
 
+#: How long to keep asking for the focus, and how often; see
+#: TaskFormDialog._focus_when_visible. The same shape as the grab's retry in
+#: gantt_app.views.modal, and for the same reason - a window that has not been
+#: mapped yet can be given neither.
+FOCUS_ATTEMPTS = 25
+FOCUS_RETRY_MS = 40
+
+
 class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     """
     The task form shared by creating and editing.
@@ -564,6 +572,57 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._watch_fields()
         self._watch_type()
         self._check_fields()
+        self._focus_when_visible()
+
+    def _focus_when_visible(self, attempt: int = 0):
+        """
+        Put the cursor in the Name box once the window is up.
+
+        PARAMETERS:
+        -----------
+        attempt : int
+            Retry counter; callers leave this at its default.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The form opened with nothing focused at all - focus_get() answered
+        None - so the first thing typed went nowhere and the Name field read
+        as one that could not be edited. That it worked at all depended on
+        the reader clicking into a box first, and on the window manager
+        having given the window keyboard focus by then, which is what made
+        it look intermittent.
+
+        Deferred and retried for the same reason the grab is; see
+        gantt_app.views.modal. Focus asked for before the window manager has
+        mapped the window is given away again as it maps, so asking early is
+        the same as not asking. The name is where a form is filled in from,
+        and where a reader who opened it to correct a typo is already
+        looking.
+
+        Never raises: a form nobody can type into yet is a great deal better
+        than one that failed to open.
+        """
+        entry = getattr(self, 'name_entry', None)
+        if entry is None:
+            return
+
+        try:
+            if not self.winfo_exists() or not entry.winfo_exists():
+                return
+            if self.winfo_viewable():
+                entry.focus_set()
+                return
+        except tk.TclError:
+            return
+
+        if attempt >= FOCUS_ATTEMPTS:
+            logger.debug("The form never became viewable; nothing focused")
+            return
+
+        try:
+            self.after(FOCUS_RETRY_MS, self._focus_when_visible, attempt + 1)
+        except tk.TclError:
+            pass
 
     def _build_general(self, frame):
         """

@@ -115,6 +115,10 @@ class GanttApp(ctk.CTk):
         self.is_dirty = False
         self._dirty_tracking_suspended = False
 
+        #: The editor window open on each task, by task id. One per task;
+        #: see edit_task for what six of them on one row did.
+        self._open_task_editors = {}
+
         # Optional startup settings and launcher configuration
         self.startup_settings = startup_settings
         self._show_welcome = show_welcome
@@ -638,10 +642,35 @@ class GanttApp(ctk.CTk):
     
     def edit_task(self, task: Task):
         """
-        Open the task edit dialog.
+        Open the task edit dialog, or bring the open one forward.
+
+        RETURNS:
+        --------
+        EditTaskDialog
+            The window now editing this task, whether it was just built or
+            was already up.
 
         DEVELOPMENT NOTES:
         ------------------
+        One editor per task. Every open built another window: six opens of
+        the same row left six identical dialogs stacked on top of one
+        another, each transient over this one and each racing the others for
+        the input grab. Whichever won it received the typing and the rest
+        took nothing, so the Name field on the window the reader was looking
+        at did nothing when typed into - reported as issue #6, and as
+        "after about 6 opens it suddenly becomes uneditable", which is
+        exactly what it was.
+
+        They were not only inert. Two editors on one task both hold their own
+        copy of it and both save, so whichever was closed last quietly undid
+        the other's edits.
+
+        The register is keyed by task id and cleared when the window goes.
+        <Destroy> fires for every widget inside the dialog as well as for the
+        dialog itself, so the handler checks which it was given; forgetting
+        the entry on a child's teardown would let the next open build a
+        second window while the first was still up.
+
         The dialog is not waited on. It is modal through its own grab, and
         nothing here needs its result - the work is done by the callbacks it
         was given. wait_window() only blocked this caller, and this caller is
@@ -653,7 +682,20 @@ class GanttApp(ctk.CTk):
         TaskContextMenu._after_menu, which defers these entries onto the idle
         queue for the same reason.
         """
-        EditTaskDialog(
+        existing = self._open_task_editors.get(task.id)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.deiconify()
+                    existing.lift()
+                    existing.focus_force()
+                    logger.info("Task %s is already open for editing", task.id)
+                    return existing
+            except tk.TclError:
+                pass
+            self._open_task_editors.pop(task.id, None)
+
+        dialog = EditTaskDialog(
             self, task, self.project,
             on_save=self.on_task_saved,
             on_delete=self.on_task_deleted,
@@ -664,6 +706,21 @@ class GanttApp(ctk.CTk):
                 "Task", anchor
             ),
         )
+        self._open_task_editors[task.id] = dialog
+
+        def forget(event, task_id=task.id, window=dialog):
+            """Drop the register's entry when its window goes."""
+            if event.widget is not window:
+                return                  # a widget inside it, not the dialog
+            if self._open_task_editors.get(task_id) is window:
+                del self._open_task_editors[task_id]
+
+        try:
+            dialog.bind('<Destroy>', forget, add='+')
+        except tk.TclError:
+            logger.debug("Could not watch the editor for task %s", task.id)
+
+        return dialog
     
     def on_task_saved(self, task: Task):
         """Handle task save from edit dialog."""
