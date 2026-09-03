@@ -33,8 +33,7 @@ import customtkinter as ctk
 from gantt_app import theme
 from gantt_app.shortcuts import accelerator
 from gantt_app.taskstyle import (
-    DEFAULT_BADGE, FILL_COLOURS, PRESETS, TEXT_COLOURS, ResolvedStyle,
-    preset_badge,
+    DEFAULT_BADGE, FILL_COLOURS, TEXT_COLOURS, ResolvedStyle,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.modal import take_grab
@@ -416,10 +415,40 @@ class StyleBar(ctk.CTkFrame):
         """
         if not self.enabled:
             return
+        from gantt_app.presets import default_manager
         from gantt_app.views.toolbar import CTkDropdownMenu
 
         button = self.buttons['style_preset']
+        items = self._preset_menu_items(default_manager())
 
+        menu = CTkDropdownMenu(self, items=items)
+        menu.geometry(f"+{button.winfo_rootx()}"
+                      f"+{button.winfo_rooty() + button.winfo_height() + 2}")
+
+    def _preset_menu_items(self, manager):
+        """
+        The rows the preset menu shows, in two sections.
+
+        PARAMETERS:
+        -----------
+        manager : PresetManager
+            The built-in and custom presets, read live so a preset added in
+            Settings is offered here with no restart; see REQ-UI-020.
+
+        RETURNS:
+        --------
+        list[dict]
+            A Default entry, then a Standard section of the built-ins, then a
+            Custom section of the reader's own - the second omitted when there
+            are none, so an untouched application shows no empty heading.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Built by kind rather than hardcoded, so the custom presets appear the
+        instant the manager holds them. Each row's chip is drawn from the
+        preset's own TaskStyle, so it cannot promise a look the click does
+        not deliver.
+        """
         default_glyph, default_colour = DEFAULT_BADGE
         items = [{
             "type": "preview",
@@ -428,29 +457,38 @@ class StyleBar(ctk.CTkFrame):
             "badge_color": default_colour,
             "preview": {"sample": "Sample"},
             "command": (lambda: self._apply('reset', None)),
-        }, {"type": "separator"}]
+        }, {"type": "separator"},
+            {"type": "header", "text": "STANDARD PRESETS"}]
 
-        for name, style in PRESETS:
-            glyph, colour = preset_badge(name)
-            items.append({
-                "type": "preview",
-                "text": name,
-                "badge": glyph,
-                "badge_color": colour,
-                "preview": {
-                    "sample": "Sample",
-                    "fill": style.fill_color,
-                    "text_color": style.text_color,
-                    "bold": bool(style.bold),
-                    "italic": bool(style.italic),
-                    "underline": bool(style.underline),
-                },
-                "command": (lambda s=style: self._apply('preset', s)),
-            })
+        for preset in manager.builtin():
+            items.append(self._preset_row(preset))
 
-        menu = CTkDropdownMenu(self, items=items)
-        menu.geometry(f"+{button.winfo_rootx()}"
-                      f"+{button.winfo_rooty() + button.winfo_height() + 2}")
+        custom = manager.custom()
+        if custom:
+            items.append({"type": "header", "text": "CUSTOM PRESETS"})
+            for preset in custom:
+                items.append(self._preset_row(preset))
+
+        return items
+
+    def _preset_row(self, preset):
+        """One preview row for a preset, built-in or custom."""
+        style = preset.style
+        return {
+            "type": "preview",
+            "text": preset.name,
+            "badge": preset.badge,
+            "badge_color": preset.badge_color,
+            "preview": {
+                "sample": "Sample",
+                "fill": style.fill_color,
+                "text_color": style.text_color,
+                "bold": bool(style.bold),
+                "italic": bool(style.italic),
+                "underline": bool(style.underline),
+            },
+            "command": (lambda s=style: self._apply('preset', s)),
+        }
 
     # ---- what the controls show ----------------------------------------
 

@@ -15,7 +15,7 @@ class SettingsWindow(ctk.CTkToplevel):
     """Modern four-tab hub that preserves the existing settings editors."""
 
     GEOMETRY = "800x600"
-    TABS = ("Project", "Resource", "Gantt", "Calendar")
+    TABS = ("Project", "Resource", "Gantt", "Calendar", "Presets")
 
     def __init__(
         self,
@@ -74,6 +74,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self._build_resource_tab()
         self._build_gantt_tab()
         self._build_calendar_tab()
+        self._build_presets_tab()
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill=tk.X, padx=20, pady=(0, 18))
@@ -191,6 +192,20 @@ class SettingsWindow(ctk.CTkToplevel):
             ),
             "Open Calendar Settings",
         )
+
+    def _build_presets_tab(self):
+        """
+        Build the style-presets manager inside its tab.
+
+        Hosted in the tab directly rather than behind an Open button like the
+        other four: the built-ins and the reader's own customs are edited in
+        place, and the grid is the whole of it. See views/presetsettings.py.
+        """
+        from gantt_app.presets import default_manager
+        from gantt_app.views.presetsettings import StylePresetsTab
+
+        StylePresetsTab(self.tabs["Presets"], default_manager()).pack(
+            fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     def open_editor(self, tab_name: str):
         """Close the hub and open the selected existing settings editor."""

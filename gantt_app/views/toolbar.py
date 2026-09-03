@@ -379,6 +379,8 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         # Determine item type - check if it has submenu/items first
         if item.get("type") == "separator":
             item_type = "separator"
+        elif item.get("type") == "header":
+            item_type = "header"
         elif item.get("type") == "preview":
             item_type = "preview"
         elif "submenu" in item or "items" in item:
@@ -398,6 +400,16 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             # Create a separator line
             separator = ctk.CTkFrame(row, height=1, fg_color=theme.SEPARATOR, corner_radius=0)
             separator.pack(fill="x", pady=4)
+            return
+
+        if item_type == "header":
+            # A section title, muted and answering no click. It names the
+            # two halves of the preset menu - Standard and Custom.
+            ctk.CTkLabel(
+                row, text=label_text, anchor="w",
+                text_color=theme.MUTED_TEXT,
+                font=ctk.CTkFont(size=11, weight="bold"),
+            ).pack(fill="x", padx=10)
             return
 
         if item_type == "toggle":

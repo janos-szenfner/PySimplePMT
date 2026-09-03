@@ -21,6 +21,8 @@ wants to drive. The one scenario that checks the drawing builds a real menu
 from preview items and reads its widgets back, the way test_menu_dismissal
 does, settling it with update_idletasks rather than a full update.
 """
+import os
+import tempfile
 import tkinter as tk
 
 import pytest
@@ -92,6 +94,21 @@ def bar_root():
         pass
 
 
+@pytest.fixture
+def manager():
+    """
+    A preset manager with its own settings file and no custom presets.
+
+    Isolated on purpose: the toolbar uses the application-wide default
+    manager, which reads the real user settings.json - a test must neither
+    depend on what is in it nor write to it.
+    """
+    from gantt_app.presets import PresetManager
+
+    path = os.path.join(tempfile.mkdtemp(), 'settings.json')
+    return PresetManager(settings_path=path)
+
+
 @given("a style bar with a selection", target_fixture="bar")
 def a_style_bar_with_a_selection(bar_root):
     """
@@ -111,26 +128,15 @@ def a_style_bar_with_a_selection(bar_root):
 
 
 @when("the preset menu is opened", target_fixture="menu_items")
-def the_preset_menu_is_opened(bar):
+def the_preset_menu_is_opened(bar, manager):
     """
-    Open it with the floating window swapped for a recorder.
+    The rows _open_presets would hand the floating window.
 
-    _open_presets builds the item list and hands it to CTkDropdownMenu; the
-    recorder keeps that list so the test can read the badges, previews and
-    commands the real window would have drawn.
+    Built through the real item builder against an isolated manager, rather
+    than opening the topmost window, which watches for clicks and does not
+    want driving from a headless test. See the module note.
     """
-    from unittest import mock
-
-    captured = {}
-
-    def catch(master, items, **kwargs):
-        menu = RecordingMenu(master, items, **kwargs)
-        captured['menu'] = menu
-        return menu
-
-    with mock.patch('gantt_app.views.toolbar.CTkDropdownMenu', catch):
-        bar._open_presets()
-    return captured['menu'].items
+    return bar._preset_menu_items(manager)
 
 
 @when(parsers.parse('the "{label}" entry is chosen'))
