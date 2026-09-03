@@ -413,6 +413,18 @@ jobs:
           if not text.strip():
               text = 'Housekeeping only; see the commit history for detail.'
 
+          # Neutralise @-mentions. GitHub linkifies every "@word" in release
+          # notes as a user, so a commit body describing pytest-bdd's @given
+          # and @when steps turned them into links to strangers' accounts and
+          # listed those accounts as contributors on the release. Wrapping a
+          # bare mention in backticks stops the autolink and is the right font
+          # for what these are - identifiers - anyway. An @ with a word before
+          # it is an e-mail address and is left alone, as is one already in a
+          # code span.
+          import re
+          text = re.sub(r'(?<![`\w])@([A-Za-z0-9][A-Za-z0-9-]*)',
+                        r'`@\1`', text)
+
           with open(out_path, 'w') as handle:
               handle.write(text + '\n')
           PY
