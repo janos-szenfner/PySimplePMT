@@ -37,7 +37,7 @@ This is a complete implementation of a project management tool with:
 - **Cross-platform hierarchy shortcuts**: `Tab` indents and `Shift+Tab` outdents everywhere. macOS also supports `Command+]`, `Command+[`, `Option+Shift+Right`, and `Option+Shift+Left`; Windows/Linux support `Ctrl+]`, `Ctrl+[`, `Alt+Shift+Right`, and `Alt+Shift+Left`
 - **Foldable Hierarchy**: A task with sub-tasks shows an expander; the arrow beside a row folds its branch away. Each nested level uses a 24-pixel indentation step
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
-- **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. Applies to a whole selection at once, undoes in one step, and is saved with the plan
+- **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. The preset menu shows each one as it will look — a coloured badge, its name, and a live sample drawn in the preset's own colours and emphasis — and a **Default (no style)** entry at the top of the same menu clears the formatting in one click. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
 - **Resource Settings**: Settings → Resource Settings manages Named people, Generic role placeholders and Team pools in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity, hourly rates, days off and team splits; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘.` on a Mac (`Ctrl+Alt+.` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
@@ -64,7 +64,7 @@ This is a complete implementation of a project management tool with:
 - **Critical Path**: Automatic calculation and visualization of the critical path. The icon on the bar paints every critical row light red in the task list — press it again to clear — and **View → Critical Path...** opens the full float table
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in **working** days and Hard/Rubber link hardness. A start link and a finish link on the same task state a span - Start-Start onto the first task and Finish-Finish onto the last makes a row cover the stretch between them, and its duration follows from the two dates rather than being carried over. A hard link pins a date but still has to clear any rubber floor set by another link
 - **Earliest Begin Date**: a floor on when a task's work can start, applied alongside the links and the working calendar
-- **Checked as you type**: The task editor outlines a name or a date it cannot use and says why beneath the form, rather than waiting for Save
+- **Checked as you type**: The task editor outlines a date it cannot use and says why beneath the form, rather than waiting for Save. A name is not required — a row may be left unnamed, or share a name with another — so the name box is never marked
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Actions → Calendar Settings... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
@@ -778,13 +778,14 @@ the whole window when they are what you came for.
   duration the mode names is worked out from the other two and greyed out, and
   fills itself in as the other two are typed. Durations are inclusive, so a
   task running from the 1st to the 5th lasts five days
-- **Checked as it is filled in** (`views/formcheck.py`): a name or a date that
-  cannot be used is outlined, and the reason written on a line under the form
-  which keeps its place whether or not it has anything to say. A box is only
+- **Checked as it is filled in** (`views/formcheck.py`): a date that cannot be
+  used is outlined, and the reason written on a line under the form which keeps
+  its place whether or not it has anything to say. A date box is only
   complained about for being empty once the user has been in it, so a new task
-  does not open covered in red. Fields are watched through a variable rather
-  than the keyboard, so a date arriving from the calendar or from a dependency
-  is checked too
+  does not open covered in red. The name is not checked at all - a task may
+  have none, and may share one with another row - so the name box is never
+  marked. Fields are watched through a variable rather than the keyboard, so a
+  date arriving from the calendar or from a dependency is checked too
 - **Help**: a Help button beside Delete opens a reference on the form's own
   fields (`help/editorhelp.py`)
 - **Progress**: a percentage on every row that carries its own, and
@@ -1270,6 +1271,19 @@ of each letter are bound: Tk reports `<Control-B>` when caps lock is on, and a
 shortcut that stops working with caps lock is the kind of fault nobody reports
 and everybody notices.
 
+**The preset menu shows what each preset looks like.** It once listed four
+plain names, so a reader had to apply one to find out what it was. Each preset
+is now a preview row — a coloured badge to recognise it by, its name, and a
+chip drawn in the preset's own fill, ink and emphasis. The chip is built from
+the very `TaskStyle` the click applies, so it can never promise a look the
+click does not deliver. The badge is a geometric shape (a diamond, a circle, a
+triangle, a square) rather than an emoji, because a shape renders in the one
+font Tk has everywhere and takes a colour, where a colour emoji shows as an
+empty box on a Tk built without one. A **Default (no style)** entry heads the
+list and clears the formatting: trying a preset and putting it back was a trip
+out to the Clear button beside the menu, and one click at the top of the same
+list is where the eye already is.
+
 ### Menus That Can Always Be Dismissed (`views/toolbar.py`)
 
 Menus were going behind the main window and leaving the application looking
@@ -1382,10 +1396,11 @@ have moved. `destroy()` cancels a pending one, for the same reason it cancels a
 pending status message: a timer firing into a destroyed widget is a Tk error.
 
 A name typed here goes onto the task through the undo tracker, so the editor
-reads it and one Undo takes it back. An empty name puts the old one back
-without saying anything: a row has to be called something, and a dialog thrown
-up because somebody clicked away from a box they had cleared would be a
-reprimand for a slip.
+reads it and one Undo takes it back. Clearing the name clears it: a row need
+not be called anything - the create dialog makes blank ones too - so the grid
+clearing a name is the same choice one level down. A name that has not actually
+changed is not written, so clicking away from an already-blank row adds nothing
+to the undo history.
 
 ### The Dependencies Column (`dependencysyntax.py`)
 
@@ -2489,7 +2504,8 @@ Unit tests cover:
 - ✅ **Undo/Redo**: Command stack behaviour
 - ✅ **Utilities**: Project utilities, validation, edge cases
 - ✅ **Completion**: Each level's roll-up rule, empty containers, clamping, the whole cascade from a part-finished sub-task to the phase above it, and that a plan of ticks and empty boxes reads exactly what counting ticks used to give
-- ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when, what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
+- ✅ **Task Editor**: That the boxes survive being checked, what the form complains about and when (a date, never the name), what a refused save leaves alone, and that a keystroke changing no verdict touches no widget
+- ✅ **Opening the Editor**: That the name box takes the cursor once the window is mapped, that opening the same task twice keeps one window rather than stacking them, that a second task gets its own, and that closing one lets it be opened afresh
 - ✅ **Copy, Cut and Paste**: What goes on the clipboard, what may be pasted where, that a paste lands beside the row rather than inside it, that a paste with nothing selected is refused, that links and parentage follow what was copied, that a task cannot be pasted inside itself, that one Undo takes the whole paste back, and that the shortcuts bind this platform's modifier in both letter cases
 - ✅ **Forms opened from a menu**: That neither the edit nor the create form is waited on, and that both still hand their result back through a callback
 - ✅ **Mark on Track**: That work behind its dates is brought forward, that a figure already reported is never lowered - over a selection or over the whole project - and that being ahead of schedule is reported rather than corrected
@@ -2508,13 +2524,14 @@ Unit tests cover:
 - ✅ **Task Editor Exits**: That Enter saves and claims the key, that it leaves a multi-line box alone under either of the two widgets Tk might report as focused, that Escape discards, and that the primary and secondary buttons look different
 - ✅ **Progress Tracking**: The five thresholds over a whole selection, that a phase marks the work under it, that past work goes to 100% and future work stays at 0%, that a weekend and a holiday both count correctly, that a milestone is done or not done, and that a whole press is one undo step
 - ✅ **The Formatting Bar**: That it is greyed with nothing selected, what it shows for a selection that disagrees, that pressing a toggle then applies to every selected row, the presets, the one-press clear, one undo step per press, and the hotkeys in both letter cases
+- ✅ **The Preset Preview Menu**: That every preset carries a badge and an unknown one falls back, that the menu opens with a Default entry ahead of a preview per preset, that each preview chip matches the style it applies, that choosing a preset applies it and choosing Default clears the formatting, and that a preview row draws its badge, name and chip
 - ✅ **The List Keeps Its Place**: That the selection, the folded branches and the scroll position all survive a rebuild — the refresh that used to throw the selection away on every change — and that a row deleted underneath it is not reselected
 - ✅ **Menu Dismissal**: That two watchers can coexist and removing one leaves the other, that the window's own bindings survive, that a menu closes on a click outside and not on one inside, that closing it stops the watch, and the exact two-menu sequence that used to leave one undismissable
 - ✅ **The Settings Layout**: That every control belongs to the frame it is gridded into rather than to the window, that labels and controls are in their own columns, that the notes wrap rather than running off the edge, and that the window opens big enough for what is in it
 - ✅ **Project Settings**: That the settings survive a saved file and an older one opens with the defaults, that a priority out of range is clamped rather than refusing the plan, that moving the plan keeps every duration and gap and carries the earliest-begin floors with it, and that the panel refuses a backward schedule with no deadline
 - ✅ **Backward Scheduling**: That the plan ends on the deadline, that durations survive, that every link is still satisfied without a reschedule afterwards, that a task with float moves late rather than staying early, that a deadline in the past still moves the plan, and that a forward plan is settled byte for byte as it was before
 - ✅ **Inline Editing**: — the tests stub where a cell is, because that is the widget's answer and a window that has never been mapped does not reliably have one; `_cell_box`'s own behaviour is checked separately.
-- ✅ **Inline Editing (behaviour)**: That a double-click opens an editor over the right cell and routes the name and the dependencies to their own, that Enter stores the name and Escape does not, that an empty name reverts, that a row deleted under the editor is not renamed, that it is one undo step, and that renaming does not disturb the rest of the task
+- ✅ **Inline Editing (behaviour)**: That a double-click opens an editor over the right cell and routes the name and the dependencies to their own, that Enter stores the name and Escape does not, that an empty name clears it, that a row deleted under the editor is not renamed, that it is one undo step, and that renaming does not disturb the rest of the task
 - ✅ **The Type column**: That a double-click opens a read-only dropdown of every type, that a nested row gets the same list, that choosing stores it as one undo step, that choosing the type it already is costs nothing, and that the milestone flag is written and cleared with the type in both directions
 - ✅ **A row keeps its type when it moves**: That indent and outdent leave every type alone, including the cases the older rule retyped, and that an indent/outdent round trip lands where it started
 - ✅ **New task from the keyboard**: That it creates beside the focused row, at the end of the plan with no cursor, that the key is the platform's and does not collide with italic, and that the I key is recognised from its keysym, its character or — on macOS — its physical keycode, so the Option compose key cannot hide it
