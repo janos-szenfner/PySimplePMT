@@ -18,7 +18,9 @@ from gantt_app.models import Project, Task
 from gantt_app.resource_model import (
     Resource, ResourceRepository, ResourceType, SchedulePattern, TeamPool,
 )
-from gantt_app.views.assigntask import _resource_load, _workload_text, TaskResourceTab
+from gantt_app.views.assigntask import (
+    _resource_load, _workload_text, TaskResourceTab,
+)
 
 
 def _display_available() -> bool:
@@ -40,133 +42,118 @@ pytestmark = [
 scenarios("features/assigntask.feature")
 
 
-# FIXTURES FOR HELPER FUNCTION TESTS (no display needed)
+# ---------------------------------------------------------------------------
+# The helper functions, which need no display
+#
+# One step per line of the feature. These were written twice - a @given that
+# built the resource and a @when of the same wording that used it - and the
+# feature says When, so the @given never ran and the @when asked for a
+# fixture nothing had made. Every one of these scenarios failed on
+# "fixture 'resource_no_memberships' not found".
+# ---------------------------------------------------------------------------
 
-@given(parsers.parse("calculating resource load for a resource with no memberships and {capacity:g} weekly capacity"),
-       target_fixture="resource_no_memberships")
-def resource_with_no_memberships(capacity):
-    """Create a resource with no memberships."""
+def _resource(capacity, memberships=None):
+    """One named resource, with the memberships a scenario gives it."""
     return Resource(
         id="r1", name="Jane Smith",
         resource_type=ResourceType.NAMED, role_type="Dev",
         weekly_capacity_hours=capacity,
+        team_memberships=memberships or {},
         schedule_pattern=SchedulePattern.STANDARD)
 
 
-@given(parsers.parse("calculating resource load for a resource with team memberships totaling {total:g} and {capacity:g} weekly capacity"),
-       target_fixture="resource_with_memberships")
-def resource_with_team_memberships(total, capacity):
-    """Create a resource with team memberships totaling the specified amount."""
-    # Create memberships that sum to the specified total
-    memberships = {}
-    if total > 0:
-        memberships["team1"] = total
-    
-    return Resource(
-        id="r1", name="Jane Smith",
-        resource_type=ResourceType.NAMED, role_type="Dev",
-        weekly_capacity_hours=capacity,
-        team_memberships=memberships,
-        schedule_pattern=SchedulePattern.STANDARD)
+@when(parsers.parse("calculating resource load for a resource with no "
+                    "memberships and {capacity:g} weekly capacity"),
+      target_fixture="result")
+def resource_load_with_no_memberships(capacity):
+    """A resource on no teams uses none of its capacity."""
+    return _resource_load(_resource(capacity))
 
 
-@given(parsers.parse("calculating workload text for an overloaded resource with {allocation:g} allocation and {capacity:g} weekly capacity"),
-       target_fixture="overloaded_resource")
-def overloaded_resource_data(allocation, capacity):
-    """Create an overloaded resource for workload text calculation."""
-    resource = Resource(
-        id="r1", name="Jane Smith",
-        resource_type=ResourceType.NAMED, role_type="Dev",
-        weekly_capacity_hours=capacity,
-        team_memberships={"team1": allocation},
-        schedule_pattern=SchedulePattern.STANDARD)
-    return resource, [resource]  # resource and resource list
+@when(parsers.parse("calculating resource load for a resource with team "
+                    "memberships totaling {total:g} and {capacity:g} "
+                    "weekly capacity"),
+      target_fixture="result")
+def resource_load_with_memberships(total, capacity):
+    """A share of a team is a share of the resource's week."""
+    memberships = {"team1": total} if total > 0 else {}
+    return _resource_load(_resource(capacity, memberships))
 
 
-@given(parsers.parse("calculating workload text for an available resource with {allocation:g} allocation and {capacity:g} weekly capacity"),
-       target_fixture="available_resource")
-def available_resource_data(allocation, capacity):
-    """Create an available resource for workload text calculation."""
-    resource = Resource(
-        id="r1", name="Jane Smith",
-        resource_type=ResourceType.NAMED, role_type="Dev",
-        weekly_capacity_hours=capacity,
-        team_memberships={"team1": allocation},
-        schedule_pattern=SchedulePattern.STANDARD)
-    return resource, [resource]  # resource and resource list
+@when(parsers.parse("calculating workload text for an overloaded resource "
+                    "with {allocation:g} allocation and {capacity:g} "
+                    "weekly capacity"),
+      target_fixture="result")
+def workload_text_for_an_overloaded_resource(allocation, capacity):
+    """More allocated than there are hours in the week."""
+    resource = _resource(capacity, {"team1": allocation})
+    return _workload_text(resource, [resource])
 
 
-# WHEN FIXTURES FOR HELPER FUNCTIONS
+@when(parsers.parse("calculating workload text for an available resource "
+                    "with {allocation:g} allocation and {capacity:g} "
+                    "weekly capacity"),
+      target_fixture="result")
+def workload_text_for_an_available_resource(allocation, capacity):
+    """Room left in the week."""
+    resource = _resource(capacity, {"team1": allocation})
+    return _workload_text(resource, [resource])
 
-@when(parsers.parse("calculating resource load for a resource with no memberships and {capacity:g} weekly capacity"))
-def calculate_resource_load_no_memberships(resource_no_memberships):
-    """Calculate resource load for resource with no memberships."""
-    return _resource_load(resource_no_memberships)
-
-
-@when(parsers.parse("calculating resource load for a resource with team memberships totaling {total:g} and {capacity:g} weekly capacity"))
-def calculate_resource_load_with_memberships(resource_with_memberships):
-    """Calculate resource load for resource with memberships."""
-    return _resource_load(resource_with_memberships)
-
-
-@when(parsers.parse("calculating workload text for an overloaded resource with {allocation:g} allocation and {capacity:g} weekly capacity"))
-def calculate_workload_text_overloaded(overloaded_resource):
-    """Calculate workload text for overloaded resource."""
-    resource, resource_list = overloaded_resource
-    return _workload_text(resource, resource_list)
-
-
-@when(parsers.parse("calculating workload text for an available resource with {allocation:g} allocation and {capacity:g} weekly capacity"))
-def calculate_workload_text_available(available_resource):
-    """Calculate workload text for available resource."""
-    resource, resource_list = available_resource
-    return _workload_text(resource, resource_list)
-
-
-# THEN FIXTURES FOR HELPER FUNCTIONS
 
 @then(parsers.parse("the used capacity should be {used:g}"))
 def check_used_capacity(result, used):
-    """Check that the used capacity matches the expected value."""
-    if isinstance(result, tuple):
-        actual_used, _ = result
-        assert actual_used == used
-    else:
-        assert result == used
+    """The hours the memberships come to."""
+    actual = result[0] if isinstance(result, tuple) else result
+    assert actual == used
 
 
 @then(parsers.parse("the total capacity should be {capacity:g}"))
 def check_total_capacity(result, capacity):
-    """Check that the total capacity matches the expected value."""
-    if isinstance(result, tuple):
-        _, actual_capacity = result
-        assert actual_capacity == capacity
+    """The hours there are."""
+    assert isinstance(result, tuple), result
+    assert result[1] == capacity
 
 
 @then(parsers.parse('the text should contain "{text}"'))
 def check_text_contains(result, text):
-    """Check that the result text contains the specified text."""
-    if isinstance(result, tuple):
-        actual_text, _, _ = result
-    else:
-        actual_text = result
-    assert text in actual_text
+    """What the reader is shown."""
+    actual = result[0] if isinstance(result, tuple) else result
+    assert text in actual, f"{text!r} not in {actual!r}"
 
 
 @then(parsers.parse("the percentage should be {pct:g}"))
 def check_percentage(result, pct):
-    """Check that the percentage matches the expected value."""
-    if isinstance(result, tuple):
-        _, _, actual_pct = result
-        assert actual_pct == pct
+    """And the number behind it."""
+    assert isinstance(result, tuple) and len(result) == 3, result
+    assert result[2] == pct
 
 
-# FIXTURES FOR WIDGET TESTS (need display)
+# ---------------------------------------------------------------------------
+# The Resource tab, which needs a display
+#
+# One task fixture and one tab fixture between all the scenarios. There were
+# four steps reading "a task resource tab for that task", each making a tab
+# under a different name; pytest-bdd keeps one definition per step text, so
+# three of those names were never created and the scenarios reaching for them
+# failed. The task a tab is built on comes from whichever Given ran before
+# it, which is what the wording already says.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def root():
+    """A window to build the tab in."""
+    root = ctk.CTk()
+    root.withdraw()
+    yield root
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
+
 
 @pytest.fixture
 def resource_repository():
-    """Create a resource repository for testing."""
+    """One person and one team to assign."""
     repo = ResourceRepository()
     repo.resources["r1"] = Resource(
         id="r1", name="Jane Smith",
@@ -182,236 +169,197 @@ def resource_repository():
 
 @pytest.fixture
 def project(resource_repository):
-    """Create a project for testing."""
-    return Project(name="Test Project", resource_repository=resource_repository)
+    """A plan holding them."""
+    return Project(name="Test Project",
+                   resource_repository=resource_repository)
 
 
-@given("a task with resource assignments", target_fixture="task_with_assignments")
-def task_with_resource_assignments(project):
-    """Create a task with existing resource assignments."""
+def _assigned_task(task_id, name, assignments):
+    """A task carrying the assignments a scenario asks for."""
     return Task(
-        id="001", name="Test Task",
+        id=task_id, name=name,
         start_date=datetime(2026, 1, 1),
         end_date=datetime(2026, 1, 10),
-        resource_assignments=[
-            {"resource_id": "r1", "estimated_hours": 8.0, "resource_split": 50.0},
-        ])
+        resource_assignments=assignments)
 
 
-@given("an empty task", target_fixture="empty_task")
-def empty_task():
-    """Create an empty task."""
-    return Task(
-        id="002", name="Empty",
-        start_date=datetime(2026, 1, 1))
+@given("a task with resource assignments", target_fixture="task")
+@given("a task with existing resource assignments", target_fixture="task")
+def a_task_with_resource_assignments():
+    """One assignment already on it."""
+    return _assigned_task("001", "Test Task", [
+        {"resource_id": "r1", "estimated_hours": 8.0,
+         "resource_split": 50.0},
+    ])
 
 
-@given("a task with multiple resource assignments", target_fixture="task_with_multiple_assignments")
-def task_with_multiple_assignments(project):
-    """Create a task with multiple resource assignments."""
-    return Task(
-        id="002", name="Align",
-        start_date=datetime(2026, 1, 1),
-        resource_assignments=[
-            {"resource_id": "r1", "estimated_hours": 8.0, "resource_split": 50.0},
-            {"resource_id": "t1", "estimated_hours": 16.0, "resource_split": 100.0},
-        ])
+@given("an empty task", target_fixture="task")
+def an_empty_task():
+    """Nothing assigned yet."""
+    return Task(id="002", name="Empty", start_date=datetime(2026, 1, 1))
 
 
-@given("a task resource tab for that task", target_fixture="resource_tab")
-def task_resource_tab(root, project, task_with_assignments):
-    """Create a task resource tab for the specified task."""
-    tab = TaskResourceTab(root, project, task_with_assignments)
+@given("a task with multiple resource assignments", target_fixture="task")
+def a_task_with_multiple_resource_assignments():
+    """Two rows in the tab, so their cells can be compared."""
+    return _assigned_task("002", "Align", [
+        {"resource_id": "r1", "estimated_hours": 8.0,
+         "resource_split": 50.0},
+        {"resource_id": "t1", "estimated_hours": 16.0,
+         "resource_split": 100.0},
+    ])
+
+
+@given("a task resource tab for that task", target_fixture="tab")
+def a_task_resource_tab_for_that_task(root, project, task):
+    """The tab, on whichever task the Given before it set up."""
+    tab = TaskResourceTab(root, project, task)
     tab.update_idletasks()
     return tab
 
 
-@given("a task resource tab for that task", target_fixture="empty_resource_tab")
-def empty_task_resource_tab(root, project, empty_task):
-    """Create a task resource tab for the empty task."""
-    tab = TaskResourceTab(root, project, empty_task)
+@given("a task resource tab with resources", target_fixture="tab")
+@given("a task resource tab with existing assignments", target_fixture="tab")
+def a_task_resource_tab_on_an_assigned_task(root, project):
+    """
+    A tab that opens with one assignment already on it.
+
+    These two scenarios name no task of their own - the wording carries it -
+    so the task is made here rather than asked for as a fixture. Asking
+    would fail: nothing before them produces one.
+    """
+    task = _assigned_task("003", "Assigned", [
+        {"resource_id": "r1", "estimated_hours": 8.0,
+         "resource_split": 50.0},
+    ])
+    tab = TaskResourceTab(root, project, task)
     tab.update_idletasks()
     return tab
 
-
-@given("a task resource tab for that task", target_fixture="multi_assignment_tab")
-def multi_assignment_resource_tab(root, project, task_with_multiple_assignments):
-    """Create a task resource tab for the task with multiple assignments."""
-    tab = TaskResourceTab(root, project, task_with_multiple_assignments)
-    tab.update_idletasks()
-    return tab
-
-
-@given("a task resource tab for that task", target_fixture="resource_tab_with_resources")
-def task_resource_tab_with_resources(root, project, task_with_assignments):
-    """Create a task resource tab with resources for testing."""
-    tab = TaskResourceTab(root, project, task_with_assignments)
-    tab.update_idletasks()
-    return tab
-
-
-@given("a task resource tab with resources", target_fixture="search_tab")
-def task_resource_tab_for_search(root, project, empty_task):
-    """Create a task resource tab for search testing."""
-    tab = TaskResourceTab(root, project, empty_task)
-    tab.update_idletasks()
-    return tab
-
-
-@given("a task resource tab with existing assignments", target_fixture="effort_tab")
-def task_resource_tab_for_effort(root, project, task_with_assignments):
-    """Create a task resource tab for effort testing."""
-    tab = TaskResourceTab(root, project, task_with_assignments)
-    tab.update_idletasks()
-    return tab
-
-
-@given("a task resource tab with existing assignments", target_fixture="split_tab")
-def task_resource_tab_for_split(root, project, task_with_assignments):
-    """Create a task resource tab for split testing."""
-    tab = TaskResourceTab(root, project, task_with_assignments)
-    tab.update_idletasks()
-    return tab
-
-
-@pytest.fixture
-def root():
-    """Create a root window for testing."""
-    root = ctk.CTk()
-    root.withdraw()
-    yield root
-    try:
-        root.destroy()
-    except tk.TclError:
-        pass
-
-
-# WHEN FIXTURES FOR WIDGET TESTS
 
 @when("the tab is created and updated")
-def tab_created_and_updated(resource_tab):
-    """Return the tab after creation and update."""
-    return resource_tab
+def the_tab_is_created_and_updated(tab):
+    """Already built by the Given; this settles its layout."""
+    tab.update_idletasks()
 
 
 @when("a team is picked for assignment")
-def pick_team_for_assignment(empty_resource_tab):
-    """Pick a team for assignment."""
-    empty_resource_tab._on_picked("t1")
-    return empty_resource_tab
+def a_team_is_picked_for_assignment(tab):
+    """Choosing the team from the dropdown."""
+    tab._on_picked("t1")
+    tab.update_idletasks()
 
 
 @when("the assignment is removed")
-def remove_assignment(tab):
-    """Remove the assignment at index 0."""
+def the_assignment_is_removed(tab):
+    """Clearing the first row."""
     tab._remove(0)
-    return tab
+    tab.update_idletasks()
 
 
 @when("the same resource is picked again")
-def pick_same_resource_again(resource_tab):
-    """Pick the same resource again."""
-    resource_tab._on_picked("r1")
-    return resource_tab
+def the_same_resource_is_picked_again(tab):
+    """Which must not assign it twice."""
+    tab._on_picked("r1")
+    tab.update_idletasks()
 
 
 @when(parsers.parse('the search text is set to "{text}"'))
-def set_search_text(search_tab, text):
-    """Set the search text."""
-    search_tab.search_var.set(text)
-    return search_tab
+def the_search_text_is_set_to(tab, text):
+    """Typing into the search box."""
+    tab.search_var.set(text)
 
 
 @when("the search is triggered")
-def trigger_search(search_tab):
-    """Trigger the search."""
-    search_tab._on_search()
-    return search_tab
+def the_search_is_triggered(tab):
+    """And the filter running."""
+    tab._on_search()
+    tab.update_idletasks()
 
 
 @when("the first filtered resource is confirmed")
-def confirm_first_resource(search_tab):
-    """Confirm the first filtered resource."""
-    search_tab._confirm_first()
-    return search_tab
+def the_first_filtered_resource_is_confirmed(tab):
+    """Enter, on the first match."""
+    tab._confirm_first()
+    tab.update_idletasks()
 
 
 @when(parsers.parse("the effort field is changed to {value:d}"))
-def change_effort_field(effort_tab, value):
-    """Change the effort field to the specified value."""
+def the_effort_field_is_changed_to(tab, value):
+    """Typing over the hours on the first row."""
     entry = SimpleNamespace(get=lambda: str(value))
-    effort_tab._make_updater(0, "estimated_hours", entry)(None)
-    return effort_tab
+    tab._make_updater(0, "estimated_hours", entry)(None)
 
 
 @when(parsers.parse("the split field is changed to {value:d}"))
-def change_split_field(split_tab, value):
-    """Change the split field to the specified value."""
+def the_split_field_is_changed_to(tab, value):
+    """Typing over the split on the first row."""
     entry = SimpleNamespace(get=lambda: str(value))
-    split_tab._make_updater(0, "resource_split", entry)(None)
-    return split_tab
+    tab._make_updater(0, "resource_split", entry)(None)
 
-
-# THEN FIXTURES FOR WIDGET TESTS
 
 @then("the tab should return the same assignments as the task")
-def check_roundtrip_assignments(resource_tab, task_with_assignments):
-    """Check that the tab returns the same assignments as the original task."""
-    assert resource_tab.get_assignments() == task_with_assignments.resource_assignments
+def check_roundtrip_assignments(tab, task):
+    """What went in comes back out."""
+    assert tab.get_assignments() == task.resource_assignments
 
 
 @then(parsers.parse("the tab should have {count:d} assignment"))
+@then(parsers.parse("the tab should have {count:d} assignments"))
+@then(parsers.parse("the tab should still have {count:d} assignment"))
 def check_assignment_count(tab, count):
-    """Check that the tab has the expected number of assignments."""
+    """How many rows the tab holds."""
     assert len(tab.get_assignments()) == count
 
 
 @then(parsers.parse('the assignment resource ID should be "{resource_id}"'))
 def check_assignment_resource_id(tab, resource_id):
-    """Check that the first assignment has the expected resource ID."""
+    """And who the first one names."""
     assignments = tab.get_assignments()
-    assert len(assignments) > 0
+    assert assignments, "no assignments at all"
     assert assignments[0]["resource_id"] == resource_id
 
 
-@then("the dropdown should only show the \"t1\" resource")
-def check_dropdown_filtered(search_tab):
-    """Check that the dropdown only shows the t1 resource after filtering."""
-    children = search_tab.dropdown.tree.get_children()
-    assert children == ("t1",)
+@then('the dropdown should only show the "t1" resource')
+def check_dropdown_filtered(tab):
+    """The filter leaves the one match."""
+    children = tab.dropdown.tree.get_children()
+    assert children == ("t1",), children
 
 
-@then(parsers.parse('the assignments should include both "{first}" and "{second}"'))
+@then(parsers.parse(
+    'the assignments should include both "{first}" and "{second}"'))
 def check_assignments_include_both(tab, first, second):
-    """Check that the assignments include both specified resource IDs."""
-    ids = [a["resource_id"] for a in tab.get_assignments()]
-    assert first in ids
-    assert second in ids
+    """Confirming a match adds it beside what was there."""
+    ids = [row["resource_id"] for row in tab.get_assignments()]
+    assert first in ids and second in ids, ids
 
 
-@then(parsers.parse("the first assignment estimated hours should be {hours:g}"))
+@then(parsers.parse(
+    "the first assignment estimated hours should be {hours:g}"))
 def check_first_assignment_effort(tab, hours):
-    """Check that the first assignment has the expected estimated hours."""
+    """The hours typed reach the assignment."""
     assignments = tab.get_assignments()
-    assert len(assignments) > 0
+    assert assignments, "no assignments at all"
     assert assignments[0]["estimated_hours"] == hours
 
 
-@then(parsers.parse("the first assignment resource split should be {split:g}"))
+@then(parsers.parse(
+    "the first assignment resource split should be {split:g}"))
 def check_first_assignment_split(tab, split):
-    """Check that the first assignment has the expected resource split."""
+    """And so does the split."""
     assignments = tab.get_assignments()
-    assert len(assignments) > 0
+    assert assignments, "no assignments at all"
     assert assignments[0]["resource_split"] == split
 
 
 @then("all assignment row cells should have the same width and position")
-def check_assignment_cells_align(multi_assignment_tab):
-    """Check that all assignment row cells have the same width and position."""
-    assert len(multi_assignment_tab._row_cells) == 2
-    first = multi_assignment_tab._row_cells[0]
-    for row in multi_assignment_tab._row_cells:
+def check_assignment_cells_align(tab):
+    """Two rows of cells line up as one grid."""
+    assert len(tab._row_cells) == 2
+    first = tab._row_cells[0]
+    for row in tab._row_cells:
         assert len(row) == len(first)
-        for i, cell in enumerate(row):
-            assert cell.winfo_width() == first[i].winfo_width()
-            assert cell.winfo_x() == first[i].winfo_x()
+        for index, cell in enumerate(row):
+            assert cell.winfo_width() == first[index].winfo_width()
+            assert cell.winfo_x() == first[index].winfo_x()
