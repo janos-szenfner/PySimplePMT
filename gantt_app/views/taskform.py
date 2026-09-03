@@ -247,8 +247,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """
         Text for the name box.
 
-        Not taken from the template: a Task must be named to exist, so the
-        stand-in has one, while a new task starts with the box empty.
+        Not taken from the template: the stand-in the create dialog is
+        seeded with carries a placeholder name, while a new task starts with
+        the box empty - and may be saved that way. See issue #3.
         """
         return ""
 

@@ -781,20 +781,20 @@ class DragDropTaskList(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        An empty name puts the old one back rather than saying anything. A
-        row has to be called something, and a dialog thrown up because
-        somebody clicked away from a box they had cleared would be a
-        reprimand for a slip - the cell simply reverts, which says the same
-        thing and gets out of the way.
+        An empty name is stored rather than reverted. A row need not be
+        called anything - the create dialog makes blank ones too - so
+        clearing a name in the grid clears it, which is what the empty box
+        asked for. See issue #3. Nothing is stored when the name has not
+        actually changed, so clicking away from an already-blank row does
+        not put a rename on the undo history.
         """
         text, task_id = self._editor_text()
         if task_id is None:
             return
 
         name = text.strip()
-        if not name:
-            logger.debug("Empty name typed over task %s; keeping the old one",
-                         task_id)
+        task = self.project.get_task_by_id(task_id)
+        if task is not None and task.name == name:
             return
 
         self.set_task_name(task_id, name)

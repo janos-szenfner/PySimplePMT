@@ -3,8 +3,9 @@ Checking the task form as it is filled in.
 
 WHY THIS MODULE EXISTS:
 ======================
-The task form asks for a name and two dates, and none of the three is worth
-much if it is left out or written in a way the application cannot read. What
+The task form asks for a name and two dates. The dates are worth little left
+out or written in a way the application cannot read; the name may be left
+blank, and only the dates are held to anything here. What
 is wrong with a field, when to say so, and how to say it without getting in
 the way of typing is a subject of its own, and it was two hundred lines
 sitting in the middle of the dialog that builds the form.
@@ -38,9 +39,9 @@ class FormChecks:
 
     WHAT THIS DOES:
     ---------------
-    Every change to the name or either date box runs _check_fields, which
-    asks each field what is wrong with it, outlines the ones that answer, and
-    writes the first answer under the form.
+    Every change to either date box runs _check_fields, which asks each field
+    what is wrong with it, outlines the ones that answer, and writes the first
+    answer under the form.
 
     WHAT IT EXPECTS OF THE FORM:
     ----------------------------
@@ -60,11 +61,12 @@ class FormChecks:
     the answer out. A keystroke that leaves a good field good costs three
     string comparisons and touches no widget at all.
 
-    An empty box is only complained about once the user has been in it. The
-    create dialog opens with an empty name, and a form that greets you in red
-    for not yet having typed anything is just noise. What is already there
-    and will not parse is pointed at straight away, because that is the
-    user's own text and it is wrong now.
+    An empty date box is only complained about once the user has been in it.
+    A form that greets you in red for not yet having typed anything is just
+    noise. What is already there and will not parse is pointed at straight
+    away, because that is the user's own text and it is wrong now.
+
+    The name is not checked at all: a task may have none. See issue #3.
     """
 
     #: Border and text colour of a field the form is complaining about.
@@ -111,8 +113,9 @@ class FormChecks:
         Built from what is actually on the form: a milestone has no end date,
         and the create dialog leaves the box out of the window entirely.
         """
-        fields = [('name', self.name_entry),
-                  ('start_date', self.start_date_entry)]
+        # The name is not among them: a task may have none, so there is
+        # nothing to complain about when the box is empty. See issue #3.
+        fields = [('start_date', self.start_date_entry)]
         if self.end_date_entry is not None:
             fields.append(('end_date', self.end_date_entry))
         return fields
@@ -188,11 +191,6 @@ class FormChecks:
         have none - a task with sub-tasks takes its dates from them - so this
         points out the omission and _apply still saves without one.
         """
-        if key == 'name':
-            if self.name_entry.get().strip():
-                return None, ''
-            return self.MISSING, "Enter a name for the task."
-
         widget = (self.start_date_entry if key == 'start_date'
                   else self.end_date_entry)
         label = "start date" if key == 'start_date' else "end date"

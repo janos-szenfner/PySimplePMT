@@ -130,9 +130,8 @@ class EditTaskDialog(TaskFormDialog):
         saved.
         """
         try:
+            # A blank name is allowed; a task need not be named. See issue #3.
             name = self.name_entry.get().strip()
-            if not name:
-                raise ValueError("Enter a name for the task.")
 
             is_milestone = self.is_milestone_var.get()
             start, end, duration = self._read_schedule()
@@ -386,9 +385,8 @@ class CreateTaskDialog(TaskFormDialog):
     def _apply(self) -> bool:
         """Build the task from the form and hand it to the save callback."""
         try:
+            # A blank name is allowed; a task need not be named. See issue #3.
             name = self.name_entry.get().strip()
-            if not name:
-                raise ValueError("Enter a name for the task.")
 
             is_milestone = self.is_milestone_var.get()
             start, end, duration = self._read_schedule()

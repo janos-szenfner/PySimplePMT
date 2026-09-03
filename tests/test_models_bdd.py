@@ -186,15 +186,20 @@ def check_milestone_is_milestone(milestone_task):
 
 
 # VALIDATION TESTS
-@when("creating a task with empty name")
-def create_task_empty_name():
-    with pytest.raises(ValueError):
-        Task(id="test", name="", start_date=datetime(2024, 1, 1))
+@when("creating a task with an empty name", target_fixture="blank_task")
+def create_task_with_an_empty_name():
+    """A task need not be named; see issue #3."""
+    return Task(id="test", name="", start_date=datetime(2024, 1, 1))
+
+
+@then("the task should be created with a blank name")
+def check_task_has_blank_name(blank_task):
+    assert blank_task.name == ""
 
 
 @then("a ValueError should be raised")
 def check_value_error_raised():
-    # This will be handled by the When step raising the exception
+    # The progress scenarios raise inside their When step.
     pass
 
 
@@ -990,3 +995,38 @@ def scan_for_property_calls():
 def check_no_property_is_called(property_call_offenders):
     """A property is read, not called."""
     assert property_call_offenders == [], property_call_offenders
+
+
+# ---------------------------------------------------------------------------
+# Two tasks with the same name (issue #3)
+# ---------------------------------------------------------------------------
+
+@when(parsers.parse('two tasks named "{name}" are added'),
+      target_fixture="same_name_ids")
+def two_tasks_with_the_same_name_are_added(simple_project, name):
+    """
+    Rows are told apart by id, not by name, so a repeat is not refused.
+
+    next_task_id advances as each is added, so the second gets its own id
+    even though it carries the same name as the first.
+    """
+    ids = []
+    for _ in range(2):
+        task = Task(id=simple_project.next_task_id(), name=name,
+                    start_date=datetime(2024, 1, 1))
+        simple_project.add_task(task)
+        ids.append(task.id)
+    return ids
+
+
+@then("the project should hold two tasks")
+def check_project_holds_two(simple_project):
+    assert len(simple_project.tasks) == 2
+
+
+@then("each should be reachable by its own id")
+def check_each_reachable_by_id(simple_project, same_name_ids):
+    first, second = same_name_ids
+    assert first != second
+    assert simple_project.get_task_by_id(first) is not None
+    assert simple_project.get_task_by_id(second) is not None

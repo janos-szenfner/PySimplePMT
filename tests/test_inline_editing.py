@@ -385,19 +385,19 @@ class TestSavingTheName(InlineEditingTestCase):
 
         self.assertEqual(self.name(), 'Planning')
 
-    def test_an_empty_name_puts_the_old_one_back(self):
+    def test_an_empty_name_clears_the_name(self):
         """
-        A row has to be called something.
+        A row need not be called anything, so clearing one clears it.
 
-        Quietly reverting says so and gets out of the way; a dialog would be
-        a reprimand for clicking away from a box somebody had cleared.
+        The create dialog makes blank rows too; the grid clearing a name is
+        the same choice one level down. See issue #3.
         """
         self.slow_click('u1')
         self.type_into_editor('   ')
 
         self.task_list._commit_name()
 
-        self.assertEqual(self.name(), 'Planning')
+        self.assertEqual(self.name(), '')
 
     def test_surrounding_space_is_trimmed(self):
         """A name is what was meant, not what the keyboard left behind."""

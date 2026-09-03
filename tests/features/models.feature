@@ -39,9 +39,9 @@ Feature: Task and Project model functionality
     And the milestone should be marked as a milestone
 
   @models
-  Scenario: Task validation - empty name
-    When creating a task with empty name
-    Then a ValueError should be raised
+  Scenario: A task may be created with an empty name
+    When creating a task with an empty name
+    Then the task should be created with a blank name
 
   @models
   Scenario: Task validation - invalid progress low
@@ -228,3 +228,10 @@ Feature: Task and Project model functionality
   Scenario: A model property is never called as a method
     When every source file is scanned for calls to a model property
     Then no file should call one
+
+  @models
+  Scenario: Two tasks with the same name coexist in a project
+    Given a project
+    When two tasks named "Review" are added
+    Then the project should hold two tasks
+    And each should be reachable by its own id

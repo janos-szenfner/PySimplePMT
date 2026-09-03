@@ -571,8 +571,10 @@ class Task:
         Handles backward compatibility for legacy is_milestone flag and
         old task_type values ('Task', 'Subtask').
         """
-        if not self.name:
-            raise ValueError("Task name cannot be empty")
+        # A name is not required. A blank row is a legitimate thing to want
+        # - a spacer between groups, a line to fill in later - and the plan
+        # already carries rows that share a name, so nothing downstream needs
+        # one to tell them apart. See issue #3.
         if self.progress < 0 or self.progress > 100:
             raise ValueError("Progress must be between 0 and 100")
         

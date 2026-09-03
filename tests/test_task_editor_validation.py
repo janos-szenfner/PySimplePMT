@@ -205,14 +205,19 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
         self.assertFalse(self.marked(dialog, 'name'))
         self.assertEqual(self.problem(dialog), "")
 
-    def test_a_name_emptied_by_the_user_is_marked(self):
-        """Clearing a name you have typed in is worth pointing out."""
+    def test_a_name_emptied_by_the_user_is_not_marked(self):
+        """
+        A blank name is allowed now, so clearing one says nothing. See #3.
+
+        Nothing else on an untouched form complains either, so the problem
+        line stays empty rather than moving on to the next field.
+        """
         dialog = self.edit_dialog()
 
         self.type_into(dialog.name_entry, "")
 
-        self.assertTrue(self.marked(dialog, 'name'))
-        self.assertIn("name", self.problem(dialog))
+        self.assertFalse(self.marked(dialog, 'name'))
+        self.assertEqual(self.problem(dialog), "")
 
     def test_a_date_that_will_not_parse_is_marked(self):
         """A misread date is pointed at as it is typed."""
@@ -333,15 +338,22 @@ class TestRefusingToSave(EditorTestCase):
         self.assertEqual(self.task.name, "Alpha")
 
     def test_a_refused_save_marks_the_field_it_refused(self):
-        """The offending box is outlined behind the message."""
+        """
+        The offending box is outlined behind the message.
+
+        Refused for a malformed date rather than an empty name: an empty
+        name is no longer a reason to refuse a save. See issue #3.
+        """
         from gantt_app.views import dialogs
 
-        dialog = self.create_dialog()
+        dialog = self.edit_dialog()
+        self.let_the_end_date_be_typed(dialog)
+        self.type_into(dialog.start_date_entry, "15/08/2026")
 
         with mock.patch.object(dialogs, 'showerror'):
             dialog._apply()
 
-        self.assertTrue(self.marked(dialog, 'name'))
+        self.assertTrue(self.marked(dialog, 'start_date'))
 
     def test_a_good_form_saves(self):
         """Nothing above stops an ordinary edit going through."""

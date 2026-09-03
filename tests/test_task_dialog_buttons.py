@@ -259,6 +259,38 @@ class TestCreateDialogButtons(DialogTestCase):
 
         self.assertEqual(dialog.start_date_entry.get(), start)
 
+    def test_a_task_can_be_created_with_no_name(self):
+        """
+        A blank row is a legitimate thing to make; see issue #3.
+
+        The name box is left empty and the save goes through rather than
+        being refused, and the task it makes carries a blank name.
+        """
+        saved = []
+        dialog = self.dialog(on_save=saved.append)
+
+        dialog.save_and_new()
+
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0].name, "")
+
+    def test_two_tasks_can_share_a_name(self):
+        """
+        Rows are told apart by id, not by name; see issue #3.
+
+        Two saved with the same name are two tasks, each with its own id.
+        """
+        saved = []
+        dialog = self.dialog(on_save=saved.append)
+
+        dialog.name_entry.insert(0, "Review")
+        dialog.save_and_new()
+        dialog.name_entry.insert(0, "Review")
+        dialog.save_and_new()
+
+        self.assertEqual([t.name for t in saved], ["Review", "Review"])
+        self.assertIsNot(saved[0], saved[1])
+
     def test_nothing_is_cleared_when_the_save_fails(self):
         """A rejected form is left as it was for correcting."""
         dialog = self.dialog()
