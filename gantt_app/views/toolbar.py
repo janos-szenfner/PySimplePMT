@@ -379,6 +379,8 @@ class CTkDropdownMenu(ctk.CTkToplevel):
         # Determine item type - check if it has submenu/items first
         if item.get("type") == "separator":
             item_type = "separator"
+        elif item.get("type") == "preview":
+            item_type = "preview"
         elif "submenu" in item or "items" in item:
             item_type = "submenu"
         elif item.get("type") == "toggle":
@@ -442,6 +444,9 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             btn.pack(fill="x", expand=True)
             self._answer_across_the_row(row, btn, make_action_handler(item))
 
+        elif item_type == "preview":
+            self._build_preview_row(row, item)
+
         elif item_type == "submenu":
             submenu_items = item.get("submenu", item.get("items", []))
             
@@ -480,6 +485,72 @@ class CTkDropdownMenu(ctk.CTkToplevel):
 
             self._answer_across_the_row(
                 row, btn, make_submenu_handler(item, submenu_items, row))
+
+    #: The width of a preview row's badge and its live chip, in pixels.
+    PREVIEW_BADGE_WIDTH = 22
+    PREVIEW_CHIP_WIDTH = 92
+
+    def _build_preview_row(self, row, item: Dict):
+        """
+        A menu row that shows what a style preset looks like.
+
+        PARAMETERS:
+        -----------
+        row : ctk.CTkFrame
+            The row to fill, already packed by _create_menu_item.
+        item : Dict
+            A "preview" item: "text" for the name, "badge" and "badge_color"
+            for the glyph beside it, "preview" for the sample's look (fill,
+            text_color, bold, italic, underline), and "command" for the
+            click.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Three columns: a coloured badge to recognise the preset by, its name,
+        and a chip drawn in the preset's own colours and emphasis - so the
+        reader sees what applying it does rather than reading a name and
+        guessing. See issue #9.
+
+        The chip is built from the style itself rather than from a second
+        description of it, so the preview cannot drift from what a click
+        actually applies. A fill of None leaves the chip on the menu's own
+        background, which is what a row with no fill looks like in the grid.
+
+        The whole row answers a click, badge and chip included, through the
+        same _answer_across_the_row every other menu row uses.
+        """
+        preview = item.get("preview", {})
+
+        badge = ctk.CTkLabel(
+            row, text=item.get("badge", ""),
+            text_color=item.get("badge_color", WIN_MENU_TEXT),
+            width=self.PREVIEW_BADGE_WIDTH, anchor="center")
+        badge.pack(side="left", padx=(6, 4))
+
+        name = ctk.CTkButton(
+            row, text=item.get("text", ""), anchor="w",
+            fg_color="transparent", text_color=WIN_MENU_TEXT,
+            hover_color=WIN_MENU_HOVER, height=self.ITEM_HEIGHT - 2,
+            corner_radius=6,
+            command=lambda i=item: self._handle_action(i))
+        highlight_on_hover(name)
+        name.pack(side="left", fill="x", expand=True)
+
+        chip_text = str(preview.get("sample", "Sample"))
+        fill = preview.get("fill")
+        font = ctk.CTkFont(
+            weight="bold" if preview.get("bold") else "normal",
+            slant="italic" if preview.get("italic") else "roman",
+            underline=bool(preview.get("underline")))
+        chip = ctk.CTkLabel(
+            row, text=chip_text, font=font,
+            text_color=preview.get("text_color") or WIN_MENU_TEXT,
+            fg_color=fill if fill else "transparent",
+            corner_radius=4, width=self.PREVIEW_CHIP_WIDTH, anchor="center")
+        chip.pack(side="right", padx=(4, 6))
+
+        self._answer_across_the_row(row, name,
+                                    lambda i=item: self._handle_action(i))
 
     def _handle_toggle(self, item: Dict, var: Optional[ctk.BooleanVar]):
         if var is not None:

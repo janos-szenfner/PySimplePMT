@@ -32,7 +32,10 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.shortcuts import accelerator
-from gantt_app.taskstyle import FILL_COLOURS, PRESETS, TEXT_COLOURS, ResolvedStyle
+from gantt_app.taskstyle import (
+    DEFAULT_BADGE, FILL_COLOURS, PRESETS, TEXT_COLOURS, ResolvedStyle,
+    preset_badge,
+)
 from gantt_app.utils.log import get_logger
 from gantt_app.views.modal import take_grab
 from gantt_app.views.tooltip import attach as attach_tooltip
@@ -394,15 +397,56 @@ class StyleBar(ctk.CTkFrame):
                     lambda colour: self._apply(name, colour))
 
     def _open_presets(self):
-        """Offer the combined styles, one press each."""
+        """
+        Offer the combined styles, each shown as it will look.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every preset is a preview row - a badge, its name, and a chip drawn
+        in the preset's own colours and emphasis - so a reader picks by sight
+        rather than applying one to find out what it is; see issue #9. The
+        chip is built from the same TaskStyle the click applies, so the two
+        cannot disagree.
+
+        A Default entry heads the list, and clearing formatting is what it
+        does. Trying a preset and putting it back was a trip out to the
+        Clear button beside the menu, which is several clicks from where the
+        eye already is; one at the top of the same list is where it is looked
+        for. See issue #10.
+        """
         if not self.enabled:
             return
         from gantt_app.views.toolbar import CTkDropdownMenu
 
         button = self.buttons['style_preset']
-        items = [{"text": name,
-                  "command": (lambda style=style: self._apply('preset', style))}
-                 for name, style in PRESETS]
+
+        default_glyph, default_colour = DEFAULT_BADGE
+        items = [{
+            "type": "preview",
+            "text": "Default (no style)",
+            "badge": default_glyph,
+            "badge_color": default_colour,
+            "preview": {"sample": "Sample"},
+            "command": (lambda: self._apply('reset', None)),
+        }, {"type": "separator"}]
+
+        for name, style in PRESETS:
+            glyph, colour = preset_badge(name)
+            items.append({
+                "type": "preview",
+                "text": name,
+                "badge": glyph,
+                "badge_color": colour,
+                "preview": {
+                    "sample": "Sample",
+                    "fill": style.fill_color,
+                    "text_color": style.text_color,
+                    "bold": bool(style.bold),
+                    "italic": bool(style.italic),
+                    "underline": bool(style.underline),
+                },
+                "command": (lambda s=style: self._apply('preset', s)),
+            })
 
         menu = CTkDropdownMenu(self, items=items)
         menu.geometry(f"+{button.winfo_rootx()}"

@@ -283,3 +283,35 @@ PRESETS: Tuple[Tuple[str, TaskStyle], ...] = (
     ('Summary Phase',
      TaskStyle(fill_color='#e5e8e8', bold=True)),
 )
+
+
+#: A badge drawn beside each preset in the menu, as (glyph, colour).
+#:
+#: The dropdown used to list the four presets as plain names, so a reader had
+#: to apply one to find out what it looked like - see issue #9. A badge gives
+#: each a shape and a colour to recognise it by, beside the live preview the
+#: menu builds from the style itself.
+#:
+#: A geometric glyph rather than an emoji: these render in the one font Tk has
+#: everywhere and take a colour, where a colour emoji shows as an empty box on
+#: a machine whose Tk was built without one - the test display among them.
+PRESET_BADGES: Dict[str, Tuple[str, str]] = {
+    'Financial Milestone': ('◆', '#d4a017'),   # a filled diamond, gold
+    'Work Complete':       ('●', '#1e8449'),   # a filled circle, green
+    'Phase Gate / Approval': ('▲', '#c0392b'), # a triangle, red
+    'Summary Phase':       ('■', '#1f3a5f'),   # a square, navy
+}
+
+#: The badge for the entry that clears a row's formatting; see issue #10.
+DEFAULT_BADGE: Tuple[str, str] = ('○', '#909497')   # a hollow circle
+
+
+def preset_badge(name: str) -> Tuple[str, str]:
+    """
+    The glyph and colour for a preset's badge, as (glyph, colour).
+
+    A named preset the table does not know, and the default entry, both fall
+    back to the hollow circle - a badge is decoration and a missing one must
+    never be a reason a menu cannot be drawn.
+    """
+    return PRESET_BADGES.get(name, DEFAULT_BADGE)
