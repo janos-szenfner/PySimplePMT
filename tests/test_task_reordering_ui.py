@@ -872,8 +872,16 @@ class TestDragGesture(TaskListTestCase):
         self.assertEqual(line.place_info()['width'], '280')
 
     def test_dropping_reorders_the_rows(self):
-        """A completed drag moves the row to the drop position."""
+        """A completed drag moves the row to the drop position.
+
+        The target's geometry is pinned so the pointer lands in its top
+        half - a reorder above it, not the middle third that reparents. A
+        withdrawn window's bbox is empty on macOS and real under Linux's
+        xvfb, so without a fixed box the same drop reordered on one and
+        reparented on the other.
+        """
         self.at({0: "003", 100: "001"})
+        self.rows_at({"001": (0, 100, 300, 26)})
 
         self.press(0)
         self.drag(100)
