@@ -206,3 +206,25 @@ Feature: Task and Project model functionality
     Given a task dict without status
     When deserialized to Task
     Then the deserialized task status should be "Active"
+
+  # Restored from test_models.py. The conversion carried the status
+  # round-trips across and left behind the resource-assignment ones and the
+  # guard against a property being called as a method - none of which the
+  # rest of the suite covers.
+
+  @models
+  Scenario: Resource assignments survive a round trip
+    Given a task carrying two resource assignments
+    When the task is serialized and read back
+    Then the read-back assignments should equal the originals
+
+  @models
+  Scenario: A file's old single resource fields are converted
+    Given a task dict with the old resource_id, estimated_hours and split
+    When the legacy dict is deserialized to Task
+    Then the task should carry one assignment built from those fields
+
+  @models
+  Scenario: A model property is never called as a method
+    When every source file is scanned for calls to a model property
+    Then no file should call one

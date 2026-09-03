@@ -68,3 +68,9 @@ Feature: Safe XML parsing functionality
   Scenario: File-based attack is refused
     When parsing a billion laughs XML file from disk
     Then it should raise EntitiesRefused exception
+  # Restored from test_safexml.py: the benign side of reading from disk. The
+  # "File-based attack is refused" scenario covers a malicious file on disk;
+  # this covers an ordinary one, which is the path the importers actually take.
+  Scenario: An ordinary file on disk parses
+    When parsing an ordinary XML file from disk
+    Then the parsed root name should be "Plan & Co"

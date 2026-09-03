@@ -236,6 +236,23 @@ def check_valid_gan_import():
         os.unlink(path)
 
 
+@when("parsing an ordinary XML file from disk",
+      target_fixture="parsed_from_disk")
+def parse_ordinary_file_from_disk():
+    """The path the importers take, on a document with nothing to fear."""
+    path = _write_temp_file(ORDINARY)
+    try:
+        return safexml.parse(path)
+    finally:
+        os.unlink(path)
+
+
+@then(parsers.parse('the parsed root name should be "{name}"'))
+def check_parsed_root_name(parsed_from_disk, name):
+    """It reads back, entities and all, rather than being refused."""
+    assert parsed_from_disk.getroot().get('name') == name
+
+
 @when("parsing a billion laughs XML file from disk")
 @then("it should raise EntitiesRefused exception")
 def check_file_entities_refused():

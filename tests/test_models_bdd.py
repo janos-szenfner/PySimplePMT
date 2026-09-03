@@ -872,3 +872,121 @@ def deserialize_task_without_status(task_dict_without_status):
 @then("the deserialized task status should be \"Active\"")
 def check_deserialized_task_defaults_to_active(deserialized_task_without_status):
     assert deserialized_task_without_status.status == "Active"
+
+# ---------------------------------------------------------------------------
+# Resource assignments through the dictionary, and the property-call guard
+#
+# Restored from test_models.py. The status round-trips came across; these did
+# not, and nothing else in the suite covers a task's assignments surviving
+# to_dict/from_dict, the old single-resource fields being converted on load,
+# or the guard that stops a property being called as a method.
+# ---------------------------------------------------------------------------
+
+@given("a task carrying two resource assignments",
+       target_fixture="assigned_task")
+def a_task_carrying_two_resource_assignments():
+    """A named resource and a team, each with hours and a split."""
+    assignments = [
+        {'resource_id': 'r1', 'estimated_hours': 10.5,
+         'resource_split': 50.0},
+        {'resource_id': 't1', 'estimated_hours': 2.0,
+         'resource_split': 25.0},
+    ]
+    task = Task(id="test", name="Test", start_date=datetime(2024, 1, 1),
+                resource_assignments=assignments)
+    return task, assignments
+
+
+@when("the task is serialized and read back", target_fixture="round_tripped")
+def the_task_is_serialized_and_read_back(assigned_task):
+    """Out through to_dict and back through from_dict."""
+    task, assignments = assigned_task
+    task_dict = task.to_dict()
+    return task_dict, Task.from_dict(task_dict), assignments
+
+
+@then("the read-back assignments should equal the originals")
+def check_assignments_round_trip(round_tripped):
+    """The dict carries them, and the rebuilt task holds them."""
+    task_dict, restored, assignments = round_tripped
+    assert task_dict['resource_assignments'] == assignments
+    assert restored.resource_assignments == assignments
+
+
+@given("a task dict with the old resource_id, estimated_hours and split",
+       target_fixture="legacy_resource_dict")
+def a_task_dict_with_the_old_resource_fields():
+    """A file saved before a task could hold several resources."""
+    return {
+        'id': 'test', 'name': 'Test',
+        'start_date': datetime(2024, 1, 1).isoformat(),
+        'progress': 0,
+        'dependencies': [],
+        'color': '#1f6aa5',
+        'is_milestone': False,
+        'resource_id': 'r1',
+        'estimated_hours': 8.0,
+        'resource_split': 100.0,
+    }
+
+
+@when("the legacy dict is deserialized to Task",
+      target_fixture="deserialized_task")
+def the_legacy_dict_is_deserialized(legacy_resource_dict):
+    """Read back into a task, which the loader converts."""
+    return Task.from_dict(legacy_resource_dict)
+
+
+@then("the task should carry one assignment built from those fields")
+def check_legacy_fields_converted(deserialized_task):
+    """The three old fields become the one assignment they described."""
+    assert deserialized_task.resource_assignments == [{
+        'resource_id': 'r1',
+        'estimated_hours': 8.0,
+        'resource_split': 100.0,
+    }]
+
+
+@when("every source file is scanned for calls to a model property",
+      target_fixture="property_call_offenders")
+def scan_for_property_calls():
+    """
+    Every place a Task or Project property is called rather than read.
+
+    A property read looks like task.duration_days; called as a method it is
+    task.duration_days(), which returns the value and then tries to call it -
+    a bug that hides until the line runs. Found by walking the syntax tree
+    rather than by grepping, so a name that is a property on one class and a
+    method on another is not a false alarm.
+    """
+    import ast
+    import pathlib
+
+    from gantt_app import models
+
+    properties = {
+        name for cls in (models.Task, models.Project)
+        for name, value in vars(cls).items()
+        if isinstance(value, property)
+    }
+    # The guard is only worth having if it knows about a real one
+    assert 'duration_days' in properties
+
+    offenders = []
+    root = pathlib.Path(models.__file__).parent.parent
+    for path in sorted(root.rglob('*.py')):
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in properties):
+                offenders.append(
+                    f"{path.relative_to(root)}:{node.lineno} "
+                    f"calls .{node.func.attr}()")
+    return offenders
+
+
+@then("no file should call one")
+def check_no_property_is_called(property_call_offenders):
+    """A property is read, not called."""
+    assert property_call_offenders == [], property_call_offenders

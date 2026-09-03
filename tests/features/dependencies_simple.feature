@@ -93,3 +93,42 @@ Feature: Task dependency management
     Given a project with tasks having specific dependency types
     When serialized and deserialized
     Then the dependencies should preserve their types and hardness
+
+  # These scheduling and loading scenarios were in test_dependencies.py and
+  # did not come across with the conversion. What a link does to a date is
+  # the whole point of having one, and nothing else in the suite covered
+  # the combinations below.
+
+  @dependencies
+  Scenario: A hard link keeps the task its own length
+    Given a predecessor running 1 to 5 January and a task three weeks later
+    When the task is linked "FS" "Hard" and rescheduled
+    Then the task should still be 5 days long
+    And the task should end on "2024-01-12"
+
+  @dependencies
+  Scenario: A hard link still respects a later rubber floor
+    Given a predecessor running 1 to 5 January and a task three weeks later
+    And a third task running 1 to 5 February
+    When the task is pinned "SS" "Hard" to the predecessor and floored "FS" "Rubber" by the third
+    Then the task should start on "2024-02-06"
+
+  @dependencies
+  Scenario: A hard link wins where it is the later of the two
+    Given a predecessor running 1 to 5 January and a task three weeks later
+    And a third task running 1 to 5 December 2023
+    When the task is pinned "SS" "Hard" to the predecessor and floored "FS" "Rubber" by the third
+    Then the task should start on "2024-01-01"
+
+  @dependencies
+  Scenario: A project saved with bare dependency IDs still loads
+    Given a saved project whose dependencies are bare task IDs
+    When the project is loaded
+    Then the link should be "FS" and "Hard"
+
+  @dependencies
+  Scenario: GanttProject hardness is read from the file
+    Given a GanttProject file with a Strong link and a Rubber link
+    When the file is imported
+    Then the Strong link should be "FS" and "Hard"
+    And the Rubber link should be "SS" and "Rubber"

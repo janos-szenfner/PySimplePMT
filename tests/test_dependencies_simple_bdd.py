@@ -285,3 +285,200 @@ def check_dep_serialization_preserved(project_with_typed_deps, roundtrip_project
     link = restored_second.get_dependency(project_with_typed_deps.tasks[0].id)
     assert link.dep_type == 'SS'
     assert link.hardness == 'Rubber'
+
+# ---------------------------------------------------------------------------
+# What a link does to a date, and what a file's links are read as
+#
+# Restored from test_dependencies.py, which the conversion deleted without
+# bringing these across. test_scheduling.py covers a single hard or rubber
+# link on its own; what it does not cover is a task carrying one of each, a
+# moved task keeping its length, or either of the two file formats being
+# read back into a typed link.
+# ---------------------------------------------------------------------------
+
+#: Both fixtures run Monday to Friday, so their five calendar days are five
+#: days of work. Scheduling counts working days - see workdaycalendar - and a
+#: span starting on a Saturday would hold less work than its length suggests.
+SECOND_START = datetime(2024, 1, 22)
+SECOND_END = datetime(2024, 1, 26)
+
+
+@given("a predecessor running 1 to 5 January and a task three weeks later",
+       target_fixture="plan")
+def a_predecessor_and_a_later_task():
+    """The two tasks every scheduling scenario below starts from."""
+    project = Project(name="Scheduling")
+    first = Task.create_task("First", datetime(2024, 1, 1),
+                             datetime(2024, 1, 5),
+                             task_id=project.next_task_id())
+    project.add_task(first)
+
+    second = Task.create_task("Second", SECOND_START, SECOND_END,
+                              task_id=project.next_task_id())
+    project.add_task(second)
+    return project, first, second
+
+
+@given("a third task running 1 to 5 February", target_fixture="third")
+def a_third_task_in_february(plan):
+    """A task finishing after the pin, so its floor is the later of the two."""
+    project, _first, _second = plan
+    third = Task.create_task("Third", datetime(2024, 2, 1),
+                             datetime(2024, 2, 5),
+                             task_id=project.next_task_id())
+    project.add_task(third)
+    return third
+
+
+@given("a third task running 1 to 5 December 2023", target_fixture="third")
+def a_third_task_in_december(plan):
+    """A task finishing before the pin, so its floor changes nothing."""
+    project, _first, _second = plan
+    third = Task.create_task("Third", datetime(2023, 12, 1),
+                             datetime(2023, 12, 5),
+                             task_id=project.next_task_id())
+    project.add_task(third)
+    return third
+
+
+@when(parsers.parse('the task is linked "{dep_type}" "{hardness}" '
+                    'and rescheduled'))
+def the_task_is_linked_and_rescheduled(plan, dep_type, hardness):
+    """One link, and the constraints applied."""
+    project, first, second = plan
+    second.start_date, second.end_date = SECOND_START, SECOND_END
+    second.dependencies = []
+    second.add_dependency(first.id, dep_type, hardness)
+    project.apply_dependency_constraints(second)
+
+
+@when(parsers.parse('the task is pinned "{pin_type}" "{pin_hardness}" to the '
+                    'predecessor and floored "{floor_type}" '
+                    '"{floor_hardness}" by the third'))
+def the_task_is_pinned_and_floored(plan, third, pin_type, pin_hardness,
+                                   floor_type, floor_hardness):
+    """
+    Two links at once, which is where the two hardnesses have to agree.
+
+    Hardness decides whether the task's own date can stand, not whether the
+    other link counts - so the later of the two applies. This used to be
+    written the other way round, and a task pinned to the 1st of January and
+    floored at the 6th of February was placed on the 1st, quietly breaking
+    the floor the application promises; see help/dependencyhelp.py.
+    """
+    project, first, second = plan
+    second.dependencies = []
+    second.add_dependency(first.id, pin_type, pin_hardness)
+    second.add_dependency(third.id, floor_type, floor_hardness)
+    project.apply_dependency_constraints(second)
+
+
+@then(parsers.parse("the task should still be {days:d} days long"))
+def check_task_length(plan, days):
+    """A moved task keeps its length; the weekend costs it nothing."""
+    _project, _first, second = plan
+    assert second.duration_days == days
+
+
+@then(parsers.parse('the task should end on "{when}"'))
+def check_task_end(plan, when):
+    """Where its five days of work run to."""
+    _project, _first, second = plan
+    assert second.end_date == datetime.fromisoformat(when)
+
+
+@then(parsers.parse('the task should start on "{when}"'))
+def check_task_start(plan, when):
+    """Where the links between them put it."""
+    _project, _first, second = plan
+    assert second.start_date == datetime.fromisoformat(when)
+
+
+@given("a saved project whose dependencies are bare task IDs",
+       target_fixture="saved_project")
+def a_saved_project_with_bare_dependency_ids():
+    """What a file written before links carried a type looks like."""
+    return {
+        'name': 'Legacy',
+        'start_date': None,
+        'end_date': None,
+        'tasks': [
+            {
+                'id': '001', 'name': 'First',
+                'start_date': '2024-01-01T00:00:00',
+                'end_date': '2024-01-05T00:00:00',
+                'progress': 0, 'dependencies': [], 'color': '#1f6aa5',
+                'is_milestone': False, 'task_type': 'Task',
+                'parent_task_id': None,
+            },
+            {
+                'id': '002', 'name': 'Second',
+                'start_date': '2024-01-06T00:00:00',
+                'end_date': '2024-01-10T00:00:00',
+                'progress': 0, 'dependencies': ['001'], 'color': '#1f6aa5',
+                'is_milestone': False, 'task_type': 'Task',
+                'parent_task_id': None,
+            },
+        ],
+    }
+
+
+@when("the project is loaded", target_fixture="loaded_link")
+def the_project_is_loaded(saved_project):
+    """A bare id becomes the link it always meant."""
+    project = Project.from_dict(saved_project)
+    return project.get_task_by_id('002').get_dependency('001')
+
+
+@then(parsers.parse('the link should be "{dep_type}" and "{hardness}"'))
+def check_loaded_link(loaded_link, dep_type, hardness):
+    """The most common kind of link, which is what a bare id stood for."""
+    assert loaded_link is not None
+    assert loaded_link.dep_type == dep_type
+    assert loaded_link.hardness == hardness
+
+
+@given("a GanttProject file with a Strong link and a Rubber link",
+       target_fixture="gan_file")
+def a_ganttproject_file_with_both_hardnesses(tmp_path):
+    """GanttProject writes Strong and Rubber; both have to be understood."""
+    path = tmp_path / "links.gan"
+    path.write_text('''<?xml version="1.0" encoding="UTF-8"?>
+<project name="Links">
+    <tasks>
+        <task id="1" name="First" start="2024-01-01" duration="3">
+            <depend id="2" type="2" difference="0" hardness="Strong"/>
+            <depend id="3" type="1" difference="0" hardness="Rubber"/>
+        </task>
+        <task id="2" name="Second" start="2024-01-04" duration="2"/>
+        <task id="3" name="Third" start="2024-01-01" duration="2"/>
+    </tasks>
+</project>
+''', encoding='utf-8')
+    return str(path)
+
+
+@when("the file is imported", target_fixture="imported_project")
+def the_file_is_imported(gan_file):
+    """Read back as a plan."""
+    from gantt_app.utils.gan_importer import import_gan_file
+
+    return import_gan_file(gan_file)
+
+
+@then(parsers.parse(
+    'the Strong link should be "{dep_type}" and "{hardness}"'))
+def check_strong_link(imported_project, dep_type, hardness):
+    """Strong is this application's Hard."""
+    link = imported_project.get_task_by_id('2').get_dependency('1')
+    assert link.dep_type == dep_type
+    assert link.hardness == hardness
+
+
+@then(parsers.parse(
+    'the Rubber link should be "{dep_type}" and "{hardness}"'))
+def check_rubber_link(imported_project, dep_type, hardness):
+    """And Rubber is read as it is written."""
+    link = imported_project.get_task_by_id('3').get_dependency('1')
+    assert link.dep_type == dep_type
+    assert link.hardness == hardness
