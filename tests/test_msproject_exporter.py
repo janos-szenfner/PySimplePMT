@@ -215,7 +215,7 @@ class MSProjectDocumentTestCase(unittest.TestCase):
 
     def test_no_element_the_schema_does_not_name_is_written(self):
         """
-        A Draft stays behind rather than making the file unreadable.
+        The status stays behind rather than making the file unreadable.
 
         MSPDI's <Task> is a fixed sequence of the elements the schema names,
         and Status is not one of them - Project has a Status of its own but
@@ -225,7 +225,7 @@ class MSProjectDocumentTestCase(unittest.TestCase):
         it may not open in Project at all.
         """
         project = sample_project()
-        project.get_task_by_id("T2").status = 'Draft'
+        project.get_task_by_id("T2").status = 'Inactive'
 
         root = ET.fromstring(generate_msproject_content(project))
 

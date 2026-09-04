@@ -246,7 +246,7 @@ class TestJSONFileIO(unittest.TestCase):
         project = Project(name="Test Project")
         start = datetime(2024, 1, 1)
         end = datetime(2024, 1, 10)
-        task = Task(id="1", name="Test Task", start_date=start, end_date=end, status="Draft")
+        task = Task(id="1", name="Test Task", start_date=start, end_date=end, status="Inactive")
         project.add_task(task)
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -257,7 +257,7 @@ class TestJSONFileIO(unittest.TestCase):
             loaded_project = JSONFileIO.load_project(filepath)
             self.assertIsNotNone(loaded_project)
             loaded_task = loaded_project.get_task_by_id("1")
-            self.assertEqual(loaded_task.status, "Draft")
+            self.assertEqual(loaded_task.status, "Inactive")
         finally:
             os.unlink(filepath)
 

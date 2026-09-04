@@ -242,8 +242,9 @@ def _status_of(task: Task) -> str:
 
     DEVELOPMENT NOTES:
     ------------------
-    This is not Task.status, which says whether a row is a Draft or Active
-    and is the planner's own answer. The spreadsheet's Status column is read
+    This is not Task.status, which says whether a row is Active, Estimated
+    or Inactive and is the planner's own answer. The spreadsheet's Status
+    column is read
     off the progress and says how far the work has got - two different
     questions that the word Status is used for on both sides of the export.
     Neither is derived from the other, and this one does not read the field.

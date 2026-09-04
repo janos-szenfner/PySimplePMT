@@ -498,16 +498,18 @@ class TestMermaidRoundTrip(unittest.TestCase):
     
     def test_roundtrip_preserves_the_status(self):
         """
-        A draft row comes back a draft row.
+        An estimated row comes back an estimated row.
 
         The exporter wrote the status into the metadata and nothing read it
-        back, so every chart round trip quietly made every draft active.
+        back, so every chart round trip quietly made every non-active row
+        active.
         """
         original = Project(name="Status")
         start = datetime(2024, 1, 1)
-        draft = Task.create_task("Draft row", start, start + timedelta(days=2))
-        draft.status = 'Draft'
-        original.add_task(draft)
+        estimated = Task.create_task("Estimated row", start,
+                                     start + timedelta(days=2))
+        estimated.status = 'Estimated'
+        original.add_task(estimated)
         original.add_task(Task.create_task("Active row", start,
                                            start + timedelta(days=2)))
 
@@ -520,7 +522,7 @@ class TestMermaidRoundTrip(unittest.TestCase):
             imported = import_mermaid_file(temp_path)
 
             statuses = {task.name: task.status for task in imported.tasks}
-            self.assertEqual(statuses.get("Draft row"), 'Draft')
+            self.assertEqual(statuses.get("Estimated row"), 'Estimated')
             self.assertEqual(statuses.get("Active row"), 'Active')
         finally:
             if os.path.exists(temp_path):

@@ -38,7 +38,8 @@ Task colours - MSPDI has no field for one - and the distinction between a
 Phase and a Task that has children, since Project has one kind of summary row.
 Both are cosmetic.
 
-Whether a task is a Draft or Active does not survive either. MSPDI's <Task> is
+A task's status - Active, Estimated or Inactive - does not survive either.
+MSPDI's <Task> is
 a fixed sequence of the elements the schema names, and Status is not one of
 them - Project has a Status of its own but it is a calculated field, not
 something a file may state. An element the schema does not know sits in the

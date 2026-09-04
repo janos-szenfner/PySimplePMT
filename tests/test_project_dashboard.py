@@ -55,7 +55,7 @@ def sample_project(**statuses) -> Project:
     -----------
     **statuses
         Rows to mark as something other than the example says, by id -
-        sample_project(t003='Draft').
+        sample_project(t003='Estimated').
     """
     project = Project(name="Sample")
     for task_id, name, kind, duration, progress, parent, status \
@@ -259,34 +259,49 @@ class TestKPIMetrics(unittest.TestCase):
     def test_a_plan_of_active_rows_is_all_active(self):
         """The shares read the Status field, not the progress."""
         self.assertAlmostEqual(self.metrics['active_share'], 100.0)
-        self.assertAlmostEqual(self.metrics['draft_share'], 0.0)
+        self.assertAlmostEqual(self.metrics['estimated_share'], 0.0)
+        self.assertAlmostEqual(self.metrics['inactive_share'], 0.0)
 
-    def test_the_drafts_are_the_rest_of_them(self):
-        """Two rows of eight marked Draft is a quarter of the plan."""
+    def test_the_estimated_rows_are_counted_on_their_own(self):
+        """Two rows of eight marked Estimated is a quarter of the plan."""
         metrics = kpi_metrics(dashboard_rows(
-            sample_project(t003='Draft', t004='Draft')))
+            sample_project(t003='Estimated', t004='Estimated')))
 
         self.assertAlmostEqual(metrics['active_share'], 75.0)
-        self.assertAlmostEqual(metrics['draft_share'], 25.0)
+        self.assertAlmostEqual(metrics['estimated_share'], 25.0)
+        self.assertAlmostEqual(metrics['inactive_share'], 0.0)
 
-    def test_the_two_shares_always_come_to_a_hundred(self):
+    def test_the_inactive_rows_are_counted_on_their_own(self):
+        """A row marked Inactive lands in the inactive share, not active."""
+        metrics = kpi_metrics(dashboard_rows(
+            sample_project(t003='Inactive', t004='Inactive')))
+
+        self.assertAlmostEqual(metrics['active_share'], 75.0)
+        self.assertAlmostEqual(metrics['inactive_share'], 25.0)
+        self.assertAlmostEqual(metrics['estimated_share'], 0.0)
+
+    def test_the_three_shares_always_come_to_a_hundred(self):
         """
-        They are written side by side and read as a pair, so a plan whose
-        halves do not meet reads as a fault in the arithmetic - which,
-        with two counts rounded separately, it would be.
+        The three are written together and read as a set, so a plan whose
+        shares do not meet reads as a fault in the arithmetic. Active is
+        taken as the remainder for exactly that reason - the E and the I
+        are counted, and what is left is firm.
         """
-        for drafts in range(len(WORKED_EXAMPLE) + 1):
-            marked = {f"t{row[0]}": 'Draft'
-                      for row in WORKED_EXAMPLE[:drafts]}
+        example = list(WORKED_EXAMPLE)
+        for cut in range(len(example) + 1):
+            marked = {}
+            for i, row in enumerate(example[:cut]):
+                marked[f"t{row[0]}"] = 'Estimated' if i % 2 else 'Inactive'
             metrics = kpi_metrics(dashboard_rows(sample_project(**marked)))
 
             self.assertAlmostEqual(
-                metrics['active_share'] + metrics['draft_share'], 100.0,
-                msg=f"{drafts} drafts")
+                metrics['active_share'] + metrics['estimated_share']
+                + metrics['inactive_share'], 100.0,
+                msg=f"{cut} marked")
 
     def test_progress_does_not_decide_the_status(self):
         """
-        A row can be Active and untouched, or Draft and half done. The
+        A row can be Active and untouched, or Estimated and half done. The
         share used to count the rows that had progress on them, which is a
         different question and was labelled with this one's answer.
         """
@@ -302,7 +317,8 @@ class TestKPIMetrics(unittest.TestCase):
 
         self.assertEqual(metrics['total_items'], 0)
         self.assertEqual(metrics['active_share'], 0.0)
-        self.assertEqual(metrics['draft_share'], 0.0)
+        self.assertEqual(metrics['estimated_share'], 0.0)
+        self.assertEqual(metrics['inactive_share'], 0.0)
         self.assertEqual(metrics['completion'], 0.0)
 
 
@@ -394,20 +410,28 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
         self.assertIn("11.43%", texts)
 
     def test_the_summary_names_every_figure(self):
-        """Six lines, each with a caption saying what it counts."""
+        """Seven lines, each with a caption saying what it counts."""
         texts = self.texts()
 
         for caption in ("Total Project Scope", "Total Items Tracked",
                         "Milestones Count", "Overall Completion",
-                        "Active Status", "Draft Status"):
+                        "Active Status", "Estimated Status",
+                        "Inactive Status"):
             self.assertIn(caption, texts)
 
-    def test_the_two_status_lines_are_drawn_as_a_pair(self):
-        """Both letters, both shares, and the two coming to a hundred."""
+    def test_the_draft_status_line_is_gone(self):
+        """The old Draft line and its D are no longer written anywhere."""
+        texts = self.texts()
+
+        self.assertNotIn("Draft Status", texts)
+        self.assertFalse(any("Draft" in text for text in texts), texts)
+
+    def test_the_three_status_lines_are_drawn_as_a_set(self):
+        """Every letter, every share, and the three coming to a hundred."""
         from gantt_app.views.project_dashboard import ProjectDashboardFrame
 
         frame = ProjectDashboardFrame(
-            self.root, sample_project(t003='Draft', t004='Draft'))
+            self.root, sample_project(t003='Estimated', t004='Inactive'))
         frame.canvas.configure(width=1200, height=800)
         frame.refresh()
 
@@ -415,8 +439,9 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
                  for item in frame.canvas.find_all()
                  if frame.canvas.type(item) == 'text']
 
-        self.assertIn("75% Active (A)", texts)
-        self.assertIn("25% Draft (D)", texts)
+        self.assertIn("75% Active", texts)
+        self.assertIn("12% Estimated (E)", texts)
+        self.assertIn("12% Inactive (I)", texts)
 
     def test_an_empty_plan_says_so_and_invents_nothing(self):
         """No bars, no ring, and none of the old sample task names."""

@@ -791,10 +791,11 @@ def check_invalid_status_defaults_to_active_fallback(task_with_invalid_status):
     assert task_with_invalid_status.status == "Active"
 
 
-@given('a task with status "Draft"', target_fixture="task_with_draft_status")
+@given('a task with status "Estimated"', target_fixture="task_with_draft_status")
 def task_with_draft_status():
     base_date = datetime(2024, 1, 1)
-    return Task(id="test", name="Test", start_date=base_date, status="Draft")
+    return Task(id="test", name="Test", start_date=base_date,
+                status="Estimated")
 
 
 @when("serialized to dict to check status", target_fixture="serialized_task_with_status")
@@ -805,10 +806,10 @@ def serialize_task_with_status_to_dict(task_with_draft_status):
 @then("the dict should include the status field")
 def check_serialized_task_includes_status(serialized_task_with_status):
     assert 'status' in serialized_task_with_status
-    assert serialized_task_with_status['status'] == "Draft"
+    assert serialized_task_with_status['status'] == "Estimated"
 
 
-@given("a task dict with status \"Draft\" for deserialization", target_fixture="task_dict_with_status")
+@given("a task dict with status \"Inactive\" for deserialization", target_fixture="task_dict_with_status")
 def task_dict_with_status():
     return {
         'id': 'test',
@@ -823,7 +824,7 @@ def task_dict_with_status():
         'parent_task_id': None,
         'duration': None,
         'priority': 'Normal',
-        'status': 'Draft',
+        'status': 'Inactive',
         'shape': 'Default',
         'show_in_timeline': True,
         'earliest_begin': None,
@@ -839,9 +840,9 @@ def deserialize_task_with_status(task_dict_with_status):
     return Task.from_dict(task_dict_with_status)
 
 
-@then("the task should have status \"Draft\"")
+@then("the task should have status \"Inactive\"")
 def check_deserialized_task_has_draft_status(deserialized_task_with_status):
-    assert deserialized_task_with_status.status == "Draft"
+    assert deserialized_task_with_status.status == "Inactive"
 
 
 @given("a task dict without status", target_fixture="task_dict_without_status")

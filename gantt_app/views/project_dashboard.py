@@ -181,12 +181,13 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     RETURNS:
     --------
     Dict[str, Any]
-        total_scope   - days held by the top-level rows
-        total_items   - how many rows there are
-        milestones    - how many of them are milestones
-        completion    - weighted_progress over the same rows
-        active_share  - percentage of rows marked Active
-        draft_share   - percentage marked Draft, being the rest of them
+        total_scope      - days held by the top-level rows
+        total_items      - how many rows there are
+        milestones       - how many of them are milestones
+        completion       - weighted_progress over the same rows
+        active_share     - percentage of rows marked Active
+        estimated_share  - percentage marked Estimated
+        inactive_share   - percentage marked Inactive
 
     DEVELOPMENT NOTES:
     ------------------
@@ -197,17 +198,30 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     every row is the same length, and a plan where they are is a plan that
     did not need weighting.
 
-    The two shares are the Status field a row carries - the A and D the
-    task list shows in its Status column - and not how far the work has
-    got. They are meant to be read as a pair and to come to a hundred, so
-    the draft share is what is left after the active one rather than a
-    second count of its own: rounding two halves separately is how a plan
-    of eight rows comes to 99%.
+    The three shares are the Status field a row carries - the letters the
+    task list's own Status column uses, an empty cell for Active and the E
+    and I for Estimated and Inactive - and not how far the work has got. A
+    row whose status is anything else, an older file's 'Draft' among them,
+    is read as Active, which is where the readers coerce it too. Each share
+    is counted on its own rather than taken as the remainder of the others:
+    with three of them the remainder trick no longer closes, and a direct
+    count is the honest figure even when rounding leaves the three a point
+    short of a hundred.
     """
     top = [row for row in rows if row['Level'] == 1]
-    active = [row for row in rows if row.get('Status', 'Active') != 'Draft']
 
-    active_share = (len(active) / len(rows) * 100) if rows else 0.0
+    def share(status: str) -> float:
+        if not rows:
+            return 0.0
+        n = len([row for row in rows if row.get('Status', 'Active') == status])
+        return n / len(rows) * 100
+
+    estimated_share = share('Estimated')
+    inactive_share = share('Inactive')
+    # Active is the default the column leaves blank, so every row that is not
+    # explicitly Estimated or Inactive counts towards it - which is what the
+    # blank cell means and how the coercion above already treats 'Draft'.
+    active_share = (100.0 - estimated_share - inactive_share) if rows else 0.0
     return {
         'total_scope': sum(row['Duration'] for row in top),
         'total_items': len(rows),
@@ -215,7 +229,8 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                            if row['Type'] == 'Milestone']),
         'completion': weighted_progress(rows),
         'active_share': active_share,
-        'draft_share': (100.0 - active_share) if rows else 0.0,
+        'estimated_share': estimated_share,
+        'inactive_share': inactive_share,
     }
 
 
@@ -574,14 +589,15 @@ class ProjectDashboardFrame(ctk.CTkFrame):
 
     def _draw_summary(self, rows, x, y, width, height):
         """
-        The six figures, in a box of their own.
+        The seven figures, in a box of their own.
 
         DEVELOPMENT NOTES:
         ------------------
-        The two status lines are written as a pair - the share Active and
-        the share Draft, coming to a hundred between them - because either
-        on its own leaves the reader working out the other, and the A and
-        the D are the letters the task list's own Status column uses.
+        The three status lines are the Status field the task list's own
+        column shows: Active, which that column leaves blank, and Estimated
+        and Inactive, which it marks E and I. They are written as a set that
+        comes to a hundred, so the reader can weigh how much of the plan is
+        firm against how much is still an estimate or set aside.
         """
         left, top, right, bottom = self._panel(
             x, y, width, height, "Summary")
@@ -598,8 +614,11 @@ class ProjectDashboardFrame(ctk.CTkFrame):
              f"{metrics['milestones']} "
              f"{self._plural('Milestone', metrics['milestones'])}"),
             ("Overall Completion", f"{metrics['completion']:.2f}%"),
-            ("Active Status", f"{metrics['active_share']:.0f}% Active (A)"),
-            ("Draft Status", f"{metrics['draft_share']:.0f}% Draft (D)"),
+            ("Active Status", f"{metrics['active_share']:.0f}% Active"),
+            ("Estimated Status",
+             f"{metrics['estimated_share']:.0f}% Estimated (E)"),
+            ("Inactive Status",
+             f"{metrics['inactive_share']:.0f}% Inactive (I)"),
         )
 
         box_h = min(len(lines) * 24 + 28, bottom - top)

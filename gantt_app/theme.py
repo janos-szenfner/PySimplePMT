@@ -142,6 +142,10 @@ GRID_SELECT_BG: Tuple[str, str] = ('#cfe2f3', '#2f5d86')
 #: A row that has been cut and is waiting to be pasted.
 GRID_CUT_TEXT: Tuple[str, str] = ('#9aa0a6', '#71767c')
 
+#: A task marked Inactive: struck through and dimmed to a light grey, so a
+#: dormant row reads as set aside rather than as work still in front of you.
+GRID_INACTIVE_TEXT: Tuple[str, str] = ('#9aa0a6', '#71767c')
+
 #: The window's own furniture: the scrollbars and the divider between the
 #: two panes.
 #:

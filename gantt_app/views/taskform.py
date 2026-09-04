@@ -1339,7 +1339,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_status(self, frame):
         """
-        Draft or Active, between the percentage and the priority.
+        Active, Estimated or Inactive, between the percentage and priority.
 
         DEVELOPMENT NOTES:
         ------------------

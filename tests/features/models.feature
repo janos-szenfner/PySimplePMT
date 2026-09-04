@@ -179,7 +179,7 @@ Feature: Task and Project model functionality
 
   @models
   Scenario: Task accepts valid status values
-    Given valid status values "Draft" and "Active"
+    Given valid status values "Estimated" and "Inactive"
     When creating tasks with these statuses
     Then the tasks should have the specified statuses
 
@@ -191,15 +191,15 @@ Feature: Task and Project model functionality
 
   @models
   Scenario: Task serialization includes status
-    Given a task with status "Draft"
+    Given a task with status "Estimated"
     When serialized to dict to check status
     Then the dict should include the status field
 
   @models
   Scenario: Task deserialization reads status
-    Given a task dict with status "Draft" for deserialization
+    Given a task dict with status "Inactive" for deserialization
     When deserialized to Task to check status
-    Then the task should have status "Draft"
+    Then the task should have status "Inactive"
 
   @models
   Scenario: Task deserialization defaults status to Active

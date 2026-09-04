@@ -93,6 +93,10 @@ class DragDropTaskList(ctk.CTkFrame):
     #: Text colour of a row that has been cut and not yet pasted.
     CUT_ROW_TEXT = theme.GRID_CUT_TEXT
 
+    #: Text colour of a row whose task is marked Inactive - a light grey that
+    #: goes with the line struck through it; see _row_tag.
+    INACTIVE_ROW_TEXT = theme.GRID_INACTIVE_TEXT
+
     #: Fill of a row on the critical path, while the icon has it turned on.
     #: The same light red the critical path window uses for those rows, so
     #: the report and the list agree about what a critical row looks like.
@@ -183,9 +187,18 @@ class DragDropTaskList(ctk.CTkFrame):
             self._base_font_spec = (family, size or 10)
         return self._base_font_spec
 
-    def _row_font(self, bold: bool, italic: bool, underline: bool):
+    def _row_font(self, bold: bool, italic: bool, underline: bool,
+                  overstrike: bool = False):
         """
         The grid's own font, with the emphasis a row asked for.
+
+        PARAMETERS:
+        -----------
+        bold, italic, underline : bool
+            The emphasis the row's own style carries.
+        overstrike : bool
+            A line drawn through the whole row, used to show a task marked
+            Inactive - see _row_tag. Tk's own name for a strike-through.
 
         RETURNS:
         --------
@@ -204,6 +217,7 @@ class DragDropTaskList(ctk.CTkFrame):
         family, size = self._base_font()
         modifiers = ' '.join(name for name, wanted in (
             ('bold', bold), ('italic', italic), ('underline', underline),
+            ('overstrike', overstrike),
         ) if wanted)
         return (family, size, modifiers) if modifiers else (family, size)
 
@@ -243,6 +257,15 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         resolved = resolve_style(task.style, self.is_summary_row(task))
 
+        # What the status says the row is doing now. Estimated and Inactive
+        # each wear a bold letter in the Status column - E and I; Inactive
+        # additionally strikes the whole line through and greys it, the way
+        # the screenshot marks a dropped task. Both fold into the one tag so
+        # the row is painted once.
+        estimated = task.status == 'Estimated'
+        inactive = task.status == 'Inactive'
+        marked = estimated or inactive
+
         if task.id in self._critical_task_ids:
             # Beats the row's own fill for the same reason the greying beats
             # its ink: it says what the row is doing now, and the reader
@@ -254,18 +277,24 @@ class DragDropTaskList(ctk.CTkFrame):
 
         if task.id in self._cut_task_ids() or self._is_search_context(task):
             foreground = theme.now(self.CUT_ROW_TEXT)
+        elif inactive:
+            # Dormant, so greyed whatever ink the style carries - the same
+            # "this row is not the work in front of you" the cut greying says
+            foreground = theme.now(self.INACTIVE_ROW_TEXT)
         else:
             foreground = resolved.text_color or theme.now(self.GRID_TEXT)
 
+        bold = resolved.bold or marked
+
         name = (f"row_{background}_{foreground}"
-                f"_{int(resolved.bold)}{int(resolved.italic)}"
-                f"{int(resolved.underline)}").replace('#', '')
+                f"_{int(bold)}{int(resolved.italic)}"
+                f"{int(resolved.underline)}{int(inactive)}").replace('#', '')
 
         if name not in self._row_tags:
             self.tree.tag_configure(
                 name, background=background, foreground=foreground,
-                font=self._row_font(resolved.bold, resolved.italic,
-                                    resolved.underline))
+                font=self._row_font(bold, resolved.italic,
+                                    resolved.underline, overstrike=inactive))
             self._row_tags.add(name)
 
         return name
@@ -2674,8 +2703,12 @@ class DragDropTaskList(ctk.CTkFrame):
         # Format task type
         type_str = task.task_type
         
-        # Format status - D for Draft, A for Active
-        status_str = 'D' if task.status == 'Draft' else 'A'
+        # Format status - Active is the ordinary case and shows nothing, so
+        # the column stays quiet until a row is something other than active.
+        # Estimated and Inactive each get their initial; the bold and the
+        # strike-through those letters wear are set on the row's tag by
+        # _row_tag, since a Treeview styles a whole row rather than one cell.
+        status_str = {'Estimated': 'E', 'Inactive': 'I'}.get(task.status, '')
         
         # The name goes in column #0, which is the one that draws the
         # indentation and the expander beside it

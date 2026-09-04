@@ -84,8 +84,11 @@ DEPENDENCY_HARDNESS_LABELS = {
 #: Task types in the new hierarchy
 TASK_TYPES = ('Phase', 'Task', 'Subtask', 'Milestone')
 
-#: Available status values for tasks
-TASK_STATUSES = ('Draft', 'Active')
+#: Available status values for tasks. Active is the default and the first
+#: value, so the editor's dropdown opens on it. A file written by an older
+#: version carries 'Draft'; it is no longer a status, so the readers below
+#: coerce it - like any other unrecognised value - to Active.
+TASK_STATUSES = ('Active', 'Estimated', 'Inactive')
 
 #: Task type display labels
 TASK_TYPE_LABELS = {
