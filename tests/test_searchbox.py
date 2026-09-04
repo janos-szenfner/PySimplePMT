@@ -320,6 +320,20 @@ class TestTheBoxOnTheToolbar(unittest.TestCase):
 
         self.assertTrue(self.box.clear_button.winfo_manager())
 
+    def test_destroying_the_box_cancels_a_pending_search(self):
+        """
+        A settle timer must not outlive the box that scheduled it.
+
+        Typing arms the debounce; tearing the box down before it fires would
+        otherwise leave the timer to run _fire_now on a dead widget.
+        """
+        self.box.search_var.set("mock")
+        self.assertIsNotNone(self.box._settle_job)
+
+        self.box.destroy()
+
+        self.assertIsNone(self.box._settle_job)
+
     def test_clearing_empties_the_box_and_says_so(self):
         """Which puts every row back."""
         self.box.search_var.set("mockup")

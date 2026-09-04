@@ -446,5 +446,43 @@ class TestZoomControls(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheResizeTimerDoesNotOutliveTheChart(unittest.TestCase):
+    """A settle timer left pending would redraw a chart that has gone."""
+
+    def setUp(self):
+        """Build a chart widget over a small project."""
+        import customtkinter as ctk
+        from gantt_app.views.gantt_chart import GanttChart
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        self.project.add_task(Task(id="001", name="Alpha", start_date=base,
+                                   end_date=base + timedelta(days=5)))
+        self.chart = GanttChart(self.root, self.project)
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def test_destroying_the_chart_cancels_a_pending_resize(self):
+        """
+        Arm the resize debounce, then tear the chart down before it fires.
+
+        The job is cleared rather than left to run _resize_settled on a dead
+        widget.
+        """
+        self.chart._resize_job = self.chart.after(10000, lambda: None)
+
+        self.chart.destroy()
+
+        self.assertIsNone(self.chart._resize_job)
+
+
 if __name__ == '__main__':
     unittest.main()

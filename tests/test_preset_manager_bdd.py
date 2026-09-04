@@ -281,3 +281,21 @@ def check_grid_row(ctx, name):
 def check_custom_actions(ctx):
     buttons = _buttons(ctx["tab"].grid_frame)
     assert "Edit" in buttons and "Delete" in buttons, buttons
+
+
+@then("the manager has one listener")
+def check_one_listener(ctx):
+    assert len(ctx["manager"]._listeners) == 1, ctx["manager"]._listeners
+
+
+@when("the settings tab is destroyed")
+def destroy_the_tab(ctx):
+    ctx["tab"].destroy()
+
+
+@then("the manager has no listeners")
+def check_no_listeners(ctx):
+    # The tab unsubscribes in its destroy() override; a <Destroy> binding
+    # would not have fired for the frame itself, so the subscription used to
+    # outlive every Settings window that opened the tab.
+    assert ctx["manager"]._listeners == [], ctx["manager"]._listeners

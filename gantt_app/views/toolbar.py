@@ -414,15 +414,22 @@ class CTkDropdownMenu(ctk.CTkToplevel):
 
         if item_type == "toggle":
             var = item.get("variable")
+            # The tick sits in the same left gutter the action and submenu
+            # rows leave with their four leading spaces, so the label lines
+            # up with theirs whether it is ticked or not. The indicator is
+            # always one character - the tick or a space standing in for it -
+            # followed by three spaces, coming to the four the others use;
+            # two spaces left the label a space short and hanging out to the
+            # left of every other entry.
             check_str = "✓" if (var and var.get()) else " "
-            
+
             # Create handler to avoid lambda scoping issues
             def make_toggle_handler(i, v):
                 return lambda: self._handle_toggle(i, v)
-            
+
             btn = ctk.CTkButton(
                 row,
-                text=f"{check_str}  {label_text}",
+                text=f"{check_str}   {label_text}",
                 anchor="w",
                 fg_color="transparent",
                 text_color=WIN_MENU_TEXT,

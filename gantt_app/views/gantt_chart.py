@@ -277,6 +277,25 @@ class GanttChart(ctk.CTkFrame):
         except tk.TclError:
             self._resize_job = None
 
+    def destroy(self):
+        """
+        Cancel a pending resize redraw before the chart goes.
+
+        A settle timer left armed would otherwise run _resize_settled on a
+        dead widget. Done in a destroy() override rather than off a <Destroy>
+        binding because a CustomTkinter widget's own <Destroy> does not reach
+        a self.bind handler, and because the canvas child - whose <Destroy>
+        does fire - is torn down and rebuilt on every redraw, so binding
+        there would cancel a live resize mid-draw.
+        """
+        if self._resize_job is not None:
+            try:
+                self.after_cancel(self._resize_job)
+            except (tk.TclError, ValueError):
+                pass
+            self._resize_job = None
+        super().destroy()
+
     def _resize_settled(self):
         """Redraw once the window has stopped changing size."""
         self._resize_job = None

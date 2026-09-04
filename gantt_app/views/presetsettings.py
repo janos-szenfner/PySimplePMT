@@ -50,13 +50,20 @@ class StylePresetsTab(ctk.CTkFrame):
 
         self._build()
         self.manager.subscribe(self.refresh)
-        self.bind("<Destroy>", self._on_destroy, add="+")
         self.refresh()
 
-    def _on_destroy(self, event):
-        """Stop listening when the tab goes, so a dead grid is not redrawn."""
-        if event.widget is self:
-            self.manager.unsubscribe(self.refresh)
+    def destroy(self):
+        """
+        Stop listening when the tab goes, so a dead grid is not redrawn.
+
+        A destroy() override rather than a <Destroy> binding: a CustomTkinter
+        widget's own <Destroy> does not reach a self.bind handler - only its
+        internal canvas child's does - so the guarded binding never fired and
+        the subscription outlived every Settings window that had ever opened
+        the tab, piling up in the application-wide manager.
+        """
+        self.manager.unsubscribe(self.refresh)
+        super().destroy()
 
     def _build(self):
         """Title, the scrolling grid, and the add button."""

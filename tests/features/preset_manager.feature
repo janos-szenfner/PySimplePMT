@@ -111,3 +111,12 @@ Feature: Built-in and custom style presets
     When a custom preset "Shown" is added
     Then the settings grid shows a row named "Shown"
     And that row offers Edit and Delete
+
+  @preset_manager
+  @needs_display
+  Scenario: A closed settings tab stops listening to the manager
+    Given a preset manager with an isolated settings file
+    And a style-presets settings tab reading that manager
+    Then the manager has one listener
+    When the settings tab is destroyed
+    Then the manager has no listeners

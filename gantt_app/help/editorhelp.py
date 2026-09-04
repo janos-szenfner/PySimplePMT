@@ -270,6 +270,24 @@ HELP_SECTIONS = (
         ],
     ),
     (
+        "Status",
+        [
+            "Active, Estimated or Inactive, and Active unless you say "
+            "otherwise. It is the planner's own mark on the row, separate "
+            "from how far the work has got.",
+
+            "Active is the ordinary case and leaves the list's Status column "
+            "blank. Estimated shows a bold E, for a row whose dates or effort "
+            "are still a guess. Inactive shows a bold I and strikes the whole "
+            "row through in grey, for a task set aside without deleting it.",
+
+            "The dashboard's summary counts the three as shares of the plan "
+            "that come to a hundred. A plan saved by an older version, whose "
+            "tasks carried a Draft status, opens with those rows read as "
+            "Active.",
+        ],
+    ),
+    (
         "Priority",
         [
             "A label for the reader, and for sorting and filtering. It "

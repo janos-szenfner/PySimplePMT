@@ -272,6 +272,20 @@ class TaskSearchBox(ctk.CTkFrame):
         except tk.TclError:
             self._fire_now()
 
+    def destroy(self):
+        """
+        Cancel the settle timer before the box goes.
+
+        A pending timer would otherwise fire _fire_now on a dead widget. The
+        box lives as long as the toolbar, so this is tidiness rather than a
+        leak, but the timer should not outlast what scheduled it. Done in a
+        destroy() override rather than off a <Destroy> binding because a
+        CustomTkinter widget's own <Destroy> does not reach a self.bind
+        handler - only its internal canvas child's does.
+        """
+        self._cancel_settle()
+        super().destroy()
+
     def _cancel_settle(self):
         """Drop a pending search, if there is one."""
         if self._settle_job is None:

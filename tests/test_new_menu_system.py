@@ -682,5 +682,90 @@ class TestOpeningASubmenuTwice(unittest.TestCase):
         self.assertTrue(hovered.winfo_exists())
 
 
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheToggleLabelLinesUpWithTheOthers(unittest.TestCase):
+    """
+    A ticked entry's label sits where every other entry's label sits.
+
+    WHY THESE EXIST:
+    ================
+    The View menu draws its indentation with leading spaces: an action and a
+    submenu row each start their label four spaces in. The toggle row - Grid
+    View Only - drew its tick indicator and then only two spaces, so its
+    label began a space to the left of all the others and hung out past them.
+    The indicator is always one character, the tick or a space standing in
+    for it, so three spaces after it come to the same four the others use.
+    """
+
+    def setUp(self):
+        """A menu with a submenu, an action and both states of a toggle."""
+        import customtkinter as ctk
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.off = ctk.BooleanVar(value=False)
+        self.on = ctk.BooleanVar(value=True)
+        self.menu = CTkDropdownMenu(self.root, items=[
+            {"label": "A submenu", "type": "submenu", "items": [
+                {"label": "Inside...", "type": "action",
+                 "command": lambda: None}]},
+            {"label": "An action", "type": "action",
+             "command": lambda: None},
+            {"label": "Off toggle", "type": "toggle", "variable": self.off,
+             "command": lambda: None},
+            {"label": "On toggle", "type": "toggle", "variable": self.on,
+             "command": lambda: None},
+        ])
+        self.menu.withdraw()
+        self.menu.update_idletasks()
+
+    def tearDown(self):
+        """Tear the root window down."""
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
+
+    def button_text(self, label):
+        """The rendered text of the row whose label contains ``label``."""
+        import customtkinter as ctk
+
+        def walk(widget):
+            for kid in widget.winfo_children():
+                if isinstance(kid, ctk.CTkButton):
+                    yield kid
+                yield from walk(kid)
+
+        return next(b.cget('text') for b in walk(self.menu)
+                    if label in b.cget('text'))
+
+    def indent_of(self, text):
+        """The characters before the label - the leading whitespace."""
+        return text[:len(text) - len(text.lstrip())]
+
+    def test_the_action_and_the_submenu_share_one_indent(self):
+        """The baseline every other row's label is measured against."""
+        self.assertEqual(self.indent_of(self.button_text("An action")),
+                         self.indent_of(self.button_text("A submenu")))
+
+    def test_an_unticked_toggle_label_lines_up_with_the_action(self):
+        """Four spaces, the same as the action row - not three."""
+        self.assertEqual(self.indent_of(self.button_text("Off toggle")),
+                         self.indent_of(self.button_text("An action")))
+
+    def test_a_ticked_toggle_keeps_the_label_in_the_same_column(self):
+        """
+        The tick takes the first column and the label the rest, so the
+        label starts where the unticked one did - four columns in.
+        """
+        on = self.button_text("On toggle")
+        self.assertTrue(on.startswith("✓"), on)
+        # Stand a space in for the tick and the label should sit exactly
+        # where the action's does - the tick only occupies the first column.
+        self.assertEqual(self.indent_of(" " + on[1:]),
+                         self.indent_of(self.button_text("An action")))
+
+
 if __name__ == '__main__':
     unittest.main()
