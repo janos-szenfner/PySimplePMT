@@ -844,6 +844,18 @@ class TestThePanesFollowTheTheme(unittest.TestCase):
         from tkinter import ttk
         return ttk.Style().lookup('Gantt.Treeview', part)
 
+    def assert_same_colour(self, actual, expected):
+        """
+        The two name the same colour, however each is spelt.
+
+        Compared as RGB rather than as strings: ttk resolves #ffffff to the
+        named colour White on macOS, so a string check said the grid had not
+        followed when it had. winfo_rgb reads both to the same triple.
+        """
+        self.assertEqual(self.app.winfo_rgb(actual),
+                         self.app.winfo_rgb(expected),
+                         f"{actual!r} is not {expected!r}")
+
     def test_the_task_list_follows_the_appearance(self):
         """It was the largest thing in the window that did not."""
         self.app.theme_controller.set_mode(theme.MODE_LIGHT)
@@ -852,8 +864,8 @@ class TestThePanesFollowTheTheme(unittest.TestCase):
         self.app.theme_controller.set_mode(theme.MODE_DARK)
         dark = self.grid_colour()
 
-        self.assertEqual(light, theme.GRID_ROW_BG[0])
-        self.assertEqual(dark, theme.GRID_ROW_BG[1])
+        self.assert_same_colour(light, theme.GRID_ROW_BG[0])
+        self.assert_same_colour(dark, theme.GRID_ROW_BG[1])
 
     def test_the_grid_headings_follow_too(self):
         """A dark grid under a light heading strip reads as broken."""
@@ -873,16 +885,74 @@ class TestThePanesFollowTheTheme(unittest.TestCase):
         self.assertEqual(settings['bg_color'], theme.CHART_BG[1])
         self.assertEqual(settings['text_color'], theme.CHART_TEXT[1])
 
+    def test_the_resource_grid_style_follows_the_appearance(self):
+        """
+        The Resource settings DataGrid stayed dark on a switch to day.
+
+        Its window is opened on its own and the application does not hold it,
+        so it has no apply_theme; the shared ttk style is re-coloured for it
+        instead. The dark value is checked, not the light one, because ttk
+        resolves #ffffff to the named colour White on macOS and the test
+        should say whether the code works, not which platform ran it.
+        """
+        from tkinter import ttk
+
+        self.app.theme_controller.set_mode(theme.MODE_LIGHT)
+        light = ttk.Style().lookup('DataGrid.Treeview', 'fieldbackground')
+
+        self.app.theme_controller.set_mode(theme.MODE_DARK)
+        dark = ttk.Style().lookup('DataGrid.Treeview', 'fieldbackground')
+
+        self.assertEqual(dark, theme.GRID_ROW_BG[1])
+        self.assertNotEqual(light, dark)
+
+    def test_the_resource_grid_rows_follow_the_appearance(self):
+        """
+        The DataGrid's banding is per-instance tag colour, not the style.
+
+        Re-styling the shared style fixes the empty field but not the rows,
+        which the window re-tags through _configure_style. The dark banding
+        colour is unambiguous, so it is the one checked.
+        """
+        from gantt_app.views.resourcesettings import DataGrid
+
+        columns = (("A", 80, 1, "w"), ("B", 80, 1, "w"))
+        grid = DataGrid(self.app, columns, on_select=lambda _i: None)
+
+        self.app.theme_controller.set_mode(theme.MODE_DARK)
+        grid._configure_style()
+
+        self.assertEqual(
+            str(grid.tree.tag_configure('even', 'background')),
+            theme.GRID_ROW_BG[1])
+
+    def test_the_chart_container_follows_the_appearance(self):
+        """
+        The frame behind the chart canvas is themed, not left to Tk.
+
+        A bare frame keeps a fixed colour, and the square where the two
+        scrollbars meet and a hairline round the edges show it - which framed
+        the chart in black after a switch to day. Rebuilt with the chart, so
+        it follows; the dark value is checked for the reason above.
+        """
+        self.app.theme_controller.set_mode(theme.MODE_DARK)
+        self.app.update_idletasks()
+
+        canvas = self.app.gantt_chart._canvas
+        self.assertIsNotNone(canvas)
+        container = canvas.master
+        self.assertEqual(str(container.cget('background')), theme.CHART_BG[1])
+
     def test_going_back_to_day_restores_the_original_colours(self):
         """The light appearance has to be unchanged, to the value."""
         self.app.theme_controller.set_mode(theme.MODE_DARK)
         self.app.theme_controller.set_mode(theme.MODE_LIGHT)
 
-        self.assertEqual(self.grid_colour(), '#ffffff')
-        self.assertEqual(self.app.gantt_chart.screen_settings()['bg_color'],
-                         '#ffffff')
-        self.assertEqual(self.app.gantt_chart.screen_settings()['text_color'],
-                         '#000000')
+        self.assert_same_colour(self.grid_colour(), '#ffffff')
+        self.assert_same_colour(
+            self.app.gantt_chart.screen_settings()['bg_color'], '#ffffff')
+        self.assert_same_colour(
+            self.app.gantt_chart.screen_settings()['text_color'], '#000000')
 
     def test_an_exported_chart_stays_light(self):
         """

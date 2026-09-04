@@ -1036,9 +1036,11 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
 
     def __init__(self, master, repo, active_project_ids=None,
-                 on_save: Optional[Callable] = None, **kwargs):
+                 on_save: Optional[Callable] = None,
+                 theme_controller=None, **kwargs):
         super().__init__(master, **kwargs)
         self.repo = repo
+        self._theme_controller = theme_controller
         self.active_project_ids = list(active_project_ids or [])
         self.on_save = on_save
         self.selected_resource_id = None
@@ -1062,7 +1064,27 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self._refresh_teams()
         logger.info("Opened Resource Settings with %d resources and %d teams",
                     len(repo.resources), len(repo.teams))
+
+        # Follow theme changes. The DataGrid's field background comes from the
+        # global ttk style, which the application re-colours; its row banding
+        # is per-instance tag colours, which only re-running _configure_style
+        # updates - so the two grids are re-tagged here. Owned by the window,
+        # so the subscription is dropped when it closes.
+        if self._theme_controller is not None:
+            self._theme_controller.subscribe(self._apply_theme, owner=self)
+
         grab_when_visible(self)
+
+    def _apply_theme(self, _mode=None, _appearance=None):
+        """Re-tag both grids so their rows follow a theme change."""
+        for grid in (getattr(self, 'resource_grid', None),
+                     getattr(self, 'team_grid', None)):
+            if grid is None:
+                continue
+            try:
+                grid._configure_style()
+            except tk.TclError:
+                logger.debug("A resource grid has gone; not re-tagging it")
 
     def _build_resources_tab(self):
         footer = self._footer(

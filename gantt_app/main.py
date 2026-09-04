@@ -402,6 +402,11 @@ class GanttApp(ctk.CTk):
         raises TclError and is expected; anything else is not.
         """
         theme.style_chrome()
+        # The shared ttk grid styles resolve their colours once, so a grid
+        # in a window this method does not hold - the Resource settings
+        # DataGrid - is re-coloured through the global style here rather than
+        # by reaching for the window. See theme.restyle_grids.
+        theme.restyle_grids()
 
         for name in ('task_list', 'gantt_chart', 'dashboard_frame'):
             pane = getattr(self, name, None)

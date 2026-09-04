@@ -2688,6 +2688,7 @@ class Toolbar(ctk.CTkFrame):
             self.winfo_toplevel(), self.project.resource_repository,
             active_project_ids=[self.project.name],
             on_save=self.save_project,
+            theme_controller=self.theme_controller,
         )
 
     def open_gantt_chart_settings(self):

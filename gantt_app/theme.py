@@ -442,6 +442,22 @@ def style_treeview(style_name: str, row_height: Optional[int] = None,
               background=[('active', now(GRID_LINE))])
 
 
+def restyle_grids() -> None:
+    """
+    Re-colour the shared Treeview styles for the appearance now in force.
+
+    ttk styles are process-global and resolve their colours once. The task
+    list re-runs Gantt.Treeview through its own apply_theme, but the Resource
+    settings DataGrid has none - its window is opened on its own and the
+    application does not hold it - so its field background stayed dark after a
+    switch to the light appearance. Re-styling here, from _theme_changed,
+    reaches every grid using these styles at once, in whichever window.
+    """
+    style_treeview('DataGrid.Treeview', row_height=26,
+                   heading_font=('Arial', 10, 'bold'))
+    style_treeview('Gantt.Treeview', row_height=26)
+
+
 def resolve(colour: Tuple[str, str], appearance: str) -> str:
     """
     The half of a pair that a given appearance uses.

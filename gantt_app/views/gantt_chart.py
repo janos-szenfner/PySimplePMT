@@ -694,7 +694,15 @@ class GanttChart(ctk.CTkFrame):
         self._release_photo()
         self._photo = ImageTk.PhotoImage(image)
 
-        container = tk.Frame(self.chart_frame)
+        # Themed, not left to Tk's default. A bare tk.Frame keeps a fixed
+        # grey (a near-black on some builds), and the canvas and the two
+        # scrollbars do not cover all of it - the square where they meet, and
+        # a hairline round the edges, show the frame itself. Unthemed, that
+        # square and border stayed dark after a switch to the light
+        # appearance, framing the chart in black. Rebuilt with the chart, so
+        # it follows every theme change the redraw already carries.
+        container = tk.Frame(self.chart_frame,
+                             background=theme.now(theme.CHART_BG))
         container.pack(fill=tk.BOTH, expand=True)
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
