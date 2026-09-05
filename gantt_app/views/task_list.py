@@ -154,6 +154,62 @@ class DragDropTaskList(ctk.CTkFrame):
         return any(other.parent_task_id == task.id
                    for other in self.project.tasks)
 
+    #: The Status column's letters, drawn bold. A Treeview styles a whole
+    #: row through one font, so the boldness cannot be put on the cell alone;
+    #: these are the Mathematical Sans-Serif Bold letters, which are bold in
+    #: any font that carries them, so the E and the I stand out without the
+    #: rest of the row following. A Tk too old to draw glyphs above the basic
+    #: plane falls back to the plain letters; see _status_label.
+    STATUS_LETTERS_BOLD = {'Estimated': '\U0001d5d8', 'Inactive': '\U0001d5dc'}
+    STATUS_LETTERS_PLAIN = {'Estimated': 'E', 'Inactive': 'I'}
+
+    def _bold_glyph_ok(self) -> bool:
+        """
+        Whether this Tk can draw the bold Status letters.
+
+        RETURNS:
+        --------
+        bool
+            True when the interpreter is Tk 8.6 or newer, which is what it
+            takes to render a character above the basic multilingual plane;
+            Tk 8.5 draws such a character as an empty box, so the plain
+            letter is used there instead. Asked once and kept.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The packaged application runs on the Tk its Python bundles - 8.6 for
+        the 3.11 the builds use - so it gets the bold letters; only an old
+        system Python used for development falls back.
+        """
+        if self._bold_glyph_supported is None:
+            try:
+                level = str(self.tree.tk.call('info', 'patchlevel'))
+                major, minor = (int(part) for part in level.split('.')[:2])
+                self._bold_glyph_supported = (major, minor) >= (8, 6)
+            except Exception:
+                self._bold_glyph_supported = False
+        return self._bold_glyph_supported
+
+    def _status_label(self, status: str) -> str:
+        """
+        The letter the Status column shows for a task's status.
+
+        PARAMETERS:
+        -----------
+        status : str
+            The task's status - Active, Estimated or Inactive.
+
+        RETURNS:
+        --------
+        str
+            Empty for Active, so the column stays quiet for the ordinary
+            case; a bold E for Estimated and a bold I for Inactive, or their
+            plain forms where the Tk cannot draw the bold glyph.
+        """
+        letters = (self.STATUS_LETTERS_BOLD if self._bold_glyph_ok()
+                   else self.STATUS_LETTERS_PLAIN)
+        return letters.get(status, '')
+
     def _base_font(self):
         """
         The family and size the grid draws in, read from the desktop's own.
@@ -257,14 +313,13 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         resolved = resolve_style(task.style, self.is_summary_row(task))
 
-        # What the status says the row is doing now. Estimated and Inactive
-        # each wear a bold letter in the Status column - E and I; Inactive
-        # additionally strikes the whole line through and greys it, the way
-        # the screenshot marks a dropped task. Both fold into the one tag so
-        # the row is painted once.
-        estimated = task.status == 'Estimated'
+        # What the status says the row is doing now. Inactive strikes the
+        # whole line through and greys it, the way the screenshot marks a
+        # dropped task. The bold the marked statuses wear belongs to the E
+        # and the I in the Status column, not to the row - a Treeview styles
+        # a whole row through one font, so the letter carries its own weight
+        # as a bold glyph instead; see _status_label.
         inactive = task.status == 'Inactive'
-        marked = estimated or inactive
 
         if task.id in self._critical_task_ids:
             # Beats the row's own fill for the same reason the greying beats
@@ -284,16 +339,14 @@ class DragDropTaskList(ctk.CTkFrame):
         else:
             foreground = resolved.text_color or theme.now(self.GRID_TEXT)
 
-        bold = resolved.bold or marked
-
         name = (f"row_{background}_{foreground}"
-                f"_{int(bold)}{int(resolved.italic)}"
+                f"_{int(resolved.bold)}{int(resolved.italic)}"
                 f"{int(resolved.underline)}{int(inactive)}").replace('#', '')
 
         if name not in self._row_tags:
             self.tree.tag_configure(
                 name, background=background, foreground=foreground,
-                font=self._row_font(bold, resolved.italic,
+                font=self._row_font(resolved.bold, resolved.italic,
                                     resolved.underline, overstrike=inactive))
             self._row_tags.add(name)
 
@@ -410,6 +463,9 @@ class DragDropTaskList(ctk.CTkFrame):
         self._row_tags = set()
         #: The grid's family and size, asked of Tk once; see _base_font.
         self._base_font_spec = None
+        #: Whether this Tk can draw the bold Status letters; see
+        #: _bold_glyph_ok. Asked once and kept.
+        self._bold_glyph_supported = None
 
         #: Rows painted as critical while the icon has the highlight on.
         #: Empty means the highlight is off; see show_critical_path_rows.
@@ -2705,10 +2761,11 @@ class DragDropTaskList(ctk.CTkFrame):
         
         # Format status - Active is the ordinary case and shows nothing, so
         # the column stays quiet until a row is something other than active.
-        # Estimated and Inactive each get their initial; the bold and the
-        # strike-through those letters wear are set on the row's tag by
-        # _row_tag, since a Treeview styles a whole row rather than one cell.
-        status_str = {'Estimated': 'E', 'Inactive': 'I'}.get(task.status, '')
+        # Estimated and Inactive get their initial, drawn bold; see
+        # _status_label for why the boldness lives in the glyph rather than
+        # the row's font. The strike-through Inactive also wears is set on
+        # the row's tag by _row_tag.
+        status_str = self._status_label(task.status)
         
         # The name goes in column #0, which is the one that draws the
         # indentation and the expander beside it

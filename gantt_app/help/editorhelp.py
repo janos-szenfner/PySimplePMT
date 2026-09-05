@@ -278,8 +278,14 @@ HELP_SECTIONS = (
 
             "Active is the ordinary case and leaves the list's Status column "
             "blank. Estimated shows a bold E, for a row whose dates or effort "
-            "are still a guess. Inactive shows a bold I and strikes the whole "
-            "row through in grey, for a task set aside without deleting it.",
+            "are still a guess. Inactive shows a bold I, for a task set aside "
+            "without deleting it. The letter alone is bold, not the whole "
+            "row.",
+
+            "An Inactive row is struck through in grey, and its bar is "
+            "dropped from the Gantt chart - its row stays on the list, but "
+            "nothing is drawn for it on the timeline. Estimated and Active "
+            "rows are drawn as usual.",
 
             "The dashboard's summary counts the three as shares of the plan "
             "that come to a hundred. A plan saved by an older version, whose "

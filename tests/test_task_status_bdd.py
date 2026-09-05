@@ -163,10 +163,40 @@ def the_status_cell_is_empty(list_state):
     assert list_state["list"].tree.set("T1", "Status") == ""
 
 
-@then(parsers.parse('the Status cell for that task is "{letter}"'))
-def the_status_cell_is(list_state, letter):
-    """The initial the marked statuses wear - E or I."""
-    assert list_state["list"].tree.set("T1", "Status") == letter
+@then("the Status cell for that task marks it Estimated")
+def the_status_cell_marks_estimated(list_state):
+    """Whatever the letter is on this Tk - bold glyph or plain E."""
+    cell = list_state["list"].tree.set("T1", "Status")
+    assert cell == list_state["list"]._status_label("Estimated")
+    assert cell != ""
+
+
+@then("the Status cell for that task marks it Inactive")
+def the_status_cell_marks_inactive(list_state):
+    """Whatever the letter is on this Tk - bold glyph or plain I."""
+    cell = list_state["list"].tree.set("T1", "Status")
+    assert cell == list_state["list"]._status_label("Inactive")
+    assert cell != ""
+
+
+@then("the Status letter is drawn bold")
+def the_status_letter_is_bold(list_state):
+    """
+    The boldness rides on the glyph, not the row.
+
+    Where the Tk can draw it (8.6+), the cell carries the Mathematical
+    Sans-Serif Bold letter rather than the plain one; an older Tk that
+    cannot render it falls back to the plain letter, and the row font is
+    never used to fake the weight - the row-font steps check that.
+    """
+    tl = list_state["list"]
+    status = tl.project.get_task_by_id("T1").status
+    cell = tl.tree.set("T1", "Status")
+    if tl._bold_glyph_ok():
+        assert cell == tl.STATUS_LETTERS_BOLD[status], repr(cell)
+        assert cell != tl.STATUS_LETTERS_PLAIN[status]
+    else:
+        assert cell == tl.STATUS_LETTERS_PLAIN[status], repr(cell)
 
 
 @then("that row's font is bold")

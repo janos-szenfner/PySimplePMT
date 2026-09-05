@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from gantt_app.models import Project, Task
-from gantt_app.utils.chart_render import layout_chart, MIN_WIDTH
+from gantt_app.utils.chart_render import layout_chart, MIN_WIDTH, RowPlan
 
 
 def labels(layout):
@@ -131,6 +131,63 @@ class TestSummaryBars(ChartLayoutTestCase):
 
         self.assertEqual(layout.summaries, [])
         self.assertIn("Phase One", [b['label'] for b in layout.bars])
+
+
+class TestInactiveTasksAreKeptOffTheChart(ChartLayoutTestCase):
+    """A task marked Inactive carries no bar on the chart."""
+
+    def _drawn(self, layout):
+        """Every label the chart drew, bar, summary or milestone."""
+        return ([b['label'] for b in layout.bars]
+                + [s['label'] for s in layout.summaries]
+                + [m['label'] for m in layout.milestones])
+
+    def test_the_export_omits_an_inactive_task(self):
+        """With no row plan the chart draws the plan, minus the dormant row."""
+        self.project.get_task_by_id("004").status = 'Inactive'
+        layout = layout_chart(self.project, width=1200)
+
+        self.assertNotIn("Phase Two", self._drawn(layout))
+        self.assertNotIn("Phase Two", labels(layout))
+
+    def test_an_inactive_milestone_is_dropped_too(self):
+        """It is a marked row like any other, so it goes as well."""
+        self.project.get_task_by_id("005").status = 'Inactive'
+        layout = layout_chart(self.project, width=1200)
+
+        self.assertNotIn("Sign-off", [m['label'] for m in layout.milestones])
+
+    def _row_plan(self):
+        """The on-screen path: every visible row, in the list's order."""
+        return RowPlan(tasks=list(self.project.tasks), row_height=26,
+                       top_margin=40, label_width=120)
+
+    def test_an_inactive_row_keeps_its_slot_on_screen(self):
+        """
+        The chart's rows come from the list and must stay level with it, so
+        an Inactive row is left blank rather than removed: the rows after it
+        do not move up.
+        """
+        active = layout_chart(self.project, rows=self._row_plan(), width=1200)
+        where = dict((label, y) for y, label in active.row_labels)
+
+        self.project.get_task_by_id("004").status = 'Inactive'
+        hidden = layout_chart(self.project, rows=self._row_plan(), width=1200)
+
+        # Phase Two draws nothing, but Sign-off below it has not shifted up
+        self.assertNotIn("Phase Two", self._drawn(hidden))
+        signoff = next(y for y, label in hidden.row_labels
+                       if label == "Sign-off")
+        self.assertEqual(signoff, where["Sign-off"])
+
+    def test_a_dependency_onto_an_inactive_task_is_dropped(self):
+        """An arrow reaching a bar that is not drawn would point at nothing."""
+        self.project.get_task_by_id("004").status = 'Inactive'
+        self.project.get_task_by_id("005").add_dependency("004")
+        layout = layout_chart(self.project, width=1200)
+
+        # Sign-off followed Phase Two; with Phase Two gone the arrow goes too
+        self.assertEqual(layout.dependencies, [])
 
 
 class TestPhaseShape(unittest.TestCase):

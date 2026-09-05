@@ -120,12 +120,13 @@ GUIDE_SECTIONS = (
 
             "Status - Active, Estimated or Inactive, Active by default. "
             "Active is the ordinary case and shows nothing in the list's "
-            "Status column; Estimated shows a bold E; Inactive shows a bold "
-            "I and strikes the whole row through in grey, so a task set "
-            "aside reads that way at a glance. The View - Charts - Dashboard "
-            "summary counts the three as shares of the plan that come to a "
-            "hundred. A plan saved by an older version, whose tasks were "
-            "Draft, opens with those rows read as Active.",
+            "Status column; Estimated shows a bold E and Inactive a bold I - "
+            "the letter alone is bold, not the row. An Inactive row is also "
+            "struck through in grey, and its bar is dropped from the Gantt "
+            "chart while the row itself stays on the list. The View - Charts "
+            "- Dashboard summary counts the three as shares of the plan that "
+            "come to a hundred. A plan saved by an older version, whose "
+            "tasks were Draft, opens with those rows read as Active.",
 
             "Parent - the row this one sits under. Empty for a top-level "
             "row.",

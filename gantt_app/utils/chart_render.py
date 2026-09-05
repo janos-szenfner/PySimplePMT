@@ -173,23 +173,30 @@ def _shorten(text: str, limit: int = LABEL_CHARS) -> str:
     return text if len(text) <= limit else text[:limit - 1] + '...'
 
 
+def _is_inactive(task: Task) -> bool:
+    """Whether a task is marked Inactive, and so kept off the chart."""
+    return getattr(task, 'status', 'Active') == 'Inactive'
+
+
 def _get_visible_tasks(project: Project) -> List[Task]:
     """
     Get tasks that should be visible in the Gantt chart.
-    
-    Only returns tasks where show_in_timeline is True (default).
-    
+
+    Only returns tasks where show_in_timeline is True (default) and whose
+    status is not Inactive - a task set aside carries no bar.
+
     PARAMETERS:
     -----------
     project : Project
         The project containing tasks.
-        
+
     RETURNS:
     --------
     List[Task]
         List of tasks with show_in_timeline set to True.
     """
-    return [task for task in project.tasks if task.show_in_timeline]
+    return [task for task in project.tasks
+            if task.show_in_timeline and not _is_inactive(task)]
 
 
 def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
@@ -509,7 +516,15 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     plot_right = width - MARGIN_RIGHT
     plot_span = max(plot_right - plot_left, 1)
 
-    min_date, max_date = calculate_date_range(tasks)
+    # A task marked Inactive is set aside: it keeps its row so the chart's
+    # lines stay level with the list's, but nothing is drawn on that row and
+    # its dates do not stretch the axis. On the on-screen chart the rows come
+    # straight from the list and include it; the export path has already
+    # dropped it in _get_visible_tasks, so this is what hides it there too.
+    hidden = {task.id for task in tasks if _is_inactive(task)}
+    drawn = [task for task in tasks if task.id not in hidden]
+
+    min_date, max_date = calculate_date_range(drawn or tasks)
     total_days = max((max_date - min_date).days, 1)
 
     def x_for(moment: datetime) -> float:
@@ -532,6 +547,12 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     for index, task in enumerate(tasks):
         centre = y_for(index)
+
+        # Its row is left blank - see the note above - so nothing, not even
+        # a label, is drawn for it.
+        if task.id in hidden:
+            continue
+
         if label_width:
             layout.row_labels.append((centre, _shorten(task.name)))
 
@@ -580,9 +601,11 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         })
 
     for task in tasks:
+        if task.id in hidden:
+            continue                     # no bar, so no arrow reaching it
         for dep_id in task.dependency_ids:
             dep = project.get_task_by_id(dep_id)
-            if dep is None or dep.id not in positions:
+            if dep is None or dep.id not in positions or dep.id in hidden:
                 continue
             dep_end = dep.start_date if dep.is_milestone else \
                 (dep.end_date or dep.start_date) + timedelta(days=1)

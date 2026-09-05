@@ -30,17 +30,19 @@ Feature: Task status on the list and the dashboard
     And that row's font is not struck through
 
   @status
-  Scenario: An Estimated row shows a bold E
+  Scenario: An Estimated row shows a bold E without bolding the row
     Given a task list holding an "Estimated" task
-    Then the Status cell for that task is "E"
-    And that row's font is bold
+    Then the Status cell for that task marks it Estimated
+    And the Status letter is drawn bold
+    And that row's font is not bold
     And that row's font is not struck through
 
   @status
-  Scenario: An Inactive row shows a bold, struck-through I on a greyed line
+  Scenario: An Inactive row shows a bold I on a struck-through, greyed line
     Given a task list holding an "Inactive" task
-    Then the Status cell for that task is "I"
-    And that row's font is bold
+    Then the Status cell for that task marks it Inactive
+    And the Status letter is drawn bold
+    And that row's font is not bold
     And that row's font is struck through
     And that row is greyed
 
