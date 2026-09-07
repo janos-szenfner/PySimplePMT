@@ -401,7 +401,8 @@ class TestThePreference(unittest.TestCase):
         with mock.patch.object(theme, 'save_mode') as saver, \
              mock.patch.object(theme, 'detect_system_appearance',
                                return_value='light'):
-            controller = theme.ThemeController(apply=lambda _a: None)
+            controller = theme.ThemeController(
+                mode=theme.MODE_SYSTEM, apply=lambda _a: None)
             controller.toggle()
 
         saver.assert_called_once_with(theme.MODE_DARK)

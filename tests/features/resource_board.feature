@@ -11,6 +11,14 @@ Feature: 4-Panel Resource Planning Matrix
     And the footer contains a "Close" button
     And the "Close" button is to the right of the switch
 
+  Scenario: Resource Planning follows live day and night changes
+    When the user switches the application to night mode
+    Then the resource task list uses dark colors
+    And the resource canvases use dark colors
+    When the user switches the application to day mode
+    Then the resource task list uses light colors
+    And the resource canvases use light colors
+
   Scenario: The default view is Task Planning
     Then the resource planning switch is off
     And the Task Planning view is on top
@@ -60,6 +68,12 @@ Feature: 4-Panel Resource Planning Matrix
     When the user filters the resource pool to "Team"
     Then the resource pool contains only "Core QA Team"
 
+  Scenario: Selecting a long-named resource keeps panels equal and wraps text
+    Given a resource board with a long-named resource
+    When the user selects the "DevOps Lead Placeholder Number One" resource
+    Then the resource board panels remain equal in width
+    And long resource text is wrapped
+
   Scenario: Selecting a resource updates the assignee preview
     Given a resource board with a project that has unassigned and assigned tasks
     When the user selects the "Requirements Gathering" task
@@ -81,11 +95,21 @@ Feature: 4-Panel Resource Planning Matrix
     Then the task has no resource assignments
     And the task list shows "Database Migration" with status "Unassigned"
 
+  Scenario: Heatmap spans the complete project timeline
+    Given a resource board with a task spanning multiple weeks
+    Then the heatmap starts on "Thu 01 Jan"
+    And the heatmap ends on "Tue 20 Jan"
+    And the heatmap contains 20 day columns
+
   Scenario: Heatmap shows a row for every resource and team
     Given a resource board with a project that has resources and a team
     Then the heatmap canvas has drawing items
     And the heatmap contains text for "Jane Smith"
     And the heatmap contains text for "Core QA Team"
+
+  Scenario: Heatmap shows existing resource overbooking
+    Given a resource board with an existing overbooked allocation
+    Then the heatmap cell for "Jane Smith" on "Thu 01 Jan" is over capacity
 
   Scenario: Heatmap colors reflect capacity load
     Given a resource board with an overloaded resource

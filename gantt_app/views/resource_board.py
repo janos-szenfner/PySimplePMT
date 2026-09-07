@@ -142,7 +142,8 @@ class ResourceBoard(ctk.CTkFrame):
         # Give all four panels equal shares of the available width.  The
         # heatmap still needs more room than it had, and equal shares stop the
         # inspector from dominating the layout.
-        self.grid_columnconfigure((0, 1, 2, 3), weight=1, minsize=180)
+        self.grid_columnconfigure(
+            (0, 1, 2, 3), weight=1, minsize=180, uniform="resource-board")
         self.grid_rowconfigure(0, weight=1)
 
         self._build_task_list_panel()
@@ -225,8 +226,9 @@ class ResourceBoard(ctk.CTkFrame):
             p2, wrap="word", height=160, width=180, state="disabled")
         self.inspector_text.pack(padx=10, pady=4, fill="x")
 
-        self.preview_label = ctk.CTkLabel(p2, text="Assignee preview:",
-                                          anchor="w")
+        self.preview_label = ctk.CTkLabel(
+            p2, text="Assignee preview:", anchor="w", justify="left",
+            wraplength=160)
         self.preview_label.pack(padx=10, pady=(8, 2), fill="x")
 
         ctk.CTkButton(
@@ -350,6 +352,16 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     # Refresh
     # ------------------------------------------------------------------
+    def apply_theme(self) -> None:
+        theme.style_treeview('ResourceBoard.Treeview', row_height=30)
+        ttk.Style().configure('ResourceBoard.Treeview', indent=20)
+        background = theme.now(theme.CHART_BG)
+        self.pool_frame.canvas.configure(background=background)
+        self.heatmap_canvas.configure(background=background)
+        self._filter_pool()
+        self._update_preview()
+        self._draw_heatmap()
+
     def refresh(self) -> None:
         """Reload every panel from the current project state."""
         if not self.project:
@@ -633,6 +645,7 @@ class ResourceBoard(ctk.CTkFrame):
                 command=lambda e=entity.id: self._select_resource(e),
             )
             card._resource_id = entity.id
+            card._text_label.configure(wraplength=150, justify="left")
             card.grid(row=row, column=0, pady=3, padx=2, sticky="ew")
             if entity.id == self._selected_resource_id:
                 card.configure(fg_color="#1f6aa5")
@@ -700,15 +713,21 @@ class ResourceBoard(ctk.CTkFrame):
             repo, self._selected_resource_id or "")
         projected = self._projected_daily_load(selected_task, selected_resource)
 
-        earliest = date.today()
-        for task in self.project.tasks:
-            if task.start_date:
-                d = (task.start_date.date()
-                     if isinstance(task.start_date, datetime)
-                     else task.start_date)
-                if d < earliest:
-                    earliest = d
-        days = [earliest + timedelta(days=i) for i in range(7)]
+        starts = [(task.start_date.date()
+                   if isinstance(task.start_date, datetime)
+                   else task.start_date)
+                  for task in self.project.tasks if task.start_date]
+        ends = [((task.end_date or task.start_date).date()
+                 if isinstance(task.end_date or task.start_date, datetime)
+                 else task.end_date or task.start_date)
+                for task in self.project.tasks if task.start_date]
+        if starts:
+            earliest = min(starts)
+            latest = max(ends)
+        else:
+            earliest = latest = date.today()
+        days = [earliest + timedelta(days=i)
+                for i in range((latest - earliest).days + 1)]
         day_width = 100
         row_height = 50
         left = 160
@@ -719,7 +738,7 @@ class ResourceBoard(ctk.CTkFrame):
             x = left + col * day_width
             canvas.create_text(
                 x + day_width // 2, 15,
-                text=day.strftime("%a %d"),
+                text=day.strftime("%a %d %b"),
                 fill=theme.now(theme.GRID_TEXT), font=("Arial", 10, "bold"))
 
         resources = list(repo.resources.values())
@@ -737,6 +756,12 @@ class ResourceBoard(ctk.CTkFrame):
             else:
                 capacity_per_day = entity.daily_capacity_hours
                 loads = _daily_load_for_resource(entity, self.project)
+                allocation = sum(entity.team_memberships.values())
+                if allocation:
+                    for day in days:
+                        weekday = DAYS[day.weekday()]
+                        loads[day] = (loads.get(day, 0.0)
+                                      + capacity_per_day[weekday] * allocation)
 
             if (entity.id == getattr(selected_resource, "id", None)
                     and projected):

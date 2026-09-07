@@ -8,10 +8,12 @@ These tests require a display because they build the full GanttApp.
 """
 import tkinter as tk
 from datetime import datetime, timedelta
+from tkinter import ttk
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from gantt_app import theme
 from gantt_app.models import Project, Task
 from gantt_app.resource_model import (
     Resource, ResourceRepository, ResourceType, SchedulePattern, TeamPool,
@@ -179,6 +181,15 @@ def a_resource_board_with_a_project_that_has_resources_and_a_team(app):
     app.resource_board.update_idletasks()
 
 
+@given("a resource board with a long-named resource")
+def a_resource_board_with_a_long_named_resource(app):
+    _setup_common_project(app.project)
+    resource = app.project.resource_repository.resources["r2"]
+    resource.name = "DevOps Lead Placeholder Number One"
+    app.resource_board.refresh()
+    app.resource_board.update_idletasks()
+
+
 @given("a resource board with a project that has an assigned task")
 def a_resource_board_with_a_project_that_has_an_assigned_task(app):
     _setup_common_project(app.project)
@@ -197,6 +208,30 @@ def a_resource_board_with_a_project_that_has_an_assigned_task(app):
     assigned.__post_init__()
     app.project.add_task(assigned)
     app.project.renumber_task_ids()
+    app.resource_board.refresh()
+    app.resource_board.update_idletasks()
+
+
+@given("a resource board with a task spanning multiple weeks")
+def a_resource_board_with_a_task_spanning_multiple_weeks(app):
+    _setup_common_project(app.project)
+    task = Task(
+        id="timeline", name="Multi-week delivery",
+        start_date=datetime(2026, 1, 1),
+        end_date=datetime(2026, 1, 20),
+        task_type="Task",
+    )
+    task.__post_init__()
+    app.project.add_task(task)
+    app.resource_board.refresh()
+    app.resource_board.update_idletasks()
+
+
+@given("a resource board with an existing overbooked allocation")
+def a_resource_board_with_an_existing_overbooked_allocation(app):
+    a_resource_board_with_a_task_spanning_multiple_weeks(app)
+    resource = app.project.resource_repository.resources["r1"]
+    resource.team_memberships = {"t1": 1.25}
     app.resource_board.refresh()
     app.resource_board.update_idletasks()
 
@@ -246,6 +281,18 @@ def _setup_common_project(project: Project):
 # ------------------------------------------------------------------
 # WHEN
 # ------------------------------------------------------------------
+@when("the user switches the application to night mode")
+def the_user_switches_the_application_to_night_mode(app):
+    app.theme_controller.set_mode(theme.MODE_DARK, remember=False)
+    app.update_idletasks()
+
+
+@when("the user switches the application to day mode")
+def the_user_switches_the_application_to_day_mode(app):
+    app.theme_controller.set_mode(theme.MODE_LIGHT, remember=False)
+    app.update_idletasks()
+
+
 @when("the user turns on resource planning")
 def the_user_turns_on_resource_planning(app):
     app._resource_switch_var.set("on")
@@ -327,6 +374,36 @@ def the_user_filters_the_resource_pool_to(app, filter):
 # ------------------------------------------------------------------
 # THEN
 # ------------------------------------------------------------------
+@then("the resource task list uses dark colors")
+def the_resource_task_list_uses_dark_colors(app):
+    style = ttk.Style()
+    assert style.lookup('ResourceBoard.Treeview', 'fieldbackground') == theme.now(
+        theme.GRID_ROW_BG)
+    assert style.lookup('ResourceBoard.Treeview', 'foreground') == theme.now(
+        theme.GRID_TEXT)
+
+
+@then("the resource canvases use dark colors")
+def the_resource_canvases_use_dark_colors(app):
+    canvases = (app.resource_board.pool_frame.canvas,
+                app.resource_board.heatmap_canvas)
+    assert all(max(canvas.winfo_rgb(canvas.cget("background"))) < 32768
+               for canvas in canvases)
+
+
+@then("the resource task list uses light colors")
+def the_resource_task_list_uses_light_colors(app):
+    the_resource_task_list_uses_dark_colors(app)
+
+
+@then("the resource canvases use light colors")
+def the_resource_canvases_use_light_colors(app):
+    canvases = (app.resource_board.pool_frame.canvas,
+                app.resource_board.heatmap_canvas)
+    assert all(min(canvas.winfo_rgb(canvas.cget("background"))) > 32768
+               for canvas in canvases)
+
+
 @then(parsers.parse('the footer contains the "{label}" label'))
 def the_footer_contains_the_label(app, label):
     texts = []
@@ -431,6 +508,25 @@ def the_preview_label_contains(app, name):
     assert name in text, f"expected {name!r} in preview, got {text!r}"
 
 
+@then("the resource board panels remain equal in width")
+def the_resource_board_panels_remain_equal_in_width(app):
+    app.resource_board.update_idletasks()
+    widths = [app.resource_board.grid_bbox(column, 0)[2]
+              for column in range(4)]
+    assert max(widths) - min(widths) <= 1, f"panel widths changed: {widths}"
+
+
+@then("long resource text is wrapped")
+def long_resource_text_is_wrapped(app):
+    preview_wrap = float(str(
+        app.resource_board.preview_label.cget("wraplength")))
+    cards = app.resource_board.pool_frame.content.winfo_children()
+    card_wraps = [float(str(card._text_label.cget("wraplength")))
+                  for card in cards]
+    assert preview_wrap > 0
+    assert card_wraps and all(length > 0 for length in card_wraps)
+
+
 @then(parsers.parse('the task "{name}" has an assignment to "{resource}"'))
 def the_task_has_an_assignment_to(app, name, resource):
     task = _find_task(app.project, name)
@@ -455,6 +551,27 @@ def the_heatmap_canvas_has_drawing_items(app):
     assert len(items) > 0, "heatmap canvas is empty"
 
 
+def _heatmap_day_headers(app):
+    canvas = app.resource_board.heatmap_canvas
+    return [canvas.itemcget(item, "text") for item in canvas.find_all()
+            if canvas.type(item) == "text" and canvas.coords(item)[1] == 15]
+
+
+@then(parsers.parse('the heatmap starts on "{label}"'))
+def the_heatmap_starts_on(app, label):
+    assert _heatmap_day_headers(app)[0] == label
+
+
+@then(parsers.parse('the heatmap ends on "{label}"'))
+def the_heatmap_ends_on(app, label):
+    assert _heatmap_day_headers(app)[-1] == label
+
+
+@then(parsers.parse("the heatmap contains {count:d} day columns"))
+def the_heatmap_contains_day_columns(app, count):
+    assert len(_heatmap_day_headers(app)) == count
+
+
 @then(parsers.parse('the heatmap contains text for "{name}"'))
 def the_heatmap_contains_text_for(app, name):
     canvas = app.resource_board.heatmap_canvas
@@ -463,6 +580,24 @@ def the_heatmap_contains_text_for(app, name):
              if canvas.type(i) == "text"]
     assert any(name in t for t in texts), (
         f"expected {name!r} in heatmap texts, got {texts}")
+
+
+@then(parsers.parse(
+    'the heatmap cell for "{resource}" on "{day}" is over capacity'))
+def the_heatmap_cell_is_over_capacity(app, resource, day):
+    canvas = app.resource_board.heatmap_canvas
+    text_items = [item for item in canvas.find_all()
+                  if canvas.type(item) == "text"]
+    x = canvas.coords(next(item for item in text_items
+                           if canvas.itemcget(item, "text") == day))[0]
+    y = canvas.coords(next(item for item in text_items
+                           if canvas.itemcget(item, "text") == resource))[1]
+    cells = [item for item in canvas.find_all()
+             if canvas.type(item) == "rectangle"
+             and canvas.coords(item)[0] < x < canvas.coords(item)[2]
+             and canvas.coords(item)[1] < y < canvas.coords(item)[3]]
+    assert len(cells) == 1
+    assert canvas.itemcget(cells[0], "fill") == "#e74c3c"
 
 
 @then("the heatmap contains an over-capacity rectangle")

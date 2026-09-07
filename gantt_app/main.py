@@ -409,7 +409,8 @@ class GanttApp(ctk.CTk):
         # by reaching for the window. See theme.restyle_grids.
         theme.restyle_grids()
 
-        for name in ('task_list', 'gantt_chart', 'dashboard_frame'):
+        for name in ('task_list', 'gantt_chart', 'dashboard_frame',
+                     'resource_board'):
             pane = getattr(self, name, None)
             if pane is None:
                 continue

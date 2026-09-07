@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.65.11 - 2026-09-07
+
+- Kept all four Resource Planning panels equal in width when long resource names are selected.
+- Wrapped long resource names and assignee preview text within their panels.
+- Made the Resource Planning task list, resource canvas, cards, preview, and heatmap repaint immediately when switching between day and night modes.
+- Extended the heatmap from a fixed week to the complete project timeline, with month-aware date headers and horizontal scrolling.
+- Included existing team allocations in daily resource load so already-overbooked resources are shown in red.
+- Added regression coverage for stable panel sizing, wrapped text, live day/night changes, multi-week timelines, and resource-and-date-specific overbooking.
+- Made the theme preference test independent of the user's saved appearance mode.
+
 ## 1.65.10 - 2026-09-07
 
 - Made the Resource Planning selection regression test portable to Linux by avoiding nested Tk event-loop processing.
