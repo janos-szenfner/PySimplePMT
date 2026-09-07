@@ -12,7 +12,7 @@ later without changing the public shape of the class.
 """
 
 import tkinter as tk
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
@@ -55,7 +55,7 @@ def _daily_load_for_resource(
     load: Dict[date, float] = {}
     repo = project.resource_repository
     for task in project.tasks:
-        if not task.is_leaf or task.is_milestone:
+        if task.is_milestone:
             continue
         for assignment in task.resource_assignments:
             entity_id = assignment.get("resource_id")
@@ -71,10 +71,14 @@ def _daily_load_for_resource(
             if not start or not end:
                 continue
             calendar = project.calendar_for(task)
-            workdays = [
+            raw_workdays = [
                 start + timedelta(days=i)
                 for i in range((end - start).days + 1)
-                if calendar.is_working_day(start + timedelta(days=i))
+            ]
+            workdays = [
+                (d.date() if isinstance(d, datetime) else d)
+                for d in raw_workdays
+                if calendar.is_working_day(d)
             ]
             if not workdays:
                 continue
@@ -254,6 +258,7 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _filter_backlog(self) -> None:
         search = (self.backlog_search.get() or "").lower()
+        logger.debug("Filtering backlog by %r", search or "<none>")
         for child in list(self.backlog_frame.content.winfo_children()):
             child.destroy()
 
@@ -270,7 +275,7 @@ class ResourceBoard(ctk.CTkFrame):
                 text=f"#{task.id}\n{task.name or '(unnamed)'}\n"
                      f"Effort: {self._task_effort(task)}h | "
                      f"Duration: {self._task_duration(task)}d",
-                anchor="w", justify="left",
+                anchor="w",
                 command=lambda t=task.id: self._select_task(t),
             )
             card.grid(row=row, column=0, pady=3, padx=2, sticky="ew")
@@ -279,8 +284,7 @@ class ResourceBoard(ctk.CTkFrame):
             row += 1
 
     def _is_unassigned(self, task: Task) -> bool:
-        return bool(task.is_leaf and not task.is_milestone and
-                    not task.resource_assignments)
+        return bool(not task.is_milestone and not task.resource_assignments)
 
     def _task_effort(self, task: Task) -> float:
         return sum(float(a.get("estimated_hours", 0.0))
@@ -328,8 +332,9 @@ class ResourceBoard(ctk.CTkFrame):
             resources = list(self.project.resource_repository.resources.values())
             text, colour, _ = _projected_workload_text(
                 resource, resources, effort)
-            self.preview_label.configure(text=f"Assignee preview: {text}",
-                                         text_color=colour)
+            self.preview_label.configure(
+                text=f"Assignee preview: {resource.name} - {text}",
+                text_color=colour)
         else:
             self.preview_label.configure(
                 text="Assignee preview: select a resource",
@@ -340,6 +345,7 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _filter_pool(self) -> None:
         selected_filter = self.pool_filter.get()
+        logger.debug("Filtering resource pool by %r", selected_filter)
         repo = self.project.resource_repository
         resources = list(repo.resources.values())
 
@@ -372,7 +378,7 @@ class ResourceBoard(ctk.CTkFrame):
             card = ctk.CTkButton(
                 self.pool_frame.content,
                 text=text,
-                anchor="w", justify="left",
+                anchor="w",
                 command=lambda e=entity.id: self._select_resource(e),
             )
             card.grid(row=row, column=0, pady=3, padx=2, sticky="ew")
@@ -396,6 +402,7 @@ class ResourceBoard(ctk.CTkFrame):
     def _draw_heatmap(self) -> None:
         canvas = self.heatmap_canvas
         canvas.delete("all")
+        logger.debug("Drawing resource heatmap")
 
         repo = self.project.resource_repository
         entities = list(repo.resources.values()) + list(repo.teams.values())
@@ -405,8 +412,15 @@ class ResourceBoard(ctk.CTkFrame):
                 fill=theme.now(theme.GRID_TEXT), anchor="w")
             return
 
-        today = date.today()
-        days = [today + timedelta(days=i) for i in range(5)]
+        earliest = date.today()
+        for task in self.project.tasks:
+            if task.start_date:
+                d = (task.start_date.date()
+                     if isinstance(task.start_date, datetime)
+                     else task.start_date)
+                if d < earliest:
+                    earliest = d
+        days = [earliest + timedelta(days=i) for i in range(5)]
         day_width = 120
         row_height = 50
         left = 160
