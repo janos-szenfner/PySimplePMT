@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.65.12 - 2026-09-07
+
+- Reduced the Task Inspector and Resource Pool panels to half their previous width while preserving the Task List width.
+- Reallocated the freed space to the heatmap, producing a 2:1:1:4 panel ratio.
+- Kept long resource and assignee text wrapped inside the narrower panels.
+- Added regression coverage that enforces the compact panel proportions after selecting a long-named resource.
+
 ## 1.65.11 - 2026-09-07
 
 - Kept all four Resource Planning panels equal in width when long resource names are selected.

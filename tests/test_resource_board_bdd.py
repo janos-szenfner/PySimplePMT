@@ -508,12 +508,14 @@ def the_preview_label_contains(app, name):
     assert name in text, f"expected {name!r} in preview, got {text!r}"
 
 
-@then("the resource board panels remain equal in width")
-def the_resource_board_panels_remain_equal_in_width(app):
+@then("the resource board uses compact panel proportions")
+def the_resource_board_uses_compact_panel_proportions(app):
     app.resource_board.update_idletasks()
     widths = [app.resource_board.grid_bbox(column, 0)[2]
               for column in range(4)]
-    assert max(widths) - min(widths) <= 1, f"panel widths changed: {widths}"
+    assert abs(widths[0] - 2 * widths[1]) <= 2, widths
+    assert abs(widths[1] - widths[2]) <= 1, widths
+    assert abs(widths[3] - 4 * widths[1]) <= 4, widths
 
 
 @then("long resource text is wrapped")

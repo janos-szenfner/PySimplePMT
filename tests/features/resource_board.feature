@@ -68,10 +68,10 @@ Feature: 4-Panel Resource Planning Matrix
     When the user filters the resource pool to "Team"
     Then the resource pool contains only "Core QA Team"
 
-  Scenario: Selecting a long-named resource keeps panels equal and wraps text
+  Scenario: Selecting a long-named resource keeps compact panel proportions and wraps text
     Given a resource board with a long-named resource
     When the user selects the "DevOps Lead Placeholder Number One" resource
-    Then the resource board panels remain equal in width
+    Then the resource board uses compact panel proportions
     And long resource text is wrapped
 
   Scenario: Selecting a resource updates the assignee preview

@@ -139,11 +139,14 @@ class ResourceBoard(ctk.CTkFrame):
         self._drag_origin: Optional[Tuple[int, int]] = None
         self._drag_window: Optional[tk.Toplevel] = None
 
-        # Give all four panels equal shares of the available width.  The
-        # heatmap still needs more room than it had, and equal shares stop the
-        # inspector from dominating the layout.
+        # Give the inspector and pool half the task list's share, and put the
+        # space they release into the heatmap.
         self.grid_columnconfigure(
-            (0, 1, 2, 3), weight=1, minsize=180, uniform="resource-board")
+            0, weight=2, minsize=180, uniform="resource-board")
+        self.grid_columnconfigure(
+            (1, 2), weight=1, minsize=110, uniform="resource-board")
+        self.grid_columnconfigure(
+            3, weight=4, minsize=300, uniform="resource-board")
         self.grid_rowconfigure(0, weight=1)
 
         self._build_task_list_panel()
