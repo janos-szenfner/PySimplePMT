@@ -412,11 +412,10 @@ class ClipboardService:
 
         DEVELOPMENT NOTES:
         ------------------
-        One new task per item on the clipboard, and nothing else. Copying a
-        phase copies the phase row; the work under it is not brought along
-        and is not duplicated. What is selected is what is copied, so a
-        selection that includes both a phase and one of its tasks produces
-        exactly those two.
+        One new task is created for every item on the clipboard. Copying a
+        row first gathers its whole branch, so a phase brings every nested
+        task and sub-task with it. Selecting both a parent and one of its
+        descendants still includes each row only once.
 
         The new tasks are numbered from the project's own sequence rather
         than given a UUID. The ID is a column in the task list, and a plan

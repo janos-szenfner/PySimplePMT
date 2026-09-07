@@ -2624,7 +2624,7 @@ Still to do:
 
 - [ ] Resource management — **In progress**
 - [ ] Filtering and grouping
-- [ ] Recursive copy of a whole branch
+- [x] Recursive copy of a whole branch — copying a task includes every nested descendant and preserves the copied hierarchy
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Resource levelling off the back of the float analysis
