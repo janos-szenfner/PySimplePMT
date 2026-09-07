@@ -2619,12 +2619,12 @@ Done:
 - [x] Per-task calendars, so one strand of work can follow a different week
 - [x] GAN file export, with the calendar the durations were counted against
 - [x] Microsoft Project export as MSPDI, with the dates pinned so Project does not re-solve them
+- [x] Recursive copy of a whole branch — copying a task includes every nested descendant and preserves the copied hierarchy
 
 Still to do:
 
 - [ ] Resource management — **In progress**
 - [ ] Filtering and grouping
-- [x] Recursive copy of a whole branch — copying a task includes every nested descendant and preserves the copied hierarchy
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Resource levelling off the back of the float analysis
