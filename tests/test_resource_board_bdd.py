@@ -274,7 +274,7 @@ def the_user_selects_the_task(app, name):
     tree = app.resource_board.task_tree
     tree.selection_set(task.id)
     tree.event_generate("<<TreeviewSelect>>")
-    app.resource_board.update()
+    app.resource_board.update_idletasks()
 
 
 @when(parsers.parse(
