@@ -2632,5 +2632,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.65.5
+**Version**: 1.65.6
 **Last Updated**: 2026-09-07
