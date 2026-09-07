@@ -24,7 +24,7 @@ from gantt_app.resource_model import (
     FTE_WEEKLY_HOURS, Resource, ResourceRepository, ResourceType, TeamPool,
 )
 from gantt_app.utils.log import get_logger
-from gantt_app.views.assigntask import _projected_workload_text, _status_badge
+from gantt_app.views.assigntask import _status_badge
 from gantt_app.views.scrollframe import ScrollFrame
 
 logger = get_logger(__name__)
@@ -50,19 +50,14 @@ def _working_days_between(start: date, end: date) -> int:
     return days
 
 
-def _daily_load_for_resource(
-    resource: Resource,
-    project: Project,
-) -> Dict[date, float]:
-    """Spread each assignment's effort evenly over the task's working days."""
+def _daily_task_load(entity_id: str, project: Project) -> Dict[date, float]:
+    """Spread an entity's task assignments over their working days."""
     load: Dict[date, float] = {}
-    repo = project.resource_repository
     for task in project.tasks:
         if task.is_milestone:
             continue
         for assignment in task.resource_assignments:
-            entity_id = assignment.get("resource_id")
-            if entity_id != resource.id:
+            if assignment.get("resource_id") != entity_id:
                 continue
             estimated = float(assignment.get("estimated_hours", 0.0))
             split = float(assignment.get("resource_split", 100.0)) / 100.0
@@ -91,13 +86,20 @@ def _daily_load_for_resource(
     return load
 
 
+def _daily_load_for_resource(
+    resource: Resource,
+    project: Project,
+) -> Dict[date, float]:
+    return _daily_task_load(resource.id, project)
+
+
 def _team_load_for_date(
     team: TeamPool,
     resources: List[Resource],
     project: Project,
 ) -> Dict[date, float]:
-    """Aggregate load for all members of a team on each date."""
-    load: Dict[date, float] = {}
+    """Aggregate direct team assignments and member load on each date."""
+    load = _daily_task_load(team.id, project)
     for resource in resources:
         if team.id not in resource.team_memberships:
             continue
@@ -594,10 +596,20 @@ class ResourceBoard(ctk.CTkFrame):
         resource = _entity_by_id(self.project.resource_repository,
                                  self._selected_resource_id or "")
         if task and resource:
-            effort = self._task_effort(task) or 8.0
             resources = list(self.project.resource_repository.resources.values())
-            text, colour, _ = _projected_workload_text(
-                resource, resources, effort)
+            if isinstance(resource, TeamPool):
+                capacity = resource.calculate_effective_capacity(resources)
+                used = sum(_team_load_for_date(
+                    resource, resources, self.project).values())
+            else:
+                used, capacity = self._resource_used(resource)
+            assigned = any(a.get("resource_id") == resource.id
+                           for a in task.resource_assignments)
+            projected = used if assigned else used + (self._task_effort(task) or 8.0)
+            badge, colour, pct = _status_badge(projected, capacity)
+            state = " OVERLOADED" if pct > 100 else " loaded"
+            text = (f"{badge} {projected:g} / {capacity:g} hrs "
+                    f"({pct:.0f}%{state})")
             self.preview_label.configure(
                 text=f"Assignee preview: {resource.name} - {text}",
                 text_color=colour)
@@ -655,8 +667,11 @@ class ResourceBoard(ctk.CTkFrame):
             row += 1
 
     def _resource_used(self, resource: Resource) -> tuple:
-        total = sum(_daily_load_for_resource(resource, self.project).values())
-        return total, resource.weekly_capacity_hours
+        task_hours = sum(
+            _daily_load_for_resource(resource, self.project).values())
+        allocation_hours = (sum(resource.team_memberships.values())
+                            * resource.weekly_capacity_hours)
+        return task_hours + allocation_hours, resource.weekly_capacity_hours
 
     def _select_resource(self, entity_id: str) -> None:
         self._selected_resource_id = entity_id
@@ -674,7 +689,7 @@ class ResourceBoard(ctk.CTkFrame):
     ) -> Dict[date, float]:
         """Simulated daily load if *task* were assigned to *resource*."""
         load: Dict[date, float] = {}
-        if task is None or resource is None or isinstance(resource, TeamPool):
+        if task is None or resource is None:
             return load
         effort = self._task_effort(task) or 8.0
         start = task.start_date
@@ -807,10 +822,6 @@ class ResourceBoard(ctk.CTkFrame):
         resource = _entity_by_id(self.project.resource_repository, resource_id)
         if not task or not resource:
             self._say("Select both a task and a resource first.")
-            return
-
-        if isinstance(resource, TeamPool):
-            self._say("Team assignment is not yet supported here.")
             return
 
         if any(a.get("resource_id") == resource.id

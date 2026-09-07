@@ -341,6 +341,13 @@ def the_user_selects_the_resource(app, name):
     app.resource_board.update_idletasks()
 
 
+@when(parsers.parse('the user selects the "{name}" team'))
+def the_user_selects_the_team(app, name):
+    entity = _find_team(app.project, name)
+    app.resource_board._select_resource(entity.id)
+    app.resource_board.update_idletasks()
+
+
 @when("the user assigns the selected resource")
 def the_user_assigns_the_selected_resource(app):
     app.resource_board._assign_selected()
@@ -532,8 +539,11 @@ def long_resource_text_is_wrapped(app):
 @then(parsers.parse('the task "{name}" has an assignment to "{resource}"'))
 def the_task_has_an_assignment_to(app, name, resource):
     task = _find_task(app.project, name)
-    res = _find_resource(app.project, resource)
-    assert any(a.get("resource_id") == res.id for a in task.resource_assignments), (
+    entities = list(app.project.resource_repository.resources.values())
+    entities += list(app.project.resource_repository.teams.values())
+    entity = next(item for item in entities if item.name == resource)
+    assert any(a.get("resource_id") == entity.id
+               for a in task.resource_assignments), (
         f"task {name} is not assigned to {resource}")
 
 
@@ -610,6 +620,21 @@ def the_heatmap_contains_an_over_capacity_rectangle(app):
              if canvas.type(i) == "rectangle"]
     assert "#e74c3c" in fills, (
         f"expected over-capacity red, got {fills}")
+
+
+@then(parsers.parse('the resource pool card for "{name}" is red'))
+def the_resource_pool_card_is_red(app, name):
+    texts = _children_texts(app.resource_board.pool_frame.content)
+    card = next(text for text in texts if name in text)
+    assert card.startswith("🔴"), card
+
+
+@then(parsers.parse(
+    'the resource pool card for "{name}" shows "{booking}"'))
+def the_resource_pool_card_shows_booking(app, name, booking):
+    texts = _children_texts(app.resource_board.pool_frame.content)
+    card = next(text for text in texts if name in text)
+    assert booking in card, card
 
 
 @then(parsers.parse('the resource pool card for "{name}" shows a percentage above 100'))

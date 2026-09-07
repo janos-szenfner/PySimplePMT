@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.65.13 - 2026-09-07
+
+- Made Resource Pool booking badges use existing team allocations and task-assignment hours, matching the inspector preview and heatmap.
+- Showed overbooked resources as red in the Resource Pool with accurate booked hours and percentages.
+- Added direct task assignment to teams and refreshed team booking hours, percentages, preview, and heatmap immediately after assignment.
+- Combined direct team task assignments with applicable member workload in team heatmap rows.
+- Prevented the assignee preview from counting an already-assigned task twice.
+- Added pytest-bdd scenarios for overbooked resource cards and team booking updates after assignment.
+
 ## 1.65.12 - 2026-09-07
 
 - Reduced the Task Inspector and Resource Pool panels to half their previous width while preserving the Task List width.

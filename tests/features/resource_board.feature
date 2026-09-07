@@ -80,6 +80,11 @@ Feature: 4-Panel Resource Planning Matrix
     And the user selects the "John Doe" resource
     Then the preview label contains "John Doe"
 
+  Scenario: An overbooked resource is red in the resource pool
+    Given a resource board with an existing overbooked allocation
+    Then the resource pool card for "Jane Smith" is red
+    And the resource pool card for "Jane Smith" shows "50 / 40 hrs (125%)"
+
   Scenario: Assigning a selected resource adds it to the task
     Given a resource board with a project that has unassigned and assigned tasks
     When the user selects the "Requirements Gathering" task
@@ -87,6 +92,14 @@ Feature: 4-Panel Resource Planning Matrix
     And the user assigns the selected resource
     Then the task "Requirements Gathering" has an assignment to "John Doe"
     And the task list shows "Requirements Gathering" with status "Assigned"
+
+  Scenario: Assigning a team updates its booking hours
+    Given a resource board with a project that has unassigned and assigned tasks
+    When the user selects the "Requirements Gathering" task
+    And the user selects the "Core QA Team" team
+    And the user assigns the selected resource
+    Then the task "Requirements Gathering" has an assignment to "Core QA Team"
+    And the resource pool card for "Core QA Team" shows "8 / 80 hrs (10%)"
 
   Scenario: De-assigning a task updates its status
     Given a resource board with a project that has an assigned task
