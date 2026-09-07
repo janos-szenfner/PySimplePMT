@@ -136,6 +136,7 @@ class ResourceBoard(ctk.CTkFrame):
         self._selected_resource_id: Optional[str] = None
         self._expanded_task_ids: Set[str] = set()
         self._drag_task_id: Optional[str] = None
+        self._drag_origin: Optional[Tuple[int, int]] = None
         self._drag_window: Optional[tk.Toplevel] = None
 
         # Give all four panels equal shares of the available width.  The
@@ -483,40 +484,44 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _on_task_drag_start(self, event: tk.Event) -> None:
         row = self.task_tree.identify_row(event.y)
-        if not row:
-            return
-        self._drag_task_id = row
-        task = self.project.get_task_by_id(row)
-        if task is None:
-            return
-        self._drag_window = tk.Toplevel(self)
-        self._drag_window.overrideredirect(True)
-        self._drag_window.attributes("-alpha", 0.7)
-        tk.Label(self._drag_window, text=task.name, bg="#1f6aa5", fg="white",
-                 padx=8, pady=4).pack()
-        self._drag_window.withdraw()
-        self._move_drag_window(event)
+        self._drag_task_id = row or None
+        self._drag_origin = (event.x, event.y) if row else None
 
     def _on_task_drag_motion(self, event: tk.Event) -> None:
-        if self._drag_window:
-            self._drag_window.deiconify()
-            self._move_drag_window(event)
+        if self._drag_task_id is None or self._drag_origin is None:
+            return
+        if self._drag_window is None:
+            origin_x, origin_y = self._drag_origin
+            if max(abs(event.x - origin_x), abs(event.y - origin_y)) < 5:
+                return
+            task = self.project.get_task_by_id(self._drag_task_id)
+            if task is None:
+                return
+            self._drag_window = tk.Toplevel(self)
+            self._drag_window.overrideredirect(True)
+            self._drag_window.attributes("-alpha", 0.7)
+            tk.Label(self._drag_window, text=task.name, bg="#1f6aa5",
+                     fg="white", padx=8, pady=4).pack()
+        self._drag_window.deiconify()
+        self._move_drag_window(event)
 
     def _move_drag_window(self, event: tk.Event) -> None:
         if self._drag_window is None:
             return
-        x = self.winfo_rootx() + event.x + 12
-        y = self.winfo_rooty() + event.y + 12
+        x = self.task_tree.winfo_rootx() + event.x + 12
+        y = self.task_tree.winfo_rooty() + event.y + 12
         self._drag_window.geometry(f"+{x}+{y}")
 
     def _on_task_drag_drop(self, _event: tk.Event) -> None:
+        was_dragging = self._drag_window is not None
         if self._drag_window:
             self._drag_window.destroy()
             self._drag_window = None
 
         task_id = self._drag_task_id
         self._drag_task_id = None
-        if task_id is None:
+        self._drag_origin = None
+        if task_id is None or not was_dragging:
             return
 
         try:
@@ -547,7 +552,6 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _select_task(self, task_id: str) -> None:
         self._selected_task_id = task_id
-        self._filter_task_list()
         self._show_task(task_id)
         logger.debug("Resource board selected task %s", task_id)
 

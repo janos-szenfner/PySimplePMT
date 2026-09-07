@@ -271,8 +271,20 @@ def the_user_searches_the_task_list_for(app, text):
 @when(parsers.parse('the user selects the "{name}" task'))
 def the_user_selects_the_task(app, name):
     task = _find_task(app.project, name)
-    app.resource_board._select_task(task.id)
-    app.resource_board.update_idletasks()
+    tree = app.resource_board.task_tree
+    tree.selection_set(task.id)
+    tree.event_generate("<<TreeviewSelect>>")
+    app.resource_board.update()
+
+
+@when(parsers.parse(
+    'the user selects the "{name}" task without rebuilding the task list'))
+def the_user_selects_without_rebuilding(app, name, monkeypatch):
+    rebuilds = []
+    monkeypatch.setattr(
+        app.resource_board, "_filter_task_list", lambda: rebuilds.append(True))
+    the_user_selects_the_task(app, name)
+    assert not rebuilds, "selecting a task rebuilt the tree and risks recursion"
 
 
 @when(parsers.parse('the user selects the "{name}" resource'))

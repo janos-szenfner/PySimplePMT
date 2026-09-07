@@ -37,6 +37,11 @@ Feature: 4-Panel Resource Planning Matrix
     When the user searches the task list for "API"
     Then the task list shows only the task named "API Integration"
 
+  Scenario: Selecting a task does not rebuild the task list
+    Given a resource board with a project that has unassigned and assigned tasks
+    When the user selects the "Requirements Gathering" task without rebuilding the task list
+    Then the inspector shows "Requirements Gathering"
+
   Scenario: Selecting a task shows its details in the inspector
     Given a resource board with a project that has unassigned and assigned tasks
     When the user selects the "Requirements Gathering" task

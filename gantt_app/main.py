@@ -529,7 +529,7 @@ class GanttApp(ctk.CTk):
         ).pack(side="left", padx=(0, 8))
 
         self.resource_switch = ctk.CTkSwitch(
-            self.resource_switch_frame, text="",
+            self.resource_switch_frame, text="", width=36,
             variable=self._resource_switch_var,
             onvalue="on", offvalue="off",
             command=self._on_resource_view_toggled,
