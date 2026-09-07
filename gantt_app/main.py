@@ -18,6 +18,7 @@ from gantt_app.resource_model import ResourceRepository
 from gantt_app.views.task_list import DragDropTaskList
 from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
+from gantt_app.views.resource_board import ResourceBoard
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.views.project_dashboard import ProjectDashboardFrame
@@ -495,8 +496,15 @@ class GanttApp(ctk.CTk):
         # set_task_list above, three lines before the chart was built, and
         # the application would not start at all.
         self.gantt_chart.set_task_list(self.task_list)
-        
-        # Footer with status bar and close button
+
+        # 4-Panel Resource Planning view, overlaid with the paned task view.
+        # Lifting one or the other swaps the main viewport.
+        self.resource_board = ResourceBoard(
+            content_frame, self.project, on_status=self._show_status)
+        self.resource_board.grid(
+            row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+
+        # Footer with status bar, view toggle and close button
         self.footer_frame = ctk.CTkFrame(self)
         self.footer_frame.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
         self.footer_frame.grid_columnconfigure(0, weight=1)
@@ -507,11 +515,37 @@ class GanttApp(ctk.CTk):
         )
         self.status_bar.grid(row=0, column=0, sticky=tk.W)
 
+        # View-mode switch, centred in the footer, with the active mode label
+        # on the side of the knob.  Close stays on the far right.
+        self._resource_switch_var = tk.StringVar(value="off")
+        self.resource_switch_frame = ctk.CTkFrame(
+            self.footer_frame, fg_color="transparent")
+        self.resource_switch_frame.grid(row=0, column=1, sticky="",
+                                        padx=(10, 10))
+
+        ctk.CTkLabel(
+            self.resource_switch_frame, text="Task Planning",
+            font=ctk.CTkFont(size=13),
+        ).pack(side="left", padx=(0, 8))
+
+        self.resource_switch = ctk.CTkSwitch(
+            self.resource_switch_frame, text="",
+            variable=self._resource_switch_var,
+            onvalue="on", offvalue="off",
+            command=self._on_resource_view_toggled,
+        )
+        self.resource_switch.pack(side="left")
+
+        ctk.CTkLabel(
+            self.resource_switch_frame, text="Resource Planning",
+            font=ctk.CTkFont(size=13),
+        ).pack(side="left", padx=(8, 0))
+
         self.close_button = ctk.CTkButton(
             self.footer_frame, text="Close", width=80,
             command=self.on_close
         )
-        self.close_button.grid(row=0, column=1, sticky=tk.E, padx=(10, 0))
+        self.close_button.grid(row=0, column=2, sticky=tk.E, padx=(10, 0))
         
         # The clipboard needs a widget to reach the desktop's own
         self.clipboard_manager.set_clipboard_widget(self)
@@ -524,6 +558,10 @@ class GanttApp(ctk.CTk):
         # selected once at startup by theme.initialise_ttk_styles(), so this
         # no longer gets reset by a pane creating its own Treeview.
         theme.style_chrome()
+
+        # Task Planning view is the default.  The resource board is created
+        # later in the same cell, so lift the paned view now.
+        self.content_panes.lift()
     
     def _create_dashboard_frame(self):
         """
@@ -604,6 +642,19 @@ class GanttApp(ctk.CTk):
     def _task_list_ready(self) -> bool:
         """Whether there is a task list for a shortcut to act on."""
         return bool(getattr(self, 'task_list', None))
+
+    def _on_resource_view_toggled(self):
+        """Swap between task planning and resource planning viewports."""
+        try:
+            if self._resource_switch_var.get() == "on":
+                self.resource_board.refresh()
+                self.resource_board.lift()
+                logger.info("Switched to Resource Planning view")
+            else:
+                self.content_panes.lift()
+                logger.info("Switched to Task Planning view")
+        except tk.TclError:
+            logger.debug("View widgets are being destroyed; nothing to lift")
 
     def _show_status(self, message: str):
         """Put a line from the task list into the status bar."""
