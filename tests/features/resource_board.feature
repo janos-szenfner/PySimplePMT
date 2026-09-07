@@ -27,19 +27,19 @@ Feature: 4-Panel Resource Planning Matrix
     Then the resource planning switch is off
     And the Task Planning view is on top
 
-  Scenario: Unassigned Backlog lists tasks with no resource assignments
+  Scenario: Task list shows all tasks with assignment status
     Given a resource board with a project that has unassigned and assigned tasks
-    Then the backlog contains the "Requirements Gathering" task
-    And the backlog does not contain the "Database Migration" task
+    Then the task list contains "Requirements Gathering" with status "Unassigned"
+    And the task list contains "Database Migration" with status "Assigned"
 
-  Scenario: Search filters the backlog
+  Scenario: Search filters the task list
     Given a resource board with a project that has two unassigned tasks
-    When the user searches the backlog for "API"
-    Then the backlog shows only the task named "API Integration"
+    When the user searches the task list for "API"
+    Then the task list shows only the task named "API Integration"
 
-  Scenario: Selecting a backlog task shows its details in the inspector
+  Scenario: Selecting a task shows its details in the inspector
     Given a resource board with a project that has unassigned and assigned tasks
-    When the user selects the "Requirements Gathering" backlog task
+    When the user selects the "Requirements Gathering" task
     Then the inspector shows "Requirements Gathering"
     And the inspector shows "Effort:"
     And the inspector shows "Priority:"
@@ -57,24 +57,24 @@ Feature: 4-Panel Resource Planning Matrix
 
   Scenario: Selecting a resource updates the assignee preview
     Given a resource board with a project that has unassigned and assigned tasks
-    When the user selects the "Requirements Gathering" backlog task
+    When the user selects the "Requirements Gathering" task
     And the user selects the "John Doe" resource
     Then the preview label contains "John Doe"
 
   Scenario: Assigning a selected resource adds it to the task
     Given a resource board with a project that has unassigned and assigned tasks
-    When the user selects the "Requirements Gathering" backlog task
+    When the user selects the "Requirements Gathering" task
     And the user selects the "John Doe" resource
     And the user assigns the selected resource
     Then the task "Requirements Gathering" has an assignment to "John Doe"
-    And the task no longer appears in the backlog
+    And the task list shows "Requirements Gathering" with status "Assigned"
 
-  Scenario: De-assigning a task returns it to the backlog
+  Scenario: De-assigning a task updates its status
     Given a resource board with a project that has an assigned task
     When the user selects the assigned task in the inspector
     And the user de-assigns the selected task
     Then the task has no resource assignments
-    And the task appears in the backlog
+    And the task list shows "Database Migration" with status "Unassigned"
 
   Scenario: Heatmap shows a row for every resource and team
     Given a resource board with a project that has resources and a team

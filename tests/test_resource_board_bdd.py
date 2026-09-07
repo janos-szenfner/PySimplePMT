@@ -71,6 +71,25 @@ def _children_texts(container):
     return [_button_text(w) for w in container.winfo_children()]
 
 
+def _all_tree_items(tree):
+    """Return (text, values) for every item in a ttk.Treeview."""
+    result = []
+    def visit(parent=""):
+        for item in tree.get_children(parent):
+            text = tree.item(item, "text")
+            values = tree.item(item, "values")
+            result.append((text, values))
+            visit(item)
+    visit()
+    return result
+
+
+def _task_list_texts(app):
+    tree = app.resource_board.task_tree
+    app.resource_board.update_idletasks()
+    return _all_tree_items(tree)
+
+
 # ------------------------------------------------------------------
 # GIVEN
 # ------------------------------------------------------------------
@@ -241,16 +260,16 @@ def the_user_turns_off_resource_planning(app):
     app.update_idletasks()
 
 
-@when(parsers.parse('the user searches the backlog for "{text}"'))
-def the_user_searches_the_backlog_for(app, text):
+@when(parsers.parse('the user searches the task list for "{text}"'))
+def the_user_searches_the_task_list_for(app, text):
     app.resource_board.backlog_search.delete(0, tk.END)
     app.resource_board.backlog_search.insert(0, text)
-    app.resource_board._filter_backlog()
+    app.resource_board._filter_task_list()
     app.resource_board.update_idletasks()
 
 
-@when(parsers.parse('the user selects the "{name}" backlog task'))
-def the_user_selects_the_backlog_task(app, name):
+@when(parsers.parse('the user selects the "{name}" task'))
+def the_user_selects_the_task(app, name):
     task = _find_task(app.project, name)
     app.resource_board._select_task(task.id)
     app.resource_board.update_idletasks()
@@ -344,25 +363,31 @@ def the_resource_planning_view_is_on_top(app):
     assert app.resource_board.winfo_exists()
 
 
-@then(parsers.parse('the backlog contains the "{name}" task'))
-def the_backlog_contains_the_task(app, name):
-    texts = _children_texts(app.resource_board.backlog_frame.content)
-    assert any(name in t for t in texts), (
-        f"expected {name!r} in backlog, got {texts}")
+@then(parsers.parse('the task list contains "{name}" with status "{status}"'))
+def the_task_list_contains_with_status(app, name, status):
+    for text, values in _task_list_texts(app):
+        if name in text:
+            assert status in values[-1], (
+                f"expected {name!r} status {status!r}, got {values}")
+            return
+    raise AssertionError(f"expected task {name!r} in task list")
 
 
-@then(parsers.parse('the backlog does not contain the "{name}" task'))
-def the_backlog_does_not_contain_the_task(app, name):
-    texts = _children_texts(app.resource_board.backlog_frame.content)
-    assert not any(name in t for t in texts), (
-        f"did not expect {name!r} in backlog, got {texts}")
+@then(parsers.parse('the task list shows only the task named "{name}"'))
+def the_task_list_shows_only_the_task_named(app, name):
+    items = _task_list_texts(app)
+    assert len(items) == 1, f"expected one task, got {items}"
+    assert name in items[0][0], f"expected {name!r}, got {items[0][0]!r}"
 
 
-@then(parsers.parse('the backlog shows only the task named "{name}"'))
-def the_backlog_shows_only_the_task_named(app, name):
-    texts = _children_texts(app.resource_board.backlog_frame.content)
-    assert len(texts) == 1, f"expected one backlog task, got {texts}"
-    assert name in texts[0], f"expected {name!r}, got {texts[0]!r}"
+@then(parsers.parse('the task list shows "{name}" with status "{status}"'))
+def the_task_list_shows_with_status(app, name, status):
+    for text, values in _task_list_texts(app):
+        if name in text:
+            assert status in values[-1], (
+                f"expected {name!r} status {status!r}, got {values}")
+            return
+    raise AssertionError(f"expected task {name!r} in task list")
 
 
 @then(parsers.parse('the inspector shows "{text}"'))
@@ -402,19 +427,6 @@ def the_task_has_an_assignment_to(app, name, resource):
         f"task {name} is not assigned to {resource}")
 
 
-@then("the task no longer appears in the backlog")
-def the_task_no_longer_appears_in_the_backlog(app):
-    assigned = None
-    for task in app.project.tasks:
-        if task.resource_assignments:
-            assigned = task.name
-            break
-    assert assigned is not None
-    texts = _children_texts(app.resource_board.backlog_frame.content)
-    assert not any(assigned in t for t in texts), (
-        f"assigned task {assigned} still in backlog")
-
-
 @then("the task has no resource assignments")
 def the_task_has_no_resource_assignments(app):
     for task in app.project.tasks:
@@ -423,13 +435,6 @@ def the_task_has_no_resource_assignments(app):
                 f"task still has assignments: {task.resource_assignments}")
             return
     raise AssertionError("Database Migration task not found")
-
-
-@then('the task appears in the backlog')
-def the_task_appears_in_the_backlog(app):
-    texts = _children_texts(app.resource_board.backlog_frame.content)
-    assert any("Database Migration" in t for t in texts), (
-        f"expected Database Migration in backlog, got {texts}")
 
 
 @then("the heatmap canvas has drawing items")

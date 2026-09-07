@@ -521,7 +521,7 @@ class GanttApp(ctk.CTk):
         self.resource_switch_frame = ctk.CTkFrame(
             self.footer_frame, fg_color="transparent")
         self.resource_switch_frame.grid(row=0, column=1, sticky="",
-                                        padx=(10, 10))
+                                        padx=(5, 5))
 
         ctk.CTkLabel(
             self.resource_switch_frame, text="Task Planning",
@@ -539,7 +539,7 @@ class GanttApp(ctk.CTk):
         ctk.CTkLabel(
             self.resource_switch_frame, text="Resource Planning",
             font=ctk.CTkFont(size=13),
-        ).pack(side="left", padx=(8, 0))
+        ).pack(side="left", padx=(4, 0))
 
         self.close_button = ctk.CTkButton(
             self.footer_frame, text="Close", width=80,
