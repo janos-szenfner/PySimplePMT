@@ -92,10 +92,12 @@ def _open_on_screen(app, width, height, scaling=None):
             def _window_scaling(self):
                 return scaling
 
+        def geometry(self, geometry_string=None):
+            if geometry_string is not None:
+                self._test_requested_geometry = geometry_string
+            return super().geometry(geometry_string)
+
     opened = Fixed()
-    # Capture the size the application asked for before the window manager
-    # clamps it to the physical display.
-    opened._test_expected_size = (opened._current_width, opened._current_height)
     opened.withdraw()
     opened.update_idletasks()
     return opened
@@ -210,11 +212,12 @@ def check_window_size(sized_app, width, height):
     pytest-bdd kept was the only one either scenario could reach.
 
     The actual rendered window may be clamped by the physical display, so the
-    test captures the requested geometry right after creation and checks that
-    the scaling and usable-area arithmetic produced the expected dimensions.
+    test checks the geometry request the application made, not the final
+    window-manager-decided size.
     """
-    expected = getattr(sized_app, "_test_expected_size", (width, height))
-    assert expected == (width, height)
+    requested = getattr(sized_app, "_test_requested_geometry", "")
+    size_part = requested.split("+")[0].split("-")[0]
+    assert size_part == f"{width}x{height}", requested
 
 
 @then("the usable screen area should match window manager max size")
