@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.65.10 - 2026-09-07
+
+- Made the Resource Planning selection regression test portable to Linux by avoiding nested Tk event-loop processing.
+- Includes the Resource Planning interaction fixes and cumulative changelog introduced for 1.65.9, whose package workflow did not complete.
+
 ## 1.65.9 - 2026-09-07
 
 - Prevented the Resource Planning task list from freezing when a task is selected by removing the recursive tree rebuild from the selection callback.
