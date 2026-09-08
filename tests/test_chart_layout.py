@@ -12,7 +12,10 @@ import unittest
 from datetime import datetime, timedelta
 
 from gantt_app.models import Project, Task
-from gantt_app.utils.chart_render import layout_chart, MIN_WIDTH, RowPlan
+from gantt_app.utils.chart_render import (
+    layout_chart, MIN_WIDTH, RowPlan, _current_bar_span, _baseline_bar_span,
+    _current_summary, _baseline_summary, render_image,
+)
 
 
 def labels(layout):
@@ -539,6 +542,79 @@ class TestTheResizeTimerDoesNotOutliveTheChart(unittest.TestCase):
         self.chart.destroy()
 
         self.assertIsNone(self.chart._resize_job)
+
+
+class TestBaselineOverlaySplitsRows(unittest.TestCase):
+    """
+    A baseline bar must be visible even when the current bar is longer.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    When a task's duration grows but its start date stays the same, the old
+    baseline bar is completely inside the new current bar. Drawing the baseline
+    behind the current bar hides it, so the chart splits the row: the baseline
+    sits in the top half and the current bar in the bottom half.
+    """
+
+    def test_bar_span_helpers_split_the_row(self):
+        bar = {'y0': 70.0, 'y1': 90.0}
+        self.assertEqual(_baseline_bar_span(bar), (70.0, 80.0))
+        self.assertEqual(_current_bar_span(bar, True), (80.0, 90.0))
+        self.assertEqual(_current_bar_span(bar, False), (70.0, 90.0))
+
+    def test_summary_helpers_split_the_row(self):
+        summary = {'y0': 70.0, 'y1': 90.0, 'x0': 0.0, 'x1': 100.0}
+        base = _baseline_summary(summary)
+        cur = _current_summary(summary, True)
+        self.assertEqual(base['y1'], 80.0)
+        self.assertEqual(cur['y0'], 80.0)
+        self.assertEqual(_current_summary(summary, False), summary)
+
+    def test_shorter_baseline_is_visible_in_rendered_image(self):
+        """A baseline that fits inside the current bar still shows up."""
+        from gantt_app.baselines import BaselineManager
+
+        project = Project(name="Overlay Visibility")
+        task = Task(id="t1", name="Task",
+                    start_date=datetime(2026, 1, 1),
+                    end_date=datetime(2026, 1, 3),
+                    color="#1f6aa5")
+        task.__post_init__()
+        project.add_task(task)
+
+        manager = BaselineManager()
+        manager.set_baseline(project, 1)
+
+        # Current bar is longer and starts at the same date; baseline is hidden
+        # behind it unless the row is split.
+        task.end_date = datetime(2026, 1, 10)
+
+        image = render_image(
+            project,
+            baseline=manager.get_slot(1).baseline,
+            baseline_color="#ff0000",
+            width=800,
+            scale=1.0,
+        )
+
+        layout = layout_chart(project, width=800)
+        bar = layout.bars[0]
+        day_width = (layout.plot_right - layout.plot_left) / layout.total_days
+        # Sample near the centre of a day cell so we are not on a gridline.
+        x_base = int(layout.plot_left + 2.5 * day_width)
+        x_cur = int(layout.plot_left + 7.5 * day_width)
+        centre_y = (bar['y0'] + bar['y1']) / 2
+        y_top = int((bar['y0'] + centre_y) / 2)
+        y_bottom = int((centre_y + bar['y1']) / 2)
+
+        top_pixel = image.getpixel((x_base, y_top))
+        bottom_pixel = image.getpixel((x_cur, y_bottom))
+
+        # Top half is the red baseline, bottom half is the current bar colour.
+        self.assertGreater(top_pixel[0], 200)
+        self.assertLess(top_pixel[1], 50)
+        self.assertLess(top_pixel[2], 50)
+        self.assertNotEqual(bottom_pixel, (255, 255, 255))
 
 
 if __name__ == '__main__':

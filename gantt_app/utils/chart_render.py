@@ -1030,11 +1030,14 @@ def _draw_date_header(draw, layout: 'ChartLayout', s: Dict[str, Any],
 
     DEVELOPMENT NOTES:
     ------------------
-    The shading is drawn down the whole chart before the bars, so it sits
-    behind them; the strip itself is drawn at the top. Non-working days and
-    today are fills rather than text, which is what keeps a denser header
-    from costing anything - the labels went from one full date every 82px to
-    one number every 22px, and the number of *text* draws barely moved.
+    The strip itself is drawn at the top. Non-working days and today are fills
+    rather than text, which is what keeps a denser header from costing
+    anything - the labels went from one full date every 82px to one number
+    every 22px, and the number of *text* draws barely moved.
+
+    In the raster renderer this function is called after the bars, so the
+    weekend shading and day rules read on top of the work and a task that ends
+    on a Friday no longer looks as if it spills into the Saturday column.
     """
     top = layout.top_margin
     plot_top = top - HEADER_MONTH_HEIGHT - HEADER_CELL_HEIGHT
@@ -1058,6 +1061,15 @@ def _draw_date_header(draw, layout: 'ChartLayout', s: Dict[str, Any],
     for x, _label in layout.date_ticks:
         draw.line([(sx(x), sx(cell_bottom)), (sx(x), sx(chart_bottom))],
                   fill=s['grid_color'], width=line_width)
+
+    # ---- the day rules --------------------------------------------------
+    # Lighter vertical lines for every day boundary make it obvious where a
+    # one-day bar ends, even when the adjacent column is a working day.
+    for x0, _x1, _label, _is_today, _is_working, starts_week in layout.day_cells:
+        if starts_week:
+            continue  # already drawn with the stronger grid colour above
+        draw.line([(sx(x0), sx(cell_bottom)), (sx(x0), sx(chart_bottom))],
+                  fill=s['header_rule'], width=line_width)
 
     # ---- the month band -------------------------------------------------
     for x0, x1, label in layout.month_bands:
@@ -1153,8 +1165,6 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                   font=label_font, fill='#7f8c8d', anchor='mm')
         return image.resize((layout.width, layout.height), Image.LANCZOS)
 
-    _draw_date_header(draw, layout, s, sx, scale, small_font)
-
     for y, label in layout.row_labels:
         draw.text((sx(MARGIN_LEFT - 12), sx(y)), label, font=label_font,
                   fill=s['text_color'], anchor='rm')
@@ -1163,45 +1173,100 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         _dashed_line(draw, sx(x0), sx(y0), sx(x1), sx(y1),
                      s['dependency_color'], max(1, int(1.5 * scale)))
 
+    has_baseline = baseline is not None and bool(baseline.task_snapshots)
+
     _draw_baseline_overlay(draw, layout, baseline, sx, scale,
                            color=baseline_color)
 
+    # Collect labels so they can be drawn after the calendar shading; the
+    # shading is drawn on top of the bars to show day boundaries, so labels
+    # must be on top of the shading to stay readable.
+    labels_to_draw: List[Tuple[float, float, str]] = []
+
     for bar in layout.bars:
-        box = [sx(bar['x0']), sx(bar['y0']), sx(bar['x1']), sx(bar['y1'])]
+        y0, y1 = _current_bar_span(bar, has_baseline)
+        box = [sx(bar['x0']), sx(y0), sx(bar['x1']), sx(y1)]
         draw.rectangle(box, fill=bar['color'], outline='#000000',
                        width=max(1, int(scale)))
         if bar['progress']:
             filled = box[0] + (box[2] - box[0]) * bar['progress'] / 100
             draw.rectangle([box[0], box[1], filled, box[3]],
                            fill=(0, 0, 0, 64))
-        draw.text((box[2] + sx(6), (box[1] + box[3]) / 2),
-                  _shorten(bar['label'], 40), font=small_font,
-                  fill=s['text_color'], anchor='lm')
+        labels_to_draw.append((
+            box[2] + sx(6), (box[1] + box[3]) / 2, _shorten(bar['label'], 40)))
 
     for summary in layout.summaries:
-        draw.polygon([(sx(px), sx(py)) for px, py in _summary_outline(summary)],
+        cur_summary = _current_summary(summary, has_baseline)
+        draw.polygon([(sx(px), sx(py)) for px, py in _summary_outline(cur_summary)],
                      fill=summary['color'], outline='#000000')
-        draw.text((sx(summary['x1']) + sx(6),
-                   (sx(summary['y0']) + sx(summary['y1'])) / 2),
-                  _shorten(summary['label'], 40), font=small_font,
-                  fill=s['text_color'], anchor='lm')
+        labels_to_draw.append((
+            sx(cur_summary['x1']) + sx(6),
+            (sx(cur_summary['y0']) + sx(cur_summary['y1'])) / 2,
+            _shorten(summary['label'], 40)))
 
     for milestone in layout.milestones:
         x, y, r = sx(milestone['x']), sx(milestone['y']), sx(MILESTONE_RADIUS)
         draw.polygon([(x, y - r), (x + r, y), (x, y + r), (x - r, y)],
                      fill=milestone['color'], outline='#000000')
-        draw.text((x + r + sx(6), y), milestone['label'], font=small_font,
+        labels_to_draw.append((
+            x + r + sx(6), y, milestone['label']))
+
+    # Draw the calendar strip and its weekend shading after the bars so the day
+    # boundaries and non-working columns read on top of the work. Without this,
+    # a bar that ends at a Friday boundary can look like it extends into the
+    # Saturday column because it covers the weekend shading behind it.
+    _draw_date_header(draw, layout, s, sx, scale, small_font)
+
+    for x, y, label in labels_to_draw:
+        draw.text((x, y), label, font=small_font,
                   fill=s['text_color'], anchor='lm')
 
     # Supersampled down for smooth edges
     return image.resize((layout.width, layout.height), Image.LANCZOS)
 
 
+def _current_bar_span(bar: Dict[str, Any], has_baseline: bool
+                      ) -> Tuple[float, float]:
+    """
+    Vertical span for the current bar.
+
+    When a baseline is being compared, the row is split so the baseline bar
+    sits in the top half and the current bar in the bottom half. Both are
+    visible even when the current bar is longer and would otherwise hide the
+    baseline behind it.
+    """
+    if not has_baseline:
+        return bar['y0'], bar['y1']
+    centre = (bar['y0'] + bar['y1']) / 2
+    return centre, bar['y1']
+
+
+def _current_summary(summary: Dict[str, Any], has_baseline: bool
+                     ) -> Dict[str, Any]:
+    """Vertical span for the current summary or phase shape."""
+    if not has_baseline:
+        return summary
+    centre = (summary['y0'] + summary['y1']) / 2
+    return {**summary, 'y0': centre}
+
+
+def _baseline_bar_span(bar: Dict[str, Any]) -> Tuple[float, float]:
+    """Vertical span for the baseline bar (top half of the row)."""
+    centre = (bar['y0'] + bar['y1']) / 2
+    return bar['y0'], centre
+
+
+def _baseline_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Vertical span for the baseline summary or phase shape (top half)."""
+    centre = (summary['y0'] + summary['y1']) / 2
+    return {**summary, 'y1': centre}
+
+
 def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
                            baseline: Optional['ProjectBaseline'],
                            sx: Callable[[float], float], scale: float,
                            color: Optional[str] = None) -> None:
-    """Draw a baseline bar behind each current task for comparison."""
+    """Draw a baseline bar in the top half of each current task for comparison."""
     if baseline is None or not baseline.task_snapshots:
         return
     logger.debug("Drawing baseline overlay for %d snapshot(s)",
@@ -1230,8 +1295,10 @@ def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
         x0 = _x(snap.start_date)
         # Baseline finish is inclusive, so the bar reaches the end of that day
         x1 = max(_x(end + timedelta(days=1)), x0 + 2)
-        # Same vertical span as the current bar; drawn behind it
-        box = [sx(x0), sx(bar['y0']), sx(x1), sx(bar['y1'])]
+        # Baseline sits in the top half of the row so it is visible even when
+        # the current bar is longer and starts at the same date.
+        y0, y1 = _baseline_bar_span(bar)
+        box = [sx(x0), sx(y0), sx(x1), sx(y1)]
         draw.rectangle(box, fill=baseline_color, outline=outline,
                        width=max(1, int(scale)))
 
@@ -1243,8 +1310,8 @@ def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
         x0 = _x(snap.start_date)
         x1 = max(_x(end + timedelta(days=1)), x0 + 2)
         draw.polygon(
-            [(sx(px), sx(py)) for px, py in _summary_outline({
-                **summary, 'x0': x0, 'x1': x1})],
+            [(sx(px), sx(py)) for px, py in _summary_outline(_baseline_summary({
+                **summary, 'x0': x0, 'x1': x1}))],
             fill=baseline_color, outline=outline)
 
     for milestone in layout.milestones:

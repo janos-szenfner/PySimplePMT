@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.66.5 - 2026-09-08
+
+- Fixed the Gantt baseline overlay so the baseline and current bars do not hide
+  one another when they overlap. Baseline bars now sit in the top half of each
+  row and current bars in the bottom half, so both schedule changes are visible
+  (for example, a task that grew from 5 to 10 days shows both the original and
+  the new bar).
+- Clarified day boundaries in the Gantt chart by drawing the weekend shading and
+  vertical day rules on top of the bars. A one-day task now ends at the day
+  boundary and no longer looks like it extends into the next day or the weekend.
+- Added regression tests for the split baseline overlay rendering.
+
 ## 1.66.4 - 2026-09-08
 
 - Fixed the task editor so it captures the pre-edit task snapshot *before*

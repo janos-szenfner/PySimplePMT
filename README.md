@@ -31,7 +31,7 @@ This is a complete implementation of a project management tool with:
 
 ## Features
 
-- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and today's column is tinted
+- **Gantt Chart**: Tasks, milestones and dependency arrows, drawn with Pillow so nothing is downloaded and no browser is involved. Zoom in, out, Fit and Reset beneath it. It opens framed on the plan — a day of calendar before the first bar and room after the last for its label. The dates run across the top as a **calendar strip**: a month band, and a cell per day beneath it carrying the day number. Days nobody works are shaded down the whole chart and across the bars, and vertical day rules make each day boundary clear so a one-day task reads as exactly one day
 - **Drag-and-Drop Task List**: Reorder tasks by dragging a row — a thin blue line shows where it will land — or drop it over the centre of another Task Group to make that group its parent. A parent drop highlights the target and reports `Drop Target: Parent`
 - **Cycle-safe Group Re-parenting**: Entire Task Group branches can be nested inside other groups. A branch carries every descendant, schedule and resource assignment with it; moving a group into itself or one of its descendants is rejected
 - **Cross-platform hierarchy shortcuts**: `Tab` indents and `Shift+Tab` outdents everywhere. macOS also supports `Command+]`, `Command+[`, `Option+Shift+Right`, and `Option+Shift+Left`; Windows/Linux support `Ctrl+]`, `Ctrl+[`, `Alt+Shift+Right`, and `Alt+Shift+Left`
@@ -83,7 +83,7 @@ This is a complete implementation of a project management tool with:
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
-- **Baseline Management**: Save up to ten baselines, rename their slots, choose a color for each slot, compare the current plan against a baseline, and see baseline and variance columns in the task list plus a colored baseline bar behind each Gantt bar. Baselines are stored with the project file.
+- **Baseline Management**: Save up to ten baselines, rename their slots, choose a color for each slot, compare the current plan against a baseline, and see baseline and variance columns in the task list plus a colored baseline bar split above or below each Gantt bar so both schedules stay visible. Baselines are stored with the project file.
 
 ## Project Structure
 
@@ -1918,7 +1918,9 @@ resource assignments at the moment it is captured.
   slot, showing which are empty and which have a saved baseline, along with the
   save timestamp and the active slot. Selecting a baseline makes it active, the
   task list shows baseline and variance columns and the Gantt chart draws the
-  baseline bar in that slot's chosen color behind each current bar.
+  baseline bar in that slot's chosen color in the top half of each row, with the
+  current bar in the bottom half, so both schedules stay visible even when they
+  overlap.
 - **Variance Columns**: Baseline Start, Start Variance, Baseline Finish,
   Finish Variance, Baseline Duration, Duration Variance, Baseline Work,
   Work Variance, Baseline Cost and Cost Variance. Variance is in working
