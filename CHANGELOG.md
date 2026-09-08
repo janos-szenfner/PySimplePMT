@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.66.2 - 2026-09-08
+
+- Moved the "Compare with Baseline" control from the toolbar into the
+  `Actions > Baseline > Compare Baseline` cascading sub-menu, with a list of
+  ten slots and `None (Current Only)`.
+- Restored the Log button to the far right of the menu row.
+- Fixed `Toolbar._refresh_baseline_views()` so that setting or clearing a
+  baseline propagates the active baseline to the task list and Gantt chart
+  immediately, ensuring variances are computed for the changed task itself.
+- Updated baseline and toolbar menu tests for the new location and cascading
+  menu.
+
 ## 1.66.1 - 2026-09-08
 
 - Fixed settings-window BDD test to expect the new Baseline tab.

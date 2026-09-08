@@ -6,6 +6,7 @@ Contains action buttons for managing the project.
 
 import tkinter as tk
 from datetime import datetime
+from functools import partial
 # Message boxes and file choosers that stay native on every desktop:
 # Tk's own are native on macOS and Windows but drawn by Tk on X11.
 # Aliased so the call sites below read exactly as they always have.
@@ -1114,8 +1115,6 @@ class Toolbar(ctk.CTkFrame):
         self.menu_bar = CustomMenuBar(self.menu_row, menu_config=menu_config)
         self.menu_bar.pack(side=tk.LEFT)
 
-        self._create_baseline_selector()
-
         # The Log button sits at the end of the menu row, away from the
         # actions, being a thing to look at rather than a thing to do
         self._create_theme_log_buttons()
@@ -1297,6 +1296,15 @@ class Toolbar(ctk.CTkFrame):
                     {"text": "Baseline", "submenu": [
                         {"text": "Set Baseline...", "command": self.set_baseline},
                         {"text": "Clear Baseline...", "command": self.clear_baseline},
+                        {"text": "Compare Baseline", "submenu": [
+                            {"text": "None (Current Only)",
+                             "command": partial(self._compare_baseline_selected, None)},
+                            *[
+                                {"text": f"Baseline {n}",
+                                 "command": partial(self._compare_baseline_selected, n)}
+                                for n in range(1, 11)
+                            ],
+                        ]},
                     ]},
                     {"text": "Import", "submenu": [
                         {"text": "MS Project...", "command": self.import_mpp},
@@ -1393,60 +1401,16 @@ class Toolbar(ctk.CTkFrame):
         button.pack(side=tk.LEFT, padx=5, pady=5)
         return button
 
-    def _create_baseline_selector(self):
-        """Create the Compare with Baseline dropdown on the menu row."""
+    def _compare_baseline_selected(self, number):
+        """Set the active baseline for comparison and refresh the views."""
         if self.baseline_manager is None:
             return
-        self._baseline_selector_frame = ctk.CTkFrame(
-            self.menu_row, fg_color='transparent')
-        self._baseline_selector_frame.pack(side=tk.RIGHT, padx=5)
-
-        ctk.CTkLabel(
-            self._baseline_selector_frame, text="Compare with Baseline:"
-        ).pack(side=tk.LEFT, padx=(0, 5))
-        self._baseline_var = ctk.StringVar(value="None (Current Only)")
-        self._baseline_menu = ctk.CTkOptionMenu(
-            self._baseline_selector_frame,
-            variable=self._baseline_var,
-            values=["None (Current Only)"],
-            width=180,
-            command=self._on_baseline_selected,
-        )
-        self._baseline_menu.pack(side=tk.LEFT)
-        self._refresh_baseline_selector()
-
-    def _refresh_baseline_selector(self):
-        if self.baseline_manager is None:
-            return
-        values = ["None (Current Only)"]
-        for slot in self.baseline_manager.slots:
-            if slot.is_set:
-                values.append(slot.status_label())
-        current = self._baseline_var.get()
-        self._baseline_menu.configure(values=values)
-        if current in values:
-            self._baseline_var.set(current)
-        else:
-            self._baseline_var.set("None (Current Only)")
-
-    def _on_baseline_selected(self, value: str):
-        if self.baseline_manager is None:
-            return
-        number = None
-        if value != "None (Current Only)":
-            logger.info("Compare with Baseline selected: %s", value)
-            for slot in self.baseline_manager.slots:
-                if not slot.is_set:
-                    continue
-                if value == slot.status_label() or value in slot.status_label():
-                    number = slot.number
-                    break
         self.baseline_manager.set_active(number)
         if self.task_list is not None:
             self.task_list.set_active_baseline(self.baseline_manager, number)
         if self.gantt_chart is not None:
             self.gantt_chart.set_active_baseline(self.baseline_manager, number)
-        self._refresh_baseline_selector()
+        logger.info("Compare with Baseline %s selected", number)
 
     def _create_theme_log_buttons(self):
         """Create the log button, at the far end of the menu row."""
@@ -1759,6 +1723,11 @@ class Toolbar(ctk.CTkFrame):
         """Update task list and Gantt chart for the active baseline."""
         if self.baseline_manager is None:
             return
+        active = self.baseline_manager.active_slot_number
+        if self.task_list is not None:
+            self.task_list.set_active_baseline(self.baseline_manager, active)
+        if self.gantt_chart is not None:
+            self.gantt_chart.set_active_baseline(self.baseline_manager, active)
         if self.on_project_changed:
             self.on_project_changed()
 

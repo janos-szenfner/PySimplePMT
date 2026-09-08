@@ -10,6 +10,7 @@ exist on the class.
 """
 
 import unittest
+from functools import partial
 from types import SimpleNamespace
 
 from gantt_app.views.toolbar import Toolbar
@@ -199,8 +200,12 @@ class TestMenuCommands(unittest.TestCase):
                 command = item.get('command')
                 if command is None:
                     missing.append(f"{where} has no command")
-                elif not hasattr(Toolbar, getattr(command, '__name__', '')):
-                    missing.append(f"{where} -> {command}")
+                else:
+                    name = getattr(command, '__name__', '')
+                    if not name and isinstance(command, partial):
+                        name = getattr(getattr(command, 'func', None), '__name__', '')
+                    if not hasattr(Toolbar, name):
+                        missing.append(f"{where} -> {command}")
 
         for menu in menu_tree():
             walk(menu['items'], menu['text'])

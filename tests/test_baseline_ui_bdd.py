@@ -108,7 +108,7 @@ def a_project_with_sample_tasks_exists(app):
 @given("the user has set baseline 1 for the entire project")
 def the_user_has_set_baseline_1_for_the_entire_project(app):
     app.baseline_manager.set_baseline(app.project, 1)
-    app.toolbar._refresh_baseline_selector()
+    app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
 
@@ -133,14 +133,14 @@ def the_user_renames_slot_to(app, number, name):
 @when("the user saves the baseline settings")
 def the_user_saves_the_baseline_settings(app):
     app.toolbar._settings_window._save_baseline_settings()
-    app.toolbar._refresh_baseline_selector()
+    app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
 
 @when("the user sets baseline 1 for the entire project")
 def the_user_sets_baseline_1_for_the_entire_project(app):
     app.baseline_manager.set_baseline(app.project, 1)
-    app.toolbar._refresh_baseline_selector()
+    app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
 
@@ -156,14 +156,14 @@ def the_user_sets_baseline_1_for_selected_tasks_with_roll_up(app):
     selected = app.task_list.get_selected_task_ids()
     app.baseline_manager.set_baseline(
         app.project, 1, task_ids=selected, rollup=True)
-    app.toolbar._refresh_baseline_selector()
+    app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
 
 @when("the user clears baseline 1 for the entire project")
 def the_user_clears_baseline_1_for_the_entire_project(app):
     app.baseline_manager.clear_baseline(1)
-    app.toolbar._refresh_baseline_selector()
+    app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
 
@@ -174,9 +174,13 @@ def the_user_clears_the_selected_task_from_baseline_1(app):
     app.update_idletasks()
 
 
-@when(parsers.parse('the user selects "{label}" from the compare dropdown'))
-def the_user_selects_from_the_compare_dropdown(app, label):
-    app.toolbar._on_baseline_selected(label)
+@when(parsers.parse('the user selects "{label}" from the Compare Baseline sub-menu'))
+def the_user_selects_from_the_compare_baseline_sub_menu(app, label):
+    if label == "None (Current Only)":
+        number = None
+    else:
+        number = int(label.split()[-1])
+    app.toolbar._compare_baseline_selected(number)
     app.update_idletasks()
 
 
@@ -204,20 +208,15 @@ def the_toolbar_owns_the_baseline_manager(app):
     assert app.toolbar.baseline_manager is app.baseline_manager
 
 
-@then(parsers.parse('the baseline compare dropdown shows "{label}"'))
-def the_baseline_compare_dropdown_shows(app, label):
-    values = app.toolbar._baseline_menu.cget("values")
+@then(parsers.parse('the Compare Baseline menu offers "{label}"'))
+def the_compare_baseline_menu_offers(app, label):
+    menu_config = app.toolbar.menu_bar.menu_config
+    actions = menu_config['Actions']
+    baseline = next(d for d in actions if d.get('label') == 'Baseline')
+    compare = next(d for d in baseline['items'] if d.get('label') == 'Compare Baseline')
+    values = [item['label'] for item in compare['items']]
     assert any(label in v for v in values), \
         f"expected a value containing {label!r} in {values!r}"
-
-
-@then("the baseline compare dropdown lists ten empty baseline slots")
-def the_baseline_compare_dropdown_lists_ten_empty_baseline_slots(app):
-    values = app.toolbar._baseline_menu.cget("values")
-    assert "None (Current Only)" in values
-    for n in range(1, 11):
-        expected = f"Baseline {n} (Unset)"
-        assert expected in values, f"missing {expected!r} in {values!r}"
 
 
 @then("the settings window shows 10 baseline rows")
@@ -230,12 +229,6 @@ def the_settings_window_shows_10_baseline_rows(app):
 def the_first_slot_is_named(app, name):
     settings = app.toolbar._settings_window
     assert settings._baseline_entries[1].get() == name
-
-
-@then(parsers.parse('the toolbar dropdown labels include "{name}"'))
-def the_toolbar_dropdown_labels_include(app, name):
-    values = app.toolbar._baseline_menu.cget("values")
-    assert any(name in v for v in values), f"{name!r} not in {values!r}"
 
 
 @then("a baseline settings error is shown")
