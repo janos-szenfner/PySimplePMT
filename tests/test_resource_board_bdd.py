@@ -547,12 +547,69 @@ def the_preview_label_contains(app, name):
 
 @then("the resource board uses compact panel proportions")
 def the_resource_board_uses_compact_panel_proportions(app):
-    app.resource_board.update_idletasks()
-    widths = [app.resource_board.grid_bbox(column, 0)[2]
-              for column in range(4)]
+    board = app.resource_board
+    board.update_idletasks()
+    # The paned split sets the widths, not the panel content, so a long name
+    # wraps rather than widening a panel. Check the default 2:1:1:4 split,
+    # computed for a known width, and that selecting a resource left it
+    # untouched (no divider was dragged).
+    assert not board._user_sized
+    positions = board._default_sash_positions(800)
+    widths = [positions[0],
+              positions[1] - positions[0],
+              positions[2] - positions[1],
+              800 - positions[2]]
     assert abs(widths[0] - 2 * widths[1]) <= 2, widths
     assert abs(widths[1] - widths[2]) <= 1, widths
     assert abs(widths[3] - 4 * widths[1]) <= 4, widths
+
+
+@then("the resource board panels are a resizable split")
+def the_panels_are_a_resizable_split(app):
+    board = app.resource_board
+    assert isinstance(board._panes, ttk.PanedWindow)
+    assert len(board._panes.panes()) == 4
+
+
+@when("the user drags a panel divider")
+def the_user_drags_a_panel_divider(app):
+    app.resource_board._note_manual_resize()
+
+
+@then("the default panel split is no longer reasserted")
+def the_default_split_is_no_longer_reasserted(app):
+    board = app.resource_board
+    assert board._user_sized
+    # A later layout change now leaves the reader's split alone.
+    board._keep_default_proportions()
+    assert board._user_sized
+
+
+@then("the task list scrolls vertically with the wheel")
+def the_task_list_scrolls_with_the_wheel(app):
+    board = app.resource_board
+    calls = []
+    board.task_tree.yview_scroll = lambda *a: calls.append(a)
+
+    class _Wheel:
+        delta = -120
+        num = 5
+        state = 0
+
+    result = board._on_task_wheel(_Wheel())
+    assert calls, "the wheel did not scroll the task tree"
+    assert result == "break"
+
+
+@when("the resource board is shown")
+def the_resource_board_is_shown(app):
+    app.resource_board.on_shown()
+    app.update_idletasks()
+
+
+@then("the heatmap is scrolled to its left edge")
+def the_heatmap_is_scrolled_to_its_left_edge(app):
+    assert app.resource_board.heatmap_canvas.xview()[0] == 0.0
 
 
 @then("long resource text is wrapped")

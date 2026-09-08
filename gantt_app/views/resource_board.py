@@ -141,29 +141,101 @@ class ResourceBoard(ctk.CTkFrame):
         self._drag_origin: Optional[Tuple[int, int]] = None
         self._drag_window: Optional[tk.Toplevel] = None
 
-        # Give the inspector and pool half the task list's share, and put the
-        # space they release into the heatmap.
-        self.grid_columnconfigure(
-            0, weight=2, minsize=180, uniform="resource-board")
-        self.grid_columnconfigure(
-            (1, 2), weight=1, minsize=110, uniform="resource-board")
-        self.grid_columnconfigure(
-            3, weight=4, minsize=300, uniform="resource-board")
+        # The four panels sit in a draggable paned window, the same as the
+        # task list and the Gantt chart split, so the reader can widen one at
+        # another's expense. The default split - task list 2, inspector and
+        # pool 1 each, heatmap 4 - is kept until the reader drags a divider;
+        # see _keep_default_proportions.
+        self._pane_weights = (2, 1, 1, 4)
+        self._panels: List[ctk.CTkFrame] = []
+        self._user_sized = False
+        self._heatmap_reset_pending = True
+
         self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._panes = ttk.PanedWindow(
+            self, orient=tk.HORIZONTAL, style='Gantt.TPanedwindow')
+        self._panes.grid(row=0, column=0, sticky="nsew")
 
         self._build_task_list_panel()
         self._build_inspector_panel()
         self._build_pool_panel()
         self._build_heatmap_panel()
 
+        # A press that lands on the paned window itself is on a divider - a
+        # press inside a panel goes to that panel - so it marks the split as
+        # the reader's from then on, and the default proportions stop being
+        # reasserted.
+        self._panes.bind('<ButtonPress-1>', self._note_manual_resize, add='+')
+        self._panes.bind('<Configure>', self._keep_default_proportions,
+                         add='+')
+
         self.refresh()
+
+    def _add_panel(self, weight: int) -> ctk.CTkFrame:
+        """A panel frame added to the paned window at the given weight."""
+        panel = ctk.CTkFrame(self._panes, corner_radius=6)
+        self._panes.add(panel, weight=weight)
+        self._panels.append(panel)
+        return panel
+
+    def _note_manual_resize(self, _event=None) -> None:
+        """The reader has taken hold of a divider; leave the split to them."""
+        self._user_sized = True
+
+    def _keep_default_proportions(self, _event=None) -> None:
+        """
+        Hold the panels at their default split until the reader resizes.
+
+        The paned window's weights govern how extra space is shared once the
+        panes have a size, but not the size they open at - a pane opens at
+        its content's width. So the sashes are placed by hand to the default
+        2:1:1:4 on every layout change, until a divider is dragged.
+        """
+        if self._user_sized:
+            return
+        try:
+            width = self._panes.winfo_width()
+        except tk.TclError:
+            return
+        if width <= 1 or len(self._panels) < 4:
+            return
+        for index, position in enumerate(self._default_sash_positions(width)):
+            try:
+                self._panes.sashpos(index, position)
+            except tk.TclError:
+                pass
+
+    def _default_sash_positions(self, width: int) -> List[int]:
+        """The sash x-positions that split a given width by the weights."""
+        total = sum(self._pane_weights)
+        positions: List[int] = []
+        cumulative = 0
+        for weight in self._pane_weights[:-1]:
+            cumulative += weight
+            positions.append(int(width * cumulative / total))
+        return positions
+
+    def on_shown(self) -> None:
+        """
+        Called when the board is brought to the front.
+
+        Puts the heatmap back to its left edge so it opens fully
+        left-aligned rather than wherever a previous view left it scrolled,
+        and settles the default panel split now that the board has a width.
+        """
+        self._keep_default_proportions()
+        try:
+            self.heatmap_canvas.xview_moveto(0.0)
+            self.heatmap_canvas.yview_moveto(0.0)
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------
     # Construction
     # ------------------------------------------------------------------
     def _build_task_list_panel(self) -> None:
-        p1 = ctk.CTkFrame(self, corner_radius=6)
-        p1.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
+        p1 = self._add_panel(self._pane_weights[0])
         p1.grid_rowconfigure(2, weight=1)
         p1.grid_columnconfigure(0, weight=1)
 
@@ -216,10 +288,36 @@ class ResourceBoard(ctk.CTkFrame):
         self.task_tree.bind("<ButtonPress-1>", self._on_task_drag_start)
         self.task_tree.bind("<B1-Motion>", self._on_task_drag_motion)
         self.task_tree.bind("<ButtonRelease-1>", self._on_task_drag_drop)
+        # Claim the wheel while the pointer is over the list, so it scrolls
+        # vertically the same way the heatmap and the pool do - the tree did
+        # not answer the wheel on its own here.
+        self.task_tree.bind("<Enter>", self._bind_task_wheel, add='+')
+        self.task_tree.bind("<Leave>", self._unbind_task_wheel, add='+')
+
+    def _bind_task_wheel(self, _event=None):
+        for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            self.task_tree.bind_all(sequence, self._on_task_wheel, add='+')
+
+    def _unbind_task_wheel(self, _event=None):
+        for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            try:
+                self.task_tree.unbind_all(sequence)
+            except tk.TclError:
+                pass
+
+    def _on_task_wheel(self, event: tk.Event) -> str:
+        delta = getattr(event, 'delta', 0)
+        if delta:
+            steps = -1 if delta > 0 else 1
+            if abs(delta) >= 120:
+                steps = int(-delta / 120)
+        else:
+            steps = -1 if getattr(event, 'num', 5) == 4 else 1
+        self.task_tree.yview_scroll(steps, 'units')
+        return 'break'
 
     def _build_inspector_panel(self) -> None:
-        p2 = ctk.CTkFrame(self, corner_radius=6)
-        p2.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+        p2 = self._add_panel(self._pane_weights[1])
         p2.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -249,8 +347,7 @@ class ResourceBoard(ctk.CTkFrame):
         ).pack(padx=10, pady=5, fill="x")
 
     def _build_pool_panel(self) -> None:
-        p3 = ctk.CTkFrame(self, corner_radius=6)
-        p3.grid(row=0, column=2, padx=2, pady=2, sticky="nsew")
+        p3 = self._add_panel(self._pane_weights[2])
         p3.grid_rowconfigure(2, weight=1)
         p3.grid_columnconfigure(0, weight=1)
 
@@ -272,8 +369,7 @@ class ResourceBoard(ctk.CTkFrame):
         self.pool_frame.content.grid_columnconfigure(0, weight=1)
 
     def _build_heatmap_panel(self) -> None:
-        p4 = ctk.CTkFrame(self, corner_radius=6)
-        p4.grid(row=0, column=3, padx=2, pady=2, sticky="nsew")
+        p4 = self._add_panel(self._pane_weights[3])
         p4.grid_rowconfigure(1, weight=1)
         p4.grid_columnconfigure(0, weight=1)
 

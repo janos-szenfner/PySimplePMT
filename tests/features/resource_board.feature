@@ -13,6 +13,19 @@ Feature: 4-Panel Resource Planning Matrix
     And the footer contains a "Close" button
     And the "Close" button is to the right of the tab bar
 
+  Scenario: The four panels sit in a draggable split kept at the default
+    Then the resource board panels are a resizable split
+    And the resource board uses compact panel proportions
+    When the user drags a panel divider
+    Then the default panel split is no longer reasserted
+
+  Scenario: The task list answers the mouse wheel
+    Then the task list scrolls vertically with the wheel
+
+  Scenario: Opening the resource board left-aligns the heatmap
+    When the resource board is shown
+    Then the heatmap is scrolled to its left edge
+
   Scenario: Resource Planning follows live day and night changes
     When the user switches the application to night mode
     Then the resource task list uses dark colors

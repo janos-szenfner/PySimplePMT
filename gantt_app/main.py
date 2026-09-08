@@ -655,6 +655,9 @@ class GanttApp(ctk.CTk):
             if active:
                 self.resource_board.refresh()
                 self.resource_board.lift()
+                # Settle the default panel split and left-align the heatmap
+                # now that the board has a width, once it is on top.
+                self.resource_board.after_idle(self.resource_board.on_shown)
                 logger.info("Switched to Resource Planning view")
             else:
                 self.content_panes.lift()
