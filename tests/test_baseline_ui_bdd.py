@@ -272,11 +272,17 @@ def the_save_button_is_in_the_footer(app):
 @then("the baseline status message sits to the right of the Save button")
 def the_status_sits_right_of_the_button(app):
     settings = app.toolbar._settings_window
-    settings.update_idletasks()
+    footer = settings._baseline_footer
     button = settings._baseline_save_button
     label = settings._baseline_error
-    assert label.winfo_x() > button.winfo_x(), (
-        f"status x={label.winfo_x()} not right of button x={button.winfo_x()}")
+    # Checked by pack order rather than realised pixels: a headless CI never
+    # maps the window, so winfo_x() is 0 for both. Both are packed to the
+    # left, button first, so the label follows it and sits to its right.
+    order = list(footer.pack_slaves())
+    assert button in order and label in order
+    assert order.index(button) < order.index(label)
+    assert button.pack_info().get("side") == "left"
+    assert label.pack_info().get("side") == "left"
 
 
 @then(parsers.parse('the baseline status message reads "{text}"'))
