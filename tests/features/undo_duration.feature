@@ -46,3 +46,11 @@ Feature: Undo and redo task duration changes with dependent tasks
     And the user has undone the last change
     When the user redoes the last change
     Then the log contains a redo entry
+
+  Scenario: Undo restores a duration change made in the task editor
+    Given the user has opened the task editor for "Task 1"
+    When the user changes the dialog duration to 10 days and saves
+    Then "Task 1" has a duration of 10 days
+    And "Task 2" starts after "Task 1" finishes
+    When the user undoes the last change
+    Then "Task 2" has its original start date

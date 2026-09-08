@@ -118,6 +118,30 @@ def the_user_has_undone_the_last_change(app):
     the_user_undoes_the_last_change(app)
 
 
+@given(parsers.parse('the user has opened the task editor for "{name}"'))
+def the_user_has_opened_the_task_editor_for(app, name):
+    from gantt_app.views.taskdialogs import EditTaskDialog
+
+    task = _find_task(app.project, name)
+    app.undo_redo_manager.clear()
+
+    def on_save(_task):
+        app.update_all()
+        app.update_idletasks()
+
+    dialog = EditTaskDialog(
+        app,
+        task=task,
+        project=app.project,
+        on_save=on_save,
+        on_delete=lambda _id: None,
+        project_tracker=app.project_tracker,
+    )
+    dialog.withdraw()
+    app._test_dialog = dialog
+    app.update_idletasks()
+
+
 # ------------------------------------------------------------------
 # WHEN
 # ------------------------------------------------------------------
@@ -147,6 +171,23 @@ def the_user_undoes_the_last_change(app):
 @when("the user redoes the last change")
 def the_user_redoes_the_last_change(app):
     app.toolbar.redo()
+    app.update_all()
+    app.update_idletasks()
+
+
+@when(parsers.parse('the user changes the dialog duration to {days:d} days and saves'))
+def the_user_changes_the_dialog_duration_to_days_and_saves(app, days):
+    dialog = app._test_dialog
+    # Set the scheduling mode so duration drives the end date.
+    dialog.scheduling_options_var.set("End date is calculated")
+    dialog._on_scheduling_mode_changed()
+    dialog.duration_var.set(str(days))
+    dialog._recalculate_schedule()
+    dialog._apply()
+    try:
+        dialog.destroy()
+    except tk.TclError:
+        pass
     app.update_all()
     app.update_idletasks()
 

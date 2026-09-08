@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.66.4 - 2026-09-08
+
+- Fixed the task editor so it captures the pre-edit task snapshot *before*
+  mutating the live task, making Undo/Redo restore the real previous duration,
+  dates and dependent-task positions.
+- Added a pytest-bdd scenario that exercises the actual task-editor save path
+  for duration changes and verifies Undo pulls the dependent task back.
+
 ## 1.66.3 - 2026-09-08
 
 - Fixed undo/redo for task duration edits so dependent tasks reschedule in both directions: shortening a predecessor now pulls successors earlier, and undo/redo restores the original schedule.

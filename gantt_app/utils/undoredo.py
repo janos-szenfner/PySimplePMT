@@ -1084,7 +1084,8 @@ class ProjectStateTracker:
         command = create_remove_task_command(self.project, task_id, task, index)
         return self.manager.execute(command)
     
-    def update_task(self, task_id: str, **kwargs) -> bool:
+    def update_task(self, task_id: str, old_task: Optional[Task] = None,
+                    **kwargs) -> bool:
         """
         Update a task's properties with undo support.
         
@@ -1092,6 +1093,12 @@ class ProjectStateTracker:
         -----------
         task_id : str
             The ID of the task to update
+        old_task : Optional[Task]
+            A pre-built snapshot of the task before the change. When a caller
+            already holds this snapshot (for example a dialog that needs to
+            keep the live task in sync), passing it avoids capturing the
+            already-mutated live task and makes undo restore the real previous
+            state.
         **kwargs
             The properties to update (name, start_date, end_date, progress, etc.)
             
@@ -1112,8 +1119,9 @@ class ProjectStateTracker:
         # that list in place would rewrite this undo snapshot too. The links
         # are copied individually because Task.add_dependency updates an
         # existing Dependency in place rather than replacing it.
-        old_task = copy.copy(task)
-        old_task.dependencies = [copy.copy(d) for d in task.dependencies]
+        if old_task is None:
+            old_task = copy.copy(task)
+            old_task.dependencies = [copy.copy(d) for d in task.dependencies]
         
         # Create a new task with the updated properties
         # We'll use the same ID and just update the specified properties

@@ -144,7 +144,12 @@ class EditTaskDialog(TaskFormDialog):
 
             details = self.details_text.get("1.0", tk.END).strip()
 
+            # Capture the pre-edit task before mutating the live object. The
+            # dialog has to keep self.task in step with the project, but using
+            # a copy for the undo snapshot means Undo can restore the real
+            # previous values.
             old_task = copy.copy(self.task)
+            old_task.dependencies = [copy.copy(d) for d in self.task.dependencies]
 
             self.task.name = name
             # Whatever the menu says, wherever the row sits; see
@@ -187,6 +192,7 @@ class EditTaskDialog(TaskFormDialog):
                 new_task = copy.copy(self.task)
                 if self.project_tracker.update_task(
                     old_task.id,
+                    old_task=old_task,
                     name=new_task.name,
                     task_type=new_task.task_type,
                     start_date=new_task.start_date,
