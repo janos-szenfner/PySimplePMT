@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.66.9 - 2026-09-08
+
+- Replaced the task editor's footer view tabs (Task Planning, Resource
+  Planning, Deliverables) with a segmented control matching the Settings
+  window's tabs, so the bar looks like the rest of the app. Deliverables
+  stays visible but is not interactive yet - selecting it snaps the choice
+  back to the active tab.
+- Moved Save Settings in `Settings > Baseline` into a fixed footer so it is
+  always in view without scrolling past the ten slots, with the status
+  message ("Settings saved." or a duplicate-name error) beside it on the
+  right instead of stacked above it.
+
+## 1.66.8 - 2026-09-08
+
+- Centred Gantt milestone diamonds on their day cell, in line with where a
+  one-day task on the same day sits, and pointed a dependency arrow into a
+  milestone at the diamond itself rather than half a day short of it.
+- Stopped a saved baseline appearing on the Gantt chart automatically. A
+  baseline is now stored without turning comparison on and stays off the
+  chart until it is picked from `Actions > Baseline > Compare Baseline`;
+  choosing a slot there also moves the [Active] marker in the menu.
+
 ## 1.66.7 - 2026-09-08
 
 - Fixed Gantt bar alignment for tasks whose start/end dates carry a time of day
