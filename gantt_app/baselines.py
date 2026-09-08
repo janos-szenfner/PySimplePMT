@@ -200,6 +200,10 @@ class BaselineSlot:
     saved_at: Optional[datetime] = None
     active: bool = False
     baseline: Optional[ProjectBaseline] = None
+    color: str = ""
+
+    #: Default overlay color for new slots; used when no custom colour is set.
+    DEFAULT_COLOR: str = field(default="#9e9e9e", repr=False)
 
     def __post_init__(self):
         if not self.display_name:
@@ -208,6 +212,10 @@ class BaselineSlot:
     @property
     def is_set(self) -> bool:
         return self.baseline is not None
+
+    @property
+    def effective_color(self) -> str:
+        return self.color if self.color else self.DEFAULT_COLOR
 
     def status_label(self) -> str:
         if not self.is_set:
@@ -223,6 +231,7 @@ class BaselineSlot:
             "saved_at": _to_iso(self.saved_at),
             "active": self.active,
             "baseline": self.baseline.to_dict() if self.baseline else None,
+            "color": self.color,
         }
 
     @classmethod
@@ -236,6 +245,7 @@ class BaselineSlot:
             saved_at=_from_iso(data.get("saved_at")),
             active=data.get("active", False),
             baseline=baseline,
+            color=data.get("color", ""),
         )
 
 
@@ -317,6 +327,22 @@ class BaselineManager:
         logger.info("Renamed baseline %d from %r to %r", number, old,
                     slot.display_name)
         return slot
+
+    def set_slot_color(self, number: int, color: str) -> BaselineSlot:
+        slot = self.get_slot(number)
+        if slot is None:
+            raise ValueError(f"Invalid baseline number {number}")
+        old = slot.color
+        slot.color = color
+        logger.info("Set color for baseline %d from %r to %r", number,
+                    old, slot.color)
+        return slot
+
+    def get_slot_color(self, number: int) -> str:
+        slot = self.get_slot(number)
+        if slot is None:
+            return BaselineSlot.DEFAULT_COLOR
+        return slot.effective_color
 
     def compare(self, project: Project, number: Optional[int] = None,
                 calendar: Optional[WorkingCalendar] = None) -> Dict[str, TaskVariance]:

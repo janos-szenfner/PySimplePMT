@@ -83,7 +83,7 @@ This is a complete implementation of a project management tool with:
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
-- **Baseline Management**: Save up to ten baselines, rename their slots, compare the current plan against a baseline, and see baseline and variance columns in the task list plus a grey baseline bar behind each Gantt bar
+- **Baseline Management**: Save up to ten baselines, rename their slots, choose a color for each slot, compare the current plan against a baseline, and see baseline and variance columns in the task list plus a colored baseline bar behind each Gantt bar. Baselines are stored with the project file.
 
 ## Project Structure
 
@@ -1908,18 +1908,23 @@ resource assignments at the moment it is captured.
 - **Set Baseline**: **Actions > Baseline > Set Baseline...** captures the whole
   project or only the selected tasks. Selected Tasks Only enables the roll-up
   check-box, which pushes the captured values up to parent summary rows.
+  Saving a baseline updates its slot with the current date and time.
 - **Clear Baseline**: **Actions > Baseline > Clear Baseline...** removes a
   complete baseline or clears only the selected tasks from one slot.
-- **Rename Slots**: **Settings > Baseline** lists all ten slots, their display
-  names, last saved timestamp and a Clear Data button. Names must be unique.
-- **Compare with Baseline**: the dropdown on the toolbar chooses which saved
-  baseline is active. With a comparison active, the task list shows baseline
-  and variance columns and the Gantt chart draws a grey baseline bar behind
-  each current bar.
+- **Rename Slots and Set Colors**: **Settings > Baseline** lists all ten slots,
+  their display names, saved status/timestamp and a color picker. Names must be
+  unique. The color chosen for a slot is used when that baseline is compared.
+- **Compare with Baseline**: **Actions > Baseline > Compare Baseline** lists every
+  slot, showing which are empty and which have a saved baseline, along with the
+  save timestamp and the active slot. Selecting a baseline makes it active, the
+  task list shows baseline and variance columns and the Gantt chart draws the
+  baseline bar in that slot's chosen color behind each current bar.
 - **Variance Columns**: Baseline Start, Start Variance, Baseline Finish,
   Finish Variance, Baseline Duration, Duration Variance, Baseline Work,
   Work Variance, Baseline Cost and Cost Variance. Variance is in working
   days and the sign shows early (-) or late (+) against the baseline.
+- **Persistence**: baseline snapshots, slot names, colors and the active slot are
+  saved inside the project JSON file and restored on load.
 
 ## Installation
 

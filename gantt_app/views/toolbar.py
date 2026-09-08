@@ -4,6 +4,7 @@ Toolbar for the Gantt Project Management Tool.
 Contains action buttons for managing the project.
 """
 
+import json
 import tkinter as tk
 from datetime import datetime
 from functools import partial
@@ -1300,9 +1301,13 @@ class Toolbar(ctk.CTkFrame):
                             {"text": "None (Current Only)",
                              "command": partial(self._compare_baseline_selected, None)},
                             *[
-                                {"text": f"Baseline {n}",
-                                 "command": partial(self._compare_baseline_selected, n)}
-                                for n in range(1, 11)
+                                {"text": slot.status_label(),
+                                 "command": partial(self._compare_baseline_selected, slot.number)}
+                                for slot in (
+                                    self.baseline_manager.slots
+                                    if getattr(self, 'baseline_manager', None)
+                                    else []
+                                )
                             ],
                         ]},
                     ]},
@@ -1692,6 +1697,7 @@ class Toolbar(ctk.CTkFrame):
             open_calendar=self.edit_holidays,
             baseline_manager=self.baseline_manager,
             initial_tab=initial_tab,
+            on_baseline_changed=self.refresh_menus,
         )
         return self._settings_window
 
@@ -1720,7 +1726,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
     def _refresh_baseline_views(self):
-        """Update task list and Gantt chart for the active baseline."""
+        """Update task list, Gantt chart and menus for the active baseline."""
         if self.baseline_manager is None:
             return
         active = self.baseline_manager.active_slot_number
@@ -1728,8 +1734,20 @@ class Toolbar(ctk.CTkFrame):
             self.task_list.set_active_baseline(self.baseline_manager, active)
         if self.gantt_chart is not None:
             self.gantt_chart.set_active_baseline(self.baseline_manager, active)
+        self.refresh_menus()
         if self.on_project_changed:
             self.on_project_changed()
+
+    def refresh_menus(self):
+        """Rebuild the menu bar so baseline labels stay up to date."""
+        if self.menu_bar is None:
+            return
+        self.menu_bar.destroy()
+        menu_config = self._convert_to_new_menu_format()
+        self.menu_bar = CustomMenuBar(self.menu_row, menu_config=menu_config)
+        self.menu_bar.pack(side=tk.LEFT)
+        self.menu_bar.update_idletasks()
+        logger.debug("Toolbar menus refreshed")
 
     def edit_project_info(self):
         """
@@ -1947,12 +1965,16 @@ class Toolbar(ctk.CTkFrame):
     def _write_project(self, file_path: str):
         """Write the plan to one path, and remember it if that worked."""
         logger.info("Saving project %r to %s", self.project.name, file_path)
-        if save_project(self.project, file_path):
+        extra = None
+        if self.baseline_manager is not None:
+            extra = {"baselines": self.baseline_manager.to_dict()}
+        if save_project(self.project, file_path, extra_data=extra):
             self.current_file_path = file_path
             messagebox.showinfo("Success", "Project saved successfully!")
-            if hasattr(self.master, 'startup_settings'):
+            startup_settings = getattr(self.master, 'startup_settings', None)
+            if startup_settings is not None:
                 logger.info("Recording %s in the recent-projects list", file_path)
-                self.master.startup_settings.add(file_path, self.project.name)
+                startup_settings.add(file_path, self.project.name)
             if hasattr(self.master, 'mark_clean'):
                 self.master.mark_clean()
         else:
@@ -1979,23 +2001,45 @@ class Toolbar(ctk.CTkFrame):
         if project:
             # Save writes back here from now on, rather than asking
             self.current_file_path = file_path
-            # Replace current project
+            # Replace current project. Native project files already use the
+            # app's IDs and carry baseline snapshots keyed by those IDs, so
+            # we keep them as-is; imports use their own renumbering path.
             self.project.name = project.name
-            project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             self.project.resource_repository = project.resource_repository
 
+            # Restore any baseline data that was saved with the project
+            if self.baseline_manager is not None:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if isinstance(data, dict) and 'baselines' in data:
+                        self.baseline_manager.from_dict(data['baselines'])
+                        logger.info("Restored baseline slots from %s", file_path)
+                except Exception:
+                    logger.exception("Could not restore baselines from %s", file_path)
+                self.refresh_menus()
+                if self.task_list is not None:
+                    self.task_list.set_active_baseline(
+                        self.baseline_manager,
+                        self.baseline_manager.active_slot_number)
+                if self.gantt_chart is not None:
+                    self.gantt_chart.set_active_baseline(
+                        self.baseline_manager,
+                        self.baseline_manager.active_slot_number)
+
             self._forget_the_previous_plan()
 
             if self.on_project_changed:
                 self.on_project_changed()
 
-            if hasattr(self.master, 'startup_settings'):
+            startup_settings = getattr(self.master, 'startup_settings', None)
+            if startup_settings is not None:
                 logger.info("Recording %s in the recent-projects list", file_path)
-                self.master.startup_settings.add(file_path, self.project.name)
+                startup_settings.add(file_path, self.project.name)
 
             if hasattr(self.master, 'mark_clean'):
                 self.master.mark_clean()

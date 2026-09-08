@@ -1105,7 +1105,8 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400, scale: float = 2.0,
                  min_width: int = MIN_WIDTH,
                  rows: Optional['RowPlan'] = None,
-                 baseline: Optional['ProjectBaseline'] = None) -> Image.Image:
+                 baseline: Optional['ProjectBaseline'] = None,
+                 baseline_color: Optional[str] = None) -> Image.Image:
     """
     Render the chart into a PIL image.
 
@@ -1162,7 +1163,8 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         _dashed_line(draw, sx(x0), sx(y0), sx(x1), sx(y1),
                      s['dependency_color'], max(1, int(1.5 * scale)))
 
-    _draw_baseline_overlay(draw, layout, baseline, sx, scale)
+    _draw_baseline_overlay(draw, layout, baseline, sx, scale,
+                           color=baseline_color)
 
     for bar in layout.bars:
         box = [sx(bar['x0']), sx(bar['y0']), sx(bar['x1']), sx(bar['y1'])]
@@ -1197,8 +1199,9 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
 
 def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
                            baseline: Optional['ProjectBaseline'],
-                           sx: Callable[[float], float], scale: float) -> None:
-    """Draw a grey baseline bar behind each current task for comparison."""
+                           sx: Callable[[float], float], scale: float,
+                           color: Optional[str] = None) -> None:
+    """Draw a baseline bar behind each current task for comparison."""
     if baseline is None or not baseline.task_snapshots:
         return
     logger.debug("Drawing baseline overlay for %d snapshot(s)",
@@ -1209,7 +1212,7 @@ def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
     if plot_span <= 0:
         return
     day_width = plot_span / layout.total_days
-    baseline_color = '#9ca3af'
+    baseline_color = color or '#9ca3af'
     outline = '#4b5563'
 
     def _x(moment: Optional[datetime]) -> float:

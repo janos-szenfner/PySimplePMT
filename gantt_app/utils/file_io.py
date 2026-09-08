@@ -55,13 +55,16 @@ class JSONFileIO:
         return dct
     
     @classmethod
-    def save_project(cls, project: Project, filepath: str) -> bool:
+    def save_project(cls, project: Project, filepath: str,
+                     extra_data: Optional[Dict[str, Any]] = None) -> bool:
         """
         Save a Project object to a JSON file atomically.
 
         Args:
             project: The Project object to save
             filepath: Path to the JSON file
+            extra_data: Optional dictionary of extra data to merge into the
+                saved JSON (e.g. baseline slots).
 
         Returns:
             True if successful, False otherwise
@@ -69,6 +72,8 @@ class JSONFileIO:
         temp_path = None
         try:
             project_dict = project.to_dict()
+            if extra_data:
+                project_dict.update(extra_data)
             path = Path(filepath)
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -170,9 +175,10 @@ class ProjectFileManager:
 
 
 # Convenience functions
-def save_project(project: Project, filepath: str) -> bool:
+def save_project(project: Project, filepath: str,
+                 extra_data: Optional[Dict[str, Any]] = None) -> bool:
     """Save project to JSON file."""
-    return JSONFileIO.save_project(project, filepath)
+    return JSONFileIO.save_project(project, filepath, extra_data=extra_data)
 
 
 def load_project(filepath: str) -> Optional[Project]:

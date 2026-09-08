@@ -353,10 +353,12 @@ class GanttChart(ctk.CTkFrame):
         plan = self._row_plan()
 
         baseline = None
+        baseline_color = None
         if getattr(self, '_baseline_manager', None) and self._baseline_slot:
             slot = self._baseline_manager.get_slot(self._baseline_slot)
             if slot and slot.baseline:
                 baseline = slot.baseline
+                baseline_color = slot.effective_color
 
         try:
             image = render_image(
@@ -367,6 +369,7 @@ class GanttChart(ctk.CTkFrame):
                 min_width=MIN_ZOOMED_WIDTH if self._zoom < 1.0 else MIN_WIDTH,
                 rows=plan,
                 baseline=baseline,
+                baseline_color=baseline_color,
             )
         except Exception:
             logger.exception("Could not draw the Gantt chart")

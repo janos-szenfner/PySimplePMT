@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.66.3 - 2026-09-08
+
+- Fixed undo/redo for task duration edits so dependent tasks reschedule in both directions: shortening a predecessor now pulls successors earlier, and undo/redo restores the original schedule.
+- Added command-name logging to `UndoRedoManager` so Undo and Redo actions are visible in the Log window.
+- Added a color picker for each baseline slot in `Settings > Baseline`; the chosen color is saved per slot and used for the Gantt baseline overlay.
+- Updated the `Actions > Baseline > Compare Baseline` menu to show each slot's saved/empty status and timestamp, and to refresh automatically when slots are renamed or changed.
+- Persisted baseline slot names, colors, snapshots and active slot with the project JSON file.
+- Extended pytest-bdd coverage for duration undo/redo, dependent-task rescheduling, undo/redo logging, baseline color picker, dynamic compare menu labels, Gantt overlay color, and baseline persistence across save/load.
+
 ## 1.66.2 - 2026-09-08
 
 - Moved the "Compare with Baseline" control from the toolbar into the

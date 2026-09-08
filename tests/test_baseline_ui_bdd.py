@@ -6,6 +6,9 @@ Run with:
 
 These tests require a display because they build the full GanttApp.
 """
+import json
+import os
+import tempfile
 import tkinter as tk
 from datetime import datetime, timedelta
 
@@ -13,6 +16,7 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.chart_render import render_image
 
 
 def _display_available() -> bool:
@@ -178,6 +182,9 @@ def the_user_clears_the_selected_task_from_baseline_1(app):
 def the_user_selects_from_the_compare_baseline_sub_menu(app, label):
     if label == "None (Current Only)":
         number = None
+    elif label.startswith("Baseline "):
+        # Dynamic labels are "Baseline N (Saved: ...)"; the number is second token.
+        number = int(label.split()[1])
     else:
         number = int(label.split()[-1])
     app.toolbar._compare_baseline_selected(number)
@@ -185,6 +192,7 @@ def the_user_selects_from_the_compare_baseline_sub_menu(app, label):
 
 
 @when('the task "Task A" is shifted one day later')
+@given('the task "Task A" is shifted one day later')
 def the_task_task_a_is_shifted_one_day_later(app):
     task = _find_task(app.project, "Task A")
     task.start_date += timedelta(days=1)
@@ -313,3 +321,120 @@ def the_gantt_chart_is_drawn_with_the_baseline_overlay(app):
     assert app.gantt_chart._baseline_slot == 1
     app.gantt_chart.draw_chart()
     app.update_idletasks()
+
+
+# ------------------------------------------------------------------
+# Color picker and persistence
+# ------------------------------------------------------------------
+@then("a color picker is shown for every baseline slot")
+def a_color_picker_is_shown_for_every_baseline_slot(app):
+    settings = app.toolbar._settings_window
+    assert len(settings._baseline_color_vars) == 10
+    for slot in app.baseline_manager.slots:
+        assert slot.number in settings._baseline_color_vars
+
+
+@when(parsers.parse('the user picks "{color}" as the color for slot {number:d}'))
+def the_user_picks_the_color_for_slot(app, color, number):
+    settings = app.toolbar._settings_window
+    from gantt_app.views import settingswindow
+    original = settingswindow.colorchooser.askcolor
+    settingswindow.colorchooser.askcolor = lambda *args, **kwargs: ((255, 0, 0), color)
+    try:
+        settings._pick_baseline_color(number)
+    finally:
+        settingswindow.colorchooser.askcolor = original
+    settings.update_idletasks()
+
+
+@then(parsers.parse('baseline slot {number:d} has color "{color}"'))
+def baseline_slot_has_color(app, number, color):
+    slot = app.baseline_manager.get_slot(number)
+    assert slot.color == color, f"expected color {color!r}, got {slot.color!r}"
+
+
+@given(parsers.parse('baseline slot {number:d} has color "{color}"'))
+def given_baseline_slot_has_color(app, number, color):
+    app.baseline_manager.set_slot_color(number, color)
+
+
+@given("the active baseline is 1")
+def given_the_active_baseline_is_1(app):
+    app.baseline_manager.set_active(1)
+
+
+@then("the rendered image contains red baseline overlay pixels")
+def the_rendered_image_contains_red_baseline_overlay_pixels(app):
+    slot = app.baseline_manager.get_slot(1)
+    image = render_image(
+        app.project,
+        baseline=slot.baseline,
+        baseline_color=slot.effective_color,
+        width=800,
+        scale=1.0,
+    )
+    pixels = list(image.getdata())
+    red_pixels = [
+        p for p in pixels
+        if isinstance(p, (tuple, list)) and len(p) >= 3
+        and p[0] > 200 and p[1] < 50 and p[2] < 50
+    ]
+    assert red_pixels, "expected red baseline overlay pixels in the rendered image"
+
+
+@when("the project is saved to a temporary file")
+def the_project_is_saved_to_a_temporary_file(app):
+    import gantt_app.views.toolbar as toolbar_mod
+    original_info = toolbar_mod.messagebox.showinfo
+    original_error = toolbar_mod.messagebox.showerror
+    toolbar_mod.messagebox.showinfo = lambda *a, **k: None
+    toolbar_mod.messagebox.showerror = lambda *a, **k: None
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    app._test_temp_file = path
+    try:
+        app.toolbar._write_project(path)
+    finally:
+        toolbar_mod.messagebox.showinfo = original_info
+        toolbar_mod.messagebox.showerror = original_error
+
+
+@when("the project is loaded from the temporary file")
+def the_project_is_loaded_from_the_temporary_file(app):
+    import gantt_app.views.toolbar as toolbar_mod
+    original_info = toolbar_mod.messagebox.showinfo
+    original_error = toolbar_mod.messagebox.showerror
+    toolbar_mod.messagebox.showinfo = lambda *a, **k: None
+    toolbar_mod.messagebox.showerror = lambda *a, **k: None
+    try:
+        app.toolbar.load_project_path(app._test_temp_file)
+    finally:
+        toolbar_mod.messagebox.showinfo = original_info
+        toolbar_mod.messagebox.showerror = original_error
+    app.update_all()
+    app.update_idletasks()
+
+
+@then("baseline 1 is still set")
+def baseline_1_is_still_set(app):
+    slot = app.baseline_manager.get_slot(1)
+    assert slot.is_set, "expected baseline 1 to still be set after load"
+
+
+@then(parsers.parse('baseline slot {number:d} still has color "{color}"'))
+def baseline_slot_still_has_color(app, number, color):
+    slot = app.baseline_manager.get_slot(number)
+    assert slot.color == color, f"expected color {color!r}, got {slot.color!r}"
+
+
+@then(parsers.parse('the saved task snapshot for "{name}" is restored'))
+def the_saved_task_snapshot_for_is_restored(app, name):
+    task = _find_task(app.project, name)
+    slot = app.baseline_manager.get_slot(1)
+    assert slot.is_set, "expected baseline 1 to be set after load"
+    snapshot = slot.baseline.task_snapshots.get(task.id)
+    assert snapshot is not None, f"snapshot for {name!r} missing after load"
+    assert snapshot.start_date == task.start_date, \
+        "snapshot start date does not match the restored task"
+    assert snapshot.finish_date == task.end_date, \
+        "snapshot finish date does not match the restored task"

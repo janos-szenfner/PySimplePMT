@@ -1,5 +1,6 @@
 """Unified, tabbed launcher for the application's settings editors."""
 import tkinter as tk
+from tkinter import colorchooser
 from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
@@ -28,11 +29,13 @@ class SettingsWindow(ctk.CTkToplevel):
         open_calendar: Callable[[], None],
         baseline_manager: Optional[BaselineManager] = None,
         initial_tab: str = "Project",
+        on_baseline_changed: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(master, **kwargs)
         self.project = project
         self.baseline_manager = baseline_manager
+        self.on_baseline_changed = on_baseline_changed
         self._openers: Dict[str, Callable[[], None]] = {
             "Project": open_project,
             "Resource": open_resource,
@@ -224,6 +227,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ).grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 10))
 
         self._baseline_entries: Dict[int, ctk.CTkEntry] = {}
+        self._baseline_color_vars: Dict[int, str] = {}
+        self._baseline_color_buttons: Dict[int, ctk.CTkButton] = {}
         if self.baseline_manager is None:
             ctk.CTkLabel(scroll, text="No baseline manager found.",
                          text_color=theme.MUTED_TEXT).grid(
@@ -240,20 +245,41 @@ class SettingsWindow(ctk.CTkToplevel):
             status = ctk.CTkLabel(scroll, text=slot.status_label(),
                                   text_color=theme.MUTED_TEXT)
             status.grid(row=i, column=2, sticky=tk.W, padx=(0, 8))
+            color_button = ctk.CTkButton(
+                scroll, text="Color", width=60,
+                fg_color=slot.effective_color,
+                text_color="white" if slot.effective_color == "#000000" else "black",
+                command=lambda n=slot.number: self._pick_baseline_color(n),
+            )
+            color_button.grid(row=i, column=3, sticky=tk.W, padx=(0, 8))
+            self._baseline_color_vars[slot.number] = slot.color
+            self._baseline_color_buttons[slot.number] = color_button
             ctk.CTkButton(
                 scroll, text="Clear Data", width=80,
                 command=lambda n=slot.number: self._clear_baseline_data(n),
-            ).grid(row=i, column=3, sticky=tk.W)
+            ).grid(row=i, column=4, sticky=tk.W)
 
         self._baseline_error = ctk.CTkLabel(
             scroll, text="", text_color=theme.NEGATIVE_TEXT)
-        self._baseline_error.grid(row=11, column=0, columnspan=4,
+        self._baseline_error.grid(row=11, column=0, columnspan=5,
                                   sticky=tk.W, pady=(10, 0))
 
         ctk.CTkButton(
             scroll, text="Save Settings", width=120,
             command=self._save_baseline_settings,
-        ).grid(row=12, column=0, columnspan=4, sticky=tk.W, pady=(10, 0))
+        ).grid(row=12, column=0, columnspan=5, sticky=tk.W, pady=(10, 0))
+
+    def _pick_baseline_color(self, number: int):
+        current = self._baseline_color_vars.get(number, "")
+        result = colorchooser.askcolor(color=current or None,
+                                       title=f"Choose color for Baseline {number}")
+        if result is None or result[1] is None:
+            return
+        self._baseline_color_vars[number] = result[1]
+        button = self._baseline_color_buttons.get(number)
+        if button is not None:
+            button.configure(fg_color=result[1])
+        logger.info("Selected color %s for baseline %d", result[1], number)
 
     def _save_baseline_settings(self):
         if self.baseline_manager is None:
@@ -270,9 +296,13 @@ class SettingsWindow(ctk.CTkToplevel):
             names.append(name)
         for number, entry in self._baseline_entries.items():
             self.baseline_manager.rename_slot(number, entry.get().strip())
+            self.baseline_manager.set_slot_color(
+                number, self._baseline_color_vars.get(number, ""))
         self._baseline_error.configure(text="Settings saved.",
                                        text_color=theme.POSITIVE_TEXT)
-        logger.info("Saved baseline slot names")
+        logger.info("Saved baseline slot names and colors")
+        if self.on_baseline_changed:
+            self.on_baseline_changed()
 
     def _clear_baseline_data(self, number: int):
         if self.baseline_manager is None:

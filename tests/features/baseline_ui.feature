@@ -74,3 +74,48 @@ Feature: Baseline management end-to-end UI
     When the user selects "Baseline 1" from the Compare Baseline sub-menu
     Then the task list shows the baseline variance columns
     And the Gantt chart is drawn with the baseline overlay
+
+  Scenario: Baseline settings tab shows a color picker per slot
+    When the user opens the baseline settings tab
+    Then a color picker is shown for every baseline slot
+
+  Scenario: Selecting and saving a baseline color persists it
+    When the user opens the baseline settings tab
+    And the user picks "#ff0000" as the color for slot 1
+    And the user saves the baseline settings
+    Then baseline slot 1 has color "#ff0000"
+
+  Scenario: Compare Baseline menu shows saved status and timestamp
+    Given the user has set baseline 1 for the entire project
+    Then the Compare Baseline menu offers "Saved:"
+    And the Compare Baseline menu offers "Active"
+
+  Scenario: Gantt overlay uses the selected baseline color
+    Given the user has set baseline 1 for the entire project
+    And baseline slot 1 has color "#ff0000"
+    And the task "Task A" is shifted one day later
+    When the user selects "Baseline 1" from the Compare Baseline sub-menu
+    And the Gantt chart is drawn
+    Then the rendered image contains red baseline overlay pixels
+
+  Scenario: Baselines persist through project save and load
+    Given the user has set baseline 1 for the entire project
+    And baseline slot 1 has color "#00ff00"
+    And the active baseline is 1
+    When the project is saved to a temporary file
+    And the project is loaded from the temporary file
+    Then baseline 1 is still set
+    And baseline slot 1 still has color "#00ff00"
+    And the active baseline is 1
+    And the saved task snapshot for "Task A" is restored
+
+  Scenario: Renaming a slot updates the Compare Baseline menu
+    When the user opens the baseline settings tab
+    And the user renames slot 1 to "Initial Approved Scope"
+    And the user saves the baseline settings
+    Then the Compare Baseline menu offers "Initial Approved Scope"
+
+  Scenario: Clearing a baseline updates the Compare Baseline menu status
+    Given the user has set baseline 1 for the entire project
+    When the user clears baseline 1 for the entire project
+    Then the Compare Baseline menu offers "(Unset)"

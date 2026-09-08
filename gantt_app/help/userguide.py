@@ -1044,32 +1044,44 @@ GUIDE_SECTIONS = (
             "Actions > Baseline > Set Baseline... captures the whole plan or "
             "only the selected tasks. Choosing Selected Tasks Only also "
             "allows the roll-up check-box, which writes the captured values "
-            "up to parent summary rows.",
+            "up to parent summary rows. Each save records the date and time "
+            "in the slot.",
 
             "Actions > Baseline > Clear Baseline... removes a baseline entirely "
             "or clears only the selected tasks from it. Cleared data cannot "
             "be recovered.",
 
-            "Settings > Baseline is where the ten slots are named. Double-click "
-            "or edit the display name of any slot; the Compare with Baseline "
-            "dropdown and the exported column headers use the same names. "
-            "Duplicate names are not allowed and the Clear Data button on each "
-            "row resets that slot to unset.",
+            "Settings > Baseline is where the ten slots are named and given a "
+            "color. Double-click or edit the display name of any slot; the "
+            "Compare with Baseline menu and the exported column headers use "
+            "the same names. Duplicate names are not allowed. The color button "
+            "next to each slot opens a color picker; the chosen color is used "
+            "for the Gantt baseline overlay whenever that baseline is compared. "
+            "The Clear Data button on each row resets that slot to unset.",
 
-            "The Compare with Baseline dropdown on the toolbar chooses which "
-            "baseline is active. With an active baseline, the task list grows "
-            "baseline and variance columns: Baseline Start, Start Variance, "
-            "Baseline Finish, Finish Variance, Baseline Duration, Duration "
-            "Variance, Baseline Work, Work Variance, Baseline Cost and Cost "
-            "Variance.",
+            "Actions > Baseline > Compare Baseline lists every slot and shows "
+            "which ones are empty and which have a saved baseline, together "
+            "with the save timestamp and the currently active slot. Selecting "
+            "a baseline makes it active, the task list grows baseline and "
+            "variance columns and the Gantt chart draws the baseline bar.",
+
+            "With an active baseline, the task list shows: Baseline Start, "
+            "Start Variance, Baseline Finish, Finish Variance, Baseline "
+            "Duration, Duration Variance, Baseline Work, Work Variance, "
+            "Baseline Cost and Cost Variance.",
 
             "Start, finish and duration variance are in working days. +1d "
             "means one working day later than the baseline, -1d means one "
             "working day earlier, and 0d is exactly on schedule.",
 
-            "The Gantt chart draws a grey baseline bar behind the current "
-            "bar for every task that was captured. The baseline bar shows "
-            "where the task was originally planned to start and finish.",
+            "The Gantt chart draws the baseline bar behind the current bar "
+            "for every captured task. The bar is drawn in the color chosen for "
+            "that baseline slot and shows where the task was originally "
+            "planned to start and finish.",
+
+            "Baselines are saved with the project. When you save and later "
+            "load the project file, the slot names, colors, snapshots and the "
+            "active slot are restored.",
         ],
     ),
     (

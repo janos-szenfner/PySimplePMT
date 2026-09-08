@@ -3431,7 +3431,8 @@ class Project:
 
         return True
 
-    def _pull_branch_after_its_links(self, summary: Task) -> bool:
+    def _pull_branch_after_its_links(
+            self, summary: Task, forward_only: bool = True) -> bool:
         """
         Move a row that holds work, and the work with it, to obey its links.
 
@@ -3439,6 +3440,9 @@ class Project:
         -----------
         summary : Task
             A row with children, which is therefore bracketing them.
+        forward_only : bool
+            If True, only move the branch later. If False, the branch may also
+            be pulled earlier when its links allow.
 
         RETURNS:
         --------
@@ -3466,9 +3470,10 @@ class Project:
         momentarily inconsistent, and roll_up_summaries rebuilds them from
         the children later in the same pass.
 
-        Only ever later, like the rest of the pass - see forward_only on
-        apply_dependency_constraints. A branch dragged backwards by a link
-        would undo dates somebody set on purpose.
+        By default only ever later, like the rest of the pass - see
+        forward_only on apply_dependency_constraints. A branch dragged
+        backwards by a link would undo dates somebody set on purpose, but a
+        user edit that shortens a predecessor is allowed to pull it earlier.
 
         The working calendar is enforced afterwards, inside the same loop,
         so a child landing on a Saturday is pushed to the Monday. That makes
@@ -3480,7 +3485,9 @@ class Project:
             return False
 
         delta = as_date(required_start) - as_date(summary.start_date)
-        if delta.days <= 0:
+        if delta.days == 0:
+            return False
+        if forward_only and delta.days < 0:
             return False
 
         branch = self._descendant_ids(summary.id) | {summary.id}
@@ -3980,9 +3987,17 @@ class Project:
 
         return ordered
 
-    def reschedule(self) -> bool:
+    def reschedule(self, forward_only: bool = True) -> bool:
         """
         Settle the whole plan: apply every link, then roll summaries up.
+
+        PARAMETERS:
+        -----------
+        forward_only : bool
+            If True, only ever move a task later. This preserves deliberate
+            slack and is the default used by importers and general refreshes.
+            If False, tasks may also be pulled earlier to satisfy their links,
+            which is what is wanted after a user edit shortens a predecessor.
 
         RETURNS:
         --------
@@ -4002,10 +4017,11 @@ class Project:
         the row out of step with the children it brackets - it is moved by
         moving those children instead; see _pull_branch_after_its_links.
 
-        The pass only ever moves a task later - see forward_only on
+        The default pass only ever moves a task later - see forward_only on
         apply_dependency_constraints. Choosing a predecessor in the dialog
         still pins the date exactly; it is applying that to a whole plan
-        unasked that destroys imported schedules.
+        unasked that destroys imported schedules. A user edit, however, can
+        legitimately shorten a task and should pull its successors with it.
 
         The two feed each other - a resized summary can move a task linked to
         it - so the pass repeats until nothing changes, capped so a cycle in
@@ -4028,10 +4044,13 @@ class Project:
             moved = False
             for task in self._schedule_order():
                 if task.id in summary_ids:
-                    if self._pull_branch_after_its_links(task):
+                    if self._pull_branch_after_its_links(
+                            task, forward_only=forward_only):
                         moved = True
                     continue
-                if self.apply_dependency_constraints(task, forward_only=True):
+                if self.apply_dependency_constraints(
+                        task, preserve_duration=True,
+                        forward_only=forward_only):
                     moved = True
 
             if self.enforce_working_calendar():

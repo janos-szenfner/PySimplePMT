@@ -80,6 +80,9 @@ from typing import Dict, Optional, List, Callable
 import copy
 
 from gantt_app.models import Project, Task
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -291,6 +294,14 @@ class UpdateTaskCommand(Command):
     def __post_init__(self):
         self.name = f"Update Task: {self.old_task.name}"
     
+    def _dates_changed(self) -> bool:
+        """Whether the date properties differ between the two snapshots."""
+        return (
+            self.old_task.start_date != self.new_task.start_date
+            or self.old_task.end_date != self.new_task.end_date
+            or self.old_task.duration != self.new_task.duration
+        )
+
     def execute(self) -> bool:
         """Update the task with new properties."""
         # Find and replace the task
@@ -298,7 +309,10 @@ class UpdateTaskCommand(Command):
             if task.id == self.task_id:
                 self.project.tasks[i] = self.new_task
                 self.project._id_to_task = None
-                self.project._update_dates()
+                if self._dates_changed():
+                    self.project.reschedule(forward_only=False)
+                else:
+                    self.project._update_dates()
                 return True
         return False
 
@@ -308,7 +322,10 @@ class UpdateTaskCommand(Command):
             if task.id == self.task_id:
                 self.project.tasks[i] = self.old_task
                 self.project._id_to_task = None
-                self.project._update_dates()
+                if self._dates_changed():
+                    self.project.reschedule(forward_only=False)
+                else:
+                    self.project._update_dates()
                 return True
         return False
 
@@ -658,11 +675,14 @@ class UndoRedoManager:
         4. Enforces the max_history limit
         """
         # Execute the command
+        logger.info("Executing command: %s", getattr(command, 'name', type(command).__name__))
         if not command.execute():
+            logger.warning("Command execution failed: %s", getattr(command, 'name', type(command).__name__))
             return False
         
         # Add to undo stack
         self.undo_stack.append(command)
+        logger.info("Command executed and added to undo stack: %s", getattr(command, 'name', type(command).__name__))
         
         # Clear redo stack (new actions invalidate redo history)
         self.redo_stack.clear()
@@ -691,19 +711,23 @@ class UndoRedoManager:
         4. Returns False if the undo stack was empty
         """
         if not self.can_undo():
+            logger.debug("Undo requested but undo stack is empty")
             return False
         
         # Get the last command
         command = self.undo_stack.pop()
+        logger.info("Undoing command: %s", getattr(command, 'name', type(command).__name__))
         
         # Undo it
         if not command.undo():
             # If undo failed, put it back
+            logger.warning("Undo failed for command: %s", getattr(command, 'name', type(command).__name__))
             self.undo_stack.append(command)
             return False
         
         # Add to redo stack
         self.redo_stack.append(command)
+        logger.info("Undo successful: %s", getattr(command, 'name', type(command).__name__))
         
         return True
     
@@ -725,19 +749,23 @@ class UndoRedoManager:
         4. Returns False if the redo stack was empty
         """
         if not self.can_redo():
+            logger.debug("Redo requested but redo stack is empty")
             return False
         
         # Get the last undone command
         command = self.redo_stack.pop()
+        logger.info("Redoing command: %s", getattr(command, 'name', type(command).__name__))
         
         # Execute it
         if not command.execute():
             # If execute failed, put it back
+            logger.warning("Redo failed for command: %s", getattr(command, 'name', type(command).__name__))
             self.redo_stack.append(command)
             return False
         
         # Add back to undo stack
         self.undo_stack.append(command)
+        logger.info("Redo successful: %s", getattr(command, 'name', type(command).__name__))
         
         return True
     
