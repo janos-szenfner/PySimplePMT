@@ -19,6 +19,7 @@ A cross-platform desktop application for project management with Gantt chart vis
 - [Testing](#testing)
 - [Known Limitations](#known-limitations)
 - [Future Enhancements](#future-enhancements)
+- [License](#license)
 
 ## Overview
 
@@ -2680,6 +2681,11 @@ Still to do:
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Resource levelling off the back of the float analysis
+
+## License
+
+PySimplePMT is released under the **MIT License** — see [LICENSE](LICENSE).
+Copyright (c) 2026 Janos Szenfner.
 
 ---
 
