@@ -306,6 +306,51 @@ HELP_SECTIONS = (
         ],
     ),
     (
+        "Advanced tab: Deadline",
+        [
+            "A target finish, on the Advanced tab. It does not move the "
+            "schedule - the dates still come from the links and the calendar "
+            "- but a forecast finish later than the deadline is flagged: the "
+            "Gantt bar gets a red downward arrow with a dashed guide line and "
+            "a red outline, and the hover text shows how many days early or "
+            "late the finish is.",
+
+            "Reset to N/A clears the deadline and takes the marks away. A "
+            "deadline the finish still meets is drawn green and flags "
+            "nothing.",
+        ],
+    ),
+    (
+        "Advanced tab: Constraint",
+        [
+            "How the task is pinned, the PMP way: N/A (unconstrained, the "
+            "default), As Soon or As Late As Possible, Start or Finish No "
+            "Earlier or No Later Than, and Must Start or Finish On. The "
+            "Constraint Date is enabled only for the six that need one; the "
+            "others carry no date.",
+
+            "A constraint drives the schedule. Must Start On and Must Finish "
+            "On hard-lock the start or finish to the date, overriding a "
+            "predecessor that would push the task later; Start and Finish No "
+            "Earlier Than floor the start or finish, moving the task later "
+            "when the links would place it sooner. A task left at N/A - which "
+            "is every task until you set one - stays driven purely by its "
+            "dependencies, so turning constraints on elsewhere never disturbs "
+            "an unconstrained task.",
+
+            "The chart marks them - a blue bracket for the semi-flexible "
+            "constraints and As Late As Possible, a red lock for Must Start "
+            "and Must Finish On.",
+
+            "If the date you pick contradicts the network - a Must Finish On "
+            "earlier than a predecessor can allow, or a No-Later date the "
+            "links cannot meet - saving raises a conflict dialog naming the "
+            "task in the way. Keep Constraint forces the date and marks the "
+            "task at negative float (a red bar and a warning sign); Cancel "
+            "Constraint drops it back to N/A.",
+        ],
+    ),
+    (
         "Show in timeline, Shape and Colour",
         [
             "Show in timeline hides this row's bar from the chart without "

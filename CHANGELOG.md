@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.67.0 - 2026-09-08
+
+- Added an **Advanced** tab to the task editor (between General and Notes, in
+  `gantt_app/views/advanced_tab.py`) holding a **Deadline** and a scheduling
+  **Constraint**. Both are saved with the project and drawn on the Gantt
+  chart.
+- Deadline: a target finish that does not move the schedule, but a forecast
+  finish past it flags the task with a red downward arrow, a dashed guide
+  line, a red bar outline, a variance in the hover text and a warning sign in
+  the task list's Status column. "Reset to N/A" clears it.
+- Constraints now **drive the schedule** (PMP/CPM): Must Start On and Must
+  Finish On hard-lock the start/finish to the constraint date and override
+  predecessor delays; Start/Finish No Earlier Than floor the start/finish and
+  push the task later. Start/Finish No Later Than bound the late dates. A task
+  left at N/A - every task until a planner sets one - stays purely
+  dependency-driven, so unconstrained plans schedule exactly as before.
+- Gantt markers per constraint: a blue bracket for the semi-flexible
+  constraints and As Late As Possible, a red lock for Must Start/Finish On.
+- Conflict resolution: saving a constraint that contradicts the network - a
+  Must Finish On earlier than a predecessor allows, a No-Later date the links
+  cannot meet - raises a dialog naming the impacted predecessor, with Keep
+  Constraint (force it and flag the negative float) or Cancel Constraint
+  (revert to N/A). Constraint and deadline changes are single undo/redo steps
+  and are logged like every other task edit.
+- Resource Planning view: the four panels now sit in a draggable split kept
+  at their default proportions, the task list scrolls with the wheel, and the
+  heatmap opens left-aligned.
+- README: refreshed the project-structure file list, and documented the
+  Resource Planning view and the Advanced tab.
+
 ## 1.66.10 - 2026-09-08
 
 - Re-release of the 1.66.9 changes after that release build failed on the

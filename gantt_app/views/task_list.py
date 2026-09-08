@@ -2806,6 +2806,15 @@ class DragDropTaskList(ctk.CTkFrame):
         # per row would walk it once per row. See Project.display_ids.
         self._display_ids = self.project.display_ids()
 
+        # The tasks whose constraint or deadline puts them at negative float,
+        # worked out once for the whole plan; their Status cell gets a warning
+        # sign. See Project.tasks_in_conflict.
+        try:
+            self._at_risk_ids = self.project.tasks_in_conflict()
+        except Exception:
+            logger.exception("Could not work out which tasks are at risk")
+            self._at_risk_ids = set()
+
         # Map task IDs to tree items for parent-child relationships
         tree_items = {}
 
@@ -2906,7 +2915,12 @@ class DragDropTaskList(ctk.CTkFrame):
         # the row's font. The strike-through Inactive also wears is set on
         # the row's tag by _row_tag.
         status_str = self._status_label(task.status)
-        
+        # A task at negative float - a constraint that clashes with the
+        # network, or a finish past its deadline - is flagged with a warning
+        # sign ahead of its letter; see Project.tasks_in_conflict.
+        if task.id in getattr(self, '_at_risk_ids', set()):
+            status_str = f"⚠ {status_str}".rstrip()
+
         # The name goes in column #0, which is the one that draws the
         # indentation and the expander beside it
         item_id = self.tree.insert(parent_item, tk.END,

@@ -530,6 +530,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self.tabs = ctk.CTkTabview(self, command=self._on_tab_changed)
         self.tabs.add("General")
+        self.tabs.add("Advanced")
         self.tabs.add("Notes")
         self.tabs.add("Dependency")
         self.tabs.add("Resource")
@@ -560,6 +561,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         self._build_general(main_frame)
         scroller.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
+        self._build_advanced_tab(self.tabs.tab("Advanced"))
         self._build_details(self.tabs.tab("Notes"))
         self._build_problem_line(general)
         self._build_dependency_tab()
@@ -1441,6 +1443,15 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """
         self._dependency_editor = None
 
+    def _build_advanced_tab(self, tab):
+        """Build the Advanced tab: deadline and scheduling constraint."""
+        from gantt_app.views.advanced_tab import AdvancedTab
+
+        scroller = ScrollFrame(tab)
+        self.advanced_tab = AdvancedTab(scroller.content, self.template)
+        self.advanced_tab.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        scroller.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
+
     def _build_resource_tab(self, tab):
         """Build the Resource assignment tab."""
         self.resource_tab = TaskResourceTab(tab, self.project, self.template)
@@ -1784,6 +1795,41 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """
         self._first_problem()
         messagebox.showerror("Invalid Entry", str(error), parent=self)
+
+    def _constraint_permitted(self, task) -> bool:
+        """
+        Decide whether a task's constraint may be saved, prompting on a clash.
+
+        RETURNS:
+        --------
+        bool
+            True to go on saving, False to abort and leave the editor open.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The CPM check (REQ-UI-041 §3): a constraint that contradicts the
+        network - a Must Finish On earlier than a predecessor allows, a
+        No-Later date the links cannot meet - interrupts the save with the
+        conflict dialog. Keep forces it (and the negative float is then
+        flagged on the chart and in the list); Cancel drops it back to N/A
+        and aborts the save so nothing is committed behind the reader's back.
+        """
+        if getattr(task, 'constraint_type', 'NA') == 'NA':
+            return True
+        conflict = self.project.constraint_conflict(task)
+        if conflict is None:
+            return True
+
+        from gantt_app.views.advanced_tab import ConstraintConflictDialog
+        choice = ConstraintConflictDialog.ask(self, conflict)
+        if choice == 'keep':
+            logger.info("Constraint conflict on %r kept by the user",
+                        task.name)
+            return True
+        self.advanced_tab.revert_to_na()
+        logger.info("Constraint conflict on %r cancelled; reverted to N/A",
+                    task.name)
+        return False
 
     def cancel(self):
         """Close without saving."""

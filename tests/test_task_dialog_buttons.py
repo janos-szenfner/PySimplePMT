@@ -1151,12 +1151,18 @@ class TestWhereTheFieldsSit(DialogTestCase):
         self.assertGreater(int(placed['columnspan']), 1)
 
     def test_the_notes_have_a_tab_of_their_own(self):
-        """Between the fields and the links, which is where they belong."""
+        """
+        Between the fields and the links, which is where they belong.
+
+        Advanced sits between General and Notes - deadline and constraint
+        are more fields, so they come with the rest before the notes and
+        the links; see REQ-UI-040.
+        """
         dialog = self.dialog()
 
         self.assertEqual(
             list(dialog.tabs._segmented_button._buttons_dict.keys()),
-            ["General", "Notes", "Dependency", "Resource"])
+            ["General", "Advanced", "Notes", "Dependency", "Resource"])
 
     def test_the_notes_box_is_on_that_tab(self):
         """

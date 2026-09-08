@@ -1143,6 +1143,12 @@ class ProjectStateTracker:
             'show_in_timeline': kwargs.get('show_in_timeline', task.show_in_timeline),
             'earliest_begin': kwargs.get('earliest_begin', task.earliest_begin),
             'scheduling_options': kwargs.get('scheduling_options', task.scheduling_options),
+            # Advanced tab. Listed here for the reason the note below gives:
+            # left out, editing any field would reset the deadline and the
+            # constraint to their defaults, and undo would not carry them.
+            'deadline': kwargs.get('deadline', task.deadline),
+            'constraint_type': kwargs.get('constraint_type', task.constraint_type),
+            'constraint_date': kwargs.get('constraint_date', task.constraint_date),
             'details': kwargs.get('details', task.details),
             # Every field the task carries has to be listed here, not just
             # the ones a caller is likely to change: the new task is built

@@ -84,6 +84,35 @@ DEPENDENCY_HARDNESS_LABELS = {
 #: Task types in the new hierarchy
 TASK_TYPES = ('Phase', 'Task', 'Subtask', 'Milestone')
 
+#: The scheduling constraints a task may carry, as MS Project names them.
+#: The stored value is the short enum; CONSTRAINT_LABELS gives the title the
+#: editor shows. NA is the default - the task is driven purely by its
+#: dependencies and the project start, with no manual override.
+CONSTRAINT_TYPES = (
+    'NA', 'ASAP', 'ALAP',
+    'SNET', 'SNLT', 'FNET', 'FNLT', 'MSO', 'MFO',
+)
+
+#: Enum -> the title shown in the Advanced tab's dropdown and the help.
+CONSTRAINT_LABELS = {
+    'NA': 'N/A',
+    'ASAP': 'As Soon As Possible',
+    'ALAP': 'As Late As Possible',
+    'SNET': 'Start No Earlier Than',
+    'SNLT': 'Start No Later Than',
+    'FNET': 'Finish No Earlier Than',
+    'FNLT': 'Finish No Later Than',
+    'MSO': 'Must Start On',
+    'MFO': 'Must Finish On',
+}
+
+#: The constraints that need a date: the semi-flexible and inflexible ones.
+#: NA, ASAP and ALAP carry no date and disable the constraint-date picker.
+CONSTRAINTS_WITH_DATE = ('SNET', 'SNLT', 'FNET', 'FNLT', 'MSO', 'MFO')
+
+#: The inflexible (hard) constraints, which lock a boundary to the date.
+HARD_CONSTRAINTS = ('MSO', 'MFO')
+
 #: Available status values for tasks. Active is the default and the first
 #: value, so the editor's dropdown opens on it. A file written by an older
 #: version carries 'Draft'; it is no longer a status, so the readers below
@@ -545,6 +574,15 @@ class Task:
     show_in_timeline: bool = True
     earliest_begin: Optional[datetime] = None
     scheduling_options: str = "End date is calculated"
+    #: A target finish the task should not slip past. Informational: it does
+    #: not pin the schedule (see the Advanced tab / REQ-UI-041), but a finish
+    #: later than it is flagged as slipped. None means N/A.
+    deadline: Optional[datetime] = None
+    #: One of CONSTRAINT_TYPES. NA is unconstrained - dependency-driven.
+    constraint_type: str = "NA"
+    #: The date a dated constraint is measured against, or None. Only the
+    #: constraints in CONSTRAINTS_WITH_DATE carry one.
+    constraint_date: Optional[datetime] = None
     details: str = ""
     is_milestone: bool = False
     status: str = "Active"
@@ -1031,6 +1069,10 @@ class Task:
             'show_in_timeline': self.show_in_timeline,
             'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
             'scheduling_options': self.scheduling_options,
+            'deadline': self.deadline.isoformat() if self.deadline else None,
+            'constraint_type': self.constraint_type,
+            'constraint_date': (self.constraint_date.isoformat()
+                                if self.constraint_date else None),
             'details': self.details,
             'calendar_id': self.calendar_id,
             'resource_assignments': list(self.resource_assignments),
@@ -1092,7 +1134,31 @@ class Task:
             'manual': 'End date is calculated'
         }
         scheduling_options = old_to_new.get(scheduling_options, scheduling_options)
-        
+
+        # Advanced tab: deadline and constraint. All absent in plans written
+        # before REQ-UI-041, which open unconstrained with no deadline.
+        deadline = data.get('deadline')
+        if isinstance(deadline, str):
+            try:
+                deadline = datetime.fromisoformat(deadline)
+            except (ValueError, TypeError):
+                deadline = None
+        constraint_type = data.get('constraint_type', 'NA')
+        if constraint_type not in CONSTRAINT_TYPES:
+            logger.info("Task %r has an unknown constraint %r; reading it as "
+                        "N/A", data.get('name', 'unknown'), constraint_type)
+            constraint_type = 'NA'
+        constraint_date = data.get('constraint_date')
+        if isinstance(constraint_date, str):
+            try:
+                constraint_date = datetime.fromisoformat(constraint_date)
+            except (ValueError, TypeError):
+                constraint_date = None
+        # A constraint that carries no date cannot keep one - an older file
+        # or a hand-edit that left a stray date is tidied here.
+        if constraint_type not in CONSTRAINTS_WITH_DATE:
+            constraint_date = None
+
         # Validate status and provide default for backward compatibility
         status = data.get('status', 'Active')
         if status not in TASK_STATUSES:
@@ -1129,6 +1195,9 @@ class Task:
             show_in_timeline=data.get('show_in_timeline', True),
             earliest_begin=earliest_begin,
             scheduling_options=scheduling_options,
+            deadline=deadline,
+            constraint_type=constraint_type,
+            constraint_date=constraint_date,
             details=data.get('details', ''),
             calendar_id=data.get('calendar_id') or None,
             resource_assignments=assignments,
@@ -3431,6 +3500,166 @@ class Project:
 
         return True
 
+    def place_by_constraint(self, task: Task) -> bool:
+        """
+        Apply a task's Advanced-tab constraint to its dates (CPM enforcement).
+
+        RETURNS:
+        --------
+        bool
+            True when the constraint moved the task.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Only four of the nine constraints place a task in this forward pass:
+
+        - MSO / MFO hard-lock the start / finish to the constraint date,
+          overriding predecessor delays. reschedule skips the link pass for a
+          hard-constrained task so the links cannot drag the locked boundary
+          back, which is what "the constraint drives the schedule" means and
+          what leaves a predecessor conflict standing to be flagged.
+        - SNET / FNET floor the start / finish at the constraint date, pushing
+          the task later when a link would otherwise place it earlier. They
+          only ever move it later, so they settle in step with the link pass.
+
+        NA, ASAP and ALAP carry no date and never move a task here; SNLT and
+        FNLT bound the *late* dates (the float), not the early dates a forward
+        pass places, so they do not move a task either - both are checked for
+        conflict instead; see constraint_conflict. A task left at NA - which
+        is every task until a planner sets one - returns immediately, so the
+        schedule of an unconstrained plan is exactly what it was before.
+        """
+        ctype = task.constraint_type
+        cd = task.constraint_date
+        if ctype not in ('MSO', 'MFO', 'SNET', 'FNET') or cd is None:
+            return False
+
+        calendar = self.calendar_for(task)
+        start, end = task.start_date, task.end_date
+
+        if task.is_milestone:
+            pinned = calendar.get_next_working_day(cd)
+            # A floor only ever pushes a milestone later.
+            if ctype in ('SNET', 'FNET') and pinned <= start:
+                return False
+            if pinned == start:
+                return False
+            task.start_date = pinned
+            task.end_date = None
+            return True
+
+        duration = self.working_duration(task)
+        if ctype == 'MSO':
+            new_start = calendar.get_next_working_day(cd)
+            new_end = calendar.add_working_days(new_start, duration)
+        elif ctype == 'MFO':
+            new_end = calendar.get_next_working_day(cd)
+            new_start = calendar.subtract_working_days(new_end, duration)
+        elif ctype == 'SNET':
+            floor = calendar.get_next_working_day(cd)
+            if floor <= start:
+                return False
+            new_start = floor
+            new_end = calendar.add_working_days(new_start, duration)
+        else:  # FNET
+            floor = calendar.get_next_working_day(cd)
+            if floor <= (end or start):
+                return False
+            new_end = floor
+            new_start = calendar.subtract_working_days(new_end, duration)
+
+        if new_start == start and new_end == end:
+            return False
+        task.start_date = new_start
+        task.end_date = new_end
+        return True
+
+    def constraint_conflict(self, task: Task) -> Optional[dict]:
+        """
+        Whether a task's constraint contradicts its dependency network.
+
+        RETURNS:
+        --------
+        Optional[dict]
+            None when the constraint sits happily. Otherwise a description
+            the conflict dialog reads: the constraint, the reason, and the
+            predecessor task(s) it clashes with.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Only a constraint that can force a boundary against the links is a
+        conflict. A hard MSO/MFO may pin a task earlier than a predecessor
+        allows - "finish Friday, but the work it waits on ends Monday" - and
+        a No-Later constraint (SNLT/FNLT) is broken when the links cannot get
+        the task started/finished by its date. The flexible floors (SNET,
+        FNET) only ever push a task later than its links already want, so they
+        cannot clash and are never reported here.
+        """
+        ctype = task.constraint_type
+        cd = task.constraint_date
+        if ctype == 'NA' or cd is None:
+            return None
+
+        calendar = self.calendar_for(task)
+        req_start, req_end = self.constrained_dates(task)
+
+        def _later(a, b) -> bool:
+            return (calendar.get_next_working_day(a)
+                    > calendar.get_next_working_day(b))
+
+        # For a finish constraint (MFO/FNLT) a start the links push past the
+        # date is as much a conflict as a finish that is: the task cannot end
+        # by the date if it cannot even begin by then. So both required edges
+        # are weighed against the date.
+        start_late = req_start is not None and _later(req_start, cd)
+        finish_late = req_end is not None and _later(req_end, cd)
+
+        reason = None
+        if ctype == 'MSO' and start_late:
+            reason = 'predecessor'          # links push start past the lock
+        elif ctype == 'MFO' and (finish_late or start_late):
+            reason = 'predecessor'          # links push finish past the lock
+        elif ctype == 'SNLT' and start_late:
+            reason = 'late'                 # cannot start by the No-Later date
+        elif ctype == 'FNLT' and (finish_late or start_late):
+            reason = 'late'                 # cannot finish by the No-Later date
+
+        if reason is None:
+            return None
+
+        numbers = self.display_ids()
+        predecessors = [
+            (numbers.get(dep.id, dep.id), dep.name)
+            for dep in self.get_dependencies(task.id) if dep is not None
+        ]
+        return {
+            'task_id': task.id,
+            'constraint_type': ctype,
+            'constraint_date': cd,
+            'reason': reason,
+            'predecessors': predecessors,
+        }
+
+    def tasks_in_conflict(self) -> set:
+        """
+        Every task whose constraint or deadline puts it at negative float.
+
+        Used to flag rows in the list and the chart with a warning. A task is
+        at risk when its constraint clashes with the network (see
+        constraint_conflict) or its forecast finish is past its deadline.
+        """
+        at_risk = set()
+        for task in self.tasks:
+            if self.constraint_conflict(task) is not None:
+                at_risk.add(task.id)
+                continue
+            deadline = getattr(task, 'deadline', None)
+            if deadline is not None:
+                finish = task.end_date or task.start_date
+                if finish is not None and as_date(finish) > as_date(deadline):
+                    at_risk.add(task.id)
+        return at_risk
+
     def _pull_branch_after_its_links(
             self, summary: Task, forward_only: bool = True) -> bool:
         """
@@ -4048,9 +4277,18 @@ class Project:
                             task, forward_only=forward_only):
                         moved = True
                     continue
-                if self.apply_dependency_constraints(
-                        task, preserve_duration=True,
-                        forward_only=forward_only):
+                # A hard constraint (MSO/MFO) drives the task's dates itself
+                # and overrides its predecessors, so the link pass is skipped
+                # for it - otherwise the two would fight to a false cycle. A
+                # semi-flexible floor (SNET/FNET) runs after the links and only
+                # pushes the task later. Every other task - all NA ones among
+                # them - takes the link pass exactly as before.
+                if task.constraint_type not in HARD_CONSTRAINTS:
+                    if self.apply_dependency_constraints(
+                            task, preserve_duration=True,
+                            forward_only=forward_only):
+                        moved = True
+                if self.place_by_constraint(task):
                     moved = True
 
             if self.enforce_working_calendar():

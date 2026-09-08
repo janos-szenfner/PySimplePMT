@@ -188,6 +188,45 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "The Advanced tab: deadline and constraint",
+        [
+            "A tab between General and Notes, holding two boundaries a "
+            "planner may set. Both are saved with the project and drawn on "
+            "the Gantt chart.",
+
+            "Deadline - a target finish. Pick a date, or leave it at N/A. It "
+            "does not move the task, but if the forecast finish falls later "
+            "than the deadline the row is flagged: a red downward arrow, a "
+            "dashed red guide line and a red bar outline, a warning sign in "
+            "the Status column, and the days early or late in the hover "
+            "text. Reset to N/A clears it and removes the marks.",
+
+            "Constraint type - how the task is pinned, the PMP way: N/A "
+            "(unconstrained, the default), As Soon As Possible, As Late As "
+            "Possible, Start or Finish No Earlier or No Later Than, and Must "
+            "Start or Finish On.",
+
+            "A constraint drives the schedule. Must Start/Finish On hard-lock "
+            "the boundary to the date and override a predecessor that would "
+            "push the task later; Start/Finish No Earlier Than floor it, "
+            "moving the task later when the links would place it sooner. A "
+            "task left at N/A stays driven purely by its dependencies, so a "
+            "constraint set on one task never disturbs an unconstrained one.",
+
+            "Constraint date - enabled only for the six constraints that "
+            "need one; the others carry no date. On the chart a blue bracket "
+            "marks the semi-flexible constraints and As Late As Possible, a "
+            "red lock marks Must Start On and Must Finish On.",
+
+            "If the date contradicts the network - a Must Finish On earlier "
+            "than a predecessor allows, or a No-Later date the links cannot "
+            "meet - saving raises a conflict dialog naming the task in the "
+            "way. Keep Constraint forces it and marks the affected task at "
+            "negative float; Cancel Constraint drops it back to N/A. Every "
+            "constraint change is a single Undo step.",
+        ],
+    ),
+    (
         "Working days and calendar days",
         [
             "These are two different measurements and confusing them is what "

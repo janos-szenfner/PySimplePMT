@@ -40,6 +40,8 @@ This is a complete implementation of a project management tool with:
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from a dedicated group on the icon bar. The preset menu shows each one as it will look — a coloured badge, its name, and a live sample drawn in the preset's own colours and emphasis — and a **Default (no style)** entry at the top of the same menu clears the formatting in one click. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
 - **Resource Settings**: Settings → Resource Settings manages Named people, Generic role placeholders and Team pools in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity, hourly rates, days off and team splits; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘.` on a Mac (`Ctrl+Alt+.` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
+- **Resource Planning view (4-panel)**: A second viewport, reached from the **Resource Planning** tab in the footer, laid out as four draggable panels — **1. Task List** with its own search, **2. Task Inspector** with Assign / De-assign buttons, **3. Resource Pool** filtered by Named / Generic / Team, and **4. Live Stacking & Heatmap**, a day-by-day capacity grid that greens, ambers and reds each resource as load approaches and passes its daily hours. Assign a task by selecting it and a resource, or by dragging a row from the list onto a resource. The four panels resize like the task-list/Gantt split and open at a fixed default; the heatmap opens left-aligned. The bar along the bottom switches between Task Planning and Resource Planning (a Deliverables tab is reserved but not yet active)
+- **Resource assignment on a task**: the task editor's **Resource** tab assigns one or more resources to a task with a split percentage each; assignments travel with the task and feed the heatmap and the resource pool's load figures
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
 - **Retype in the grid**: Double-click the **Type** cell for a dropdown of every type. Picking one stores it — one undo step, and the editor shows it. Choosing `Milestone` sets the milestone flag with it, so the editor opens with the switch on; choosing anything else clears it again
 - **New task from the keyboard**: `⌥⌘.` on a Mac, `Ctrl+Alt+.` elsewhere, creates a task beside the row the cursor is on and opens its editor. With no cursor it goes at the end of the plan
@@ -81,6 +83,7 @@ This is a complete implementation of a project management tool with:
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a row copies everything under it - a phase brings its tasks and their sub-tasks, nested as they were - and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
+- **Advanced tab — Deadline & Constraint**: A tab in the task editor, between General and Notes, for two planner boundaries, saved with the project and drawn on the Gantt chart. A **Deadline** is a target finish: it does not move the schedule, but a forecast finish later than it flags the row — a red downward arrow with a dashed guide line on the bar, a red bar outline, a variance in the hover text, and a ⚠ in the list's Status column — and **Reset to N/A** clears it. A **Constraint Type** — N/A, As Soon As Possible, As Late As Possible, Start/Finish No Earlier/Later Than, Must Start/Finish On — pins the task the PMP/CPM way, with a **Constraint Date** enabled only for the six dated ones. Constraints **drive the schedule**: `MSO`/`MFO` hard-lock the start/finish to the date (overriding predecessor delays), and `SNET`/`FNET` floor the start/finish, pushing the task later. A task left at `N/A` — every task until a planner sets one — stays purely dependency-driven, so an unconstrained plan schedules exactly as before. On the chart a blue bracket marks the semi-flexible constraints and As Late As Possible, and a red lock marks Must Start/Finish On. When a constraint contradicts the network — a Must Finish On earlier than a predecessor allows, a No-Later date the links cannot meet — saving raises a **conflict dialog** naming the impacted predecessor, offering **Keep Constraint** (force it and flag the negative float with ⚠ and a red bar) or **Cancel Constraint** (drop it back to N/A); every constraint change is one atomic step on the undo/redo stack
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
 - **Baseline Management**: Save up to ten baselines, rename their slots, choose a color for each slot, compare the current plan against a baseline, and see baseline and variance columns in the task list plus a colored baseline bar split above or below each Gantt bar so both schedules stay visible. Baselines are stored with the project file.
@@ -90,13 +93,19 @@ This is a complete implementation of a project management tool with:
 ```
 gantt_app/
 ├── __init__.py
-├── models.py              # Task and Project data models
+├── models.py              # Task and Project models (dates, links, deadline, constraint)
+├── taskstyle.py           # A row's ink, fill and emphasis, and the honest-chip presets
+├── presets.py             # Built-in and custom style presets, and their live broadcast
+├── baselines.py           # Up to ten schedule baselines: capture, compare, persist
 ├── resource_model.py      # Resources, teams, schedules, leave and capacity
 ├── workdaycalendar.py     # Working days, weekends, holidays, overrides
 ├── calendarregistry.py    # Named calendars, and which one a task follows
+├── dependencysyntax.py    # Parsing the Dependencies column notation (3FS+1d, ...)
+├── priority.py            # The priority levels a work item can carry
+├── shortcuts.py           # Keyboard shortcut sequences, spelt out per platform
+├── startup_setting.py     # First-run window sizing and startup preferences
 ├── theme.py               # Light or dark, who decides it, and the palette
-├── main.py                # Main application entry point
-├── run.py                 # Entry point script
+├── main.py                # Main window, the paned view, and the view-tab switch
 │
 ├── views/
 │   ├── __init__.py
@@ -104,18 +113,29 @@ gantt_app/
 │   ├── taskform.py        # The task form shared by creating and editing
 │   ├── taskdialogs.py     # The Create Task and Edit Task dialogs
 │   ├── formcheck.py       # Checks the task form as it is filled in
+│   ├── advanced_tab.py    # The editor's Advanced tab: deadline and constraint
+│   ├── dependency_editor.py # Dependency tab shared by the task dialogs
+│   ├── assigntask.py      # The editor's Resource tab: assign resources, split %
+│   ├── resource_board.py  # The 4-panel Resource Planning view (list, inspector, pool, heatmap)
+│   ├── resourcesettings.py # Resource grids and resource/team editor modals
+│   ├── settingswindow.py  # The unified Settings hub (Project/Resource/Gantt/Calendar/Presets/Baseline)
+│   ├── projectsettings.py # The Project settings tab's fields
+│   ├── presetsettings.py  # The Presets tab: lock the built-ins, edit customs
+│   ├── stylebar.py        # The row-formatting bar and its live preset menu
+│   ├── baselinedialog.py  # Set and Clear Baseline dialogs
+│   ├── progressgroup.py   # The 0/25/50/75/100 and Mark-on-track progress controls
+│   ├── project_dashboard.py # View → Charts → Dashboard: the KPI summary and rings
 │   ├── scrollframe.py     # Scrolling container the task form is built in
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
 │   ├── colorpicker.py     # Color picker with popup for task dialogs
 │   ├── datepicker.py      # Date box and calendar shared by task/resource editors
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
-│   ├── dependency_editor.py # Dependency tab shared by the task dialogs
 │   ├── holidaydialog.py   # Working week, public holidays, date overrides
-│   ├── resourcesettings.py # Resource grids and resource/team editor modals
 │   ├── searchbox.py       # Finding a row by anything written on it
 │   ├── criticalpath.py    # The critical path analysis, task by task
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
+│   ├── tooltip.py         # The hover text shared across the toolbar and chart
 │   ├── log_window.py      # Application log viewer
 │   ├── modal.py           # Makes a dialog modal, and hands the grab to a popup
 │   ├── buttonstyle.py     # How a secondary button is drawn, in one place
@@ -128,8 +148,6 @@ gantt_app/
 │   ├── dependencyhelp.py  # Dependency reference behind the Help button
 │   └── userguide.py       # The full guide behind ? and View → Help
 │
-├── priority.py            # The priority levels a work item can carry
-│
 ├── resources/
 │   ├── __init__.py
 │   ├── appicon.py          # The application icon, drawn rather than shipped
@@ -138,7 +156,9 @@ gantt_app/
 ├── utils/
 │   ├── __init__.py
 │   ├── copypastecut.py     # The clipboard behind Copy, Cut and Paste
+│   ├── undoredo.py         # The undo/redo command stack every edit runs through
 │   ├── file_io.py          # JSON save/load functionality
+│   ├── safexml.py          # Guarded XML parsing for the interchange importers
 │   ├── gan_importer.py     # GAN (GanttProject) file import
 │   ├── gan_exporter.py     # GAN (GanttProject) file export
 │   ├── mpp_importer.py     # Which of the two MS Project formats a file is
@@ -148,12 +168,12 @@ gantt_app/
 │   ├── mermaid_importer.py # Mermaid (.mmd) file import
 │   ├── mermaid_exporter.py # Mermaid (.mmd) file export
 │   ├── xlsx_importer.py    # Excel XLSX project plan import
+│   ├── xlsx_exporter.py    # Excel XLSX export as a live plan sheet
 │   ├── log.py              # Application logging (file, memory, stderr)
 │   ├── chart_figure.py     # Shared Plotly figure builder
-│   ├── image_export.py     # PNG, PDF, SVG and HTML export
-│   ├── chart_render.py     # Browser-free static chart drawing
+│   ├── chart_render.py     # Browser-free static chart drawing (bars, markers, baselines)
 │   ├── page_render.py      # The pages of the PDF: work item list and chart
-│   └── xlsx_exporter.py    # Excel XLSX export as a live plan sheet
+│   └── image_export.py     # PNG, PDF, SVG and HTML export
 │
 └── assets/                # Bundled into the packaged build when it holds anything
 ```
@@ -2664,5 +2684,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.66.10
+**Version**: 1.67.0
 **Last Updated**: 2026-09-08

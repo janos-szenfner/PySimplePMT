@@ -37,7 +37,7 @@ from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFont
 
-from gantt_app.models import Project, Task
+from gantt_app.models import HARD_CONSTRAINTS, Project, Task
 from gantt_app.utils.chart_figure import _merged_settings, calculate_date_range
 from gantt_app.workdaycalendar import as_date
 from gantt_app.utils.log import get_logger
@@ -145,6 +145,9 @@ class ChartLayout:
     summaries: List[Dict[str, Any]] = field(default_factory=list)
     milestones: List[Dict[str, Any]] = field(default_factory=list)
     dependencies: List[Tuple[float, float, float, float]] = field(default_factory=list)
+    #: Deadline and constraint markers drawn over the bars; see the Advanced
+    #: tab (REQ-UI-041). Each is a dict carrying its kind, anchor and colour.
+    markers: List[Dict[str, Any]] = field(default_factory=list)
     row_labels: List[Tuple[float, str]] = field(default_factory=list)
     date_ticks: List[Tuple[float, str]] = field(default_factory=list)
     #: The month band across the top: (x0, x1, "DECEMBER 2020").
@@ -179,6 +182,83 @@ def _shorten(text: str, limit: int = LABEL_CHARS) -> str:
 def _is_inactive(task: Task) -> bool:
     """Whether a task is marked Inactive, and so kept off the chart."""
     return getattr(task, 'status', 'Active') == 'Inactive'
+
+
+#: Advanced-tab marker colours (REQ-UI-041).
+DEADLINE_ON_TRACK = '#2ECC71'
+DEADLINE_SLIPPED = '#E74C3C'
+CONSTRAINT_BLUE = '#3498DB'
+CONSTRAINT_RED = '#E74C3C'
+
+
+def _add_advanced_markers(layout: 'ChartLayout', task: Task, centre: float,
+                          bar_height: float, x_for: Callable,
+                          x_center: Callable) -> bool:
+    """
+    Append this task's deadline and constraint markers to the layout.
+
+    RETURNS:
+    --------
+    bool
+        Whether the task has a deadline its forecast finish overruns - the
+        caller draws such a bar with a red outline.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Markers carry pixel geometry and a colour, never glyphs: the renderer
+    draws each as canvas/PIL primitives (a triangle, a bracket, a padlock),
+    so nothing depends on a font that has the arrow or the lock in it.
+    """
+    y_top = centre - bar_height / 2
+    y_bottom = centre + bar_height / 2
+    start_x = x_for(task.start_date)
+    end = task.end_date or task.start_date
+    end_x = max(x_for(end + timedelta(days=1)), start_x + 2)
+
+    slipped = False
+    deadline = getattr(task, 'deadline', None)
+    if deadline is not None:
+        finish = as_date(end)
+        due = as_date(deadline)
+        slipped = finish > due
+        variance = (due - finish).days
+        layout.markers.append({
+            'kind': 'deadline',
+            'task_id': task.id,
+            'x': x_center(deadline),
+            'y_top': y_top,
+            'y_bottom': y_bottom,
+            'color': DEADLINE_SLIPPED if slipped else DEADLINE_ON_TRACK,
+            'dashed': slipped,
+            'tooltip': (f"Deadline: {due.isoformat()} | "
+                        f"Variance: {variance:+d} days"),
+        })
+
+    ctype = getattr(task, 'constraint_type', 'NA')
+    if ctype not in ('NA', 'ASAP'):
+        starts = ctype in ('SNET', 'SNLT', 'MSO')
+        anchor = start_x if starts else end_x
+        if ctype in HARD_CONSTRAINTS:
+            layout.markers.append({
+                'kind': 'constraint_lock', 'task_id': task.id,
+                'x': anchor, 'y_top': y_top, 'y_bottom': y_bottom,
+                'color': CONSTRAINT_RED,
+                'tooltip': f"{ctype} constraint",
+            })
+        else:
+            # ALAP and the No-Later constraints face right (]); the
+            # No-Earlier ones face left ([).
+            facing = 'left' if ctype in ('SNET', 'FNET') else 'right'
+            if ctype == 'ALAP':
+                anchor, facing = end_x, 'right'
+            layout.markers.append({
+                'kind': 'constraint_bracket', 'task_id': task.id,
+                'x': anchor, 'y_top': y_top, 'y_bottom': y_bottom,
+                'color': CONSTRAINT_BLUE, 'facing': facing,
+                'tooltip': f"{ctype} constraint",
+            })
+
+    return slipped
 
 
 def _get_visible_tasks(project: Project) -> List[Task]:
@@ -557,6 +637,10 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     # of its own, so it is drawn as a bracket instead of a solid bar
     summary_ids = project.get_summary_task_ids()
 
+    # Tasks whose constraint or deadline puts them at negative float; their
+    # bars get the red outline too. Computed once, read-only.
+    at_risk = project.tasks_in_conflict()
+
     for index, task in enumerate(tasks):
         centre = y_for(index)
 
@@ -564,6 +648,9 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         # a label, is drawn for it.
         if task.id in hidden:
             continue
+
+        slipped = _add_advanced_markers(
+            layout, task, centre, bar_height, x_for, x_center)
 
         if label_width:
             layout.row_labels.append((centre, _shorten(task.name)))
@@ -613,6 +700,9 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
             'color': colour,
             'progress': max(0, min(100, task.progress)),
             'label': task.name,
+            # A finish past its deadline, or a constraint that clashes with
+            # the network, gets a red outline; see REQ-UI-041.
+            'slipped': slipped or task.id in at_risk,
         })
 
     for task in tasks:
@@ -1206,8 +1296,13 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
     for bar in layout.bars:
         y0, y1 = _current_bar_span(bar, has_baseline)
         box = [sx(bar['x0']), sx(y0), sx(bar['x1']), sx(y1)]
-        draw.rectangle(box, fill=bar['color'], outline='#000000',
-                       width=max(1, int(scale)))
+        # A finish past its deadline is outlined red and a touch heavier, so
+        # the slipped bar stands out from its neighbours; see REQ-UI-041.
+        slipped = bar.get('slipped')
+        draw.rectangle(
+            box, fill=bar['color'],
+            outline=DEADLINE_SLIPPED if slipped else '#000000',
+            width=max(1, int(scale * (1.5 if slipped else 1))))
         if bar['progress']:
             filled = box[0] + (box[2] - box[0]) * bar['progress'] / 100
             draw.rectangle([box[0], box[1], filled, box[3]],
@@ -1236,6 +1331,9 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
     # a bar that ends at a Friday boundary can look like it extends into the
     # Saturday column because it covers the weekend shading behind it.
     _draw_date_header(draw, layout, s, sx, scale, small_font)
+
+    # Deadline and constraint markers, on top of the shading so they read.
+    _draw_advanced_markers(draw, layout, sx, scale)
 
     for x, y, label in labels_to_draw:
         draw.text((x, y), label, font=small_font,
@@ -1344,6 +1442,54 @@ def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
         draw.polygon([(sx(x), sx(y - r)), (sx(x + r), sx(y)),
                       (sx(x), sx(y + r)), (sx(x - r), sx(y))],
                      fill=baseline_color, outline=outline)
+
+
+def _draw_advanced_markers(draw: 'ImageDraw.ImageDraw', layout: 'ChartLayout',
+                           sx: Callable[[float], float], scale: float) -> None:
+    """
+    Draw the deadline and constraint markers over the bars.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Everything is a primitive - a triangle for the deadline arrow, two lines
+    for a constraint bracket, a rectangle and an arc for the padlock - so no
+    glyph or font has to carry the symbol, which is what keeps it identical
+    on the old Tk the development interpreter has and the newer one the build
+    ships.
+    """
+    line_w = max(1, int(scale * 1.5))
+    for marker in layout.markers:
+        x = sx(marker['x'])
+        top = sx(marker['y_top'])
+        bottom = sx(marker['y_bottom'])
+        colour = marker['color']
+        kind = marker['kind']
+
+        if kind == 'deadline':
+            # A downward triangle sitting on the top edge of the bar.
+            size = sx(6)
+            draw.polygon([(x - size, top - 2 * size), (x + size, top - 2 * size),
+                          (x, top)], fill=colour, outline='#000000')
+            if marker.get('dashed'):
+                _dashed_line(draw, x, top, x, bottom, colour, line_w,
+                             dash=int(sx(3)) or 1, gap=int(sx(3)) or 1)
+        elif kind == 'constraint_bracket':
+            foot = sx(6) if marker.get('facing') == 'right' else -sx(6)
+            draw.line([(x, top), (x, bottom)], fill=colour, width=line_w)
+            draw.line([(x, top), (x + foot, top)], fill=colour, width=line_w)
+            draw.line([(x, bottom), (x + foot, bottom)], fill=colour,
+                      width=line_w)
+        elif kind == 'constraint_lock':
+            # A small padlock: a body rectangle with an arc shackle above it.
+            w = sx(5)
+            body_top = (top + bottom) / 2 - sx(1)
+            body_bottom = body_top + sx(7)
+            draw.rectangle([x - w, body_top, x + w, body_bottom], fill=colour,
+                           outline='#000000', width=max(1, int(scale)))
+            shackle = sx(4)
+            draw.arc([x - shackle, body_top - 2 * shackle, x + shackle,
+                      body_top + shackle], start=180, end=360, fill=colour,
+                     width=line_w)
 
 
 def _dashed_line(draw: ImageDraw.ImageDraw, x0: float, y0: float,

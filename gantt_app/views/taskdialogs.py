@@ -143,6 +143,20 @@ class EditTaskDialog(TaskFormDialog):
                                                   "earliest begin date")
 
             details = self.details_text.get("1.0", tk.END).strip()
+            # Read (and validate) the Advanced tab before anything is written,
+            # so a bad date there stops the save with the rest untouched.
+            advanced = self.advanced_tab.read_values()
+
+            # CPM conflict check before anything is committed: probe the task
+            # as it would be, and if the constraint clashes with the network
+            # let the reader Keep or Cancel it. A Cancel aborts the save.
+            probe = copy.copy(self.task)
+            probe.constraint_type = advanced['constraint_type']
+            probe.constraint_date = advanced['constraint_date']
+            if self._dependency_editor is not None:
+                probe.dependencies = self._dependency_editor.get_links()
+            if not self._constraint_permitted(probe):
+                return False
 
             # Capture the pre-edit task before mutating the live object. The
             # dialog has to keep self.task in step with the project, but using
@@ -174,6 +188,16 @@ class EditTaskDialog(TaskFormDialog):
             self.task.show_in_timeline = self.show_in_timeline_var.get()
             self.task.earliest_begin = earliest_begin
             self.task.scheduling_options = self.scheduling_options_var.get()
+            self.task.deadline = advanced['deadline']
+            self.task.constraint_type = advanced['constraint_type']
+            self.task.constraint_date = advanced['constraint_date']
+            logger.debug(
+                "Task %r advanced set: deadline=%s constraint=%s%s",
+                self.task.name,
+                self.task.deadline.date() if self.task.deadline else None,
+                self.task.constraint_type,
+                f" on {self.task.constraint_date.date()}"
+                if self.task.constraint_date else "")
             self.task.calendar_id = self.chosen_calendar_id()
             self.task.details = details
             self.task.color = self.color_entry.get()
@@ -209,6 +233,9 @@ class EditTaskDialog(TaskFormDialog):
                     show_in_timeline=new_task.show_in_timeline,
                     earliest_begin=new_task.earliest_begin,
                     scheduling_options=new_task.scheduling_options,
+                    deadline=new_task.deadline,
+                    constraint_type=new_task.constraint_type,
+                    constraint_date=new_task.constraint_date,
                     calendar_id=new_task.calendar_id,
                     details=new_task.details,
                     resource_assignments=list(new_task.resource_assignments),
@@ -417,6 +444,7 @@ class CreateTaskDialog(TaskFormDialog):
 
             details = self.details_text.get("1.0", tk.END).strip()
             assignments = self.resource_tab.get_assignments()
+            advanced = self.advanced_tab.read_values()
 
             task = Task(
                 id=self.project.next_task_id(),
@@ -437,13 +465,27 @@ class CreateTaskDialog(TaskFormDialog):
                 show_in_timeline=self.show_in_timeline_var.get(),
                 earliest_begin=earliest_begin,
                 scheduling_options=self.scheduling_options_var.get(),
+                deadline=advanced['deadline'],
+                constraint_type=advanced['constraint_type'],
+                constraint_date=advanced['constraint_date'],
                 calendar_id=self.chosen_calendar_id(),
                 details=details,
                 resource_assignments=list(assignments),
             )
             task.__post_init__()
+            # CPM conflict check before the task joins the plan; Cancel aborts.
+            if not self._constraint_permitted(task):
+                return False
             logger.info("Created task %s %r with %d resource assignment(s)",
                         task.id, task.name, len(task.resource_assignments))
+            if task.deadline or task.constraint_type != 'NA':
+                logger.debug(
+                    "Created task %r advanced: deadline=%s constraint=%s%s",
+                    task.name,
+                    task.deadline.date() if task.deadline else None,
+                    task.constraint_type,
+                    f" on {task.constraint_date.date()}"
+                    if task.constraint_date else "")
             logger.debug("Assignments for %s: %r", task.id,
                          task.resource_assignments)
             logger.debug("Created task %r with status %s", task.name,
