@@ -6,7 +6,7 @@ Feature: Unified tabbed settings window
     And the unified Settings window is open
 
   Scenario: The Settings window presents its categories
-    Then the Settings tabs are "Project, Resource, Gantt, Calendar, Presets"
+    Then the Settings tabs are "Project, Resource, Gantt, Calendar, Presets, Baseline"
 
   Scenario: Project tab shows the current project summary
     When the Project tab is selected

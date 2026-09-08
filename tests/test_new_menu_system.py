@@ -469,13 +469,13 @@ class TestSubmenusOpen(unittest.TestCase):
         return rows
 
     def test_actions_offers_import_and_export(self):
-        """Both are submenus, and both are there to be opened."""
+        """Baseline, Import and Export are submenus, and all are there to be opened."""
         dropdown = self.open_menu('Actions')
 
         labels = [str(w.cget('text')).strip()
                   for w in self.submenu_rows(dropdown)]
 
-        self.assertEqual(labels, ['Import', 'Export'])
+        self.assertEqual(labels, ['Baseline', 'Import', 'Export'])
 
     def test_opening_a_submenu_leaves_its_parent_alive(self):
         """

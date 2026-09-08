@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.66.1 - 2026-09-08
+
+- Fixed settings-window BDD test to expect the new Baseline tab.
+- Fixed toolbar menu tests to expect the new Actions > Baseline submenu.
+- Full test suite now passes with the baseline and resource-planning changes.
+
 ## 1.66.0 - 2026-09-08
 
 - Added the Baseline Management engine in `gantt_app/baselines.py` with ten slots, capture, clear, rename, active comparison and variance analysis.
