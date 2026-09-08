@@ -26,6 +26,7 @@ import unittest
 from unittest import mock
 
 from gantt_app import theme
+from tests.pixels import flat_pixels
 
 
 class ThemeControllerTestCase(unittest.TestCase):
@@ -597,7 +598,7 @@ class TestTheDrawnIcons(unittest.TestCase):
         light = draw_icon('sun', size=20, color=theme.ICON_INK_LIGHT)
         dark = draw_icon('sun', size=20, color=theme.ICON_INK_DARK)
 
-        self.assertNotEqual(list(light.getdata()), list(dark.getdata()))
+        self.assertNotEqual(flat_pixels(light), flat_pixels(dark))
 
     def test_the_moon_is_a_crescent(self):
         """
@@ -611,7 +612,7 @@ class TestTheDrawnIcons(unittest.TestCase):
 
         moon = draw_icon('moon', size=40, color=(0, 0, 0))
         disc = draw_icon('sun', size=40, color=(0, 0, 0))
-        opaque = lambda image: sum(1 for pixel in image.getdata()
+        opaque = lambda image: sum(1 for pixel in flat_pixels(image)
                                    if pixel[3] > 128)
 
         # A crescent covers less than the disc it was cut from, and is not

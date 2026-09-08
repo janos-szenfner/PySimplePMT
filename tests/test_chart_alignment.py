@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.chart_render import layout_chart, RowPlan, MARGIN_LEFT
+from tests.pixels import flat_pixels
 
 
 def _display_available() -> bool:
@@ -473,7 +474,7 @@ class TestTheChartFontIsChosenForSpeedToo(unittest.TestCase):
         ImageDraw.Draw(image).text((2, 2), "árvíztűrő ÁÉÍÓŐÚŰ",
                                    font=font, fill=0)
 
-        self.assertGreater(sum(1 for p in image.getdata() if p < 128), 200)
+        self.assertGreater(sum(1 for p in flat_pixels(image) if p < 128), 200)
 
 
 if __name__ == '__main__':

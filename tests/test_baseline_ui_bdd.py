@@ -18,6 +18,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.chart_render import render_image
+from tests.pixels import flat_pixels
 
 
 def _display_available() -> bool:
@@ -428,7 +429,7 @@ def the_rendered_image_contains_red_baseline_overlay_pixels(app):
         width=800,
         scale=1.0,
     )
-    pixels = list(image.getdata())
+    pixels = flat_pixels(image)
     red_pixels = [
         p for p in pixels
         if isinstance(p, (tuple, list)) and len(p) >= 3

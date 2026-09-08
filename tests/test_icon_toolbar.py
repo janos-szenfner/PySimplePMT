@@ -15,6 +15,7 @@ import customtkinter as ctk
 from unittest.mock import MagicMock, patch
 
 from gantt_app.models import Project, Task
+from tests.pixels import flat_pixels
 from gantt_app.views.toolbar import IconToolbar, Toolbar
 from gantt_app.resources.icons import (
     ICON_NAMES, ICON_STROKES, draw_icon,
@@ -557,7 +558,7 @@ class TestDrawingAnIcon(unittest.TestCase):
         """A drawing that puts no ink down is a blank button."""
         icon = draw_icon('link', 20)
 
-        self.assertTrue(any(pixel[3] for pixel in icon.getdata()),
+        self.assertTrue(any(pixel[3] for pixel in flat_pixels(icon)),
                         "nothing was drawn")
 
 

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from unittest import mock
 
 from gantt_app.models import Project, Task
+from tests.pixels import flat_pixels
 
 
 def _display_available() -> bool:
@@ -447,7 +448,7 @@ class TestCalendarIcon(unittest.TestCase):
         from gantt_app.views.datepicker import _draw_calendar
 
         image = _draw_calendar(16)
-        inked = sum(1 for pixel in image.getdata() if pixel[3] > 60)
+        inked = sum(1 for pixel in flat_pixels(image) if pixel[3] > 60)
 
         self.assertGreater(inked, 40)
         self.assertLess(inked, 16 * 16)
