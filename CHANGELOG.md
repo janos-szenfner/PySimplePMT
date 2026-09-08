@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.66.7 - 2026-09-08
+
+- Fixed Gantt bar alignment for tasks whose start/end dates carry a time of day
+  (e.g. imported schedules using 12:00). Bars are now positioned by calendar
+  date, so a one-day task occupies exactly one day column and the first and last
+  days are drawn full width.
+
 ## 1.66.6 - 2026-09-08
 
 - Added Shift+Up/Down range selection to the task list. Click a task and then

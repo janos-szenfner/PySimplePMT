@@ -26,6 +26,7 @@ import plotly.graph_objects as go
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.log import get_logger
+from gantt_app.workdaycalendar import as_date
 
 logger = get_logger(__name__)
 
@@ -151,10 +152,11 @@ def _elapsed_days(task: Task) -> int:
     smaller number for anything crossing a weekend - see
     gantt_app.workdaycalendar - and using it here drew every such bar short.
     """
-    end = task.end_date or task.start_date
-    if end < task.start_date:
+    start = as_date(task.start_date)
+    end = as_date(task.end_date or task.start_date)
+    if end < start:
         return 1
-    return (end - task.start_date).days + 1
+    return (end - start).days + 1
 
 
 def _hover_text(task: Task, project: Project) -> str:
@@ -213,9 +215,9 @@ def _phase_outline(task: Task) -> Tuple[List[Any], List[float]]:
     does not get a head a month and a half deep, and it can never eat the whole
     span, which would fold the shape through itself.
     """
-    start = task.start_date
+    start = as_date(task.start_date)
     # A task is inclusive of its end date, so the shape covers that whole day
-    end = (task.end_date or task.start_date) + timedelta(days=1)
+    end = as_date(task.end_date or task.start_date) + timedelta(days=1)
 
     span_days = max((end - start).days, 1)
     head_days = min(max(span_days * PHASE_HEAD_FRACTION, 0.5),
@@ -289,7 +291,7 @@ def _add_tasks(figure: go.Figure, tasks: List[Task], project: Project,
         figure.add_trace(go.Bar(
             x=[_elapsed_days(task) * 86400000],  # bar length in milliseconds
             y=[positions[task.id]],
-            base=[task.start_date],
+            base=[as_date(task.start_date)],
             orientation='h',
             name=task.name,
             width=0.35 if is_summary else 0.8,
@@ -310,7 +312,7 @@ def _add_milestones(figure: go.Figure, tasks: List[Task],
         return
 
     figure.add_trace(go.Scatter(
-        x=[m.start_date for m in milestones],
+        x=[as_date(m.start_date) for m in milestones],
         y=[positions[m.id] for m in milestones],
         mode='markers+text',
         marker=dict(symbol='diamond', size=18,
@@ -346,8 +348,8 @@ def _add_dependencies(figure: go.Figure, tasks: List[Task], project: Project,
             if dep is None or dep.id not in positions:
                 continue
 
-            dep_x = dep.start_date if dep.is_milestone else (dep.end_date or dep.start_date)
-            xs.extend([dep_x, task.start_date, None])
+            dep_x = as_date(dep.start_date) if dep.is_milestone else as_date(dep.end_date or dep.start_date)
+            xs.extend([dep_x, as_date(task.start_date), None])
             ys.extend([positions[dep.id], positions[task.id], None])
 
     if not xs:
@@ -379,7 +381,7 @@ def _add_critical_path(figure: go.Figure, project: Project,
         figure.add_trace(go.Bar(
             x=[_elapsed_days(t) * 86400000 for t in bars],
             y=[positions[t.id] for t in bars],
-            base=[t.start_date for t in bars],
+            base=[as_date(t.start_date) for t in bars],
             orientation='h',
             marker=dict(color=colour, line=dict(width=2, color='black')),
             opacity=0.85,
@@ -389,7 +391,7 @@ def _add_critical_path(figure: go.Figure, project: Project,
     markers = [t for t in critical if t.is_milestone]
     if markers:
         figure.add_trace(go.Scatter(
-            x=[t.start_date for t in markers],
+            x=[as_date(t.start_date) for t in markers],
             y=[positions[t.id] for t in markers],
             mode='markers',
             marker=dict(symbol='diamond', size=22, color=colour,
@@ -468,6 +470,8 @@ def build_gantt_figure(project: Project,
                        resolved['critical_path_color'])
 
     min_date, max_date = calculate_date_range(tasks)
+    min_date = as_date(min_date)
+    max_date = as_date(max_date)
     labels = [t.name[:30] + ('...' if len(t.name) > 30 else '') for t in tasks]
     font_size = resolved['font_size']
     text_color = resolved['text_color']

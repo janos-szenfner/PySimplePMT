@@ -39,6 +39,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from gantt_app.models import Project, Task
 from gantt_app.utils.chart_figure import _merged_settings, calculate_date_range
+from gantt_app.workdaycalendar import as_date
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -527,11 +528,14 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     drawn = [task for task in tasks if task.id not in hidden]
 
     min_date, max_date = calculate_date_range(drawn or tasks)
+    min_date = as_date(min_date)
+    max_date = as_date(max_date)
     total_days = max((max_date - min_date).days, 1)
 
     def x_for(moment: datetime) -> float:
         """Map a date onto the horizontal axis."""
-        offset = (moment - min_date).days + (moment - min_date).seconds / 86400
+        d = as_date(moment)
+        offset = (d - min_date).days
         return plot_left + (offset / total_days) * plot_span
 
     def y_for(index: int) -> float:
@@ -660,7 +664,9 @@ def _build_date_header(layout: 'ChartLayout', project: Project,
 
     calendar = project.calendar
     today = datetime.now().date()
-    day = datetime(min_date.year, min_date.month, min_date.day)
+    min_date = as_date(min_date)
+    max_date = as_date(max_date)
+    day = min_date
     last = max_date
 
     # ---- the month band -------------------------------------------------
@@ -699,7 +705,7 @@ def _build_date_header(layout: 'ChartLayout', project: Project,
         starts_week = walk.weekday() == 0
         layout.day_cells.append((
             x_for(walk), x_for(finish), str(walk.day),
-            walk.date() == today,
+            as_date(walk) == today,
             calendar.is_working_day(walk),
             starts_week,
         ))
@@ -1283,8 +1289,8 @@ def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
     def _x(moment: Optional[datetime]) -> float:
         if moment is None:
             return layout.plot_left
-        offset = (moment - layout.min_date).days + \
-            (moment - layout.min_date).seconds / 86400
+        d = as_date(moment)
+        offset = (d - as_date(layout.min_date)).days
         return layout.plot_left + offset * day_width
 
     for bar in layout.bars:

@@ -349,6 +349,23 @@ class TestWidthFloor(ChartLayoutTestCase):
         self.assertEqual(layout.width, 400)
 
 
+class TestNoonTimeTasksAreNotShifted(unittest.TestCase):
+    """A task whose datetimes carry a time of day is still drawn on whole days."""
+
+    def test_one_day_task_at_noon_occupies_one_day(self):
+        """The time component is ignored; the bar is one day wide."""
+        project = Project(name="Noon Repro")
+        start = datetime(2026, 9, 28, 12, 0, 0)
+        project.add_task(Task(id="001", name="Deployment",
+                              start_date=start, end_date=start))
+
+        layout = layout_chart(project, width=800)
+        bar = layout.bars[0]
+        day_width = (layout.plot_right - layout.plot_left) / layout.total_days
+
+        self.assertAlmostEqual(bar['x1'] - bar['x0'], day_width, places=1)
+
+
 def _display_available() -> bool:
     """Whether a usable Tk display is present."""
     try:
