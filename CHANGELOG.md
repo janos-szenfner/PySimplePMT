@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.66.10 - 2026-09-08
+
+- Re-release of the 1.66.9 changes after that release build failed on the
+  test suite. No change to the application itself; the fixes are in the
+  tests.
+- Fixed a headless-CI failure in the baseline Save-footer test: it now
+  asserts the button and its status message by pack order rather than by
+  pixel coordinates, which are 0 when the window is never mapped on screen.
+- Routed the image-pixel tests through a Pillow-version-tolerant helper, so
+  Pillow's `getdata()` deprecation no longer warns on the newer Pillow while
+  the older one keeps working.
+
 ## 1.66.9 - 2026-09-08
 
 - Replaced the task editor's footer view tabs (Task Planning, Resource
