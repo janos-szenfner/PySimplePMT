@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.66.6 - 2026-09-08
+
+- Added Shift+Up/Down range selection to the task list. Click a task and then
+  press Shift+Down or Shift+Up to extend the selection to the next or previous
+  visible row, including the originally clicked task.
+
 ## 1.66.5 - 2026-09-08
 
 - Fixed the Gantt baseline overlay so the baseline and current bars do not hide

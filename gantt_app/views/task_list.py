@@ -483,6 +483,9 @@ class DragDropTaskList(ctk.CTkFrame):
         #: Whether the row pressed was already the one selected. A click on a
         #: row that was already picked out is the second of a slow pair.
         self._pressed_selected = False
+        #: The row the last plain click started a range selection from. Shift+Up
+        #: and Shift+Down extend the selection from this anchor to the new focus.
+        self._selection_anchor = None
 
         # Create UI
         self._create_ui()
@@ -611,6 +614,8 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<ButtonRelease-1>', self.on_release)
         self.tree.bind('<B1-Motion>', self.on_drag)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
+        self.tree.bind('<Shift-Up>', self._on_shift_up)
+        self.tree.bind('<Shift-Down>', self._on_shift_down)
         self._bind_hierarchy_hotkeys()
 
         # Right-click menu, which offers the same moves as dragging
@@ -1780,6 +1785,51 @@ class DragDropTaskList(ctk.CTkFrame):
             self.outdent_task(selected)
         return 'break'
 
+    def _on_shift_up(self, _event=None):
+        """Extend the selection one row up from the anchor."""
+        self._extend_selection(-1)
+        return 'break'
+
+    def _on_shift_down(self, _event=None):
+        """Extend the selection one row down from the anchor."""
+        self._extend_selection(1)
+        return 'break'
+
+    def _extend_selection(self, direction: int) -> None:
+        """Select every visible row from the anchor to the new focus."""
+        items = self._rows_in_display_order()
+        if not items:
+            return
+
+        focus = self.tree.focus()
+        if focus not in items:
+            focus = None
+
+        anchor = self._selection_anchor
+        if anchor not in items:
+            selection = self.tree.selection()
+            anchor = focus or (selection[0] if selection else items[0])
+            self._selection_anchor = anchor
+
+        try:
+            anchor_index = items.index(anchor)
+        except ValueError:
+            anchor_index = 0
+
+        try:
+            focus_index = items.index(focus) if focus else anchor_index
+        except ValueError:
+            focus_index = anchor_index
+
+        new_index = max(0, min(len(items) - 1, focus_index + direction))
+        new_item = items[new_index]
+
+        start, end = sorted((anchor_index, new_index))
+        selected = items[start:end + 1]
+        self.tree.selection_set(*selected)
+        self.tree.focus(new_item)
+        self.tree.see(new_item)
+
     def on_press(self, event):
         """
         Begin a possible drag.
@@ -1811,6 +1861,13 @@ class DragDropTaskList(ctk.CTkFrame):
         self.drag_item = item
         self._drag_origin = (event.x, event.y)
         self._dragging = False
+
+        # A plain left click sets the anchor for a later Shift+Up/Down range
+        # selection. Shift- and Control-clicks leave the anchor where it was
+        # so the standard range/multi-selection gestures behave as expected.
+        state = getattr(event, 'state', 0)
+        if not (state & (0x1 | 0x4)):
+            self._selection_anchor = item
 
     def on_drag(self, event):
         """

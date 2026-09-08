@@ -1288,5 +1288,100 @@ class TestContextMenu(TaskListTestCase):
         self.assertEqual(states["Subtask"], 'disabled')
 
 
+class TestShiftRangeSelection(TaskListTestCase):
+    """Shift+Up/Down extend the selection from the clicked anchor."""
+
+    def rows(self):
+        """Every visible row, parents before their children."""
+        found = []
+
+        def walk(parent=''):
+            for item in self.task_list.tree.get_children(parent):
+                found.append(item)
+                walk(item)
+
+        walk()
+        return found
+
+    def select(self, task_id):
+        """Select a task and set it as the range anchor."""
+        self.task_list.tree.selection_set(task_id)
+        self.task_list.tree.focus(task_id)
+        self.task_list._selection_anchor = task_id
+
+    def test_shift_down_selects_the_next_row_too(self):
+        """Shift+Down includes the row below the anchor."""
+        self.select("001")
+
+        self.task_list._on_shift_down()
+
+        self.assertEqual(set(self.task_list.tree.selection()), {"001", "002"})
+
+    def test_shift_down_extends_further(self):
+        """Each Shift+Down adds one more row."""
+        self.select("001")
+
+        self.task_list._on_shift_down()
+        self.task_list._on_shift_down()
+
+        self.assertEqual(set(self.task_list.tree.selection()),
+                         {"001", "002", "004"})
+
+    def test_shift_up_selects_the_previous_row(self):
+        """Shift+Up includes the row above the anchor."""
+        self.select("005")
+
+        self.task_list._on_shift_up()
+
+        self.assertEqual(set(self.task_list.tree.selection()), {"004", "005"})
+
+    def test_shift_up_then_down_returns_to_the_anchor(self):
+        """Moving back to the anchor leaves only it selected."""
+        self.select("004")
+
+        self.task_list._on_shift_down()
+        self.task_list._on_shift_up()
+
+        self.assertEqual(set(self.task_list.tree.selection()), {"004"})
+
+    def test_shift_down_stops_at_the_last_row(self):
+        """It cannot select past the bottom of the list."""
+        self.select("003")
+
+        self.task_list._on_shift_down()
+
+        self.assertEqual(set(self.task_list.tree.selection()), {"003"})
+
+    def test_shift_up_stops_at_the_first_row(self):
+        """It cannot select past the top of the list."""
+        self.select("001")
+
+        self.task_list._on_shift_up()
+
+        self.assertEqual(set(self.task_list.tree.selection()), {"001"})
+
+    def test_plain_click_sets_the_anchor(self):
+        """A plain left-click stores the row for later Shift+Up/Down use."""
+        self.task_list.tree.selection_set("002")
+        self.task_list.tree.focus("002")
+        self.task_list.tree.identify_row = lambda y: "002"
+
+        self.task_list.on_press(SimpleNamespace(x=5, y=0, state=0))
+
+        self.assertEqual(self.task_list._selection_anchor, "002")
+
+    def test_shift_click_does_not_change_the_anchor(self):
+        """Adding to the selection keeps the original anchor."""
+        self.task_list._selection_anchor = "001"
+        self.task_list.tree.selection_set("001")
+        self.task_list.tree.focus("001")
+        self.task_list.tree.identify_row = lambda y: "002"
+
+        # Shift is pressed: state 0x1 plus the Button1 bit is 0x101.
+        self.task_list.on_press(SimpleNamespace(x=5, y=0, state=0x101))
+
+        self.assertEqual(self.task_list._selection_anchor, "001")
+
+
 if __name__ == '__main__':
     unittest.main()
