@@ -216,8 +216,30 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _build_baseline_tab(self):
         """Build the baseline slot manager tab."""
-        scroll = ctk.CTkScrollableFrame(self.tabs["Baseline"])
-        scroll.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        tab = self.tabs["Baseline"]
+        # Rebuilt in place when a slot's data is cleared, so clear what is
+        # there first rather than stacking a second copy on top.
+        for child in tab.winfo_children():
+            child.destroy()
+
+        # Save sits in a fixed footer so it is always in view without
+        # scrolling to the foot of ten slots, with the status message beside
+        # it on the right rather than stacked above it.
+        self._baseline_footer = ctk.CTkFrame(tab, fg_color="transparent")
+        self._baseline_footer.pack(side=tk.BOTTOM, fill=tk.X,
+                                   padx=20, pady=(4, 12))
+        self._baseline_save_button = ctk.CTkButton(
+            self._baseline_footer, text="Save Settings", width=120,
+            command=self._save_baseline_settings,
+        )
+        self._baseline_save_button.pack(side=tk.LEFT)
+        self._baseline_error = ctk.CTkLabel(
+            self._baseline_footer, text="", text_color=theme.NEGATIVE_TEXT)
+        self._baseline_error.pack(side=tk.LEFT, padx=(12, 0))
+
+        scroll = ctk.CTkScrollableFrame(tab)
+        scroll.pack(side=tk.TOP, fill=tk.BOTH, expand=True,
+                    padx=10, pady=(10, 0))
         scroll.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
@@ -258,16 +280,6 @@ class SettingsWindow(ctk.CTkToplevel):
                 scroll, text="Clear Data", width=80,
                 command=lambda n=slot.number: self._clear_baseline_data(n),
             ).grid(row=i, column=4, sticky=tk.W)
-
-        self._baseline_error = ctk.CTkLabel(
-            scroll, text="", text_color=theme.NEGATIVE_TEXT)
-        self._baseline_error.grid(row=11, column=0, columnspan=5,
-                                  sticky=tk.W, pady=(10, 0))
-
-        ctk.CTkButton(
-            scroll, text="Save Settings", width=120,
-            command=self._save_baseline_settings,
-        ).grid(row=12, column=0, columnspan=5, sticky=tk.W, pady=(10, 0))
 
     def _pick_baseline_color(self, number: int):
         current = self._baseline_color_vars.get(number, "")

@@ -418,6 +418,11 @@ def the_resource_canvases_use_light_colors(app):
 
 
 @then(parsers.parse('the footer contains the "{label}" tab'))
+def the_footer_contains_the_tab(app, label):
+    values = list(app._view_tabs.cget("values"))
+    assert label in values, f"expected {label!r} in footer tabs, got {values}"
+
+
 @then(parsers.parse('the footer contains the "{label}" label'))
 def the_footer_contains_the_label(app, label):
     texts = []
@@ -468,17 +473,20 @@ def the_resource_planning_view_is_on_top(app):
 
 @then(parsers.parse('the "{name}" tab is active'))
 def the_tab_is_active(app, name):
-    inactive = theme.now(theme.MENU_BG)
-    btn = app._view_tab_buttons[name]
-    assert btn.cget("fg_color") != inactive, (
-        f"expected {name!r} tab to be active, got inactive color")
+    assert app._view_tabs.get() == name, (
+        f"expected {name!r} to be the selected tab, got {app._view_tabs.get()!r}")
 
 
 @then(parsers.parse('the "{name}" tab is disabled'))
 def the_tab_is_disabled(app, name):
-    btn = app._view_tab_buttons[name]
-    assert str(btn.cget("state")).lower() == "disabled", (
-        f"expected {name!r} tab to be disabled, got {btn.cget('state')!r}")
+    # No per-segment disable in a segmented control, so "disabled" means the
+    # tab cannot be selected: a click on it leaves the active tab unchanged.
+    before = app._view_tabs.get()
+    app._on_tab_selected(name)
+    app.update_idletasks()
+    assert app._view_tabs.get() == before != name, (
+        f"expected {name!r} to be non-interactive, but the tab bar moved to "
+        f"{app._view_tabs.get()!r}")
 
 
 @then(parsers.parse('the task list contains "{name}" with status "{status}"'))

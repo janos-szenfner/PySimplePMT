@@ -12,6 +12,7 @@ import tempfile
 import tkinter as tk
 from datetime import datetime, timedelta
 
+import customtkinter as ctk
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -254,6 +255,34 @@ def a_baseline_settings_error_is_shown(app):
     settings = app.toolbar._settings_window
     text = settings._baseline_error.cget("text")
     assert text and "Duplicate" in text
+
+
+@then("the baseline Save button is in the tab footer, not the scroll area")
+def the_save_button_is_in_the_footer(app):
+    settings = app.toolbar._settings_window
+    button = settings._baseline_save_button
+    # Same footer frame as the status message, and that footer is not the
+    # scrolling slot list - so the button stays in view without scrolling.
+    assert button.master is settings._baseline_footer
+    assert button.master is settings._baseline_error.master
+    assert not isinstance(button.master, ctk.CTkScrollableFrame)
+    assert settings._baseline_footer.pack_info().get("side") == "bottom"
+
+
+@then("the baseline status message sits to the right of the Save button")
+def the_status_sits_right_of_the_button(app):
+    settings = app.toolbar._settings_window
+    settings.update_idletasks()
+    button = settings._baseline_save_button
+    label = settings._baseline_error
+    assert label.winfo_x() > button.winfo_x(), (
+        f"status x={label.winfo_x()} not right of button x={button.winfo_x()}")
+
+
+@then(parsers.parse('the baseline status message reads "{text}"'))
+def the_baseline_status_message_reads(app, text):
+    settings = app.toolbar._settings_window
+    assert settings._baseline_error.cget("text") == text
 
 
 @then("baseline 1 is set")

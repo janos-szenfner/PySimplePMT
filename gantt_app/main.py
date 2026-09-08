@@ -531,31 +531,18 @@ class GanttApp(ctk.CTk):
         self.resource_switch_frame.grid(row=0, column=1, sticky="",
                                         padx=(5, 5))
 
-        self._view_tab_buttons = {}
-        for name in self._tab_names:
-            is_deliverable = name == "Deliverables"
-            btn = ctk.CTkButton(
-                self.resource_switch_frame,
-                text=name,
-                font=ctk.CTkFont(size=13),
-                width=130,
-                height=28,
-                corner_radius=8,
-                border_width=0,
-                fg_color=theme.MENU_BG,
-                hover_color=theme.MENU_HOVER,
-                text_color=theme.MUTED_TEXT if is_deliverable else theme.TEXT,
-                state="disabled" if is_deliverable else "normal",
-                command=(lambda n=name: self._on_tab_selected(n))
-                if not is_deliverable else None,
-            )
-            btn.pack(side="left", padx=(2, 2))
-            self._view_tab_buttons[name] = btn
-        # Task Planning is the default active tab.
-        self._view_tab_buttons["Task Planning"].configure(
-            fg_color=theme.GRID_SELECT_BG,
-            hover_color=theme.GRID_SELECT_BG,
+        # A segmented control, the same style the Settings window's tabs use,
+        # rather than a row of separate buttons. Deliverables is shown but not
+        # wired up yet; _on_tab_selected snaps the selection back off it.
+        self._disabled_view_tabs = {"Deliverables"}
+        self._view_tabs = ctk.CTkSegmentedButton(
+            self.resource_switch_frame,
+            values=self._tab_names,
+            font=ctk.CTkFont(size=13),
+            command=self._on_tab_selected,
         )
+        self._view_tabs.set("Task Planning")
+        self._view_tabs.pack()
 
         self.close_button = ctk.CTkButton(
             self.footer_frame, text="Close", width=80,
@@ -675,27 +662,34 @@ class GanttApp(ctk.CTk):
         except tk.TclError:
             logger.debug("View widgets are being destroyed; nothing to lift")
 
+    def _current_view_tab(self) -> str:
+        """Which view is on top now, as the tab bar names it."""
+        return ("Resource Planning"
+                if self._resource_switch_var.get() == "on"
+                else "Task Planning")
+
     def _on_tab_selected(self, name: str):
-        """Handle a tab click in the footer tab bar."""
-        if not getattr(self, '_view_tab_buttons', None) or name == "Deliverables":
+        """Handle a selection in the footer view-tab bar."""
+        tabs = getattr(self, '_view_tabs', None)
+        if tabs is None:
+            return
+        if name in getattr(self, '_disabled_view_tabs', set()):
+            # Present but not interactive yet; snap the selection back so the
+            # control never rests on it. set() does not fire this command.
+            tabs.set(self._current_view_tab())
             return
         self._resource_switch_var.set(
             "on" if name == "Resource Planning" else "off")
         self._on_resource_view_toggled()
 
     def _set_active_tab(self, name: str):
-        """Highlight the active footer tab and dim the others."""
-        if not getattr(self, '_view_tab_buttons', None):
+        """Reflect the active view in the footer tab bar."""
+        tabs = getattr(self, '_view_tabs', None)
+        if tabs is None:
             return
-        for tab_name, btn in self._view_tab_buttons.items():
-            if tab_name == "Deliverables":
-                continue
-            if tab_name == name:
-                btn.configure(fg_color=theme.GRID_SELECT_BG,
-                              hover_color=theme.GRID_SELECT_BG)
-            else:
-                btn.configure(fg_color=theme.MENU_BG,
-                              hover_color=theme.MENU_HOVER)
+        if tabs.get() != name:
+            # Does not fire the command, so no re-entry into _on_tab_selected.
+            tabs.set(name)
 
     def _show_status(self, message: str):
         """Put a line from the task list into the status bar."""

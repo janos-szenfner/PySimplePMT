@@ -30,6 +30,16 @@ Feature: Baseline management end-to-end UI
     And the user saves the baseline settings
     Then a baseline settings error is shown
 
+  Scenario: The Save button sits in a fixed footer with its message beside it
+    When the user opens the baseline settings tab
+    Then the baseline Save button is in the tab footer, not the scroll area
+    And the baseline status message sits to the right of the Save button
+
+  Scenario: Saving baseline settings confirms beside the button
+    When the user opens the baseline settings tab
+    And the user saves the baseline settings
+    Then the baseline status message reads "Settings saved."
+
   Scenario: Set baseline for the entire project
     When the user sets baseline 1 for the entire project
     Then baseline 1 is set
