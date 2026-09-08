@@ -1908,7 +1908,9 @@ resource assignments at the moment it is captured.
 - **Set Baseline**: **Actions > Baseline > Set Baseline...** captures the whole
   project or only the selected tasks. Selected Tasks Only enables the roll-up
   check-box, which pushes the captured values up to parent summary rows.
-  Saving a baseline updates its slot with the current date and time.
+  Saving a baseline updates its slot with the current date and time. Saving
+  does not turn comparison on: the baseline is stored but stays off the Gantt
+  chart until it is picked from **Compare Baseline**.
 - **Clear Baseline**: **Actions > Baseline > Clear Baseline...** removes a
   complete baseline or clears only the selected tasks from one slot.
 - **Rename Slots and Set Colors**: **Settings > Baseline** lists all ten slots,
@@ -2662,5 +2664,5 @@ Still to do:
 ---
 
 **Project Status**: Active Development
-**Version**: 1.65.13
-**Last Updated**: 2026-09-07
+**Version**: 1.66.8
+**Last Updated**: 2026-09-08
