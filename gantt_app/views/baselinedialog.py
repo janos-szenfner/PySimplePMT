@@ -127,9 +127,13 @@ class BaselineSetDialog(_BaselineDialogBase):
         else:
             task_ids = self.selected_task_ids or None
 
+        # Saving a baseline stores it without turning comparison on: a fresh
+        # baseline should not appear on the Gantt chart until the reader asks
+        # for it through Compare Baseline. set_active would otherwise make
+        # the slot the one the chart draws the moment it is captured.
         self.baseline_manager.set_baseline(
             self.project, number, task_ids=task_ids,
-            rollup=self._rollup_var.get())
+            rollup=self._rollup_var.get(), set_active=False)
         logger.info("Baseline %d captured for %s", number,
                     "entire project" if task_ids is None else "selected tasks")
         if self.on_set:

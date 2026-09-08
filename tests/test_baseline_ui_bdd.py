@@ -109,9 +109,19 @@ def a_project_with_sample_tasks_exists(app):
     app.update_idletasks()
 
 
+@given("baseline 1 is being compared")
+def baseline_1_is_being_compared(app):
+    """Turn comparison on for slot 1, the way the Compare menu does."""
+    app.toolbar._compare_baseline_selected(1)
+    app.update_idletasks()
+
+
 @given("the user has set baseline 1 for the entire project")
 def the_user_has_set_baseline_1_for_the_entire_project(app):
-    app.baseline_manager.set_baseline(app.project, 1)
+    # Saving a baseline does not turn comparison on, the same as the Set
+    # Baseline dialog does; a scenario that needs it compared selects it
+    # from the Compare Baseline menu afterwards.
+    app.baseline_manager.set_baseline(app.project, 1, set_active=False)
     app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
@@ -143,7 +153,7 @@ def the_user_saves_the_baseline_settings(app):
 
 @when("the user sets baseline 1 for the entire project")
 def the_user_sets_baseline_1_for_the_entire_project(app):
-    app.baseline_manager.set_baseline(app.project, 1)
+    app.baseline_manager.set_baseline(app.project, 1, set_active=False)
     app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
@@ -159,7 +169,7 @@ def the_user_selects_the_task_named(app, name):
 def the_user_sets_baseline_1_for_selected_tasks_with_roll_up(app):
     selected = app.task_list.get_selected_task_ids()
     app.baseline_manager.set_baseline(
-        app.project, 1, task_ids=selected, rollup=True)
+        app.project, 1, task_ids=selected, rollup=True, set_active=False)
     app.toolbar._refresh_baseline_views()
     app.update_idletasks()
 
@@ -251,6 +261,16 @@ def baseline_1_is_set(app):
     slot = app.baseline_manager.get_slot(1)
     assert slot.is_set
     assert slot.baseline is not None
+
+
+@then("no baseline is active")
+def no_baseline_is_active(app):
+    assert app.baseline_manager.active_slot_number is None
+
+
+@then("the Gantt chart has no active baseline slot")
+def the_gantt_chart_has_no_active_baseline_slot(app):
+    assert app.gantt_chart._baseline_slot is None
 
 
 @then("the selected task has a baseline snapshot")

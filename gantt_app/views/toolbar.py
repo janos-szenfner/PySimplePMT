@@ -1415,6 +1415,10 @@ class Toolbar(ctk.CTkFrame):
             self.task_list.set_active_baseline(self.baseline_manager, number)
         if self.gantt_chart is not None:
             self.gantt_chart.set_active_baseline(self.baseline_manager, number)
+        # Rebuild the menu so the [Active] marker moves to the slot now being
+        # compared - and off the one that was. Saving a baseline no longer
+        # activates it, so this menu is the one place the marker changes.
+        self.refresh_menus()
         logger.info("Compare with Baseline %s selected", number)
 
     def _create_theme_log_buttons(self):

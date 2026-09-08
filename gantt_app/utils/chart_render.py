@@ -531,12 +531,17 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     min_date = as_date(min_date)
     max_date = as_date(max_date)
     total_days = max((max_date - min_date).days, 1)
+    day_width = plot_span / total_days
 
     def x_for(moment: datetime) -> float:
-        """Map a date onto the horizontal axis."""
+        """Map a date onto the horizontal axis (left edge of the day cell)."""
         d = as_date(moment)
         offset = (d - min_date).days
         return plot_left + (offset / total_days) * plot_span
+
+    def x_center(moment: datetime) -> float:
+        """Map a date onto the centre of its day cell."""
+        return x_for(moment) + day_width / 2
 
     def y_for(index: int) -> float:
         """Centre of the row at the given index."""
@@ -566,7 +571,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         if task.is_milestone:
             layout.milestones.append({
                 'task_id': task.id,
-                'x': x_for(task.start_date),
+                'x': x_center(task.start_date),
                 'y': centre,
                 'color': (resolved['critical_path_color'] if task.id in critical
                           else task.color),
@@ -617,11 +622,20 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
             dep = project.get_task_by_id(dep_id)
             if dep is None or dep.id not in positions or dep.id in hidden:
                 continue
-            dep_end = dep.start_date if dep.is_milestone else \
-                (dep.end_date or dep.start_date) + timedelta(days=1)
+            if dep.is_milestone:
+                dep_x = x_center(dep.start_date)
+            else:
+                dep_x = x_for((dep.end_date or dep.start_date)
+                              + timedelta(days=1))
+            # A milestone successor is drawn as a diamond centred on its day,
+            # so the arrow must land on that centre rather than the day's
+            # left edge where a bar would begin - otherwise it stops half a
+            # day short of the diamond and the milestone looks displaced.
+            succ_x = (x_center(task.start_date) if task.is_milestone
+                      else x_for(task.start_date))
             layout.dependencies.append((
-                x_for(dep_end), y_for(positions[dep.id]),
-                x_for(task.start_date), y_for(positions[task.id])
+                dep_x, y_for(positions[dep.id]),
+                succ_x, y_for(positions[task.id])
             ))
 
     layout.plot_left = plot_left
@@ -1324,7 +1338,8 @@ def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
         snap = baseline.task_snapshots.get(milestone['task_id'])
         if snap is None or snap.start_date is None:
             continue
-        x, y = _x(snap.start_date), milestone['y']
+        x = _x(snap.start_date) + day_width / 2
+        y = milestone['y']
         r = MILESTONE_RADIUS
         draw.polygon([(sx(x), sx(y - r)), (sx(x + r), sx(y)),
                       (sx(x), sx(y + r)), (sx(x - r), sx(y))],

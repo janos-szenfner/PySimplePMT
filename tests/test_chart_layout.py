@@ -136,6 +136,53 @@ class TestSummaryBars(ChartLayoutTestCase):
         self.assertIn("Phase One", [b['label'] for b in layout.bars])
 
 
+class TestMilestoneSitsOnItsDay(unittest.TestCase):
+    """A milestone diamond is centred on its day, and arrows reach it there."""
+
+    def setUp(self):
+        """A one-day task and a milestone on the same day, plus a successor."""
+        self.project = Project(name="Milestone")
+        base = datetime(2026, 9, 1)
+        day = base + timedelta(days=7)          # a known interior day
+        self.project.add_task(Task(id="A", name="Anchor", start_date=base,
+                                   end_date=base + timedelta(days=1)))
+        self.project.add_task(Task(id="T", name="SameDay", start_date=day,
+                                   end_date=day))
+        self.project.add_task(Task(id="M", name="Mile", start_date=day,
+                                   is_milestone=True))
+        self.project.get_task_by_id("M").add_dependency("T")
+        self.project.add_task(Task(id="Z", name="Tail",
+                                   start_date=base + timedelta(days=14),
+                                   end_date=base + timedelta(days=16)))
+        self.layout = layout_chart(self.project, width=1200)
+
+    def _day_width(self):
+        return (self.layout.plot_right - self.layout.plot_left) \
+            / self.layout.total_days
+
+    def test_the_diamond_is_centred_in_its_day_cell(self):
+        """
+        Not at the day's left edge - a milestone reads as the middle of the
+        day, in line with where a one-day task on the same day is centred.
+        """
+        mile = next(m for m in self.layout.milestones if m['label'] == 'Mile')
+        same = next(b for b in self.layout.bars if b['label'] == 'SameDay')
+
+        self.assertAlmostEqual(mile['x'], (same['x0'] + same['x1']) / 2,
+                               places=6)
+
+    def test_an_arrow_into_the_milestone_lands_on_the_diamond(self):
+        """
+        The dependency from the same-day task ends at the diamond's centre,
+        not half a day short of it at the day's left edge.
+        """
+        mile = next(m for m in self.layout.milestones if m['label'] == 'Mile')
+        ends = [(x1, y1) for _x0, _y0, x1, y1 in self.layout.dependencies]
+
+        self.assertTrue(any(abs(x1 - mile['x']) < 0.001 for x1, _y in ends),
+                        f"no arrow ends at the diamond x={mile['x']}: {ends}")
+
+
 class TestInactiveTasksAreKeptOffTheChart(ChartLayoutTestCase):
     """A task marked Inactive carries no bar on the chart."""
 

@@ -34,6 +34,12 @@ Feature: Baseline management end-to-end UI
     When the user sets baseline 1 for the entire project
     Then baseline 1 is set
 
+  Scenario: Saving a baseline does not turn comparison on
+    When the user sets baseline 1 for the entire project
+    Then baseline 1 is set
+    And no baseline is active
+    And the Gantt chart has no active baseline slot
+
   Scenario: Set baseline for selected tasks only with roll-up
     When the user selects the task named "Task A"
     And the user sets baseline 1 for selected tasks with roll-up
@@ -87,6 +93,7 @@ Feature: Baseline management end-to-end UI
 
   Scenario: Compare Baseline menu shows saved status and timestamp
     Given the user has set baseline 1 for the entire project
+    And baseline 1 is being compared
     Then the Compare Baseline menu offers "Saved:"
     And the Compare Baseline menu offers "Active"
 
@@ -101,6 +108,7 @@ Feature: Baseline management end-to-end UI
   Scenario: Baselines persist through project save and load
     Given the user has set baseline 1 for the entire project
     And baseline slot 1 has color "#00ff00"
+    And baseline 1 is being compared
     And the active baseline is 1
     When the project is saved to a temporary file
     And the project is loaded from the temporary file
