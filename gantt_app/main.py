@@ -13,6 +13,7 @@ import tkinter as tk
 import customtkinter as ctk
 
 from gantt_app import theme
+from gantt_app.baselines import BaselineManager
 from gantt_app.models import Project, Task
 from gantt_app.resource_model import ResourceRepository
 from gantt_app.views.task_list import DragDropTaskList
@@ -109,8 +110,9 @@ class GanttApp(ctk.CTk):
         # clam theme selection resets every ttk style.
         theme.initialise_ttk_styles()
 
-        # Create project
+        # Create project and baseline manager
         self.project = Project(name="New Project")
+        self.baseline_manager = BaselineManager()
 
         # Dirty-state tracking for unsaved-change protection
         self.is_dirty = False
@@ -436,6 +438,7 @@ class GanttApp(ctk.CTk):
             undo_redo_manager=self.undo_redo_manager,
             clipboard_manager=self.clipboard_manager,
             theme_controller=self.theme_controller,
+            baseline_manager=self.baseline_manager,
         )
         self.toolbar.grid(row=0, column=0, sticky=tk.EW, padx=10, pady=10)
         
@@ -505,10 +508,12 @@ class GanttApp(ctk.CTk):
         self.resource_board.grid(
             row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
 
-        # Footer with status bar, view toggle and close button
+        # Footer with status bar, view tab bar and close button
         self.footer_frame = ctk.CTkFrame(self)
         self.footer_frame.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
         self.footer_frame.grid_columnconfigure(0, weight=1)
+        self.footer_frame.grid_columnconfigure(1, weight=0)
+        self.footer_frame.grid_columnconfigure(2, weight=1)
 
         self.status_bar = ctk.CTkLabel(
             self.footer_frame, text="Ready", anchor=tk.W,
@@ -516,31 +521,41 @@ class GanttApp(ctk.CTk):
         )
         self.status_bar.grid(row=0, column=0, sticky=tk.W)
 
-        # View-mode switch, centred in the footer, with the active mode label
-        # on the side of the knob.  Close stays on the far right.
+        # View-mode tab bar, centred in the footer.  The first tab is the
+        # default; the "Deliverables" tab is visible but not interactive yet.
+        # Close stays on the far right.
         self._resource_switch_var = tk.StringVar(value="off")
+        self._tab_names = ["Task Planning", "Resource Planning", "Deliverables"]
         self.resource_switch_frame = ctk.CTkFrame(
             self.footer_frame, fg_color="transparent")
         self.resource_switch_frame.grid(row=0, column=1, sticky="",
                                         padx=(5, 5))
 
-        ctk.CTkLabel(
-            self.resource_switch_frame, text="Task Planning",
-            font=ctk.CTkFont(size=13),
-        ).pack(side="left", padx=(0, 8))
-
-        self.resource_switch = ctk.CTkSwitch(
-            self.resource_switch_frame, text="", width=36,
-            variable=self._resource_switch_var,
-            onvalue="on", offvalue="off",
-            command=self._on_resource_view_toggled,
+        self._view_tab_buttons = {}
+        for name in self._tab_names:
+            is_deliverable = name == "Deliverables"
+            btn = ctk.CTkButton(
+                self.resource_switch_frame,
+                text=name,
+                font=ctk.CTkFont(size=13),
+                width=130,
+                height=28,
+                corner_radius=8,
+                border_width=0,
+                fg_color=theme.MENU_BG,
+                hover_color=theme.MENU_HOVER,
+                text_color=theme.MUTED_TEXT if is_deliverable else theme.TEXT,
+                state="disabled" if is_deliverable else "normal",
+                command=(lambda n=name: self._on_tab_selected(n))
+                if not is_deliverable else None,
+            )
+            btn.pack(side="left", padx=(2, 2))
+            self._view_tab_buttons[name] = btn
+        # Task Planning is the default active tab.
+        self._view_tab_buttons["Task Planning"].configure(
+            fg_color=theme.GRID_SELECT_BG,
+            hover_color=theme.GRID_SELECT_BG,
         )
-        self.resource_switch.pack(side="left")
-
-        ctk.CTkLabel(
-            self.resource_switch_frame, text="Resource Planning",
-            font=ctk.CTkFont(size=13),
-        ).pack(side="left", padx=(4, 0))
 
         self.close_button = ctk.CTkButton(
             self.footer_frame, text="Close", width=80,
@@ -647,7 +662,10 @@ class GanttApp(ctk.CTk):
     def _on_resource_view_toggled(self):
         """Swap between task planning and resource planning viewports."""
         try:
-            if self._resource_switch_var.get() == "on":
+            active = self._resource_switch_var.get() == "on"
+            self._set_active_tab(
+                "Resource Planning" if active else "Task Planning")
+            if active:
                 self.resource_board.refresh()
                 self.resource_board.lift()
                 logger.info("Switched to Resource Planning view")
@@ -656,6 +674,28 @@ class GanttApp(ctk.CTk):
                 logger.info("Switched to Task Planning view")
         except tk.TclError:
             logger.debug("View widgets are being destroyed; nothing to lift")
+
+    def _on_tab_selected(self, name: str):
+        """Handle a tab click in the footer tab bar."""
+        if not getattr(self, '_view_tab_buttons', None) or name == "Deliverables":
+            return
+        self._resource_switch_var.set(
+            "on" if name == "Resource Planning" else "off")
+        self._on_resource_view_toggled()
+
+    def _set_active_tab(self, name: str):
+        """Highlight the active footer tab and dim the others."""
+        if not getattr(self, '_view_tab_buttons', None):
+            return
+        for tab_name, btn in self._view_tab_buttons.items():
+            if tab_name == "Deliverables":
+                continue
+            if tab_name == name:
+                btn.configure(fg_color=theme.GRID_SELECT_BG,
+                              hover_color=theme.GRID_SELECT_BG)
+            else:
+                btn.configure(fg_color=theme.MENU_BG,
+                              hover_color=theme.MENU_HOVER)
 
     def _show_status(self, message: str):
         """Put a line from the task list into the status bar."""

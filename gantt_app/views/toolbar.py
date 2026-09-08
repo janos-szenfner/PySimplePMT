@@ -1039,13 +1039,15 @@ class Toolbar(ctk.CTkFrame):
                  gantt_chart=None,
                  undo_redo_manager: UndoRedoManager = None,
                  clipboard_manager=None,
-                 theme_controller=None):
+                 theme_controller=None,
+                 baseline_manager=None):
         super().__init__(master)
-        
+
         self.master = master
         self.project = project
         self.on_project_changed = on_project_changed
         self.gantt_chart = gantt_chart
+        self.baseline_manager = baseline_manager
         self.undo_redo_manager = undo_redo_manager
         self.clipboard_manager = clipboard_manager
         #: Who decides light or dark; see gantt_app.theme. Set before the
@@ -1111,6 +1113,8 @@ class Toolbar(ctk.CTkFrame):
 
         self.menu_bar = CustomMenuBar(self.menu_row, menu_config=menu_config)
         self.menu_bar.pack(side=tk.LEFT)
+
+        self._create_baseline_selector()
 
         # The Log button sits at the end of the menu row, away from the
         # actions, being a thing to look at rather than a thing to do
@@ -1290,6 +1294,10 @@ class Toolbar(ctk.CTkFrame):
             {
                 'text': 'Actions',
                 'items': [
+                    {"text": "Baseline", "submenu": [
+                        {"text": "Set Baseline...", "command": self.set_baseline},
+                        {"text": "Clear Baseline...", "command": self.clear_baseline},
+                    ]},
                     {"text": "Import", "submenu": [
                         {"text": "MS Project...", "command": self.import_mpp},
                         {"text": "GAN...", "command": self.import_gan},
@@ -1384,6 +1392,61 @@ class Toolbar(ctk.CTkFrame):
         )
         button.pack(side=tk.LEFT, padx=5, pady=5)
         return button
+
+    def _create_baseline_selector(self):
+        """Create the Compare with Baseline dropdown on the menu row."""
+        if self.baseline_manager is None:
+            return
+        self._baseline_selector_frame = ctk.CTkFrame(
+            self.menu_row, fg_color='transparent')
+        self._baseline_selector_frame.pack(side=tk.RIGHT, padx=5)
+
+        ctk.CTkLabel(
+            self._baseline_selector_frame, text="Compare with Baseline:"
+        ).pack(side=tk.LEFT, padx=(0, 5))
+        self._baseline_var = ctk.StringVar(value="None (Current Only)")
+        self._baseline_menu = ctk.CTkOptionMenu(
+            self._baseline_selector_frame,
+            variable=self._baseline_var,
+            values=["None (Current Only)"],
+            width=180,
+            command=self._on_baseline_selected,
+        )
+        self._baseline_menu.pack(side=tk.LEFT)
+        self._refresh_baseline_selector()
+
+    def _refresh_baseline_selector(self):
+        if self.baseline_manager is None:
+            return
+        values = ["None (Current Only)"]
+        for slot in self.baseline_manager.slots:
+            if slot.is_set:
+                values.append(slot.status_label())
+        current = self._baseline_var.get()
+        self._baseline_menu.configure(values=values)
+        if current in values:
+            self._baseline_var.set(current)
+        else:
+            self._baseline_var.set("None (Current Only)")
+
+    def _on_baseline_selected(self, value: str):
+        if self.baseline_manager is None:
+            return
+        number = None
+        if value != "None (Current Only)":
+            logger.info("Compare with Baseline selected: %s", value)
+            for slot in self.baseline_manager.slots:
+                if not slot.is_set:
+                    continue
+                if value == slot.status_label() or value in slot.status_label():
+                    number = slot.number
+                    break
+        self.baseline_manager.set_active(number)
+        if self.task_list is not None:
+            self.task_list.set_active_baseline(self.baseline_manager, number)
+        if self.gantt_chart is not None:
+            self.gantt_chart.set_active_baseline(self.baseline_manager, number)
+        self._refresh_baseline_selector()
 
     def _create_theme_log_buttons(self):
         """Create the log button, at the far end of the menu row."""
@@ -1663,9 +1726,41 @@ class Toolbar(ctk.CTkFrame):
             open_resource=self.open_resource_settings,
             open_gantt=self.open_gantt_chart_settings,
             open_calendar=self.edit_holidays,
+            baseline_manager=self.baseline_manager,
             initial_tab=initial_tab,
         )
         return self._settings_window
+
+    def set_baseline(self):
+        """Open the Set Baseline dialog."""
+        from gantt_app.views.baselinedialog import BaselineSetDialog
+        selected = []
+        if self.task_list is not None:
+            selected = self.task_list.get_selected_task_ids()
+        BaselineSetDialog(
+            self.winfo_toplevel(), self.project, self.baseline_manager,
+            selected_task_ids=selected,
+            on_set=self._refresh_baseline_views,
+        )
+
+    def clear_baseline(self):
+        """Open the Clear Baseline dialog."""
+        from gantt_app.views.baselinedialog import BaselineClearDialog
+        selected = []
+        if self.task_list is not None:
+            selected = self.task_list.get_selected_task_ids()
+        BaselineClearDialog(
+            self.winfo_toplevel(), self.project, self.baseline_manager,
+            selected_task_ids=selected,
+            on_clear=self._refresh_baseline_views,
+        )
+
+    def _refresh_baseline_views(self):
+        """Update task list and Gantt chart for the active baseline."""
+        if self.baseline_manager is None:
+            return
+        if self.on_project_changed:
+            self.on_project_changed()
 
     def edit_project_info(self):
         """

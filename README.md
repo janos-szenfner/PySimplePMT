@@ -83,6 +83,7 @@ This is a complete implementation of a project management tool with:
 - **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
 - **Log Viewer**: A "Log" button opens the application log for troubleshooting, with no console needed
+- **Baseline Management**: Save up to ten baselines, rename their slots, compare the current plan against a baseline, and see baseline and variance columns in the task list plus a grey baseline bar behind each Gantt bar
 
 ## Project Structure
 
@@ -1897,6 +1898,28 @@ no third-party asset in it.
 `packaging/make_icon.py` writes it out during the `.deb` build at every size
 the hicolor theme asks for - 16, 24, 32, 48, 64, 128 and 256 - so menus, docks
 and task switchers each get the size they want rather than scaling one down.
+
+### Baseline Management (`gantt_app/baselines.py`)
+
+PySimplePMT can save, clear, rename and compare up to ten baselines for a plan.
+A baseline records each task's start, finish, duration, work hours, cost and
+resource assignments at the moment it is captured.
+
+- **Set Baseline**: **Actions > Baseline > Set Baseline...** captures the whole
+  project or only the selected tasks. Selected Tasks Only enables the roll-up
+  check-box, which pushes the captured values up to parent summary rows.
+- **Clear Baseline**: **Actions > Baseline > Clear Baseline...** removes a
+  complete baseline or clears only the selected tasks from one slot.
+- **Rename Slots**: **Settings > Baseline** lists all ten slots, their display
+  names, last saved timestamp and a Clear Data button. Names must be unique.
+- **Compare with Baseline**: the dropdown on the toolbar chooses which saved
+  baseline is active. With a comparison active, the task list shows baseline
+  and variance columns and the Gantt chart draws a grey baseline bar behind
+  each current bar.
+- **Variance Columns**: Baseline Start, Start Variance, Baseline Finish,
+  Finish Variance, Baseline Duration, Duration Variance, Baseline Work,
+  Work Variance, Baseline Cost and Cost Variance. Variance is in working
+  days and the sign shows early (-) or late (+) against the baseline.
 
 ## Installation
 

@@ -307,6 +307,12 @@ def the_user_turns_off_resource_planning(app):
     app.update_idletasks()
 
 
+@when(parsers.parse('the user clicks the "{name}" tab'))
+def the_user_clicks_the_tab(app, name):
+    app._on_tab_selected(name)
+    app.update_idletasks()
+
+
 @when(parsers.parse('the user searches the task list for "{text}"'))
 def the_user_searches_the_task_list_for(app, text):
     app.resource_board.backlog_search.delete(0, tk.END)
@@ -411,6 +417,7 @@ def the_resource_canvases_use_light_colors(app):
                for canvas in canvases)
 
 
+@then(parsers.parse('the footer contains the "{label}" tab'))
 @then(parsers.parse('the footer contains the "{label}" label'))
 def the_footer_contains_the_label(app, label):
     texts = []
@@ -427,12 +434,12 @@ def the_footer_contains_a_button(app, text):
     assert app.close_button.cget("text") == text
 
 
-@then('the "Close" button is to the right of the switch')
-def the_close_button_is_to_the_right_of_the_switch(app):
+@then(parsers.parse('the "Close" button is to the right of the {container}'))
+def the_close_button_is_to_the_right_of_the_switch(app, container):
     close_col = int(app.close_button.grid_info().get("column", -1))
     switch_col = int(app.resource_switch_frame.grid_info().get("column", -1))
     assert close_col > switch_col, (
-        f"Close column {close_col} not to the right of switch column {switch_col}")
+        f"Close column {close_col} not to the right of {container} column {switch_col}")
 
 
 @then("the resource planning switch is off")
@@ -457,6 +464,21 @@ def the_resource_planning_view_is_on_top(app):
     assert app._resource_switch_var.get() == "on"
     assert app.content_panes.winfo_exists()
     assert app.resource_board.winfo_exists()
+
+
+@then(parsers.parse('the "{name}" tab is active'))
+def the_tab_is_active(app, name):
+    inactive = theme.now(theme.MENU_BG)
+    btn = app._view_tab_buttons[name]
+    assert btn.cget("fg_color") != inactive, (
+        f"expected {name!r} tab to be active, got inactive color")
+
+
+@then(parsers.parse('the "{name}" tab is disabled'))
+def the_tab_is_disabled(app, name):
+    btn = app._view_tab_buttons[name]
+    assert str(btn.cget("state")).lower() == "disabled", (
+        f"expected {name!r} tab to be disabled, got {btn.cget('state')!r}")
 
 
 @then(parsers.parse('the task list contains "{name}" with status "{status}"'))

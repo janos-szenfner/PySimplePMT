@@ -5,6 +5,7 @@ from typing import Callable, Dict, Optional
 import customtkinter as ctk
 
 from gantt_app import theme
+from gantt_app.baselines import BaselineManager
 from gantt_app.utils.log import get_logger
 from gantt_app.views.modal import grab_when_visible
 
@@ -15,7 +16,7 @@ class SettingsWindow(ctk.CTkToplevel):
     """Modern four-tab hub that preserves the existing settings editors."""
 
     GEOMETRY = "800x600"
-    TABS = ("Project", "Resource", "Gantt", "Calendar", "Presets")
+    TABS = ("Project", "Resource", "Gantt", "Calendar", "Presets", "Baseline")
 
     def __init__(
         self,
@@ -25,11 +26,13 @@ class SettingsWindow(ctk.CTkToplevel):
         open_resource: Callable[[], None],
         open_gantt: Callable[[], None],
         open_calendar: Callable[[], None],
+        baseline_manager: Optional[BaselineManager] = None,
         initial_tab: str = "Project",
         **kwargs,
     ):
         super().__init__(master, **kwargs)
         self.project = project
+        self.baseline_manager = baseline_manager
         self._openers: Dict[str, Callable[[], None]] = {
             "Project": open_project,
             "Resource": open_resource,
@@ -62,7 +65,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ).pack(anchor=tk.W)
         ctk.CTkLabel(
             heading,
-            text="Configure the project, resources, chart, and calendars.",
+            text="Configure the project, resources, chart, calendars and baselines.",
             text_color=theme.MUTED_TEXT,
         ).pack(anchor=tk.W, pady=(2, 0))
 
@@ -75,6 +78,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self._build_gantt_tab()
         self._build_calendar_tab()
         self._build_presets_tab()
+        self._build_baseline_tab()
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill=tk.X, padx=20, pady=(0, 18))
@@ -206,6 +210,76 @@ class SettingsWindow(ctk.CTkToplevel):
 
         StylePresetsTab(self.tabs["Presets"], default_manager()).pack(
             fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def _build_baseline_tab(self):
+        """Build the baseline slot manager tab."""
+        scroll = ctk.CTkScrollableFrame(self.tabs["Baseline"])
+        scroll.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        scroll.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            scroll,
+            text="Baseline slots",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 10))
+
+        self._baseline_entries: Dict[int, ctk.CTkEntry] = {}
+        if self.baseline_manager is None:
+            ctk.CTkLabel(scroll, text="No baseline manager found.",
+                         text_color=theme.MUTED_TEXT).grid(
+                             row=1, column=0, sticky=tk.W)
+            return
+
+        for i, slot in enumerate(self.baseline_manager.slots, start=1):
+            ctk.CTkLabel(scroll, text=f"{slot.number:02d}", width=40).grid(
+                row=i, column=0, sticky=tk.W, padx=(0, 8))
+            entry = ctk.CTkEntry(scroll)
+            entry.insert(0, slot.display_name)
+            entry.grid(row=i, column=1, sticky=tk.EW, padx=(0, 8))
+            self._baseline_entries[slot.number] = entry
+            status = ctk.CTkLabel(scroll, text=slot.status_label(),
+                                  text_color=theme.MUTED_TEXT)
+            status.grid(row=i, column=2, sticky=tk.W, padx=(0, 8))
+            ctk.CTkButton(
+                scroll, text="Clear Data", width=80,
+                command=lambda n=slot.number: self._clear_baseline_data(n),
+            ).grid(row=i, column=3, sticky=tk.W)
+
+        self._baseline_error = ctk.CTkLabel(
+            scroll, text="", text_color=theme.NEGATIVE_TEXT)
+        self._baseline_error.grid(row=11, column=0, columnspan=4,
+                                  sticky=tk.W, pady=(10, 0))
+
+        ctk.CTkButton(
+            scroll, text="Save Settings", width=120,
+            command=self._save_baseline_settings,
+        ).grid(row=12, column=0, columnspan=4, sticky=tk.W, pady=(10, 0))
+
+    def _save_baseline_settings(self):
+        if self.baseline_manager is None:
+            return
+        names = []
+        for number, entry in self._baseline_entries.items():
+            name = entry.get().strip()
+            if not name:
+                name = f"Baseline {number}"
+            if name in names:
+                self._baseline_error.configure(
+                    text=f"Duplicate display name: {name}")
+                return
+            names.append(name)
+        for number, entry in self._baseline_entries.items():
+            self.baseline_manager.rename_slot(number, entry.get().strip())
+        self._baseline_error.configure(text="Settings saved.",
+                                       text_color=theme.POSITIVE_TEXT)
+        logger.info("Saved baseline slot names")
+
+    def _clear_baseline_data(self, number: int):
+        if self.baseline_manager is None:
+            return
+        self.baseline_manager.clear_baseline(number)
+        self._build_baseline_tab()
+        logger.info("Cleared data for baseline %d from settings", number)
 
     def open_editor(self, tab_name: str):
         """Close the hub and open the selected existing settings editor."""

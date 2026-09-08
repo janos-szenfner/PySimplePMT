@@ -32,7 +32,7 @@ built into Pillow, so no font file has to be found or shipped.
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFont
@@ -166,6 +166,8 @@ class ChartLayout:
     top_margin: int = MARGIN_TOP
     title: str = ""
     empty_message: Optional[str] = None
+    min_date: Optional[datetime] = None
+    total_days: int = 1
 
 
 def _shorten(text: str, limit: int = LABEL_CHARS) -> str:
@@ -537,7 +539,8 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         return top_margin + index * row_height + row_height / 2
 
     layout = ChartLayout(width=width, height=height, settings=resolved,
-                         top_margin=top_margin, title=title)
+                         top_margin=top_margin, title=title,
+                         min_date=min_date, total_days=total_days)
 
     positions = {task.id: index for index, task in enumerate(tasks)}
     critical = {t.id for t in project.get_critical_path()}
@@ -558,6 +561,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
         if task.is_milestone:
             layout.milestones.append({
+                'task_id': task.id,
                 'x': x_for(task.start_date),
                 'y': centre,
                 'color': (resolved['critical_path_color'] if task.id in critical
@@ -580,6 +584,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
         is_phase = task.task_type == 'Phase'
         if is_phase or task.id in summary_ids:
             layout.summaries.append({
+                'task_id': task.id,
                 'x0': start_x,
                 'x1': end_x,
                 'y0': centre - bar_height / 2,
@@ -591,6 +596,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
             continue
 
         layout.bars.append({
+            'task_id': task.id,
             'x0': start_x,
             'x1': end_x,
             'y0': centre - bar_height / 2,
@@ -1098,7 +1104,8 @@ def _draw_date_header(draw, layout: 'ChartLayout', s: Dict[str, Any],
 def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
                  width: int = 1400, scale: float = 2.0,
                  min_width: int = MIN_WIDTH,
-                 rows: Optional['RowPlan'] = None) -> Image.Image:
+                 rows: Optional['RowPlan'] = None,
+                 baseline: Optional['ProjectBaseline'] = None) -> Image.Image:
     """
     Render the chart into a PIL image.
 
@@ -1155,6 +1162,8 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         _dashed_line(draw, sx(x0), sx(y0), sx(x1), sx(y1),
                      s['dependency_color'], max(1, int(1.5 * scale)))
 
+    _draw_baseline_overlay(draw, layout, baseline, sx, scale)
+
     for bar in layout.bars:
         box = [sx(bar['x0']), sx(bar['y0']), sx(bar['x1']), sx(bar['y1'])]
         draw.rectangle(box, fill=bar['color'], outline='#000000',
@@ -1184,6 +1193,66 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     # Supersampled down for smooth edges
     return image.resize((layout.width, layout.height), Image.LANCZOS)
+
+
+def _draw_baseline_overlay(draw: ImageDraw.ImageDraw, layout: 'ChartLayout',
+                           baseline: Optional['ProjectBaseline'],
+                           sx: Callable[[float], float], scale: float) -> None:
+    """Draw a grey baseline bar behind each current task for comparison."""
+    if baseline is None or not baseline.task_snapshots:
+        return
+    logger.debug("Drawing baseline overlay for %d snapshot(s)",
+                 len(baseline.task_snapshots))
+    if layout.min_date is None or layout.total_days <= 0:
+        return
+    plot_span = layout.plot_right - layout.plot_left
+    if plot_span <= 0:
+        return
+    day_width = plot_span / layout.total_days
+    baseline_color = '#9ca3af'
+    outline = '#4b5563'
+
+    def _x(moment: Optional[datetime]) -> float:
+        if moment is None:
+            return layout.plot_left
+        offset = (moment - layout.min_date).days + \
+            (moment - layout.min_date).seconds / 86400
+        return layout.plot_left + offset * day_width
+
+    for bar in layout.bars:
+        snap = baseline.task_snapshots.get(bar['task_id'])
+        if snap is None or snap.start_date is None:
+            continue
+        end = snap.finish_date or snap.start_date
+        x0 = _x(snap.start_date)
+        # Baseline finish is inclusive, so the bar reaches the end of that day
+        x1 = max(_x(end + timedelta(days=1)), x0 + 2)
+        # Same vertical span as the current bar; drawn behind it
+        box = [sx(x0), sx(bar['y0']), sx(x1), sx(bar['y1'])]
+        draw.rectangle(box, fill=baseline_color, outline=outline,
+                       width=max(1, int(scale)))
+
+    for summary in layout.summaries:
+        snap = baseline.task_snapshots.get(summary['task_id'])
+        if snap is None or snap.start_date is None:
+            continue
+        end = snap.finish_date or snap.start_date
+        x0 = _x(snap.start_date)
+        x1 = max(_x(end + timedelta(days=1)), x0 + 2)
+        draw.polygon(
+            [(sx(px), sx(py)) for px, py in _summary_outline({
+                **summary, 'x0': x0, 'x1': x1})],
+            fill=baseline_color, outline=outline)
+
+    for milestone in layout.milestones:
+        snap = baseline.task_snapshots.get(milestone['task_id'])
+        if snap is None or snap.start_date is None:
+            continue
+        x, y = _x(snap.start_date), milestone['y']
+        r = MILESTONE_RADIUS
+        draw.polygon([(sx(x), sx(y - r)), (sx(x + r), sx(y)),
+                      (sx(x), sx(y + r)), (sx(x - r), sx(y))],
+                     fill=baseline_color, outline=outline)
 
 
 def _dashed_line(draw: ImageDraw.ImageDraw, x0: float, y0: float,

@@ -507,7 +507,10 @@ class DragDropTaskList(ctk.CTkFrame):
         # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
             'ID', 'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
-            'Dependencies', 'Milestone', 'Outline'
+            'Dependencies', 'Milestone', 'Outline',
+            'Baseline Start', 'Start Variance', 'Baseline Finish',
+            'Finish Variance', 'Baseline Duration', 'Duration Variance',
+            'Baseline Work', 'Work Variance', 'Baseline Cost', 'Cost Variance',
         ), show='tree headings')
 
         # Configure columns.
@@ -529,6 +532,16 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Dependencies', text='Dependencies', anchor=tk.W)
         self.tree.heading('Milestone', text='Milestone', anchor=tk.W)
         self.tree.heading('Outline', text='Outline Level', anchor=tk.W)
+        self.tree.heading('Baseline Start', text='Baseline Start', anchor=tk.W)
+        self.tree.heading('Start Variance', text='Start Var', anchor=tk.W)
+        self.tree.heading('Baseline Finish', text='Baseline Finish', anchor=tk.W)
+        self.tree.heading('Finish Variance', text='Finish Var', anchor=tk.W)
+        self.tree.heading('Baseline Duration', text='Base Duration', anchor=tk.W)
+        self.tree.heading('Duration Variance', text='Dur Var', anchor=tk.W)
+        self.tree.heading('Baseline Work', text='Base Work', anchor=tk.W)
+        self.tree.heading('Work Variance', text='Work Var', anchor=tk.W)
+        self.tree.heading('Baseline Cost', text='Base Cost', anchor=tk.W)
+        self.tree.heading('Cost Variance', text='Cost Var', anchor=tk.W)
         
         # Column widths. #0 holds only the expander, so it stays narrow.
         #
@@ -554,6 +567,16 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('Dependencies', width=150, minwidth=80, stretch=False)
         self.tree.column('Milestone', width=80, minwidth=60, stretch=False)
         self.tree.column('Outline', width=95, minwidth=60, stretch=False)
+        self.tree.column('Baseline Start', width=100, minwidth=80, stretch=False)
+        self.tree.column('Start Variance', width=80, minwidth=60, stretch=False)
+        self.tree.column('Baseline Finish', width=100, minwidth=80, stretch=False)
+        self.tree.column('Finish Variance', width=80, minwidth=60, stretch=False)
+        self.tree.column('Baseline Duration', width=95, minwidth=60, stretch=False)
+        self.tree.column('Duration Variance', width=80, minwidth=60, stretch=False)
+        self.tree.column('Baseline Work', width=85, minwidth=60, stretch=False)
+        self.tree.column('Work Variance', width=80, minwidth=60, stretch=False)
+        self.tree.column('Baseline Cost', width=85, minwidth=60, stretch=False)
+        self.tree.column('Cost Variance', width=80, minwidth=60, stretch=False)
         
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
@@ -1567,6 +1590,58 @@ class DragDropTaskList(ctk.CTkFrame):
         except (tk.TclError, ValueError):
             pass
 
+    def set_active_baseline(self, baseline_manager=None, slot_number=None):
+        """Store the active baseline for the task list and refresh."""
+        self._baseline_manager = baseline_manager
+        self._baseline_slot = slot_number
+        logger.info("Task list active baseline set to slot %s", slot_number)
+        if self.tree.winfo_exists():
+            if slot_number is None:
+                self.tree['displaycolumns'] = (
+                    'ID', 'Type', 'Status', 'Duration', 'Start', 'End',
+                    'Progress', 'Dependencies', 'Milestone', 'Outline')
+            else:
+                self.tree['displaycolumns'] = (
+                    'ID', 'Type', 'Status', 'Duration', 'Start', 'End',
+                    'Progress', 'Dependencies', 'Milestone', 'Outline',
+                    'Baseline Start', 'Start Variance', 'Baseline Finish',
+                    'Finish Variance', 'Baseline Duration', 'Duration Variance',
+                    'Baseline Work', 'Work Variance', 'Baseline Cost',
+                    'Cost Variance')
+        self.update_task_list()
+
+    def _task_variance_strings(self, task) -> tuple:
+        """Return the baseline variance values for a task row."""
+        if not getattr(self, '_task_variances', None):
+            return ("",) * 10
+        variance = self._task_variances.get(task.id)
+        if variance is None:
+            return ("",) * 10
+        def fmt_date(value):
+            return value.strftime("%Y-%m-%d") if value else ""
+        start = variance.start_variance_days
+        start_str = f"{start:+d}d" if start is not None else ""
+        finish = variance.finish_variance_days
+        finish_str = f"{finish:+d}d" if finish is not None else ""
+        duration = variance.duration_variance_days
+        duration_str = f"{duration:+d}d" if duration is not None else ""
+        work = variance.work_variance_hours
+        work_str = f"{work:+.1f}h" if work is not None else ""
+        cost = variance.cost_variance
+        cost_str = f"{cost:+.2f}" if cost is not None else ""
+        return (
+            fmt_date(variance.baseline_start),
+            start_str,
+            fmt_date(variance.baseline_finish),
+            finish_str,
+            f"{variance.baseline_duration}d" if variance.baseline_duration is not None else "",
+            duration_str,
+            f"{variance.baseline_work:.1f}h" if variance.baseline_work is not None else "",
+            work_str,
+            f"{variance.baseline_cost:.2f}" if variance.baseline_cost is not None else "",
+            cost_str,
+        )
+
     def destroy(self):
         """Take anything still waiting off the queue before going away."""
         self._cancel_pending_say()
@@ -2570,6 +2645,14 @@ class DragDropTaskList(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        self._task_variances = {}
+        if getattr(self, '_baseline_manager', None) is not None and \
+                self._baseline_slot is not None:
+            self._task_variances = self._baseline_manager.compare(
+                self.project, self._baseline_slot)
+            logger.info("Computed variances for %d baseline task(s)",
+                        len(self._task_variances))
+
         self._populate_tree_hierarchical()
         self._paint_rows()
         self._restore_view_state(state)
@@ -2786,7 +2869,7 @@ class DragDropTaskList(ctk.CTkFrame):
                                      deps_str,
                                      milestone_str,
                                      str(self.project.outline_level(task.id)),
-                                 ))
+                                 ) + self._task_variance_strings(task))
         
         # What the row is. How it is painted is decided afterwards, once
         # every row is in place and the order they are drawn in is known -

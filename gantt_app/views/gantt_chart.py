@@ -352,6 +352,12 @@ class GanttChart(ctk.CTkFrame):
 
         plan = self._row_plan()
 
+        baseline = None
+        if getattr(self, '_baseline_manager', None) and self._baseline_slot:
+            slot = self._baseline_manager.get_slot(self._baseline_slot)
+            if slot and slot.baseline:
+                baseline = slot.baseline
+
         try:
             image = render_image(
                 self.project,
@@ -360,6 +366,7 @@ class GanttChart(ctk.CTkFrame):
                 scale=SCREEN_SCALE,
                 min_width=MIN_ZOOMED_WIDTH if self._zoom < 1.0 else MIN_WIDTH,
                 rows=plan,
+                baseline=baseline,
             )
         except Exception:
             logger.exception("Could not draw the Gantt chart")
@@ -819,6 +826,13 @@ class GanttChart(ctk.CTkFrame):
     def set_project(self, project: Project):
         """Set a new project and redraw the chart."""
         self.project = project
+        self.update_chart()
+
+    def set_active_baseline(self, baseline_manager=None, slot_number=None):
+        """Store the active baseline for the Gantt chart and redraw."""
+        self._baseline_manager = baseline_manager
+        self._baseline_slot = slot_number
+        logger.info("Gantt chart active baseline set to slot %s", slot_number)
         self.update_chart()
     
     def clear_chart(self):

@@ -5,11 +5,13 @@ Feature: 4-Panel Resource Planning Matrix
   Background:
     Given the application is started
 
-  Scenario: The footer has Task Planning and Resource Planning labels with Close on the right
-    Then the footer contains the "Task Planning" label
-    And the footer contains the "Resource Planning" label
+  Scenario: The footer has Task Planning, Resource Planning and Deliverables tabs with Close on the right
+    Then the footer contains the "Task Planning" tab
+    And the footer contains the "Resource Planning" tab
+    And the footer contains the "Deliverables" tab
+    And the "Deliverables" tab is disabled
     And the footer contains a "Close" button
-    And the "Close" button is to the right of the switch
+    And the "Close" button is to the right of the tab bar
 
   Scenario: Resource Planning follows live day and night changes
     When the user switches the application to night mode
@@ -21,18 +23,19 @@ Feature: 4-Panel Resource Planning Matrix
 
   Scenario: The default view is Task Planning
     Then the resource planning switch is off
+    And the "Task Planning" tab is active
     And the Task Planning view is on top
 
   Scenario: Toggle to Resource Planning view
-    When the user turns on resource planning
-    Then the resource planning switch is on
+    When the user clicks the "Resource Planning" tab
+    Then the "Resource Planning" tab is active
     And the Resource Planning view is on top
 
   Scenario: Toggle back to Task Planning view
-    When the user turns on resource planning
+    When the user clicks the "Resource Planning" tab
     Then the Resource Planning view is on top
-    When the user turns off resource planning
-    Then the resource planning switch is off
+    When the user clicks the "Task Planning" tab
+    Then the "Task Planning" tab is active
     And the Task Planning view is on top
 
   Scenario: Task list shows all tasks with assignment status

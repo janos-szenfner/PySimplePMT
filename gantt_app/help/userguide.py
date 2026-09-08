@@ -826,6 +826,43 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Resource Planning view",
+        [
+            "The footer at the bottom of the window has three tabs: Task "
+            "Planning, Resource Planning and Deliverables. Task Planning is "
+            "the default. Resource Planning opens the four-panel resource "
+            "matrix, and Deliverables is currently disabled.",
+
+            "The left half of the matrix lists every project task. Click a "
+            "task to see its details in the inspector panel on the right, "
+            "and to choose the resources or teams that can work on it.",
+
+            "The top-right panel is the resource pool. It lists every named "
+            "person, generic placeholder and team, with a colour band that "
+            "shows whether they are free, optimal, fully booked or "
+            "overbooked. Long names wrap inside the fixed panel size so the "
+            "layout stays compact.",
+
+            "The middle-right panel is the assignment preview. It shows the "
+            "hours, percentage and daily heatmap for whichever resource or "
+            "team is selected, and it updates as soon as assignments change.",
+
+            "The bottom-right panel is the project heatmap. Each row is a "
+            "resource or team and each cell is one day. The colour shows "
+            "load against capacity across the full project timeline, so "
+            "overbooking is visible at a glance.",
+
+            "Assigning a resource adds its committed hours to the task and "
+            "recalculates the resource's load. Assigning a team adds the "
+            "team's own allocation and updates the team's booking hours and "
+            "percentages. The colour bands and the heatmap update "
+            "immediately. Overbooked resources are shown in red.",
+
+            "The view follows the active day/night theme. Switching the "
+            "theme repaints every panel at once.",
+        ],
+    ),
+    (
         "The icon bar",
         [
             "The window opens filling whatever screen you are on, so the "
@@ -995,6 +1032,44 @@ GUIDE_SECTIONS = (
             "Nothing silently changes a task's duration. Calendar changes "
             "hold the effort and move the finish, which is why a task can "
             "end later without holding any more work.",
+        ],
+    ),
+    (
+        "Baselines and variance tracking",
+        [
+            "A baseline is a snapshot of the plan at a point in time. You can "
+            "save up to ten baselines and compare the current plan against "
+            "any of them.",
+
+            "Actions > Baseline > Set Baseline... captures the whole plan or "
+            "only the selected tasks. Choosing Selected Tasks Only also "
+            "allows the roll-up check-box, which writes the captured values "
+            "up to parent summary rows.",
+
+            "Actions > Baseline > Clear Baseline... removes a baseline entirely "
+            "or clears only the selected tasks from it. Cleared data cannot "
+            "be recovered.",
+
+            "Settings > Baseline is where the ten slots are named. Double-click "
+            "or edit the display name of any slot; the Compare with Baseline "
+            "dropdown and the exported column headers use the same names. "
+            "Duplicate names are not allowed and the Clear Data button on each "
+            "row resets that slot to unset.",
+
+            "The Compare with Baseline dropdown on the toolbar chooses which "
+            "baseline is active. With an active baseline, the task list grows "
+            "baseline and variance columns: Baseline Start, Start Variance, "
+            "Baseline Finish, Finish Variance, Baseline Duration, Duration "
+            "Variance, Baseline Work, Work Variance, Baseline Cost and Cost "
+            "Variance.",
+
+            "Start, finish and duration variance are in working days. +1d "
+            "means one working day later than the baseline, -1d means one "
+            "working day earlier, and 0d is exactly on schedule.",
+
+            "The Gantt chart draws a grey baseline bar behind the current "
+            "bar for every task that was captured. The baseline bar shows "
+            "where the task was originally planned to start and finish.",
         ],
     ),
     (

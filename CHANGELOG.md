@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.66.0 - 2026-09-08
+
+- Added the Baseline Management engine in `gantt_app/baselines.py` with ten slots, capture, clear, rename, active comparison and variance analysis.
+- Added `Actions > Baseline > Set Baseline...` and `Clear Baseline...` dialogs with full-project, selected-task and roll-up scope.
+- Added `Settings > Baseline` tab for renaming slots, validating uniqueness and clearing individual slots.
+- Added a `Compare with Baseline` dropdown on the toolbar that activates task-list variance columns and a grey Gantt baseline overlay.
+- Added baseline and variance columns to the task list: Baseline Start, Start Variance, Baseline Finish, Finish Variance, Baseline Duration, Duration Variance, Baseline Work, Work Variance, Baseline Cost and Cost Variance.
+- Added a grey baseline bar behind the current bar in the Gantt chart for visual comparison.
+- Added comprehensive pytest-bdd coverage for baselines, including end-to-end UI scenarios.
+- Added Resource Planning view documentation to the in-app help guide.
+- Updated README.md with baseline and resource planning features.
+
 ## 1.65.13 - 2026-09-07
 
 - Made Resource Pool booking badges use existing team allocations and task-assignment hours, matching the inspector preview and heatmap.
