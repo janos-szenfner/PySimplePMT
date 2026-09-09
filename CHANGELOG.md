@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.68.2 - 2026-09-09
+
+- Restyled the task editor's **Resource** tab so the assignment table reads
+  as one grid, like the task list, instead of white header and cell tiles
+  floating on the tab. The header is now a continuous heading bar over a
+  bordered card of contiguous, alternating rows, in the grid's own colours
+  and dark-mode aware. Only the look changed - adding, removing and editing
+  assignments (Effort and Split) works exactly as before.
+
 ## 1.68.1 - 2026-09-09
 
 - New top-level **About** menu, beside View, holding **About PySimplePMT**
