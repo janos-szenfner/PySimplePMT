@@ -1149,6 +1149,13 @@ class ProjectStateTracker:
             'deadline': kwargs.get('deadline', task.deadline),
             'constraint_type': kwargs.get('constraint_type', task.constraint_type),
             'constraint_date': kwargs.get('constraint_date', task.constraint_date),
+            # Advanced tab Task Type / Effort-Driven: same rule - omitting
+            # them here would reset an edited task to Fixed Units, effort
+            # driven and auto scheduled on any other change.
+            'effort_type': kwargs.get('effort_type', task.effort_type),
+            'effort_driven': kwargs.get('effort_driven', task.effort_driven),
+            'manually_scheduled': kwargs.get(
+                'manually_scheduled', task.manually_scheduled),
             'details': kwargs.get('details', task.details),
             # Every field the task carries has to be listed here, not just
             # the ones a caller is likely to change: the new task is built

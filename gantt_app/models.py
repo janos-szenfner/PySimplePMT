@@ -119,6 +119,29 @@ HARD_CONSTRAINTS = ('MSO', 'MFO')
 #: coerce it - like any other unrecognised value - to Active.
 TASK_STATUSES = ('Active', 'Estimated', 'Inactive')
 
+#: Task Type in the Advanced tab's sense - the effort behaviour, which of
+#: duration, work or assignment units is held fixed when the others change
+#: (Task_Type_FRS §3). Named EFFORT_TYPES, not "task types", because Task
+#: already has a task_type: the row kind (Task/Subtask/Milestone/Phase). The
+#: two are unrelated and must not be conflated. See gantt_app.effort for the
+#: scheduling maths this drives.
+EFFORT_FIXED_UNITS = 'Fixed Units'
+EFFORT_FIXED_WORK = 'Fixed Work'
+EFFORT_FIXED_DURATION = 'Fixed Duration'
+EFFORT_TYPES = (EFFORT_FIXED_UNITS, EFFORT_FIXED_WORK, EFFORT_FIXED_DURATION)
+
+#: Fixed Units for every new task, matching MS Project (Task_Type_FRS §6.1).
+DEFAULT_EFFORT_TYPE = EFFORT_FIXED_UNITS
+
+#: Effort-Driven defaults ON for Fixed Units and Fixed Duration, and is locked
+#: ON for Fixed Work (Task_Type_FRS §4.2, §6.1). An explicit product decision.
+DEFAULT_EFFORT_DRIVEN = True
+
+#: Working hours in one standard day, used to convert a duration in days to
+#: the hours the effort maths works in (Task_Type_FRS §3, §8.3). A project
+#: setting; 8 unless the plan says otherwise.
+DEFAULT_HOURS_PER_DAY = 8.0
+
 #: Task type display labels
 TASK_TYPE_LABELS = {
     'Phase': 'Phase',
@@ -583,6 +606,18 @@ class Task:
     #: The date a dated constraint is measured against, or None. Only the
     #: constraints in CONSTRAINTS_WITH_DATE carry one.
     constraint_date: Optional[datetime] = None
+    #: Advanced tab, Task Type (Effort Behavior): which of duration, work and
+    #: units is held fixed on an edit; see EFFORT_TYPES and gantt_app.effort.
+    #: Fixed Units by default, so a task behaves exactly as before until a
+    #: planner chooses otherwise.
+    effort_type: str = DEFAULT_EFFORT_TYPE
+    #: Whether adding or removing a resource preserves total work (ON) or
+    #: changes it (OFF); Task_Type_FRS §4.2. Locked ON for Fixed Work.
+    effort_driven: bool = DEFAULT_EFFORT_DRIVEN
+    #: When True the planner owns the dates and the effort maths is ignored
+    #: (Task_Type_FRS §5.6). Carried for that gate; the engine schedules
+    #: automatically otherwise.
+    manually_scheduled: bool = False
     details: str = ""
     is_milestone: bool = False
     status: str = "Active"
@@ -643,7 +678,21 @@ class Task:
                 self.status, self.name
             )
             self.status = 'Active'
-        
+
+        # Validate effort type (Advanced tab Task Type). An unknown value -
+        # a hand-edit, a future type - reads as the safe default so the row
+        # still schedules rather than carrying a type the engine cannot honour.
+        if self.effort_type not in EFFORT_TYPES:
+            logger.warning(
+                "Invalid effort type '%s' for task '%s', defaulting to '%s'",
+                self.effort_type, self.name, DEFAULT_EFFORT_TYPE
+            )
+            self.effort_type = DEFAULT_EFFORT_TYPE
+        # Fixed Work is effort-driven by definition; the checkbox is locked ON
+        # (Task_Type_FRS §6.1). Enforce it here so no path can store it off.
+        if self.effort_type == EFFORT_FIXED_WORK:
+            self.effort_driven = True
+
         self.dependencies = DependencyList(self.dependencies or [])
 
     def __setattr__(self, name, value):
@@ -1073,6 +1122,9 @@ class Task:
             'constraint_type': self.constraint_type,
             'constraint_date': (self.constraint_date.isoformat()
                                 if self.constraint_date else None),
+            'effort_type': self.effort_type,
+            'effort_driven': self.effort_driven,
+            'manually_scheduled': self.manually_scheduled,
             'details': self.details,
             'calendar_id': self.calendar_id,
             'resource_assignments': list(self.resource_assignments),
@@ -1159,6 +1211,14 @@ class Task:
         if constraint_type not in CONSTRAINTS_WITH_DATE:
             constraint_date = None
 
+        # Advanced tab Task Type / Effort-Driven. Absent in every plan saved
+        # before this feature, which open as Fixed Units, effort-driven and
+        # auto-scheduled - exactly how they behaved with no such field. An
+        # unknown type is coerced to the default in __post_init__.
+        effort_type = data.get('effort_type', DEFAULT_EFFORT_TYPE)
+        effort_driven = bool(data.get('effort_driven', DEFAULT_EFFORT_DRIVEN))
+        manually_scheduled = bool(data.get('manually_scheduled', False))
+
         # Validate status and provide default for backward compatibility
         status = data.get('status', 'Active')
         if status not in TASK_STATUSES:
@@ -1198,6 +1258,9 @@ class Task:
             deadline=deadline,
             constraint_type=constraint_type,
             constraint_date=constraint_date,
+            effort_type=effort_type,
+            effort_driven=effort_driven,
+            manually_scheduled=manually_scheduled,
             details=data.get('details', ''),
             calendar_id=data.get('calendar_id') or None,
             resource_assignments=assignments,
@@ -1252,6 +1315,9 @@ class Project:
     #: anything, and a number a reader typed should still be theirs when
     #: they come back to it.
     priority: int = DEFAULT_PROJECT_PRIORITY
+    #: Working hours in one standard day, for converting a duration in days to
+    #: the hours the effort maths works in (Task_Type_FRS §3). 8 by default.
+    hours_per_day: float = DEFAULT_HOURS_PER_DAY
     resource_repository: ResourceRepository = field(
         default_factory=ResourceRepository, compare=False)
 
@@ -3078,8 +3144,24 @@ class Project:
             'status_date': (self.status_date.isoformat()
                             if self.status_date else None),
             'priority': self.priority,
+            'hours_per_day': self.hours_per_day,
             **self.resource_repository.to_dict(),
         }
+
+    @staticmethod
+    def _read_hours_per_day(value) -> float:
+        """
+        A usable working-day length from a saved plan.
+
+        Missing, non-numeric or non-positive values fall back to the default:
+        a day of zero or negative hours would make the effort maths divide by
+        it, and a plan saved before this setting existed simply had eight.
+        """
+        try:
+            hours = float(value)
+        except (TypeError, ValueError):
+            return DEFAULT_HOURS_PER_DAY
+        return hours if hours > 0 else DEFAULT_HOURS_PER_DAY
 
     @staticmethod
     def _read_date(value) -> Optional[datetime]:
@@ -3145,6 +3227,7 @@ class Project:
             deadline=cls._read_date(data.get('deadline')),
             status_date=cls._read_date(data.get('status_date')),
             priority=data.get('priority', DEFAULT_PROJECT_PRIORITY),
+            hours_per_day=cls._read_hours_per_day(data.get('hours_per_day')),
             resource_repository=ResourceRepository.from_dict({
                 'resources': data.get('resources', []),
                 'teams': data.get('teams', []),
