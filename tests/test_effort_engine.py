@@ -7,11 +7,15 @@ day is eight hours. Pure maths, so no display is needed.
 
 import unittest
 
+from datetime import datetime
+
 from gantt_app.effort import (
     Assignment,
+    EditConflict,
     EffortState,
     add_resource,
     change_effort_type,
+    classify_changes,
     days_to_hours,
     edit_duration,
     edit_units,
@@ -19,14 +23,18 @@ from gantt_app.effort import (
     effort_driven_effective,
     logic_applies,
     recalculate,
+    reconcile,
     remove_resource,
     set_effort_driven,
+    state_from_task,
     validate,
+    write_state_to_task,
 )
 from gantt_app.models import (
     EFFORT_FIXED_DURATION,
     EFFORT_FIXED_UNITS,
     EFFORT_FIXED_WORK,
+    Task,
 )
 
 
@@ -287,6 +295,183 @@ class TestRecalculate(unittest.TestCase):
                        assignments=[Assignment('R1', 1.0)])
         recalculate(state)
         self.assertEqual(state.duration_hours, 16)
+
+
+class TestClassifyChanges(unittest.TestCase):
+    def test_it_spots_each_moved_number(self):
+        old = _state(duration_hours=8, work=8,
+                     assignments=[Assignment('R1', 1.0)])
+        new = _state(duration_hours=16, work=8,
+                     assignments=[Assignment('R1', 1.0)])
+        changed = classify_changes(old, new)
+        self.assertTrue(changed['duration'])
+        self.assertFalse(changed['work'])
+        self.assertFalse(changed['units'])
+
+
+class TestReconcileGate(unittest.TestCase):
+    """The maths only runs for a resourced, auto-scheduled leaf task."""
+
+    def test_a_task_with_no_units_is_left_alone(self):
+        old = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=8, work=0,
+                     assignments=[])
+        new = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=16, work=0,
+                     assignments=[])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 0)               # untouched
+        self.assertEqual(new.duration_hours, 16)
+
+    def test_an_assignment_at_zero_percent_counts_as_no_units(self):
+        old = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=8, work=8,
+                     assignments=[Assignment('R1', 0.0)])
+        new = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=16, work=8,
+                     assignments=[Assignment('R1', 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 8)               # untouched, U_total is 0
+
+    def test_a_milestone_is_left_alone(self):
+        old = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=8, work=8,
+                     assignments=[Assignment('R1', 1.0)], is_milestone=True)
+        new = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=16, work=8,
+                     assignments=[Assignment('R1', 1.0)], is_milestone=True)
+        _result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 8)
+
+
+class TestReconcileSingleEdit(unittest.TestCase):
+    """One adjustable variable changed - the other is recomputed, no prompt."""
+
+    def _old_new(self, **kwargs):
+        base = dict(effort_type=EFFORT_FIXED_UNITS, duration_hours=8, work=8,
+                    assignments=[Assignment('R1', 1.0)])
+        base.update(kwargs)
+        old = _state(**base)
+        new = _state(**{**base,
+                        'assignments': [Assignment('R1', a.units)
+                                        for a in base['assignments']]})
+        return old, new
+
+    def test_fixed_units_duration_change_recomputes_work(self):
+        old, new = self._old_new()
+        new.duration_hours = 16
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertTrue(result.ok)
+        self.assertEqual(new.work, 16)             # 16 x 1.0
+
+    def test_fixed_units_work_change_recomputes_duration(self):
+        old, new = self._old_new()
+        new.work = 16
+        _result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 16)   # 16 / 1.0
+
+    def test_fixed_duration_work_change_recomputes_units(self):
+        old, new = self._old_new(effort_type=EFFORT_FIXED_DURATION,
+                                 duration_hours=40, work=40)
+        new.work = 80
+        _result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertAlmostEqual(new.total_units, 2.0)   # 80 / 40
+
+    def test_fixed_work_units_change_recomputes_duration(self):
+        old, new = self._old_new(effort_type=EFFORT_FIXED_WORK,
+                                 duration_hours=40, work=40)
+        new.assignments[0].units = 2.0
+        _result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 20)       # 40 / 2.0
+
+
+class TestReconcileConflict(unittest.TestCase):
+    """Both adjustable variables changed - a prompt, then the planner's pick."""
+
+    def _fixed_units_both(self):
+        old = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=8, work=8,
+                     assignments=[Assignment('R1', 1.0)])
+        new = _state(effort_type=EFFORT_FIXED_UNITS, duration_hours=16, work=24,
+                     assignments=[Assignment('R1', 1.0)])
+        return old, new
+
+    def test_changing_both_raises_a_conflict(self):
+        old, new = self._fixed_units_both()
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(result)
+        self.assertIsInstance(conflict, EditConflict)
+        self.assertEqual(conflict.fixed, 'units')
+        self.assertEqual(set(conflict.options), {'duration', 'work'})
+
+    def test_preserving_duration_recomputes_work(self):
+        old, new = self._fixed_units_both()
+        result, conflict = reconcile(old, new, preserve='duration')
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 16)
+        self.assertEqual(new.work, 16)             # 16 x 1.0, W recomputed
+
+    def test_preserving_work_recomputes_duration(self):
+        old, new = self._fixed_units_both()
+        result, conflict = reconcile(old, new, preserve='work')
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 24)
+        self.assertEqual(new.duration_hours, 24)   # 24 / 1.0, D recomputed
+
+    def test_the_prompt_names_both_variables(self):
+        _old, new = self._fixed_units_both()
+        conflict = reconcile(*self._fixed_units_both())[1]
+        text = conflict.prompt()
+        self.assertIn("Duration", text)
+        self.assertIn("Work", text)
+
+
+class TestTaskAdapter(unittest.TestCase):
+    """Lifting a Task into a state and writing a reconciled one back."""
+
+    def _task(self, **kwargs):
+        kwargs.setdefault('id', 'T')
+        kwargs.setdefault('name', 'A task')
+        kwargs.setdefault('start_date', datetime(2026, 9, 9))
+        return Task(**kwargs)
+
+    def test_state_reads_days_as_hours_and_splits_as_units(self):
+        task = self._task(duration=5, resource_assignments=[
+            {'resource_id': 'R1', 'estimated_hours': 40.0,
+             'resource_split': 100.0}])
+        state = state_from_task(task, hours_per_day=8)
+        self.assertEqual(state.duration_hours, 40)     # 5 days x 8
+        self.assertEqual(state.work, 40)
+        self.assertEqual(state.total_units, 1.0)
+
+    def test_an_unresourced_task_has_no_units(self):
+        state = state_from_task(self._task(duration=5), hours_per_day=8)
+        self.assertEqual(state.total_units, 0.0)
+
+    def test_write_back_rounds_duration_to_whole_days(self):
+        task = self._task(duration=1, resource_assignments=[
+            {'resource_id': 'R1', 'estimated_hours': 8.0,
+             'resource_split': 100.0},
+            {'resource_id': 'R2', 'estimated_hours': 8.0,
+             'resource_split': 100.0}])
+        # Fixed Units, add nothing but recompute: 8h work over 2.0 units = 4h.
+        state = state_from_task(task, hours_per_day=8)
+        state.work = 8
+        state.effort_type = EFFORT_FIXED_UNITS
+        recalculate(state)                              # duration -> 4h
+        write_state_to_task(state, task, hours_per_day=8)
+        self.assertEqual(task.duration, 1)              # round(4/8) -> 0 -> min 1
+
+    def test_write_back_shares_work_across_assignments(self):
+        task = self._task(duration=5, resource_assignments=[
+            {'resource_id': 'R1', 'estimated_hours': 0.0, 'resource_split': 100.0},
+            {'resource_id': 'R2', 'estimated_hours': 0.0, 'resource_split': 100.0}])
+        state = state_from_task(task, hours_per_day=8)   # duration 40h, U=2.0
+        state.work = state.duration_hours * state.total_units  # 80h
+        write_state_to_task(state, task, hours_per_day=8)
+        total = sum(a['estimated_hours'] for a in task.resource_assignments)
+        self.assertEqual(total, 80)                      # 40h each
+        self.assertEqual(task.resource_assignments[0]['estimated_hours'], 40)
 
 
 if __name__ == '__main__':

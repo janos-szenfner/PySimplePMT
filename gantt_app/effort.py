@@ -451,6 +451,137 @@ def change_effort_type(state: EffortState, new_type: str) -> EffortResult:
     return EffortResult(message=f"Task Type set to {new_type}.")
 
 
+#: The three numbers the maths binds, and which one each task type holds.
+_VARS = ('duration', 'work', 'units')
+_FIXED_BY_TYPE = {
+    EFFORT_FIXED_UNITS: 'units',
+    EFFORT_FIXED_WORK: 'work',
+    EFFORT_FIXED_DURATION: 'duration',
+}
+
+#: How each variable reads in a message to the planner.
+_VAR_LABELS = {'duration': 'Duration', 'work': 'Work',
+               'units': 'Units / Resources'}
+
+
+def var_label(var: str) -> str:
+    """A variable name as it should read in a prompt."""
+    return _VAR_LABELS.get(var, var)
+
+
+@dataclass
+class EditConflict:
+    """
+    A Save that changed both of a task type's adjustable numbers.
+
+    The task type fixes one of duration, work and units; the other two are
+    adjustable. Changing both in one Save is ambiguous - which did the
+    planner mean to keep? - so the caller must ask and re-run the reconcile
+    with the chosen ``preserve``.
+    """
+    effort_type: str
+    fixed: str
+    options: tuple  # the two adjustable variables, both changed
+
+    def prompt(self) -> str:
+        """The question to put to the planner."""
+        a, b = (var_label(v) for v in self.options)
+        return (f"You changed both {a} and {b}, but this task is "
+                f"{self.effort_type}. Which should be kept? The other will be "
+                f"recalculated.")
+
+
+def classify_changes(old: EffortState, new: EffortState,
+                     tol: float = 1e-9) -> dict:
+    """Which of duration, work and total units differ between two states."""
+    return {
+        'duration': abs(old.duration_hours - new.duration_hours) > tol,
+        'work': abs(old.work - new.work) > tol,
+        'units': abs(old.total_units - new.total_units) > tol,
+    }
+
+
+def _scale_units_to_total(state: EffortState, new_total: float) -> None:
+    """Move the assignments' units so they sum to a new total."""
+    if not state.assignments:
+        return
+    old_total = state.total_units
+    if old_total > 0:
+        factor = new_total / old_total
+        for assignment in state.assignments:
+            assignment.units *= factor
+    else:
+        share = new_total / len(state.assignments)
+        for assignment in state.assignments:
+            assignment.units = share
+
+
+def _recompute(state: EffortState, fixed: str, keep: Optional[str]) -> None:
+    """
+    Solve for the one variable that is neither fixed nor preserved.
+
+    ``keep`` is the adjustable variable to hold (the planner's choice, or the
+    single one they changed); None means only the fixed variable moved, and
+    the canonical per-type rule decides which adjustable variable follows.
+    """
+    if fixed == 'units':                       # Fixed Units: hold U
+        if keep == 'work':
+            if state.total_units > 0:
+                state.duration_hours = state.work / state.total_units
+        else:                                  # keep duration, or units-only
+            state.work = state.duration_hours * state.total_units
+    elif fixed == 'work':                      # Fixed Work: hold W
+        if keep == 'units':
+            if state.total_units > 0:
+                state.duration_hours = state.work / state.total_units
+        else:                                  # keep duration
+            if state.duration_hours > 0:
+                _scale_units_to_total(state, state.work / state.duration_hours)
+    else:                                      # Fixed Duration: hold D
+        if keep == 'units':
+            state.work = state.duration_hours * state.total_units
+        else:                                  # keep work, or units-only
+            if state.duration_hours > 0:
+                _scale_units_to_total(state, state.work / state.duration_hours)
+
+
+def reconcile(old: EffortState, new: EffortState,
+              preserve: Optional[str] = None):
+    """
+    Bring a just-edited task back into W = D_hours × U for its task type.
+
+    Returns ``(EffortResult, conflict)``. ``conflict`` is an EditConflict
+    when both adjustable variables changed and no ``preserve`` was given -
+    the caller asks the planner and calls again with their choice - and None
+    otherwise. The effort maths is gated: a task with no assignment carrying
+    real units (Task_Type_FRS §8.3, U_total = Σ of units > 0), or one that is
+    a milestone / summary / manually scheduled, is left exactly as edited.
+    """
+    if not logic_applies(new) or new.total_units <= 0:
+        return EffortResult(message="No effort recalculation for this task."), \
+            None
+
+    fixed = _FIXED_BY_TYPE[new.effort_type]
+    adjustable = [v for v in _VARS if v != fixed]
+    changed = classify_changes(old, new)
+    changed_adjustable = [v for v in adjustable if changed[v]]
+
+    if len(changed_adjustable) == 2 and preserve not in adjustable:
+        return None, EditConflict(new.effort_type, fixed, tuple(adjustable))
+
+    if preserve in adjustable:
+        keep = preserve
+    elif len(changed_adjustable) == 1:
+        keep = changed_adjustable[0]
+    else:
+        keep = None
+
+    _recompute(new, fixed, keep)
+    return (EffortResult(message="Recalculated.",
+                         warnings=_high_assignment_warnings(new)),
+            None)
+
+
 def set_effort_driven(state: EffortState, on: bool) -> EffortResult:
     """
     Toggle Effort-Driven, refusing it where it is not the planner's to set.
@@ -465,3 +596,76 @@ def set_effort_driven(state: EffortState, on: bool) -> EffortResult:
         return EffortResult(error="Effort-Driven is disabled for this task.")
     state.effort_driven = on
     return EffortResult(message=f"Effort-Driven {'on' if on else 'off'}.")
+
+
+# ---------------------------------------------------------------------------
+# The bridge between a Task and an EffortState
+# ---------------------------------------------------------------------------
+#
+# A Task keeps duration in whole days and a resource's effort in its
+# assignment dict (estimated_hours, resource_split), with no single "work" or
+# "units" field. The engine works in hours and fractional FTE units, so these
+# two functions lift a Task into an EffortState and write a reconciled state
+# back. Duration is day-granular in the app, so it rounds on the way back -
+# the finest this application schedules to - while work stays exact in hours.
+
+def _assignment_units(assignment: dict) -> float:
+    """A resource assignment's units (FTE fraction) from its saved split."""
+    try:
+        return float(assignment.get('resource_split', 100.0) or 0.0) / 100.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _assignment_hours(assignment: dict) -> float:
+    """A resource assignment's estimated work in hours."""
+    try:
+        return float(assignment.get('estimated_hours', 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def state_from_task(task, hours_per_day: float = DEFAULT_HOURS_PER_DAY) -> EffortState:
+    """
+    Build an EffortState from a Task, reading its day duration in hours.
+
+    Work is the sum of the assignments' estimated hours; units are the sum of
+    their splits as FTE fractions. A task with no assignments comes back with
+    zero units, which the gate in :func:`reconcile` treats as "no effort
+    logic", so nothing about it is touched.
+    """
+    assignments = [Assignment(a.get('resource_id', ''), _assignment_units(a))
+                   for a in task.resource_assignments]
+    work = sum(_assignment_hours(a) for a in task.resource_assignments)
+    duration_days = task.duration or 0
+    return EffortState(
+        effort_type=task.effort_type,
+        effort_driven=task.effort_driven,
+        duration_hours=duration_days * hours_per_day,
+        work=work,
+        assignments=assignments,
+        hours_per_day=hours_per_day,
+        is_milestone=task.effective_milestone,
+        manually_scheduled=getattr(task, 'manually_scheduled', False),
+        constraint_type=task.constraint_type,
+    )
+
+
+def write_state_to_task(state: EffortState, task,
+                        hours_per_day: float = DEFAULT_HOURS_PER_DAY) -> None:
+    """
+    Write a reconciled state's numbers back onto a Task.
+
+    Duration rounds to whole days (at least one for any positive duration),
+    the granularity the app schedules to. Each assignment keeps its own share
+    of the work: its split follows its units, and its hours are that share of
+    the duration, so the per-resource hours always sum to the total work.
+    Assignments are matched to the task's by position, the order they were
+    read in.
+    """
+    if state.duration_hours > 0:
+        task.duration = max(1, round(state.duration_hours / hours_per_day))
+
+    for saved, computed in zip(task.resource_assignments, state.assignments):
+        saved['resource_split'] = computed.units * 100.0
+        saved['estimated_hours'] = state.duration_hours * computed.units
