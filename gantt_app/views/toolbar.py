@@ -1385,6 +1385,7 @@ class Toolbar(ctk.CTkFrame):
                     # highlight_critical_path
                     {"text": "Critical Path...", "command": self.show_critical_path},
                     {"text": "Help", "command": self.show_help},
+                    {"text": "About PySimplePMT", "command": self.show_about},
                 ],
             },
         ]
@@ -2787,6 +2788,18 @@ class Toolbar(ctk.CTkFrame):
         from gantt_app.help.userguide import show_user_guide
 
         show_user_guide(self.winfo_toplevel())
+
+    def show_about(self):
+        """
+        Open the About PySimplePMT window: logo, version, author and licence.
+
+        One window, kept as one instance, so reaching it again while it is
+        open raises the copy that is there rather than stacking a second -
+        see AboutWindow.show.
+        """
+        from gantt_app.views.aboutwindow import show_about
+
+        show_about(self.winfo_toplevel())
 
     def toggle_theme(self):
         """

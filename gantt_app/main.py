@@ -92,7 +92,8 @@ class GanttApp(ctk.CTk):
         self.title("Gantt Project Manager")
         self._fit_to_screen()
         self._set_window_icon()
-        
+        self._install_about_handler()
+
         # Who decides light or dark, and the watch on the desktop setting.
         # Held on the application because the toolbar's day/night control and
         # the View menu both drive it - see gantt_app.theme.
@@ -262,9 +263,9 @@ class GanttApp(ctk.CTk):
 
         DEVELOPMENT NOTES:
         ------------------
-        Drawn rather than loaded - see gantt_app.resources.appicon - so the
-        window, the desktop entry and the packaged build all wear the same
-        mark and there is no file to ship or to find at runtime.
+        Loaded from the one logo image - see gantt_app.resources.appicon - so
+        the window, the desktop entry and the packaged build all wear the same
+        mark and cannot drift apart.
 
         The image is kept on the instance. A Tk image is only alive while
         something references it from Python, and one dropped here left the
@@ -283,6 +284,38 @@ class GanttApp(ctk.CTk):
                 self.iconphoto(True, self._icon)
         except Exception:
             logger.exception("Could not set the window icon")
+
+    def _install_about_handler(self):
+        """
+        Route the About menu item to the application's own About window.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        On macOS every application has a bold app-name menu, and its first
+        item - "About PySimplePMT" - is wired by Tk to the Tcl command
+        ``tk::mac::standardAboutPanel``, which shows Tk's own plain panel.
+        Redefining that command with createcommand intercepts the click, so
+        the built-in menu item opens our logo-and-version window instead. No
+        native menubar is built: the app's menus live in the in-window
+        toolbar, and this only re-points an item macOS already draws.
+
+        Only meaningful on Aqua; elsewhere the same window is reached from the
+        in-window View menu's "About PySimplePMT" item. Failure is logged and
+        stepped over - a missing About handler must not stop startup.
+        """
+        if sys.platform != 'darwin':
+            return
+        try:
+            self.createcommand('tk::mac::standardAboutPanel',
+                               self._show_about_window)
+        except Exception:
+            logger.exception("Could not install the macOS About handler")
+
+    def _show_about_window(self):
+        """Open the About PySimplePMT window over the main window."""
+        from gantt_app.views.aboutwindow import show_about
+
+        show_about(self)
 
     def _create_sample_data(self):
         """Create sample tasks for demonstration."""

@@ -1,17 +1,21 @@
 """
-pytest-bdd tests for application icon functionality.
+pytest-bdd tests for the application icon and logo.
+
+The mark is built from the shipped logo image (gantt_app/resources/
+logo_source.png) rather than drawn from code, so these tests check that the
+image loads, that the square icon tile comes out rounded and non-blank at
+every packaged size, and that the packaging scripts read the same source.
 
 Run with:
     python3 -m pytest tests/test_app_icon_bdd.py -v
 """
 
-import os
 from pathlib import Path
 from pytest_bdd import given, parsers, scenarios, then, when
 import pytest
 
 from gantt_app.resources.appicon import (
-    draw_icon, BLUE_DARK, BLUE_LIGHT, YELLOW, YELLOW_LIGHT, icon_photo
+    draw_icon, logo_image, icon_photo, LOGO_PATH,
 )
 
 
@@ -34,56 +38,14 @@ HAVE_DISPLAY = _display_available()
 
 
 # SCENARIO: Icon builds at all packaged sizes
-@then("the icon should build at size 16")
-def check_icon_size_16():
-    image = draw_icon(16)
-    assert image.size == (16, 16)
+@then(parsers.parse("the icon should build at size {size:d}"))
+def check_icon_size(size):
+    image = draw_icon(size)
+    assert image.size == (size, size)
     assert image.mode == 'RGBA'
 
 
-@then("the icon should build at size 24")
-def check_icon_size_24():
-    image = draw_icon(24)
-    assert image.size == (24, 24)
-    assert image.mode == 'RGBA'
-
-
-@then("the icon should build at size 32")
-def check_icon_size_32():
-    image = draw_icon(32)
-    assert image.size == (32, 32)
-    assert image.mode == 'RGBA'
-
-
-@then("the icon should build at size 48")
-def check_icon_size_48():
-    image = draw_icon(48)
-    assert image.size == (48, 48)
-    assert image.mode == 'RGBA'
-
-
-@then("the icon should build at size 64")
-def check_icon_size_64():
-    image = draw_icon(64)
-    assert image.size == (64, 64)
-    assert image.mode == 'RGBA'
-
-
-@then("the icon should build at size 128")
-def check_icon_size_128():
-    image = draw_icon(128)
-    assert image.size == (128, 128)
-    assert image.mode == 'RGBA'
-
-
-@then("the icon should build at size 256")
-def check_icon_size_256():
-    image = draw_icon(256)
-    assert image.size == (256, 256)
-    assert image.mode == 'RGBA'
-
-
-# SCENARIO: Icon corners are cut
+# SCENARIO: Icon corners are rounded
 @when("drawing a 128x128 icon", target_fixture="icon_128")
 def draw_icon_128():
     return draw_icon(128)
@@ -104,38 +66,39 @@ def check_center_64_64_opaque(icon_128):
     assert icon_128.getpixel((64, 64))[3] == 255
 
 
-# SCENARIO: Icon is drawn in Python colors
-@when("drawing a 256x256 icon", target_fixture="icon_256")
-def draw_icon_256():
-    return draw_icon(256)
+# SCENARIO: Icon is built from the shipped logo image
+@then("the logo source image should exist")
+def check_logo_source_exists():
+    assert LOGO_PATH.is_file(), f"missing logo image at {LOGO_PATH}"
 
 
-@then("the icon should contain BLUE_DARK color")
-def check_contains_blue_dark(icon_256):
-    colours = {colour for _count, colour
-               in icon_256.getcolors(maxcolors=1 << 20)}
-    assert BLUE_DARK in colours
+@then("the icon should carry the logo detail rather than a blank tile")
+def check_icon_not_blank():
+    image = draw_icon(256)
+    # An opaque, multi-coloured tile: a blank fallback would be a single
+    # transparent colour, so more than a handful of distinct colours proves
+    # the logo was actually rasterised into the icon.
+    colours = image.getcolors(maxcolors=1 << 20)
+    assert colours is not None
+    assert len(colours) > 50
+    assert image.getpixel((128, 128))[3] == 255
 
 
-@then("the icon should contain BLUE_LIGHT color")
-def check_contains_blue_light(icon_256):
-    colours = {colour for _count, colour
-               in icon_256.getcolors(maxcolors=1 << 20)}
-    assert BLUE_LIGHT in colours
+# SCENARIO: Full logo loads at its natural aspect ratio
+@when(parsers.parse("loading the logo at width {width:d}"),
+      target_fixture="scaled_logo")
+def load_scaled_logo(width):
+    return logo_image(width)
 
 
-@then("the icon should contain YELLOW color")
-def check_contains_yellow(icon_256):
-    colours = {colour for _count, colour
-               in icon_256.getcolors(maxcolors=1 << 20)}
-    assert YELLOW in colours
+@then("the logo width should be 380")
+def check_logo_width(scaled_logo):
+    assert scaled_logo.width == 380
 
 
-@then("the icon should contain YELLOW_LIGHT color")
-def check_contains_yellow_light(icon_256):
-    colours = {colour for _count, colour
-               in icon_256.getcolors(maxcolors=1 << 20)}
-    assert YELLOW_LIGHT in colours
+@then("the logo should be landscape")
+def check_logo_landscape(scaled_logo):
+    assert scaled_logo.height < scaled_logo.width
 
 
 # SCENARIO: Icon drawing is deterministic
@@ -144,11 +107,19 @@ def check_icon_drawing_is_deterministic():
     assert draw_icon(64).tobytes() == draw_icon(64).tobytes()
 
 
-# SCENARIO: Packaging script uses the same icon drawing
-@then("the packaging script should import draw_icon from appicon")
-def check_packaging_script_imports_draw_icon():
+# SCENARIO: Packaging scripts use the same icon source
+@then("the macOS packaging script should import draw_icon from appicon")
+def check_macos_packaging_imports_draw_icon():
+    for name in ('make_icon.py', 'make_icns.py'):
+        source = (Path(__file__).resolve().parent.parent
+                  / 'packaging' / name).read_text()
+        assert 'from gantt_app.resources.appicon import draw_icon' in source
+
+
+@then("the Windows packaging script should import draw_icon from appicon")
+def check_windows_packaging_imports_draw_icon():
     source = (Path(__file__).resolve().parent.parent
-              / 'packaging' / 'make_icon.py').read_text()
+              / 'packaging' / 'make_ico.py').read_text()
     assert 'from gantt_app.resources.appicon import draw_icon' in source
 
 
@@ -194,7 +165,6 @@ def gantt_app():
         # If we can't create the full app, that's okay for this test
         from types import SimpleNamespace
         mock_app = SimpleNamespace()
-        # Create a mock icon
         import tkinter as tk
         mock_icon = tk.PhotoImage(width=64, height=64)
         mock_app._icon = mock_icon
@@ -204,7 +174,6 @@ def gantt_app():
 @pytest.mark.skipif(not HAVE_DISPLAY, reason="needs a display")
 @when("the app is initialized", target_fixture="initialized_app")
 def when_app_is_initialized(gantt_app):
-    # The app is already initialized by the Given step
     return gantt_app
 
 
@@ -223,5 +192,4 @@ def check_app_icon_dimensions(initialized_app):
         if icon is not None:
             assert (icon.width(), icon.height()) == (64, 64)
     except Exception:
-        # The app might not have fully initialized, but we can still check if icon exists
         assert icon is not None

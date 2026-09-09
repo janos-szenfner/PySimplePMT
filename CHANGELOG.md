@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.68.0 - 2026-09-09
+
+- Gave the application a real logo. The hexagonal "P / IT-Space" mark now
+  drives the window icon, the macOS `.app`/Dock icon, and the Linux desktop
+  and pixmap icons, all built from the one image (`gantt_app/resources/
+  logo_source.png`) so they cannot drift apart. A Windows `.ico` builder is
+  in place for the Windows package to come.
+- Added an **About PySimplePMT** window showing the logo, version, author and
+  MIT licence. On macOS the built-in **About PySimplePMT** item in the
+  application menu now opens it; on every platform it is also reachable from
+  the in-window **View > About PySimplePMT** menu.
+
 ## 1.67.0 - 2026-09-08
 
 - Added an **Advanced** tab to the task editor (between General and Notes, in

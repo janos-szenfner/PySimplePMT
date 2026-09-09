@@ -113,6 +113,14 @@ assets_dir = PROJECT_ROOT / 'gantt_app' / 'assets'
 if assets_dir.is_dir() and any(assets_dir.iterdir()):
     datas.append((str(assets_dir), 'gantt_app/assets'))
 
+# The logo image, read from disk at runtime by gantt_app.resources.appicon to
+# mark the window and fill the About box. collect_all would usually pick up a
+# package data file, but the icon must never be missing, so it is named here
+# explicitly and placed back where Path(__file__) expects it in the bundle.
+logo_file = PROJECT_ROOT / 'gantt_app' / 'resources' / 'logo_source.png'
+if logo_file.is_file():
+    datas.append((str(logo_file), 'gantt_app/resources'))
+
 # Large packages that are never imported at runtime. Excluding them keeps the
 # package to a sensible size for a desktop download.
 excludes = [

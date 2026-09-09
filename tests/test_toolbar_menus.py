@@ -147,7 +147,7 @@ class TestMenuContents(unittest.TestCase):
 
         self.assertEqual(view,
                          ['System UI mode', 'Grid View Only', 'Charts',
-                          'Critical Path...', 'Help'])
+                          'Critical Path...', 'Help', 'About PySimplePMT'])
         self.assertNotIn('Project Info', view)
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):

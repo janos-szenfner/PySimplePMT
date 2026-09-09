@@ -2,9 +2,9 @@
 """
 Write the application icon out as a macOS .icns.
 
-The icon itself is drawn in gantt_app/resources/appicon.py, which is part of
-the application, so the window, the desktop entry, the .deb and the .app all
-wear the same mark.
+The icon comes from gantt_app/resources/appicon.py, which loads the one logo
+image the application ships, so the window, the desktop entry, the .deb and
+the .app all wear the same mark.
 
 macOS wants an icon family rather than a single image: an .iconset directory
 holding each size at both normal and Retina scale, compiled by iconutil. That

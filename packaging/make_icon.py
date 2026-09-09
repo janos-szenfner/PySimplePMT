@@ -2,9 +2,9 @@
 """
 Write the application icon out for the desktop entry and the package.
 
-The icon itself is drawn in gantt_app/resources/appicon.py, which is part of
-the application: the window wears the same mark at runtime, so there is one
-drawing and no way for the packaged icon and the running one to drift apart.
+The icon comes from gantt_app/resources/appicon.py, which loads the one logo
+image the application ships: the window wears the same mark at runtime, so
+there is no way for the packaged icon and the running one to drift apart.
 This script only decides where it is written and at what size.
 
 Usage:
