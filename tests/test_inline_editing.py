@@ -597,6 +597,78 @@ class TestChoosingTheTypeInTheGrid(InlineEditingTestCase):
 
         self.assertEqual(self.type_of(), 'Task')
 
+    def test_it_closes_on_focus_leaving_for_the_tree(self):
+        """
+        Clicking off the Type cell without choosing takes the dropdown away.
+
+        It used to stay open and editable, so the row looked stuck. The
+        settle step reads where the focus came to rest; here it is the tree
+        the chooser sits over - the gesture of clicking another line - so the
+        chooser closes. Driven directly rather than through a real click,
+        because whether a withdrawn test window takes focus is unreliable.
+        """
+        chooser = self.open_chooser()
+        self.assertIsNotNone(self.task_list._cell_editor)
+
+        popdown = chooser.tk.call('ttk::combobox::PopdownWindow', chooser)
+        stays = self.task_list._focus_within_chooser(
+            str(chooser), str(popdown), str(self.task_list.tree))
+        self.assertFalse(stays)
+        # What settle does when the focus has left: take the field away.
+        self.task_list._close_cell_editor()
+        self.assertIsNone(self.task_list._cell_editor)
+
+    def test_leaving_without_a_pick_keeps_the_original_type(self):
+        """The abandoned edit changes nothing and adds no undo step."""
+        self.open_chooser()
+        self.task_list._close_cell_editor()
+
+        self.assertEqual(self.type_of(), 'Task')
+        self.assertFalse(self.manager.can_undo())
+
+
+class TestTheTypeChooserFocusDecision(unittest.TestCase):
+    """
+    Where the focus comes to rest decides whether the chooser stays open.
+
+    WHY THESE EXIST:
+    ================
+    The chooser must ignore focus moving into its own dropdown list - that
+    happens the instant the list opens - while closing when focus genuinely
+    leaves. The tree the chooser sits over is the trap: its path is a prefix
+    of the chooser's, so a naive "starts with" test the wrong way round would
+    read a click on another row as staying. This is pure path logic, so it is
+    checked without a display.
+    """
+
+    from gantt_app.views.task_list import DragDropTaskList
+    decide = staticmethod(DragDropTaskList._focus_within_chooser)
+
+    CHOOSER = '.!treeview.!combobox'
+    POPDOWN = '.!treeview.!combobox.popdown'
+
+    def test_focus_on_the_chooser_itself_stays(self):
+        self.assertTrue(self.decide(self.CHOOSER, self.POPDOWN, self.CHOOSER))
+
+    def test_focus_inside_the_dropdown_list_stays(self):
+        listbox = self.POPDOWN + '.f.l'
+        self.assertTrue(self.decide(self.CHOOSER, self.POPDOWN, listbox))
+
+    def test_focus_on_a_child_of_the_chooser_stays(self):
+        self.assertTrue(
+            self.decide(self.CHOOSER, self.POPDOWN, self.CHOOSER + '.entry'))
+
+    def test_focus_on_the_tree_it_sits_over_leaves(self):
+        """The prefix trap: the tree's path is shorter, not inside."""
+        self.assertFalse(self.decide(self.CHOOSER, self.POPDOWN, '.!treeview'))
+
+    def test_focus_on_an_unrelated_widget_leaves(self):
+        self.assertFalse(
+            self.decide(self.CHOOSER, self.POPDOWN, '.!frame.!button'))
+
+    def test_no_focus_at_all_leaves(self):
+        self.assertFalse(self.decide(self.CHOOSER, self.POPDOWN, ''))
+
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
 class TestTheMilestoneFlagFollowsTheType(InlineEditingTestCase):

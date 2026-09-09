@@ -1071,10 +1071,82 @@ class DragDropTaskList(ctk.CTkFrame):
         chooser.bind('<Return>', chosen)
         chooser.bind('<KP_Enter>', chosen)
         chooser.bind('<Escape>', lambda _event: self._close_cell_editor())
-        # Not <FocusOut>: opening the list moves the focus to it, so
-        # committing on focus leaving would store the value and close the
-        # dropdown the instant it was opened
+        # Close - keeping the original value - when focus leaves the chooser
+        # for good. Not a plain commit-on-FocusOut: opening the list moves
+        # focus into the list's own popup window, and committing there would
+        # store the value and shut the dropdown the instant it opened. So the
+        # handler ignores focus that is still inside the chooser or its list,
+        # and only closes when it has genuinely gone elsewhere - a click on
+        # another row or off the field - at which point the pick was never
+        # made and the type is left as it was. See _chooser_focus_left.
+        chooser.bind('<FocusOut>',
+                     lambda _event: self._chooser_focus_left(chooser))
         self.after_idle(lambda: self._drop_the_list(chooser))
+
+    def _chooser_focus_left(self, chooser):
+        """
+        Close the type chooser when focus has left it without a choice.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Checked after the event settles, because at the moment FocusOut fires
+        the focus may be in transit - to the dropdown list as it opens, or
+        back to the chooser as a pick lands. The decision is made on where the
+        focus actually came to rest: still on the chooser or inside its own
+        popup list means leave it alone; anywhere else means the field was
+        abandoned, so it is taken away and the original value stands.
+        """
+        def settle():
+            if not chooser.winfo_exists():
+                return
+            try:
+                focused = chooser.tk.call('focus', '-displayof', chooser)
+                popdown = chooser.tk.call(
+                    'ttk::combobox::PopdownWindow', chooser)
+            except tk.TclError:
+                return
+            if not self._focus_within_chooser(
+                    str(chooser), str(popdown), str(focused)):
+                self._close_cell_editor()
+
+        try:
+            chooser.after_idle(settle)
+        except tk.TclError:
+            pass
+
+    @staticmethod
+    def _focus_within_chooser(chooser_path, popdown_path, focused_path):
+        """
+        Whether the focus at rest still belongs to the chooser or its list.
+
+        PARAMETERS:
+        -----------
+        chooser_path : str
+            The combobox's own widget path.
+        popdown_path : str
+            The path of the combobox's dropdown-list popup window.
+        focused_path : str
+            The widget path the focus has come to rest on, or '' for none.
+
+        RETURNS:
+        --------
+        bool
+            True while the focus is on the chooser itself or inside its
+            popup list - the dropdown being open, or a pick landing back on
+            the field. False when it has gone elsewhere, including to the
+            tree the chooser sits over, whose path is a *prefix* of the
+            chooser's rather than the other way round - so a click on another
+            row reads as leaving, which is the whole point.
+        """
+        if not focused_path:
+            return False
+        if focused_path == chooser_path:
+            return True
+        if focused_path.startswith(chooser_path + '.'):
+            return True
+        if popdown_path and focused_path.startswith(popdown_path):
+            return True
+        return False
 
     def _drop_the_list(self, chooser):
         """Open a combobox's list, if it is still there to open."""
