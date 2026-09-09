@@ -267,6 +267,7 @@ class EditTaskDialog(TaskFormDialog):
                     )
                     if self.on_save:
                         self.on_save(new_task)
+                    self._show_effort_warnings()
                     return True
 
             logger.info("Edited task %s %r with %d resource assignment(s)",
@@ -274,6 +275,7 @@ class EditTaskDialog(TaskFormDialog):
                         len(self.task.resource_assignments))
             if self.on_save:
                 self.on_save(self.task)
+            self._show_effort_warnings()
             return True
 
         except ValueError as error:

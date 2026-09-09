@@ -1903,6 +1903,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                                              preserve=choice)
 
         eff.write_state_to_task(new_state, probe, hpd)
+        # Stashed for the Save path to show once the edit has committed; the
+        # high-assignment note (a resource over 100% on the task) is allowed
+        # but flagged, Task_Type_FRS §5.2.
+        self._effort_warnings = list(result.warnings) if result else []
         if result is not None:
             for warning in result.warnings:
                 logger.info("Effort recalculation on %r: %s",
@@ -1910,6 +1914,24 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         logger.debug("Effort reconciled on %r: duration=%s work-units=%.3g",
                      old_task.name, probe.duration, new_state.total_units)
         return probe.duration, probe.resource_assignments
+
+    def _show_effort_warnings(self):
+        """
+        Tell the planner about any high-assignment note from the save.
+
+        A resource pushed over 100% on the task is allowed but flagged
+        (Task_Type_FRS §5.2). Shown once, after the edit has committed, and
+        only when there is something to say.
+        """
+        warnings = getattr(self, '_effort_warnings', None)
+        if not warnings:
+            return
+        self._effort_warnings = []
+        try:
+            messagebox.showwarning(
+                "High assignment", "\n".join(warnings), parent=self)
+        except Exception:
+            logger.debug("Could not show the effort warning")
 
     def cancel(self):
         """Close without saving."""

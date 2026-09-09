@@ -351,6 +351,31 @@ HELP_SECTIONS = (
         ],
     ),
     (
+        "Advanced tab: Task Type and Effort-Driven",
+        [
+            "How the task's duration, work and resource units move when one "
+            "is changed. It applies only when the task has a resource at more "
+            "than 0%; with no resources the task stays duration-driven as "
+            "before.",
+
+            "Task Type: Fixed Units (default) holds each resource's "
+            "allocation - editing duration recomputes work and vice versa; "
+            "Fixed Work holds the total hours - editing duration adjusts the "
+            "allocation; Fixed Duration holds the length - editing work "
+            "adjusts the allocation and duration is locked.",
+
+            "Effort-Driven: on, adding or removing a resource keeps the total "
+            "work (a second resource halves the duration); off, the work "
+            "changes and the duration holds. Fixed Work is always "
+            "effort-driven and its box is locked on; milestones, summaries "
+            "and manually scheduled tasks disable both controls.",
+
+            "Work = Duration x Units, in the project's hours per day. If one "
+            "Save changes two of the three at once, the editor asks which to "
+            "keep and recomputes the other rather than guessing.",
+        ],
+    ),
+    (
         "Show in timeline, Shape and Colour",
         [
             "Show in timeline hides this row's bar from the chart without "

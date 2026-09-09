@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.69.0 - 2026-09-09
+
+- Added **Task Type (Effort Behavior)** and **Effort-Driven** to the task
+  editor's Advanced tab, following MS Project / PMP (Task_Type_FRS). Task
+  Type fixes one of the three quantities in `Work = Duration × Units` (in the
+  project's working hours per day): Fixed Units (default) holds each
+  resource's allocation, Fixed Work holds the total hours, Fixed Duration
+  holds the length. Effort-Driven decides whether adding or removing a
+  resource keeps the total work (shortening the duration) or changes it;
+  Fixed Work is always effort-driven and its checkbox is locked on.
+- The effort maths applies only to a leaf task with at least one resource
+  assigned above 0%. An unresourced task stays purely duration-driven,
+  exactly as before, and milestones, summaries and manually scheduled tasks
+  have both controls disabled - so existing plans are unaffected.
+- Editing a resourced task's duration, work or resource units recomputes the
+  others per the Task Type. When a single Save changes two of the three at
+  once, the editor asks which to keep and recomputes the other rather than
+  guessing; a resource pushed over 100% is allowed but flagged.
+- New project setting **hours per day** (default 8) for the day-to-hours
+  conversion; the effort engine lives in `gantt_app/effort.py`. All new
+  fields save and load with backward-compatible defaults and are carried
+  through undo/redo.
+- Documented the feature in the in-app help and the README.
+
 ## 1.68.0 - 2026-09-09
 
 - Gave the application a real logo. The hexagonal "P / IT-Space" mark now

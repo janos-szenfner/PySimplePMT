@@ -227,6 +227,39 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "The Advanced tab: Task Type and Effort-Driven",
+        [
+            "Below the constraint, the Advanced tab holds the effort "
+            "behaviour: how a task's duration, work and resource units move "
+            "when one of them is changed. It applies only to a task that has "
+            "a resource assigned at more than 0% - a task with no resources "
+            "stays purely duration-driven, exactly as before.",
+
+            "Task Type (Effort Behavior) fixes one of the three: Fixed Units "
+            "(the default) holds each resource's allocation, so editing "
+            "duration recomputes the work and editing work recomputes the "
+            "duration; Fixed Work holds the total hours, so editing duration "
+            "adjusts the allocation; Fixed Duration holds the length, so "
+            "editing work adjusts the allocation and the duration cannot be "
+            "typed over.",
+
+            "Effort-Driven decides what happens when a resource is added or "
+            "removed. On (the default), the total work is kept: a second "
+            "resource halves the duration, and removing one extends it. Off, "
+            "the work changes with the resources and the duration holds. "
+            "Fixed Work is always effort-driven, so its checkbox is ticked "
+            "and locked; a milestone, a summary row or a manually scheduled "
+            "task has no effort behaviour and both controls are disabled.",
+
+            "The relationship is Work = Duration x Units, measured in the "
+            "project's working hours per day. If a single Save changes two of "
+            "the three at once - both duration and work on a Fixed Units "
+            "task, say - the editor asks which to keep and recomputes the "
+            "other, rather than guessing. Adding a resource that pushes it "
+            "over 100% is allowed but noted.",
+        ],
+    ),
+    (
         "Working days and calendar days",
         [
             "These are two different measurements and confusing them is what "
