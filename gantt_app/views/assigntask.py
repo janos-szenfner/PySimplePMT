@@ -220,17 +220,23 @@ class TaskResourceTab(ctk.CTkFrame):
 
     @staticmethod
     def _cell(parent: ctk.CTkFrame, factory: Callable[[ctk.CTkFrame], tk.Widget],
-              width: int, column: int, padx: int = 4) -> ctk.CTkFrame:
-        """Create a fixed-size cell frame and put the factory widget inside it."""
+              width: int, column: int, padx: int = 8) -> ctk.CTkFrame:
+        """
+        A fixed-size, transparent cell holding one widget.
+
+        Transparent so the parent row or header bar shows through, which is
+        what makes the columns read as one grid rather than a row of floating
+        tiles. The left inset (padx) is the same for the header and every row,
+        so the headings line up over their columns.
+        """
         cell = ctk.CTkFrame(
             parent, width=width, height=30,
-            fg_color=theme.now(theme.GRID_ROW_BG),
-            corner_radius=0, border_width=0)
+            fg_color="transparent", corner_radius=0, border_width=0)
         cell.grid_propagate(False)
         cell.pack_propagate(False)
         child = factory(cell)
         child.place(relx=0.0, rely=0.5, anchor=tk.W)
-        cell.grid(row=0, column=column, padx=padx, sticky=tk.W)
+        cell.grid(row=0, column=column, padx=(padx, 0), sticky=tk.W)
         return cell
 
     def _build(self) -> None:
@@ -262,50 +268,44 @@ class TaskResourceTab(ctk.CTkFrame):
                                          self._on_picked)
         self.dropdown_visible = False
 
-        self._header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self._header_frame.pack(fill=tk.X, padx=10, pady=(8, 0))
+        # The assignment table sits in one bordered card - a heading bar over
+        # a body of rows - so it reads as a single grid, the way the task
+        # list does, rather than as tiles floating on the tab.
+        table = ctk.CTkFrame(
+            self, fg_color=theme.now(theme.GRID_ROW_BG),
+            border_width=1, border_color=theme.now(theme.SEPARATOR),
+            corner_radius=6)
+        table.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 10))
+        self._table = table
+
+        self._header_frame = ctk.CTkFrame(
+            table, fg_color=theme.now(theme.GRID_HEADING_BG),
+            corner_radius=0, height=32)
+        self._header_frame.pack(fill=tk.X, padx=1, pady=(1, 0))
+        self._header_frame.pack_propagate(False)
         for col, width in enumerate(self._COLS):
             self._header_frame.columnconfigure(col, minsize=width, weight=0)
 
-        self._cell(
-            self._header_frame,
-            lambda c: ctk.CTkLabel(c, text="Entity Name & Type",
-                                   font=("Arial", 10, "bold"), width=240,
-                                   anchor=tk.W),
-            240, 0)
-        self._cell(
-            self._header_frame,
-            lambda c: ctk.CTkLabel(c, text="Schedule",
-                                   font=("Arial", 10, "bold"), width=160,
-                                   anchor=tk.W),
-            160, 1)
-        self._cell(
-            self._header_frame,
-            lambda c: ctk.CTkLabel(c, text="Workload",
-                                   font=("Arial", 10, "bold"), width=240,
-                                   anchor=tk.W),
-            240, 2)
-        self._cell(
-            self._header_frame,
-            lambda c: ctk.CTkLabel(c, text="Effort (hrs)",
-                                   font=("Arial", 10, "bold"), width=70,
-                                   anchor=tk.W),
-            70, 3)
-        self._cell(
-            self._header_frame,
-            lambda c: ctk.CTkLabel(c, text="Split (%)",
-                                   font=("Arial", 10, "bold"), width=60,
-                                   anchor=tk.W),
-            60, 4)
-        self._cell(
-            self._header_frame,
-            lambda c: ctk.CTkLabel(c, text="Action",
-                                   font=("Arial", 10, "bold"), width=70,
-                                   anchor=tk.CENTER),
-            70, 5)
+        def heading(text, width, column, anchor=tk.W):
+            self._cell(
+                self._header_frame,
+                lambda c: ctk.CTkLabel(
+                    c, text=text, font=("Arial", 10, "bold"), width=width,
+                    anchor=anchor, text_color=theme.now(theme.GRID_TEXT)),
+                width, column)
 
-        self.scroller = ScrollFrame(self)
-        self.scroller.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
+        heading("Entity Name & Type", 240, 0)
+        heading("Schedule", 160, 1)
+        heading("Workload", 240, 2)
+        heading("Effort (hrs)", 70, 3)
+        heading("Split (%)", 60, 4)
+        heading("Action", 70, 5, anchor=tk.CENTER)
+
+        # A hairline under the heading, then the scrolling body of rows.
+        ttk.Separator(table, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=1)
+
+        self.scroller = ScrollFrame(table)
+        self.scroller.pack(fill=tk.BOTH, expand=True, padx=1, pady=(0, 1))
         self._rows_frame = self.scroller.content
 
     # ------------------------------------------------------------------
@@ -314,7 +314,8 @@ class TaskResourceTab(ctk.CTkFrame):
 
     def _show_dropdown(self, _event=None) -> None:
         if not self.dropdown_visible:
-            self.dropdown.pack(fill=tk.X, padx=10, pady=(0, 8), before=self._header_frame)
+            self.dropdown.pack(fill=tk.X, padx=10, pady=(0, 8),
+                               before=self._table)
             self.dropdown_visible = True
             self._on_search()
 
@@ -358,8 +359,12 @@ class TaskResourceTab(ctk.CTkFrame):
             if entity is None:
                 continue
 
-            row = ctk.CTkFrame(self._rows_frame, fg_color="transparent")
-            row.pack(fill=tk.X, pady=2)
+            # Contiguous alternating rows, so the body reads as one grid.
+            row_bg = theme.now(theme.GRID_ROW_BG if index % 2 == 0
+                               else theme.ROW_BG)
+            row = ctk.CTkFrame(self._rows_frame, fg_color=row_bg,
+                               corner_radius=0)
+            row.pack(fill=tk.X)
             for col, width in enumerate(self._COLS):
                 row.columnconfigure(col, minsize=width, weight=0)
 
@@ -369,14 +374,16 @@ class TaskResourceTab(ctk.CTkFrame):
             cells.append(self._cell(
                 row,
                 lambda c: ctk.CTkLabel(c, text=f"{entity.name}  {badge}",
-                                       width=240, anchor=tk.W),
+                                       width=240, anchor=tk.W,
+                                       text_color=theme.now(theme.GRID_TEXT)),
                 240, 0))
 
             schedule = _schedule_short(entity.schedule_pattern)
             cells.append(self._cell(
                 row,
                 lambda c: ctk.CTkLabel(c, text=schedule, width=160,
-                                       anchor=tk.W),
+                                       anchor=tk.W,
+                                       text_color=theme.now(theme.GRID_TEXT)),
                 160, 1))
 
             resources = list(self.repo.resources.values())
