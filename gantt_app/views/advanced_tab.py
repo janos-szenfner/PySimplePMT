@@ -34,6 +34,7 @@ import customtkinter as ctk
 from gantt_app import theme
 from gantt_app.models import (
     CONSTRAINT_LABELS, CONSTRAINT_TYPES, CONSTRAINTS_WITH_DATE, HARD_CONSTRAINTS,
+    EFFORT_FIXED_UNITS, EFFORT_FIXED_WORK, EFFORT_TYPES,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.datepicker import DateEntry
@@ -52,6 +53,24 @@ _LABEL_TO_ENUM = {CONSTRAINT_LABELS[enum]: enum for enum in CONSTRAINT_TYPES}
 #: differ - see REQ-UI-041 §4. Chosen so it never collides with a real title.
 MIXED_LABEL = "— Various —"
 
+#: The Task Type dropdown's help, and the Effort-Driven checkbox's, from
+#: Task_Type_FRS §7.2 - kept short enough to sit in a tooltip.
+TASK_TYPE_TOOLTIP = (
+    "How duration, work and resources adjust when one is changed:\n"
+    "• Fixed Units (default): each resource's allocation is held; duration "
+    "and work adjust.\n"
+    "• Fixed Work: total work is held; duration or resources adjust.\n"
+    "• Fixed Duration: duration is held; work or resources adjust."
+)
+EFFORT_DRIVEN_TOOLTIP = (
+    "What happens when a resource is added or removed:\n"
+    "• On: total work is kept - adding resources shortens the task, "
+    "removing them extends it.\n"
+    "• Off: total work changes with the resources; the duration is not "
+    "moved by the change.\n"
+    "Direct edits to duration, work or units follow the Task Type instead."
+)
+
 
 class AdvancedTab(ctk.CTkFrame):
     """
@@ -64,6 +83,11 @@ class AdvancedTab(ctk.CTkFrame):
     task : Task
         The task being edited; read for its opening values, never written -
         the editor writes the task on Save, from :meth:`apply_to`.
+    is_summary : bool
+        Whether the task rolls up children. A summary's length and work come
+        from what is under it, so its Task Type and Effort-Driven are shown
+        but disabled (Task_Type_FRS §5.8). The tab is handed this because it
+        holds the task alone and cannot see the hierarchy.
     """
 
     #: Field colours, taken from the editor so the two tabs match exactly.
@@ -73,16 +97,22 @@ class AdvancedTab(ctk.CTkFrame):
     FIELD_TEXT_DISABLED = theme.FIELD_TEXT_DISABLED
     ERROR_COLOR = theme.NEGATIVE_TEXT
 
-    def __init__(self, master, task, **kwargs):
+    def __init__(self, master, task, is_summary: bool = False, **kwargs):
         super().__init__(master, fg_color='transparent', **kwargs)
         self.task = task
+        self._is_summary = is_summary
         self._row = 0
         self._last_valid = {}
         self.grid_columnconfigure(1, weight=1)
 
-        self._build_deadline()
+        # Order follows Task_Type_FRS §7.1: Constraint, then Task Type and
+        # Effort-Driven, then Deadline. (Is Milestone lives on the General
+        # tab.) The same order is the keyboard tab order, §12.1.
         self._build_constraint()
+        self._build_task_type()
+        self._build_deadline()
         self._apply_constraint_state()
+        self._apply_effort_state()
 
     # ------------------------------------------------------------------
     # Layout helpers, matching the editor's look
@@ -126,7 +156,7 @@ class AdvancedTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _build_deadline(self):
         """The deadline date box, with a button to clear it back to N/A."""
-        self._heading("Deadline")
+        self._heading("Deadline", rule=True)
 
         holder = self._row_frame("Deadline:")
         holder.grid_columnconfigure(0, weight=1)
@@ -154,7 +184,7 @@ class AdvancedTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _build_constraint(self):
         """The constraint type dropdown and the date it may need."""
-        self._heading("Constraint", rule=True)
+        self._heading("Constraint")
 
         holder = self._row_frame("Constraint type:")
         current = self.task.constraint_type
@@ -212,6 +242,98 @@ class AdvancedTab(ctk.CTkFrame):
         except (tk.TclError, ValueError):
             logger.debug("Could not set the constraint-date state")
         self._paint(self.constraint_date_entry, enabled)
+
+    # ------------------------------------------------------------------
+    # Task Type (Effort Behavior) and Effort-Driven
+    # ------------------------------------------------------------------
+    def _build_task_type(self):
+        """The Task Type dropdown and the Effort-Driven checkbox."""
+        self._heading("Task Type", rule=True)
+
+        holder = self._row_frame("Task Type (Effort Behavior):")
+        current = self.task.effort_type
+        if current not in EFFORT_TYPES:
+            current = EFFORT_FIXED_UNITS
+        self.effort_type_var = ctk.StringVar(value=current)
+        self.effort_type_menu = ctk.CTkOptionMenu(
+            holder, variable=self.effort_type_var, values=list(EFFORT_TYPES),
+            width=240, command=lambda _v: self._on_effort_type_changed())
+        self.effort_type_menu.pack(side=tk.LEFT)
+        attach_tooltip(self.effort_type_menu, TASK_TYPE_TOOLTIP)
+
+        holder2 = self._row_frame("Effort-Driven:")
+        self.effort_driven_var = ctk.BooleanVar(
+            value=bool(self.task.effort_driven))
+        self.effort_driven_check = ctk.CTkCheckBox(
+            holder2, text="", width=24, variable=self.effort_driven_var)
+        self.effort_driven_check.pack(side=tk.LEFT)
+        attach_tooltip(self.effort_driven_check, EFFORT_DRIVEN_TOOLTIP)
+
+        self._hint("Which of duration, work and units is held fixed when the "
+                   "others change; Effort-Driven keeps total work as "
+                   "resources are added or removed.")
+        reason = self._effort_off_reason()
+        if reason:
+            self._hint(reason)
+
+    def _effort_logic_off(self) -> bool:
+        """
+        Whether Task Type and Effort-Driven do not apply to this task.
+
+        A milestone has no duration or work, a manually scheduled task has
+        dates the planner owns, and a summary rolls up its children - none of
+        them has effort logic of its own (Task_Type_FRS §4.4, §5.6, §5.8).
+        """
+        return bool(self.task.effective_milestone
+                    or getattr(self.task, 'manually_scheduled', False)
+                    or self._is_summary)
+
+    def _effort_off_reason(self) -> str:
+        """The muted line saying why the effort fields are disabled, or ''."""
+        if self.task.effective_milestone:
+            return "Disabled for milestones - they carry no duration or work."
+        if getattr(self.task, 'manually_scheduled', False):
+            return "Ignored for manually scheduled tasks; the dates are yours."
+        if self._is_summary:
+            return "Disabled for summary tasks; edit the subtasks instead."
+        return ""
+
+    def _on_effort_type_changed(self):
+        """Re-evaluate the Effort-Driven checkbox for the chosen type."""
+        self._apply_effort_state()
+
+    def _apply_effort_state(self):
+        """
+        Set the two controls' live/locked state.
+
+        Fixed Work is effort-driven by definition, so its checkbox is forced
+        on and locked (Task_Type_FRS §4.2). A milestone, summary or manually
+        scheduled task disables both. Otherwise both are the planner's.
+        """
+        off = self._effort_logic_off()
+        try:
+            self.effort_type_menu.configure(
+                state=tk.DISABLED if off else tk.NORMAL)
+        except (tk.TclError, ValueError):
+            logger.debug("Could not set the task-type state")
+
+        if off:
+            check_state = tk.DISABLED
+        elif self.effort_type_var.get() == EFFORT_FIXED_WORK:
+            # Locked ON: effort-driven by definition.
+            self.effort_driven_var.set(True)
+            check_state = tk.DISABLED
+        else:
+            check_state = tk.NORMAL
+        try:
+            self.effort_driven_check.configure(state=check_state)
+        except (tk.TclError, ValueError):
+            logger.debug("Could not set the effort-driven state")
+
+    def effort_type_value(self) -> str:
+        """The stored effort type the dropdown shows, defaulted if odd."""
+        value = self.effort_type_var.get()
+        return value if value in EFFORT_TYPES else EFFORT_FIXED_UNITS
 
     # ------------------------------------------------------------------
     # Validation on blur - reject an unparseable date, restore, and warn
@@ -349,10 +471,17 @@ class AdvancedTab(ctk.CTkFrame):
             if constraint_date is None:
                 raise ValueError(
                     f"{CONSTRAINT_LABELS[enum]} needs a constraint date.")
+        # Fixed Work is effort-driven whatever the (locked) checkbox reads,
+        # matching what the model enforces; other types take the checkbox.
+        effort_type = self.effort_type_value()
+        effort_driven = (True if effort_type == EFFORT_FIXED_WORK
+                         else bool(self.effort_driven_var.get()))
         return {
             'deadline': deadline,
             'constraint_type': enum,
             'constraint_date': constraint_date,
+            'effort_type': effort_type,
+            'effort_driven': effort_driven,
         }
 
     def apply_to(self, task) -> None:
@@ -368,6 +497,8 @@ class AdvancedTab(ctk.CTkFrame):
         task.deadline = values['deadline']
         task.constraint_type = values['constraint_type']
         task.constraint_date = values['constraint_date']
+        task.effort_type = values['effort_type']
+        task.effort_driven = values['effort_driven']
 
     def set_values(self, task) -> None:
         """Reload the controls from a task, e.g. after a Save & New reset."""
@@ -386,6 +517,12 @@ class AdvancedTab(ctk.CTkFrame):
         self._last_valid['constraint_date'] = \
             self.constraint_date_entry.get().strip()
         self._apply_constraint_state()
+
+        effort_type = task.effort_type if task.effort_type in EFFORT_TYPES \
+            else EFFORT_FIXED_UNITS
+        self.effort_type_var.set(effort_type)
+        self.effort_driven_var.set(bool(task.effort_driven))
+        self._apply_effort_state()
 
     def mark_mixed(self) -> None:
         """

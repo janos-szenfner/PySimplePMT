@@ -1447,8 +1447,18 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """Build the Advanced tab: deadline and scheduling constraint."""
         from gantt_app.views.advanced_tab import AdvancedTab
 
+        # A summary (a row with children) rolls its length and work up from
+        # what is under it, so its Task Type / Effort-Driven are shown but
+        # disabled. A brand-new task has no children yet, so this is False.
+        is_summary = False
+        try:
+            is_summary = bool(self.project.get_subtasks(self.template.id))
+        except Exception:
+            is_summary = False
+
         scroller = ScrollFrame(tab)
-        self.advanced_tab = AdvancedTab(scroller.content, self.template)
+        self.advanced_tab = AdvancedTab(scroller.content, self.template,
+                                        is_summary=is_summary)
         self.advanced_tab.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         scroller.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
 

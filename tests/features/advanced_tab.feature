@@ -55,6 +55,45 @@ Feature: Task Editor Advanced tab - deadline and constraint
     And the deadline is reset
     Then the tab reports no deadline
 
+  @advanced @needs_display
+  Scenario: A new task opens Fixed Units, effort-driven and editable
+    Given an Advanced tab for a task
+    Then the task type is "Fixed Units"
+    And effort-driven is on
+    And the effort-driven checkbox is enabled
+
+  @advanced @needs_display
+  Scenario: Fixed Work locks effort-driven on
+    Given an Advanced tab for a task
+    When the task type is set to "Fixed Work"
+    Then effort-driven is on
+    And the effort-driven checkbox is disabled
+
+  @advanced @needs_display
+  Scenario: Fixed Duration leaves effort-driven to the planner
+    Given an Advanced tab for a task
+    When the task type is set to "Fixed Work"
+    And the task type is set to "Fixed Duration"
+    Then the effort-driven checkbox is enabled
+
+  @advanced @needs_display
+  Scenario: The tab reports the chosen task type
+    Given an Advanced tab for a task
+    When the task type is set to "Fixed Duration"
+    Then reading the tab reports task type "Fixed Duration"
+
+  @advanced @needs_display
+  Scenario: A milestone disables the effort fields
+    Given an Advanced tab for a milestone
+    Then the task type dropdown is disabled
+    And the effort-driven checkbox is disabled
+
+  @advanced @needs_display
+  Scenario: A summary task disables the effort fields
+    Given an Advanced tab for a summary task
+    Then the task type dropdown is disabled
+    And the effort-driven checkbox is disabled
+
   @advanced
   Scenario: A deadline the finish beats is drawn green, on track
     Given a chart task finishing before its deadline

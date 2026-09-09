@@ -189,6 +189,92 @@ def tab_no_deadline(tab):
 
 
 # ---------------------------------------------------------------------------
+# Task Type (Effort Behavior) and Effort-Driven - need a display
+# ---------------------------------------------------------------------------
+@given("an Advanced tab for a milestone", target_fixture="tab")
+def an_advanced_tab_milestone(ctx):
+    if not HAVE_DISPLAY:
+        pytest.skip("needs a display")
+    import customtkinter as ctk
+    from gantt_app.views.advanced_tab import AdvancedTab
+
+    root = ctk.CTk()
+    root.withdraw()
+    ctx["root"] = root
+    task = Task(id="1", name="M", start_date=BASE, task_type="Milestone")
+    tab = AdvancedTab(root, task)
+    tab.update_idletasks()
+    yield tab
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
+
+
+@given("an Advanced tab for a summary task", target_fixture="tab")
+def an_advanced_tab_summary(ctx):
+    if not HAVE_DISPLAY:
+        pytest.skip("needs a display")
+    import customtkinter as ctk
+    from gantt_app.views.advanced_tab import AdvancedTab
+
+    root = ctk.CTk()
+    root.withdraw()
+    ctx["root"] = root
+    task = Task(id="1", name="S", start_date=BASE,
+                end_date=BASE + timedelta(days=3))
+    tab = AdvancedTab(root, task, is_summary=True)
+    tab.update_idletasks()
+    yield tab
+    try:
+        root.destroy()
+    except tk.TclError:
+        pass
+
+
+@when(parsers.parse('the task type is set to "{value}"'))
+def set_task_type(tab, value):
+    tab.effort_type_var.set(value)
+    tab._on_effort_type_changed()
+    tab.update_idletasks()
+
+
+@then(parsers.parse('the task type is "{value}"'))
+def task_type_is(tab, value):
+    assert tab.effort_type_value() == value
+
+
+@then(parsers.parse('reading the tab reports task type "{value}"'))
+def read_reports_task_type(tab, value):
+    assert tab.read_values()["effort_type"] == value
+
+
+@then("effort-driven is on")
+def effort_driven_on(tab):
+    assert tab.effort_driven_var.get() is True
+
+
+@then("effort-driven is off")
+def effort_driven_off(tab):
+    assert tab.effort_driven_var.get() is False
+
+
+@then("the effort-driven checkbox is enabled")
+def effort_driven_enabled(tab):
+    assert str(tab.effort_driven_check.cget("state")) == tk.NORMAL
+
+
+@then("the effort-driven checkbox is disabled")
+def effort_driven_disabled(tab):
+    assert str(tab.effort_driven_check.cget("state")) == tk.DISABLED
+
+
+@then("the task type dropdown is disabled")
+def task_type_disabled(tab):
+    assert str(tab.effort_type_menu.cget("state")) == tk.DISABLED
+
+
+# ---------------------------------------------------------------------------
 # The Gantt markers - no display
 # ---------------------------------------------------------------------------
 def _one_task_layout(**task_kwargs):
