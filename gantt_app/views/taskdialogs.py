@@ -165,6 +165,20 @@ class EditTaskDialog(TaskFormDialog):
             old_task = copy.copy(self.task)
             old_task.dependencies = [copy.copy(d) for d in self.task.dependencies]
 
+            # Task Type / Effort-Driven: reconcile the edited duration and
+            # assignments against the effort maths before anything is written.
+            # Leaf work items only - a container rolls its length up from its
+            # children and a milestone has no effort. A cancelled conflict
+            # prompt aborts the save with the live task still untouched.
+            assignments = self.resource_tab.get_assignments()
+            if not self.task.is_container and not is_milestone:
+                reconciled = self._reconcile_effort(
+                    old_task, duration, assignments,
+                    advanced['effort_type'], advanced['effort_driven'])
+                if reconciled is None:
+                    return False
+                duration, assignments = reconciled
+
             self.task.name = name
             # Whatever the menu says, wherever the row sits; see
             # seed_type_locked
@@ -203,7 +217,7 @@ class EditTaskDialog(TaskFormDialog):
             self.task.calendar_id = self.chosen_calendar_id()
             self.task.details = details
             self.task.color = self.color_entry.get()
-            self.task.resource_assignments = self.resource_tab.get_assignments()
+            self.task.resource_assignments = assignments
             logger.info(
                 "Task %s %r has %d resource assignment(s)",
                 self.task.id, self.task.name,

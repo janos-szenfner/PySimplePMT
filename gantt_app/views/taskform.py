@@ -15,6 +15,7 @@ The checking of the fields as they are filled in is in formcheck.py, mixed in
 here as FormChecks.
 """
 
+import copy
 import tkinter as tk
 from tkinter import ttk
 # See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
@@ -1840,6 +1841,75 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         logger.info("Constraint conflict on %r cancelled; reverted to N/A",
                     task.name)
         return False
+
+    def _reconcile_effort(self, old_task, duration, assignments,
+                          effort_type, effort_driven):
+        """
+        Apply the Task Type / Effort-Driven maths to a just-edited task.
+
+        PARAMETERS:
+        -----------
+        old_task : Task
+            The task as it was before this edit, for spotting what changed.
+        duration : int or None
+            The duration the form now holds, in days.
+        assignments : list[dict]
+            The resource assignments the form now holds.
+        effort_type, effort_driven :
+            The Advanced tab's Task Type and Effort-Driven.
+
+        RETURNS:
+        --------
+        tuple(int, list[dict]) or None
+            The reconciled ``(duration, assignments)`` to save, or None when
+            the planner cancelled the conflict prompt and the save should
+            abort. When the task is not effort-managed (no assignment with
+            real units, or a milestone/summary/manual task) the inputs come
+            back unchanged, so those tasks are byte-for-byte as before.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Runs before the live task is mutated, on a probe, so a cancel leaves
+        nothing half-written - the same shape as the constraint check above.
+        The both-adjustable-changed conflict is the only case that prompts;
+        every single-edit case recomputes silently. See gantt_app.effort.
+        """
+        from gantt_app import effort as eff
+
+        hpd = getattr(self.project, 'hours_per_day', eff.DEFAULT_HOURS_PER_DAY)
+        probe = copy.copy(old_task)
+        probe.duration = duration
+        probe.effort_type = effort_type
+        probe.effort_driven = effort_driven
+        probe.resource_assignments = [dict(a) for a in assignments]
+
+        old_state = eff.state_from_task(old_task, hpd)
+        new_state = eff.state_from_task(probe, hpd)
+
+        # The gate: only a resourced (units > 0), auto-scheduled leaf is
+        # managed. Anything else is returned exactly as the form gave it.
+        if not eff.logic_applies(new_state) or new_state.total_units <= 0:
+            return duration, assignments
+
+        result, conflict = eff.reconcile(old_state, new_state)
+        if conflict is not None:
+            from gantt_app.views.advanced_tab import EffortConflictDialog
+            choice = EffortConflictDialog.ask(self, conflict)
+            if choice is None:
+                logger.info("Effort conflict on %r cancelled; save aborted",
+                            old_task.name)
+                return None
+            result, conflict = eff.reconcile(old_state, new_state,
+                                             preserve=choice)
+
+        eff.write_state_to_task(new_state, probe, hpd)
+        if result is not None:
+            for warning in result.warnings:
+                logger.info("Effort recalculation on %r: %s",
+                            old_task.name, warning)
+        logger.debug("Effort reconciled on %r: duration=%s work-units=%.3g",
+                     old_task.name, probe.duration, new_state.total_units)
+        return probe.duration, probe.resource_assignments
 
     def cancel(self):
         """Close without saving."""

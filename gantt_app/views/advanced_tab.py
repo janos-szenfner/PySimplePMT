@@ -644,3 +644,72 @@ class ConstraintConflictDialog(ctk.CTkToplevel):
         dialog = cls(master, conflict)
         dialog.wait_window()
         return dialog.result
+
+
+class EffortConflictDialog(ctk.CTkToplevel):
+    """
+    The Save-time prompt when both of a task type's adjustable numbers moved.
+
+    PARAMETERS:
+    -----------
+    master : widget
+        The task editor.
+    conflict : gantt_app.effort.EditConflict
+        Which task type is in force and which two variables both changed.
+
+    The task type fixes one of duration, work and units; changing both of the
+    others in one Save is ambiguous, so the planner is asked which to keep -
+    the other is recalculated. The choice is left in ``result`` as the
+    variable name to preserve, or None for Cancel (which aborts the save, so
+    nothing is written and neither value is silently chosen).
+    """
+
+    def __init__(self, master, conflict):
+        super().__init__(master)
+        self.result = None
+        self.title("Which value to keep?")
+        self.transient(master.winfo_toplevel())
+        self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.bind("<Escape>", lambda _e: self._cancel())
+
+        from gantt_app.effort import var_label
+
+        ctk.CTkLabel(
+            self, text="⚠  Which value should be kept?",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=theme.WARNING_TEXT,
+        ).pack(padx=20, pady=(18, 6), anchor=tk.W)
+
+        ctk.CTkLabel(
+            self, justify=tk.LEFT, wraplength=420, text=conflict.prompt(),
+        ).pack(padx=20, pady=(0, 12), anchor=tk.W)
+
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(padx=20, pady=(0, 16), anchor=tk.E)
+        ctk.CTkButton(row, text="Cancel", width=110,
+                      fg_color="transparent", border_width=1,
+                      border_color=theme.SEPARATOR, text_color=theme.TEXT,
+                      hover_color=theme.MENU_HOVER,
+                      command=self._cancel).pack(side=tk.LEFT, padx=5)
+        for var in conflict.options:
+            ctk.CTkButton(row, text=f"Keep {var_label(var)}", width=150,
+                          command=lambda v=var: self._choose(v)).pack(
+                side=tk.LEFT, padx=5)
+
+        grab_when_visible(self)
+
+    def _choose(self, var: str):
+        self.result = var
+        self.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.destroy()
+
+    @classmethod
+    def ask(cls, master, conflict):
+        """Show modally; return the variable to preserve, or None to cancel."""
+        dialog = cls(master, conflict)
+        dialog.wait_window()
+        return dialog.result
