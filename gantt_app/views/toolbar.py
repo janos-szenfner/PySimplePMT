@@ -1385,7 +1385,13 @@ class Toolbar(ctk.CTkFrame):
                     # highlight_critical_path
                     {"text": "Critical Path...", "command": self.show_critical_path},
                     {"text": "Help", "command": self.show_help},
+                ],
+            },
+            {
+                'text': 'About',
+                'items': [
                     {"text": "About PySimplePMT", "command": self.show_about},
+                    {"text": "Changelog", "command": self.show_changelog},
                 ],
             },
         ]
@@ -2799,7 +2805,21 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.aboutwindow import show_about
 
+        logger.info("Opening the About PySimplePMT window")
         show_about(self.winfo_toplevel())
+
+    def show_changelog(self):
+        """
+        Open the Changelog, read the same way as the Help guide.
+
+        One window, kept as one instance, so reaching it again raises the
+        copy that is open rather than stacking a second - see
+        ChangelogWindow.
+        """
+        from gantt_app.help.changelog import show_changelog
+
+        logger.info("Opening the Changelog window")
+        show_changelog(self.winfo_toplevel())
 
     def toggle_theme(self):
         """

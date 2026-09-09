@@ -287,35 +287,48 @@ class GanttApp(ctk.CTk):
 
     def _install_about_handler(self):
         """
-        Route the About menu item to the application's own About window.
+        Route the macOS application and Help menu items to our own windows.
 
         DEVELOPMENT NOTES:
         ------------------
-        On macOS every application has a bold app-name menu, and its first
-        item - "About PySimplePMT" - is wired by Tk to the Tcl command
-        ``tk::mac::standardAboutPanel``, which shows Tk's own plain panel.
-        Redefining that command with createcommand intercepts the click, so
-        the built-in menu item opens our logo-and-version window instead. No
-        native menubar is built: the app's menus live in the in-window
-        toolbar, and this only re-points an item macOS already draws.
+        On macOS every application has a bold app-name menu and a Help menu
+        that Tk draws itself, and it wires two of their items to Tcl
+        commands: the app menu's "About PySimplePMT" to
+        ``tk::mac::standardAboutPanel`` and the Help menu's "PySimplePMT
+        Help" to ``tk::mac::ShowHelp``. Left alone, About shows Tk's plain
+        panel and Help does nothing (the reader sees "no help"). Redefining
+        both commands with createcommand points them at our About window and
+        the user guide. No native menubar is built: the app's own menus live
+        in the in-window toolbar, and this only re-points items macOS already
+        draws.
 
-        Only meaningful on Aqua; elsewhere the same window is reached from the
-        in-window View menu's "About PySimplePMT" item. Failure is logged and
-        stepped over - a missing About handler must not stop startup.
+        Only meaningful on Aqua; elsewhere the same windows are reached from
+        the in-window About and View menus. Failure is logged and stepped
+        over - a missing handler must not stop startup.
         """
         if sys.platform != 'darwin':
             return
         try:
             self.createcommand('tk::mac::standardAboutPanel',
                                self._show_about_window)
+            self.createcommand('tk::mac::ShowHelp', self._show_help_window)
+            logger.info("macOS About and Help menu handlers installed")
         except Exception:
-            logger.exception("Could not install the macOS About handler")
+            logger.exception("Could not install the macOS menu handlers")
 
     def _show_about_window(self):
         """Open the About PySimplePMT window over the main window."""
         from gantt_app.views.aboutwindow import show_about
 
+        logger.info("Opening the About window from the macOS app menu")
         show_about(self)
+
+    def _show_help_window(self):
+        """Open the user guide - the Help menu's PySimplePMT Help item."""
+        from gantt_app.help.userguide import show_user_guide
+
+        logger.info("Opening the user guide from the macOS Help menu")
+        show_user_guide(self)
 
     def _create_sample_data(self):
         """Create sample tasks for demonstration."""

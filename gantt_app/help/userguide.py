@@ -1171,6 +1171,19 @@ GUIDE_SECTIONS = (
             "log is where it will be.",
         ],
     ),
+    (
+        "About and Changelog",
+        [
+            "The About menu, at the right of the menu row, opens two windows. "
+            "About PySimplePMT shows the logo, the version, the author and "
+            "the licence; Changelog opens the release history, read and "
+            "searched the same way as this guide.",
+
+            "On macOS the same two are reachable where the system puts them: "
+            "the bold PySimplePMT menu's About PySimplePMT opens the About "
+            "window, and the Help menu's PySimplePMT Help opens this guide.",
+        ],
+    ),
 )
 
 

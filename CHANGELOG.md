@@ -1,7 +1,20 @@
 # Changelog
 
-## 1.69.0 - 2026-09-09
+## 1.68.1 - 2026-09-09
 
+- New top-level **About** menu, beside View, holding **About PySimplePMT**
+  (moved out of the View menu) and a new **Changelog** item that opens the
+  release history in a scrolling, searchable window read the same way as the
+  Help guide.
+- On macOS the built-in **Help > PySimplePMT Help** item now opens the user
+  guide instead of reporting no help, and the application menu's **About
+  PySimplePMT** opens the About window - both wired through the Tk Aqua menu
+  commands. The changelog file is bundled into the packaged app so the
+  Changelog window finds it when frozen.
+- Fixed the task list's inline **Type** dropdown staying open and editable
+  when clicked away from without a choice; it now closes and keeps the
+  original type. The decision is made on where focus comes to rest, so the
+  dropdown list opening no longer tears the editor down.
 - Added **Task Type (Effort Behavior)** and **Effort-Driven** to the task
   editor's Advanced tab, following MS Project / PMP (Task_Type_FRS). Task
   Type fixes one of the three quantities in `Work = Duration × Units` (in the

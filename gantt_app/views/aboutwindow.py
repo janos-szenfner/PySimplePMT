@@ -184,4 +184,5 @@ class AboutWindow(ctk.CTkToplevel):
 
 def show_about(master=None):
     """Open the About PySimplePMT window."""
+    logger.info("Showing About PySimplePMT (version %s)", __version__)
     return AboutWindow.show(master)

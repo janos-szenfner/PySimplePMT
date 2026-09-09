@@ -121,6 +121,12 @@ logo_file = PROJECT_ROOT / 'gantt_app' / 'resources' / 'logo_source.png'
 if logo_file.is_file():
     datas.append((str(logo_file), 'gantt_app/resources'))
 
+# The changelog, read at runtime by the About > Changelog window. Placed at
+# the bundle root, where gantt_app/help/changelog.py looks (sys._MEIPASS).
+changelog_file = PROJECT_ROOT / 'CHANGELOG.md'
+if changelog_file.is_file():
+    datas.append((str(changelog_file), '.'))
+
 # Large packages that are never imported at runtime. Excluding them keeps the
 # package to a sensible size for a desktop download.
 excludes = [

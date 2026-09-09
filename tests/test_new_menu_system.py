@@ -237,9 +237,10 @@ class TestMenuStructure(unittest.TestCase):
         menu_tree = Toolbar._menu_definitions(self.stub)
         
         menu_texts = [menu['text'] for menu in menu_tree]
-        expected_order = ['File', 'Actions', 'Settings', 'Edit', 'View']
-        
-        self.assertEqual(menu_texts, expected_order, 
+        expected_order = ['File', 'Actions', 'Settings', 'Edit', 'View',
+                          'About']
+
+        self.assertEqual(menu_texts, expected_order,
                         f"Menu order incorrect. Expected: {expected_order}, Got: {menu_texts}")
 
     def test_menu_conversion_preserves_structure(self):

@@ -46,9 +46,10 @@ class TestMenuOrder(unittest.TestCase):
         self.tree = menu_tree()
 
     def test_top_level_order(self):
-        """File, Actions, Settings, Edit, then View last."""
+        """File, Actions, Settings, Edit, View, then About last."""
         self.assertEqual([menu['text'] for menu in self.tree],
-                         ['File', 'Actions', 'Settings', 'Edit', 'View'])
+                         ['File', 'Actions', 'Settings', 'Edit', 'View',
+                          'About'])
 
     def test_file_comes_first(self):
         """
@@ -64,9 +65,10 @@ class TestMenuOrder(unittest.TestCase):
         """Its entries are under File; the empty menu went with them."""
         self.assertNotIn('Project', [menu['text'] for menu in self.tree])
 
-    def test_view_is_last(self):
-        """View stays at the end of the list."""
-        self.assertEqual(self.tree[-1]['text'], 'View')
+    def test_about_is_last(self):
+        """About is the final top-level menu, after View."""
+        self.assertEqual(self.tree[-1]['text'], 'About')
+        self.assertEqual(self.tree[-2]['text'], 'View')
 
 
 class TestMenuContents(unittest.TestCase):
@@ -147,8 +149,13 @@ class TestMenuContents(unittest.TestCase):
 
         self.assertEqual(view,
                          ['System UI mode', 'Grid View Only', 'Charts',
-                          'Critical Path...', 'Help', 'About PySimplePMT'])
+                          'Critical Path...', 'Help'])
         self.assertNotIn('Project Info', view)
+
+    def test_the_about_menu_holds_about_and_changelog(self):
+        """About sits beside View, with the app-about window and changelog."""
+        about = labels(find(self.tree, 'About')['items'])
+        self.assertEqual(about, ['About PySimplePMT', 'Changelog'])
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):
         """
