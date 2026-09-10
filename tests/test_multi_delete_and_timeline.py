@@ -113,6 +113,20 @@ class TestAddToTimeline(TaskListCase):
         self.task_list.add_to_timeline(["t1"])
         self.assertFalse(self.manager.can_undo())
 
+    def test_added_rows_become_visible_on_the_gantt(self):
+        from gantt_app.utils.chart_render import _get_visible_tasks
+
+        self.assertEqual(_get_visible_tasks(self.project), [])  # all off
+        self.task_list.add_to_timeline(["t1", "t2"])
+        visible = {t.id for t in _get_visible_tasks(self.project)}
+        self.assertEqual(visible, {"t1", "t2"})
+
+    def test_the_flag_the_editor_reads_is_set(self):
+        # The task editor's checkbox reads task.show_in_timeline directly, so
+        # a flag turned on here shows ticked when the row is next opened.
+        self.task_list.add_to_timeline(["t3"])
+        self.assertTrue(self.project.get_task_by_id("t3").show_in_timeline)
+
 
 if __name__ == "__main__":
     unittest.main()

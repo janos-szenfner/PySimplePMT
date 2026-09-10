@@ -1192,6 +1192,28 @@ GUIDE_SECTIONS = (
             "window, and the Help menu's PySimplePMT Help opens this guide.",
         ],
     ),
+    (
+        "Update your application version",
+        [
+            "Opening About PySimplePMT checks whether a newer release is "
+            "available and says so at the foot of the window. The check runs "
+            "in the background, so the window opens straight away; when it "
+            "finishes the line reads one of three things.",
+
+            "\"You have the latest version.\" - nothing to do. \"A new "
+            "version is available: X.Y.Z\" - a Download button appears, and "
+            "pressing it opens the release page in your browser, where you "
+            "download the new build and install it the same way you installed "
+            "this one. \"Couldn't check for updates.\" - the check could not "
+            "reach GitHub, usually because the machine is offline; open About "
+            "again when you are back online.",
+
+            "The check only reads the latest release's version number and "
+            "page - it never downloads or installs anything on its own, and "
+            "it sends nothing about you or your plans. Putting the new "
+            "version in place is always your step, from the release page.",
+        ],
+    ),
 )
 
 
