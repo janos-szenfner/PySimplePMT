@@ -1200,18 +1200,27 @@ GUIDE_SECTIONS = (
             "in the background, so the window opens straight away; when it "
             "finishes the line reads one of three things.",
 
-            "\"You have the latest version.\" - nothing to do. \"A new "
-            "version is available: X.Y.Z\" - a Download button appears, and "
-            "pressing it opens the release page in your browser, where you "
-            "download the new build and install it the same way you installed "
-            "this one. \"Couldn't check for updates.\" - the check could not "
-            "reach GitHub, usually because the machine is offline; open About "
-            "again when you are back online.",
+            "\"You have the latest version.\" - nothing to do. \"Couldn't "
+            "check for updates.\" - the check could not reach GitHub, usually "
+            "because the machine is offline; open About again when you are "
+            "back online.",
 
-            "The check only reads the latest release's version number and "
-            "page - it never downloads or installs anything on its own, and "
-            "it sends nothing about you or your plans. Putting the new "
-            "version in place is always your step, from the release page.",
+            "\"A new version is available: X.Y.Z\" - two buttons appear. "
+            "Download & Install downloads the installer for your platform - "
+            "the DMG on macOS, the DEB on Linux, the installer on Windows - "
+            "checks it against the checksum the release published for that "
+            "exact file, and only then opens it: the DMG mounts, the DEB "
+            "opens in your software installer, and you finish the install the "
+            "ordinary way. A file that fails the checksum is deleted and "
+            "never opened. Open the download page is the fallback, and the "
+            "only option when a release has no installer for your platform.",
+
+            "Nothing is installed for you and the running application is not "
+            "replaced - the verified installer is opened and you complete the "
+            "install, the same way you did the first time. A download is "
+            "never opened until its checksum matches, so a corrupted or "
+            "tampered file cannot be run. The check itself sends nothing "
+            "about you or your plans.",
         ],
     ),
 )

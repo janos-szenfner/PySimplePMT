@@ -109,11 +109,21 @@ class AboutWindow(ctk.CTkToplevel):
             text_color=theme.pair(theme.MUTED_TEXT),
         )
         self._update_label.pack()
+        # The assisted download-verify-open button, and a plain page link as a
+        # fallback; both packed only when there is an update to act on.
+        self._install_button = ctk.CTkButton(
+            update_frame, text="Download & Install…", width=180,
+            command=self._download_and_install)
         self._download_button = ctk.CTkButton(
-            update_frame, text="Download the update", width=170,
+            update_frame, text="Open the download page", width=180,
+            fg_color="transparent", border_width=1,
+            border_color=theme.pair(theme.SEPARATOR),
+            text_color=theme.pair(theme.TEXT),
             command=self._open_download)
-        # Packed only when there is something to download.
+        self._update_frame = update_frame
         self._download_url = None
+        self._update_info = None
+        self._downloading = False
 
         ctk.CTkButton(
             container, text="Close", width=110, command=self._close,
@@ -194,17 +204,116 @@ class AboutWindow(ctk.CTkToplevel):
             return
 
         if info.status == uc.STATUS_UPDATE:
+            from gantt_app import update_download as ud
+
+            self._update_info = info
+            self._download_url = info.download_url
             self._update_label.configure(
                 text=f"A new version is available: {info.latest} "
                      f"(you have {info.current}).",
                 text_color=theme.pair(theme.WARNING_TEXT))
-            self._download_url = info.download_url
-            self._download_button.pack(pady=(8, 0))
+            # Offer the verified download when the release carries an
+            # installer for this platform and a SHA256SUMS to check it
+            # against; always offer the page as a fallback.
+            if ud.can_assist(info):
+                self._install_button.pack(pady=(8, 0))
+            self._download_button.pack(pady=(6, 0))
             return
 
         self._update_label.configure(
             text="You have the latest version.",
             text_color=theme.pair(theme.POSITIVE_TEXT))
+
+    def _download_and_install(self):
+        """
+        Download the installer, verify it, and open it (issue #41, tier 2).
+
+        Runs on a background thread so the window stays responsive, reporting
+        progress on the status line. The verified installer is opened for the
+        person to complete the install; a file that fails its checksum is
+        deleted and never opened, and the page link stays available as a
+        fallback.
+        """
+        if self._downloading or self._update_info is None:
+            return
+        import threading
+
+        from gantt_app import update_download as ud
+
+        self._downloading = True
+        try:
+            self._install_button.configure(state="disabled")
+        except Exception:
+            pass
+        self._update_label.configure(
+            text="Downloading the update…",
+            text_color=theme.pair(theme.MUTED_TEXT))
+
+        info = self._update_info
+
+        def progress(received, total):
+            if total > 0:
+                pct = int(received * 100 / total)
+                self._safe_after(self._set_update_text,
+                                 f"Downloading the update… {pct}%",
+                                 theme.pair(theme.MUTED_TEXT))
+
+        def worker():
+            try:
+                path = ud.fetch_verified_installer(info, progress=progress)
+            except ud.IntegrityError as error:
+                self._safe_after(self._download_failed, str(error), True)
+            except ud.UpdateError as error:
+                self._safe_after(self._download_failed, str(error), False)
+            except Exception as error:   # never let the thread die silently
+                logger.exception("Assisted update failed")
+                self._safe_after(self._download_failed, str(error), False)
+            else:
+                self._safe_after(self._download_succeeded, path)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _download_succeeded(self, path):
+        """Verified: open the installer and say so."""
+        from gantt_app import update_download as ud
+
+        self._downloading = False
+        self._set_update_text(
+            "Downloaded and verified — opening the installer…",
+            theme.pair(theme.POSITIVE_TEXT))
+        try:
+            ud.open_installer(path)
+        except Exception:
+            logger.exception("Could not open the verified installer")
+            self._set_update_text(
+                f"Downloaded and verified. Open it yourself: {path}",
+                theme.pair(theme.TEXT))
+
+    def _download_failed(self, message, integrity):
+        """A download that could not be trusted or completed."""
+        self._downloading = False
+        try:
+            self._install_button.configure(state="normal")
+        except Exception:
+            pass
+        colour = theme.pair(
+            theme.NEGATIVE_TEXT if integrity else theme.WARNING_TEXT)
+        self._set_update_text(message, colour)
+
+    def _set_update_text(self, text, colour):
+        """Set the status line, if the window is still open."""
+        try:
+            if self._update_label.winfo_exists():
+                self._update_label.configure(text=text, text_color=colour)
+        except Exception:
+            pass
+
+    def _safe_after(self, func, *args):
+        """Schedule a UI update from the worker thread, guarding teardown."""
+        try:
+            self.after(0, func, *args)
+        except Exception:
+            pass
 
     def _open_download(self):
         """Open the release page in the browser for the reader to download."""

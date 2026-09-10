@@ -20,7 +20,7 @@ deliberately not attempted here.
 
 import json
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional, Tuple
 
 from gantt_app.utils.log import get_logger
@@ -48,6 +48,10 @@ class UpdateInfo:
     latest: Optional[str] = None
     download_url: Optional[str] = None
     error: Optional[str] = None
+    #: The release's downloadable files, each {name, url, size}. Used by the
+    #: assisted download (gantt_app.update_download) to find the installer and
+    #: the SHA256SUMS to check it against.
+    assets: list = field(default_factory=list)
 
 
 def parse_version(text: str) -> Optional[Tuple[int, ...]]:
@@ -125,6 +129,13 @@ def check_for_update(current: str,
     tag = data.get("tag_name") or ""
     latest = tag.lstrip("vV")
     download_url = data.get("html_url") or RELEASES_PAGE
+    assets = [
+        {"name": a.get("name", ""),
+         "url": a.get("browser_download_url", ""),
+         "size": a.get("size", 0)}
+        for a in (data.get("assets") or [])
+        if a.get("browser_download_url")
+    ]
 
     if parse_version(latest) is None:
         logger.info("Update check got no usable version from %r", tag)
@@ -133,7 +144,9 @@ def check_for_update(current: str,
 
     if is_newer(latest, current):
         logger.info("Update available: %s (running %s)", latest, current)
-        return UpdateInfo(STATUS_UPDATE, current, latest, download_url)
+        return UpdateInfo(STATUS_UPDATE, current, latest, download_url,
+                          assets=assets)
 
     logger.info("Running the latest version (%s)", current)
-    return UpdateInfo(STATUS_LATEST, current, latest, download_url)
+    return UpdateInfo(STATUS_LATEST, current, latest, download_url,
+                      assets=assets)
