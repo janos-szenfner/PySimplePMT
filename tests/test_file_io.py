@@ -280,7 +280,6 @@ class TestJSONFileIO(unittest.TestCase):
                 'priority': 'Normal',
                 'shape': 'Default',
                 'show_in_timeline': True,
-                'scheduling_options': 'End date is calculated',
                 'details': '',
                 'calendar_id': None,
                 'style': None

@@ -121,16 +121,16 @@ class EditorTestCase(unittest.TestCase):
 
     def let_the_end_date_be_typed(self, dialog):
         """
-        Put the form in the mode where the end date is the user's to set.
+        A no-op kept for the tests that called it (issue #31).
 
         DEVELOPMENT NOTES:
         ------------------
-        A task form opens on "End date is calculated", which greys the end
-        date box out and works it out from the start date and the duration.
-        Typing an end date means saying so first, which is what this does -
-        the same two clicks a user makes.
+        The form used to open with the end date greyed out and calculated, so
+        a test had to switch modes before it could type one. All three boxes
+        are always the user's now, so there is nothing to switch - the method
+        stays so the scenarios that called it read unchanged.
         """
-        dialog.scheduling_options_var.set("Duration is calculated")
+        return None
 
     def marked(self, dialog, key):
         """Whether a field is currently outlined as wrong."""
@@ -238,16 +238,21 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
         self.assertFalse(self.marked(dialog, 'start_date'))
         self.assertEqual(self.problem(dialog), "")
 
-    def test_an_end_before_the_start_is_marked(self):
-        """A task cannot finish before it begins."""
+    def test_an_earlier_end_moves_the_start_not_the_span(self):
+        """
+        The form cannot be made to finish before it begins now (issue #31).
+
+        Typing an earlier end moves the start by the same length (rule 2)
+        rather than leaving an inverted span to complain about.
+        """
         dialog = self.edit_dialog()
-        self.let_the_end_date_be_typed(dialog)
 
-        self.type_into(dialog.start_date_entry, "2026-03-10")
-        self.type_into(dialog.end_date_entry, "2026-03-01")
+        self.type_into(dialog.end_date_entry, "2026-01-02")
 
-        self.assertTrue(self.marked(dialog, 'end_date'))
-        self.assertIn("before", self.problem(dialog))
+        self.assertFalse(self.marked(dialog, 'end_date'))
+        start = dialog._read_date(dialog.start_date_entry)
+        end = dialog._read_date(dialog.end_date_entry)
+        self.assertLessEqual(start, end)
 
     def test_a_milestone_is_not_asked_for_an_end_date(self):
         """Ticking Is Milestone withdraws the complaint about the end date."""
@@ -358,16 +363,13 @@ class TestRefusingToSave(EditorTestCase):
     def test_a_good_form_saves(self):
         """Nothing above stops an ordinary edit going through."""
         dialog = self.edit_dialog()
-        self.let_the_end_date_be_typed(dialog)
 
         self.type_into(dialog.name_entry, "Renamed")
-        self.type_into(dialog.start_date_entry, "2026-04-01")
-        self.type_into(dialog.end_date_entry, "2026-04-10")
+        self.type_into(dialog.duration_entry, "5")
 
         self.assertTrue(dialog._apply())
         self.assertEqual(self.task.name, "Renamed")
-        self.assertEqual(self.task.start_date, datetime(2026, 4, 1))
-        self.assertEqual(self.task.end_date, datetime(2026, 4, 10))
+        self.assertEqual(self.task.duration, 5)
 
 
 class TestCheckingIsCheap(EditorTestCase):
@@ -502,10 +504,11 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
 
     WHY THESE EXIST:
     ================
-    A disabled CustomTkinter box is only very slightly paler than a live
-    one, so the end date - greyed out because the scheduling mode is
-    deriving it - looked exactly like the start date you are meant to fill
-    in. There was nothing on the form to say which was which.
+    A disabled CustomTkinter box is only very slightly paler than a live one,
+    so a greyed field - a container's dates, taken from its children - has to
+    read as greyed rather than as one the user is meant to fill in. With the
+    scheduling-options mode gone (issue #31) the three schedule boxes of an
+    ordinary task are all live; only a container or a milestone greys any.
     """
 
     def state_of(self, dialog, widget):
@@ -515,18 +518,6 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
         return (str(entry.cget('state')),
                 entry.cget('fg_color'),
                 caption.cget('text_color') if caption else None)
-
-    def test_the_calculated_date_is_greyed(self):
-        """It is the form's to fill in, not the user's."""
-        from gantt_app.views.taskform import TaskFormDialog
-
-        dialog = self.edit_dialog()
-        state, background, caption = self.state_of(dialog,
-                                                   dialog.end_date_entry)
-
-        self.assertEqual(state, 'disabled')
-        self.assertEqual(background, TaskFormDialog.FIELD_BG_DISABLED)
-        self.assertEqual(caption, TaskFormDialog.FIELD_TEXT_DISABLED)
 
     def test_the_boxes_the_user_fills_in_are_not(self):
         """The start date and the duration stay live and plain."""
@@ -541,20 +532,17 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
             self.assertEqual(background, TaskFormDialog.FIELD_BG)
             self.assertEqual(caption, TaskFormDialog.FIELD_TEXT)
 
-    def test_the_greying_follows_the_scheduling_mode(self):
-        """Whichever box the mode names is the one that greys."""
+    def test_all_three_schedule_boxes_are_editable(self):
+        """No mode greys any of them now; all three are the user's (issue #31)."""
         from gantt_app.views.taskform import TaskFormDialog
 
         dialog = self.edit_dialog()
-        dialog.scheduling_options_var.set("Duration is calculated")
 
-        duration = self.state_of(dialog, dialog.duration_entry)
-        end = self.state_of(dialog, dialog.end_date_entry)
-
-        self.assertEqual(duration[0], 'disabled')
-        self.assertEqual(duration[1], TaskFormDialog.FIELD_BG_DISABLED)
-        self.assertEqual(end[0], 'normal')
-        self.assertEqual(end[1], TaskFormDialog.FIELD_BG)
+        for widget in (dialog.start_date_entry, dialog.end_date_entry,
+                       dialog.duration_entry):
+            state, background, _caption = self.state_of(dialog, widget)
+            self.assertEqual(state, 'normal')
+            self.assertEqual(background, TaskFormDialog.FIELD_BG)
 
     def test_a_container_greys_everything_it_rolls_up(self):
         """A phase takes its dates and its length from the work inside it."""
@@ -606,11 +594,17 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
         The colour is read off the widget, not decided again.
 
         A field painted with its own state cannot quietly re-enable one
-        that was built disabled.
+        that was built disabled - a container's end, here, which it takes
+        from the work inside it.
         """
+        from gantt_app.models import Task
         from gantt_app.views.taskform import TaskFormDialog
 
-        dialog = self.edit_dialog()
+        phase = Task(id="P1", name="Planning", task_type="Phase",
+                     start_date=datetime(2026, 1, 1),
+                     end_date=datetime(2026, 1, 8))
+        self.project.add_task(phase)
+        dialog = self.edit_dialog_for(phase)
         dialog._paint_field(dialog.end_date_entry)
 
         entry = dialog._entry_of(dialog.end_date_entry)
@@ -619,13 +613,11 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
         self.assertEqual(entry.cget('fg_color'),
                          TaskFormDialog.FIELD_BG_DISABLED)
 
-    def test_a_caption_goes_back_to_black_when_its_box_comes_back(self):
-        """Greying is undone, not only applied."""
+    def test_an_editable_box_keeps_its_ordinary_caption(self):
+        """No mode greys the duration now, so its caption stays black."""
         from gantt_app.views.taskform import TaskFormDialog
 
         dialog = self.edit_dialog()
-        dialog.scheduling_options_var.set("Duration is calculated")
-        dialog.scheduling_options_var.set("End date is calculated")
 
         _state, _background, caption = self.state_of(dialog,
                                                      dialog.duration_entry)
@@ -634,18 +626,18 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
 
 class TestTheCalculatedBoxKeepsUp(EditorTestCase):
     """
-    The box the mode is deriving updates as the form is filled in.
+    Editing one of the three schedule boxes settles the other two, live.
 
     WHY THESE EXIST:
     ================
-    The three date fields were watched through a variable and the duration box
-    was not, so on the setting every task opens with - End date is calculated -
-    typing a duration changed nothing on screen. The end date caught up only
-    when Save read the form back, which meant the number in front of the user
-    and the date beside it disagreed right up until the task was saved.
+    The scheduling-options mode is gone (issue #31). All three boxes are the
+    user's, and changing one moves another as it is typed, by these rules:
+    a new duration moves the end (start held), a new end moves the start
+    (duration held), a new start recomputes the duration (end held). What the
+    boxes show is what Save will store.
 
     Dates here are read against a Monday-to-Friday calendar: the fixture task
-    starts on Monday 5 January 2026.
+    starts on Monday 5 January 2026 and runs to Wednesday the 7th (3 days).
     """
 
     def setUp(self):
@@ -670,32 +662,25 @@ class TestTheCalculatedBoxKeepsUp(EditorTestCase):
         self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-16")
         self.assertEqual(self.callback_errors, [])
 
-    def test_typing_a_duration_moves_the_start_date(self):
-        """The mirror, for a plan working back from a finish date."""
+    def test_typing_an_end_date_moves_the_start(self):
+        """Rule 2: a new end moves the start, keeping the 3-day length."""
         dialog = self.edit_dialog()
-        dialog.scheduling_options_var.set("Start date is calculated")
-
-        self.type_into(dialog.duration_entry, "3")
-
-        self.assertEqual(self.shown(dialog.start_date_entry), "2026-01-05")
-
-    def test_typing_a_date_moves_the_duration(self):
-        """The other direction was already watched, and stays watched."""
-        dialog = self.edit_dialog()
-        dialog.scheduling_options_var.set("Duration is calculated")
 
         self.type_into(dialog.end_date_entry, "2026-01-09")
 
-        self.assertEqual(self.shown(dialog.duration_entry), "5")
+        # Three working days ending Friday the 9th begin on Wednesday the 7th.
+        self.assertEqual(self.shown(dialog.start_date_entry), "2026-01-07")
+        self.assertEqual(self.shown(dialog.duration_entry), "3")
 
-    def test_the_end_date_follows_the_start_date_too(self):
-        """Moving the start with a duration typed moves the finish with it."""
+    def test_typing_a_start_date_recomputes_the_duration(self):
+        """Rule 3: a new start recomputes the duration; the end is held."""
         dialog = self.edit_dialog()
 
-        self.type_into(dialog.duration_entry, "5")
-        self.type_into(dialog.start_date_entry, "2026-01-12")
+        self.type_into(dialog.start_date_entry, "2026-01-06")
 
-        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-16")
+        # End held at Wednesday the 7th; Tuesday-to-Wednesday is two days.
+        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-07")
+        self.assertEqual(self.shown(dialog.duration_entry), "2")
 
     def test_a_weekend_is_crossed_as_the_duration_is_typed(self):
         """

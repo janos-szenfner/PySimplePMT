@@ -566,7 +566,6 @@ class Task:
         priority: Task priority level
         shape: Visual shape for the task
         show_in_timeline: Whether to show in timeline view
-        scheduling_options: Scheduling mode for the task
         details: Additional notes/details about the task
         is_milestone: Legacy flag, now determined by task_type='Milestone'
         calendar_id: Named calendar this task follows, or None for the plan's own
@@ -594,7 +593,6 @@ class Task:
     priority: str = DEFAULT_PRIORITY
     shape: str = "Default"
     show_in_timeline: bool = True
-    scheduling_options: str = "End date is calculated"
     #: A target finish the task should not slip past. Informational: it does
     #: not pin the schedule (see the Advanced tab / REQ-UI-041), but a finish
     #: later than it is flagged as slipped. None means N/A.
@@ -1128,7 +1126,6 @@ class Task:
             'estimated': self.estimated,
             'shape': self.shape,
             'show_in_timeline': self.show_in_timeline,
-            'scheduling_options': self.scheduling_options,
             'deadline': self.deadline.isoformat() if self.deadline else None,
             'constraint_type': self.constraint_type,
             'constraint_date': (self.constraint_date.isoformat()
@@ -1180,16 +1177,6 @@ class Task:
             except (ValueError, TypeError):
                 end_date = None
         
-        # Handle backward compatibility for scheduling_options
-        scheduling_options = data.get('scheduling_options', 'End date is calculated')
-        # Map old values to new ones
-        old_to_new = {
-            'in this dialog': 'End date is calculated',
-            'auto': 'End date is calculated',
-            'manual': 'End date is calculated'
-        }
-        scheduling_options = old_to_new.get(scheduling_options, scheduling_options)
-
         # Advanced tab: deadline and constraint. All absent in plans written
         # before REQ-UI-041, which open unconstrained with no deadline.
         deadline = data.get('deadline')
@@ -1276,7 +1263,6 @@ class Task:
             estimated=estimated,
             shape=data.get('shape', 'Default'),
             show_in_timeline=data.get('show_in_timeline', True),
-            scheduling_options=scheduling_options,
             deadline=deadline,
             constraint_type=constraint_type,
             constraint_date=constraint_date,
@@ -3801,6 +3787,88 @@ class Project:
         start = (end if task.effective_milestone
                  else calendar.subtract_working_days(end, duration))
         return start, end
+
+    def reconcile_schedule(self, task: Task, new_start: datetime,
+                           new_end: Optional[datetime],
+                           new_duration: Optional[int]):
+        """
+        Settle a task's three schedule fields after one of them is edited.
+
+        PARAMETERS:
+        -----------
+        task : Task
+            The task as it stands before the edit - its current start, end and
+            length are what the proposed values are weighed against.
+        new_start, new_end, new_duration :
+            The proposed start, end and duration. For a grid edit two of the
+            three equal what the task already holds, so the one that differs is
+            the field that changed; the editor may change more than one.
+
+        RETURNS:
+        --------
+        tuple(datetime, Optional[datetime], Optional[int], Optional[datetime])
+            The reconciled ``(start, end, duration, snet_date)``. ``snet_date``
+            is the date a Start No Earlier Than should be set to when the start
+            was the field that changed, and None otherwise.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The rules of issue #31, which replaced the "scheduling options" mode:
+
+          1. Duration changed -> the end follows the start and the new length;
+             the start is held.
+          2. End changed -> the start follows the end and the length; the
+             duration is held.
+          3. Start changed -> a Start No Earlier Than is set on the new start
+             so auto-scheduling cannot drag it back, the end is held, and the
+             duration follows.
+
+        Start takes precedence, then Duration, then End, so an edit that
+        touches more than one field still resolves to a single rule. All the
+        arithmetic is in working days on the task's own calendar, as everywhere
+        else. A milestone has no length, so only its start (and the floor set
+        on it) is meaningful.
+        """
+        calendar = self.calendar_for(task)
+        old_start = task.start_date
+        old_end = task.end_date or task.start_date
+        old_duration = self.working_duration(task)
+
+        if task.effective_milestone:
+            if as_date(new_start) != as_date(old_start):
+                placed = calendar.get_next_working_day(new_start)
+                return placed, None, 0, placed
+            return old_start, None, 0, None
+
+        start_changed = as_date(new_start) != as_date(old_start)
+        end_changed = (new_end is not None
+                       and as_date(new_end) != as_date(old_end))
+        duration_changed = (new_duration is not None
+                            and int(new_duration) != int(old_duration))
+
+        if start_changed:
+            start = calendar.get_next_working_day(new_start)
+            end = new_end if end_changed else old_end
+            duration = calendar.working_days_between(start, end)
+            if duration < 1:
+                # The start was pushed to or past the end; keep at least a
+                # day rather than a span that runs backwards.
+                duration = 1
+                end = calendar.add_working_days(start, duration)
+            return start, end, duration, start
+
+        if duration_changed:
+            start = old_start
+            duration = max(int(new_duration), 1)
+            end = calendar.add_working_days(start, duration)
+            return start, end, duration, None
+
+        if end_changed:
+            end = calendar.get_next_working_day(new_end)
+            start = calendar.subtract_working_days(end, old_duration)
+            return start, end, old_duration, None
+
+        return old_start, old_end, old_duration, None
 
     def tasks_in_conflict(self) -> set:
         """

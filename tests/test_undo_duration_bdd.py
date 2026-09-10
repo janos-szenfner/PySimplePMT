@@ -178,11 +178,9 @@ def the_user_redoes_the_last_change(app):
 @when(parsers.parse('the user changes the dialog duration to {days:d} days and saves'))
 def the_user_changes_the_dialog_duration_to_days_and_saves(app, days):
     dialog = app._test_dialog
-    # Set the scheduling mode so duration drives the end date.
-    dialog.scheduling_options_var.set("End date is calculated")
-    dialog._on_scheduling_mode_changed()
+    # Changing the duration moves the end date live (issue #31 rule 1).
     dialog.duration_var.set(str(days))
-    dialog._recalculate_schedule()
+    dialog._apply_live_rule('duration')
     dialog._apply()
     try:
         dialog.destroy()

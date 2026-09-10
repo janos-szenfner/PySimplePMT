@@ -78,7 +78,7 @@ class TestTheGuideCovers(unittest.TestCase):
         """Which is what "why did my task move" comes down to."""
         body = self.body()
         for phrase in ('working day', 'calendar day', 'duration',
-                       'constraint', 'scheduling options'):
+                       'constraint', 'change the start'):
             self.assertIn(phrase, body, phrase)
 
     def test_the_link_types_are_all_named(self):
@@ -451,7 +451,7 @@ class TestTheTaskEditorReference(unittest.TestCase):
         """A box with nothing said about it is the one being looked up."""
         body = self.body()
         for field in ('type', 'start date', 'end date', 'duration',
-                      'is milestone', 'scheduling options', 'constraint',
+                      'is milestone', 'constraint',
                       'working calendar', 'progress', 'priority',
                       'show in timeline', 'shape', 'colour', 'details'):
             self.assertIn(field, body, field)
@@ -460,8 +460,8 @@ class TestTheTaskEditorReference(unittest.TestCase):
         """Which was the largest thing missing from it."""
         body = self.body()
         for phrase in ('walked, not added', 'working', 'calendar days',
-                       'end date is calculated', 'start date is calculated',
-                       'duration is calculated'):
+                       'change the duration', 'change the end',
+                       'change the start', 'start no earlier than'):
             self.assertIn(phrase, body, phrase)
 
     def test_it_explains_the_working_calendar_and_its_priority(self):

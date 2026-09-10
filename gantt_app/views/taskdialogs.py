@@ -134,7 +134,6 @@ class EditTaskDialog(TaskFormDialog):
             name = self.name_entry.get().strip()
 
             is_milestone = self.is_milestone_var.get()
-            start, end, duration = self._read_schedule()
             progress = self._typed_progress()
 
             details = self.details_text.get("1.0", tk.END).strip()
@@ -142,19 +141,43 @@ class EditTaskDialog(TaskFormDialog):
             # so a bad date there stops the save with the rest untouched.
             advanced = self.advanced_tab.read_values()
 
+            # Settle the three schedule boxes against each other (issue #31):
+            # which one changed decides how the other two follow, and a changed
+            # start asks for a Start No Earlier Than on its date. A container's
+            # dates come from its children, so they are taken as-is.
+            raw_start, raw_end, raw_duration = self._typed_schedule()
+            if self.task.is_container:
+                start, end, duration, snet = \
+                    raw_start, raw_end, raw_duration, None
+            else:
+                start, end, duration, snet = self.project.reconcile_schedule(
+                    self.task, raw_start, raw_end, raw_duration)
+
+            # The Advanced tab is the explicit constraint editor; a start
+            # edited here sets its Start No Earlier Than unless the reader has
+            # changed the constraint on that tab this time, in which case that
+            # wins (issue #31, with #28's rule that it can be removed there).
+            advanced_changed = (
+                advanced['constraint_type'] != self.task.constraint_type
+                or advanced['constraint_date'] != self.task.constraint_date)
+            if snet is not None and not advanced_changed:
+                constraint_type, constraint_date = 'SNET', snet
+            else:
+                constraint_type = advanced['constraint_type']
+                constraint_date = advanced['constraint_date']
+
             # CPM conflict check before anything is committed: probe the task
             # as it would be, and if the constraint clashes with the network
             # let the reader Keep or Cancel it. A Cancel aborts the save.
             probe = copy.copy(self.task)
-            probe.constraint_type = advanced['constraint_type']
-            probe.constraint_date = advanced['constraint_date']
+            probe.constraint_type = constraint_type
+            probe.constraint_date = constraint_date
             if self._dependency_editor is not None:
                 probe.dependencies = self._dependency_editor.get_links()
             if not self._constraint_permitted(probe):
                 return False
             # Remove Predecessors pulls the task to meet its No-Later date;
-            # the General tab's start was read above, so apply the pulled
-            # dates over it here (issue #28).
+            # apply the pulled dates over the reconciled ones here (issue #28).
             forced = self.__dict__.pop('_forced_dates', None)
             if forced is not None:
                 start, end = forced
@@ -202,10 +225,9 @@ class EditTaskDialog(TaskFormDialog):
                          self.task.name, self.task.status, self.task.estimated)
             self.task.shape = self.shape_var.get()
             self.task.show_in_timeline = self.show_in_timeline_var.get()
-            self.task.scheduling_options = self.scheduling_options_var.get()
             self.task.deadline = advanced['deadline']
-            self.task.constraint_type = advanced['constraint_type']
-            self.task.constraint_date = advanced['constraint_date']
+            self.task.constraint_type = constraint_type
+            self.task.constraint_date = constraint_date
             self.task.effort_type = advanced['effort_type']
             self.task.effort_driven = advanced['effort_driven']
             logger.debug(
@@ -249,7 +271,6 @@ class EditTaskDialog(TaskFormDialog):
                     estimated=new_task.estimated,
                     shape=new_task.shape,
                     show_in_timeline=new_task.show_in_timeline,
-                    scheduling_options=new_task.scheduling_options,
                     deadline=new_task.deadline,
                     constraint_type=new_task.constraint_type,
                     constraint_date=new_task.constraint_date,
@@ -485,7 +506,6 @@ class CreateTaskDialog(TaskFormDialog):
                 estimated=self.estimated_flag(),
                 shape=self.shape_var.get(),
                 show_in_timeline=self.show_in_timeline_var.get(),
-                scheduling_options=self.scheduling_options_var.get(),
                 deadline=advanced['deadline'],
                 constraint_type=advanced['constraint_type'],
                 constraint_date=advanced['constraint_date'],

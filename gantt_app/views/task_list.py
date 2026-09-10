@@ -20,6 +20,7 @@ of the pointer position, which plain Tk reports perfectly well.
 
 import sys
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk
 # See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
 # to match the application on X11
@@ -688,10 +689,33 @@ class DragDropTaskList(ctk.CTkFrame):
             self.edit_dependencies_cell(item)
         elif cell == 'Type':
             self.edit_type_cell(item)
+        elif cell in ('Duration', 'Start', 'End') \
+                and self._schedule_cell_editable(item, cell):
+            self.edit_schedule_cell(item, cell)
         else:
             self.edit_task(item)
 
         return 'break'
+
+    def _schedule_cell_editable(self, task_id: str, cell: str) -> bool:
+        """
+        Whether a Duration, Start or End cell can be typed into in place.
+
+        A row with children takes those from the work beneath it, so its cells
+        are not the user's to type; the double-click opens the editor instead.
+        Any row with children counts, not only a Phase - a Task or Subtask
+        that has grown children rolls its dates up too (see issue #25). A
+        milestone has neither an end nor a length, so only its start is
+        editable in the grid (issues #23 and #31).
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None or task.is_container:
+            return False
+        if task_id in self.project.get_summary_task_ids():
+            return False
+        if task.effective_milestone and cell in ('Duration', 'End'):
+            return False
+        return True
 
     def _cancel_rename(self):
         """Call off a rename that has not opened yet."""
@@ -1248,6 +1272,118 @@ class DragDropTaskList(ctk.CTkFrame):
 
         self.project.apply_schedule()
         logger.info("Set %d dependency(ies) on task %s", len(links), task_id)
+
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    # ------------------------------------------------------------------
+    # The Duration, Start and End columns (issues #23 and #31)
+    # ------------------------------------------------------------------
+
+    def edit_schedule_cell(self, task_id: str, cell: str):
+        """
+        Type into a task's Duration, Start or End cell in the grid.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        All three are editable, and changing one settles the other two by the
+        rules in Project.reconcile_schedule (issue #31): a new duration moves
+        the end, a new end moves the start, and a new start is pinned with a
+        Start No Earlier Than so auto-scheduling cannot drag it back.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+        if cell == 'Duration':
+            current = str(self.project.working_duration(task))
+        elif cell == 'Start':
+            current = task.start_date.strftime('%Y-%m-%d')
+        else:  # End
+            current = (task.end_date or task.start_date).strftime('%Y-%m-%d')
+        self._open_cell_editor(task_id, cell, current,
+                               lambda: self._commit_schedule_cell(cell))
+
+    def _commit_schedule_cell(self, cell: str):
+        """
+        Read a schedule cell, reconcile the three fields, and store them.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A cell that cannot be read as a date or a whole-day length is reported
+        and nothing is stored, the same way the Dependencies cell refuses a
+        line it cannot parse. The editor is taken away first (in _editor_text),
+        because storing redraws the list out from under it.
+        """
+        text, task_id = self._editor_text()
+        if task_id is None:
+            return
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+
+        text = text.strip()
+        start, end = task.start_date, task.end_date
+        duration = self.project.working_duration(task)
+        try:
+            if cell == 'Duration':
+                duration = int(text)
+                if duration < 1:
+                    raise ValueError
+            elif cell == 'Start':
+                start = datetime.strptime(text, '%Y-%m-%d')
+            else:  # End
+                end = datetime.strptime(text, '%Y-%m-%d')
+        except ValueError:
+            what = "a whole number of days" if cell == 'Duration' \
+                else "a date as YYYY-MM-DD"
+            messagebox.showerror(cell, f"Enter {what}.")
+            return
+
+        new_start, new_end, new_duration, snet = \
+            self.project.reconcile_schedule(task, start, end, duration)
+        self.set_schedule(task_id, new_start, new_end, new_duration, snet)
+
+    def set_schedule(self, task_id: str, start, end, duration, snet_date):
+        """
+        Store a reconciled schedule as one undoable step, and redraw.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Through the tracker, so a grid edit is one entry in the undo history
+        like the editor's. A start edit carries its Start No Earlier Than with
+        it (issue #31); the other two leave the constraint alone. The plan is
+        rescheduled afterwards so the change settles into the links, exactly as
+        the Dependencies cell does.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+
+        fields = dict(start_date=start, end_date=end, duration=duration)
+        if snet_date is not None:
+            fields['constraint_type'] = 'SNET'
+            fields['constraint_date'] = snet_date
+
+        unchanged = (task.start_date == start and task.end_date == end
+                     and task.duration == duration
+                     and (snet_date is None
+                          or (task.constraint_type == 'SNET'
+                              and task.constraint_date == snet_date)))
+        if unchanged:
+            return
+
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id, **fields)
+        else:
+            for key, value in fields.items():
+                setattr(task, key, value)
+
+        self.project.apply_schedule()
+        logger.info("Set schedule on task %s: start=%s end=%s duration=%s%s",
+                    task_id, start.date() if start else None,
+                    end.date() if end else None, duration,
+                    " (SNET)" if snet_date is not None else "")
 
         self.update_task_list()
         if self.on_project_changed:

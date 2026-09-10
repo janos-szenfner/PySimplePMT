@@ -83,7 +83,7 @@ This is a complete implementation of a project management tool with:
 - **Summary Roll-Up**: Anything with children spans them, and completion works its way up the levels. A Subtask carries its own percentage; a Task averages its sub-tasks' percentages evenly, or keeps the percentage typed on it when it has none; a Phase averages its tasks evenly. An empty container reads 0%
 - **Copy, Cut and Paste act on what you selected**: from the right-click menu, the Edit menu or Cmd/Ctrl+C, X and V - the same result from all three. What you paste takes the place of the row your cursor is on, at that row's own level, and pushes it down; putting rows *inside* a row is the separate **Paste as Sub-Task** entry that says so. Copying a row copies everything under it - a phase brings its tasks and their sub-tasks, nested as they were - and a link between two rows you copied together follows the copies. Cut rows are greyed until they land. Right-click the empty space below the last row to paste at the end of the plan, the same gesture that creates a task there; a paste with nothing selected and nothing pointed at is refused and says so, rather than dropping the row somewhere you were not looking. The whole paste is one step in the undo history. Copied rows reach the desktop clipboard too, as a readable list that pastes into anything
 - **Link and Unlink Tasks**: Select the rows that run one after another and press the chain icon (`⌘F2` on a Mac, `Ctrl+F2` elsewhere) to chain them Finish-to-Start down the list; the broken-chain icon beside it (`⇧⌘F2` / `Ctrl+Shift+F2`) takes those links out again. The chain is built in the order the rows are shown, not the order they were clicked, and the plan reschedules the moment it is made. A row keeps any link it already had to something outside the selection, and a pair that would run in a circle is skipped rather than refusing the whole chain
-- **Scheduling Modes**: Choose which of the start date, end date and duration the form works out from the other two; the calculated one fills itself in as you type, counted in working days
+- **Editable Start, End & Duration**: All three are always editable, in the task editor and inline in the grid, with no scheduling-options mode to set first. Changing one settles the other two (issue #31): a new **Duration** moves the End (Start held); a new **End** moves the Start (Duration held); a new **Start** sets a Start No Earlier Than on that date so auto-scheduling cannot drag it back (End held, Duration follows) — removable on the Advanced tab. All arithmetic is in working days
 - **Advanced tab — Deadline & Constraint**: A tab in the task editor, between General and Notes, for two planner boundaries, saved with the project and drawn on the Gantt chart. A **Deadline** is a target finish: it does not move the schedule, but a forecast finish later than it flags the row — a red downward arrow with a dashed guide line on the bar, a red bar outline, a variance in the hover text, and a ⚠ in the list's Status column — and **Reset to N/A** clears it. A **Constraint Type** — N/A, As Soon As Possible, As Late As Possible, Start/Finish No Earlier/Later Than, Must Start/Finish On — pins the task the PMP/CPM way, with a **Constraint Date** enabled only for the six dated ones. Constraints **drive the schedule**: `MSO`/`MFO` hard-lock the start/finish to the date (overriding predecessor delays), and `SNET`/`FNET` floor the start/finish, pushing the task later. A task left at `N/A` — every task until a planner sets one — stays purely dependency-driven, so an unconstrained plan schedules exactly as before. On the chart a blue bracket marks the semi-flexible constraints and As Late As Possible, and a red lock marks Must Start/Finish On. When a constraint contradicts the network — a Must Finish On earlier than a predecessor allows, a No-Later date the links cannot meet — saving raises a **conflict dialog** naming the impacted predecessor, offering **Keep Constraint** (force it and flag the negative float with ⚠ and a red bar) or **Cancel Constraint** (drop it back to N/A); every constraint change is one atomic step on the undo/redo stack
 - **Advanced tab — Task Type & Effort-Driven**: below the constraint, the effort behaviour of a resourced task, following MS Project / PMP. **Task Type** fixes one of the three quantities in `Work = Duration × Units` (in the project's working **hours per day**): **Fixed Units** (default) holds each resource's allocation so editing duration recomputes work and vice-versa; **Fixed Work** holds the total hours so editing duration adjusts the allocation; **Fixed Duration** holds the length so editing work adjusts the allocation and duration is locked. **Effort-Driven** decides what happens when a resource is added or removed — on (default) keeps total work so a second resource halves the duration, off changes the work and holds the duration; Fixed Work is always effort-driven (its box is locked on). The maths applies only to a **leaf task with at least one resource above 0%** — an unresourced task stays purely duration-driven, exactly as before — and never to milestones, summaries or manually scheduled tasks (both controls are disabled there). If a single Save changes two of the three at once, the editor asks **which to keep** and recomputes the other rather than guessing; pushing a resource over 100% is allowed but flagged
 - **Menu bar and action bar**: a menu bar naming everything the application does, and an action bar of drawn icons under it for the handful worth reaching for directly. The icons are drawn rather than set as emoji, so they need no font installed
@@ -190,7 +190,7 @@ desktop asks for.
 ## Implemented Features
 
 ### Core Data Models (`models.py`)
-- **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, scheduling_options, constraint_type, constraint_date, details
+- **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, constraint_type, constraint_date, details
 - **Work Item Types**: `Phase`, `Task`, `Subtask`, `Milestone`. `Phase` is a container, taking its dates and progress from what is inside it; `Subtask` and `Milestone` hold nothing. Two older types are rewritten when a task is built, so plans saved by earlier versions load unchanged: the hyphenated `Sub-Task` becomes `Subtask`, and `Deliverable` - a level that used to sit between `Phase` and `Task` - becomes `Task`, which is the level it always described
 - **The Levels, and Moving Between Them**: the types describe a three-level plan, `Phase > Task > Subtask`, with a `Milestone` allowed at any level. **A row keeps its type wherever it is moved.** Indent and outdent change where it sits and nothing else, so a `Task` indented under another `Task` is still a `Task` and can still hold sub-tasks of its own. `child_type_for()` still settles the type of a row *created* under a parent, or read out of an imported outline that states depth and nothing else — a row arriving without a type anybody chose — but it is no longer applied to one being moved
 - **Project Class**: name, tasks, start_date, end_date, calendar
@@ -327,7 +327,7 @@ up somewhere else in calendar time holding exactly the work it held. Running it
 twice changes nothing, which is what lets it sit inside the reschedule loop.
 
 Everything that turns a duration into dates goes through it - the task form's
-three scheduling modes, the dependency scheduler, and the GanttProject,
+schedule reconciliation, the dependency scheduler, and the GanttProject,
 spreadsheet and Mermaid importers - so the same plan comes out with the same
 dates whichever way it arrived.
 
@@ -775,18 +775,16 @@ The form both dialogs show, across three tabs: **General**, **Notes** and
 Every section but the first opens under a rule; Basic Information opens the
 tab, where the top of the panel already does the dividing.
 
-The three long dropdowns — Scheduling options, Working calendar and Shape —
-are held to `MENU_WIDTH` and anchored left rather than filling their column.
-Stretched across the form a menu is several times wider than the longest thing
-it can say, and it grew with the window, so the mismatch got worse the more
-room there was. One width for all three: they sit in three different sections,
-and a ragged right edge down the form reads worse than a little slack after
-"Rounded".
+The long dropdowns — Working calendar and Shape — are held to `MENU_WIDTH`
+and anchored left rather than filling their column. Stretched across the form
+a menu is several times wider than the longest thing it can say, and it grew
+with the window, so the mismatch got worse the more room there was. One width
+for both: they sit in different sections, and a ragged right edge down the
+form reads worse than a little slack after "Rounded".
 
-The fields run down the General tab in reading order, and the **Scheduling
-options** menu sits directly above **Start Date** because it says which of the
-three boxes under it — start, end, duration — the form fills in for you. Read
-*after* them it explained a shaded box the user had already tried to type in.
+The fields run down the General tab in reading order: start, end and duration
+are three plain boxes with no mode over them, and changing one settles the
+other two on Save (see the schedule reconciliation, issue #31).
 
 The notes have a tab of their own. They were the last row of the field grid
 once, so a box meant for paragraphs sat under everything else at the height of
@@ -798,10 +796,11 @@ the whole window when they are what you came for.
 - **Grouped fields**: name, ID, type and parent; then the dates, duration and
   milestone flag; then progress, priority, timeline visibility and shape; then
   the colour
-- **Scheduling modes**: whichever of the start date, the end date and the
-  duration the mode names is worked out from the other two and greyed out, and
-  fills itself in as the other two are typed. Durations are inclusive, so a
-  task running from the 1st to the 5th lasts five days
+- **Editable start, end and duration**: all three are the user's to type,
+  with no mode over them; changing one settles the other two on Save — a new
+  duration moves the end, a new end moves the start, a new start sets a Start
+  No Earlier Than and the duration follows (issue #31). Durations are
+  inclusive, so a task running from the 1st to the 5th lasts five days
 - **Checked as it is filled in** (`views/formcheck.py`): a date that cannot be
   used is outlined, and the reason written on a line under the form which keeps
   its place whether or not it has anything to say. A date box is only
@@ -2077,8 +2076,7 @@ pysimplepmt --log-file      # print the log file path
      Milestone, as does the Create submenu on any row's right-click menu
    - Creating from a row puts the new item beside it - or inside it, for a
      sub-task - rather than at the end of the plan
-   - Enter the name, and whichever two of start date, end date and duration the
-     scheduling mode leaves you to fill in
+   - Enter the name, a start date, and either an end date or a duration
 
 3. **Add Sub-Tasks**
    - Choose "Subtask..." from either Create menu
@@ -2210,8 +2208,6 @@ The application starts with a complete sample project with tasks and subtasks:
 - `priority`: One of the levels in `priority.py`; 'Normal' by default
 - `shape`: How the bar is drawn - 'Default', 'Rectangle' or 'Rounded'
 - `show_in_timeline`: Whether the task appears in the chart at all
-- `scheduling_options`: Which of the three the form derives - 'Start date is
-  calculated', 'End date is calculated' or 'Duration is calculated'
 - `details`: Free text, shown in the notes panel beside the form
 - `duration_days`: Calculated property - working days from start to end
   inclusive, 0 for a milestone or a container, None where there is no end date
@@ -2247,7 +2243,6 @@ Projects are saved as JSON files with the following structure:
       "priority": "Normal",
       "shape": "Default",
       "show_in_timeline": true,
-      "scheduling_options": "End date is calculated",
       "details": ""
     },
     {
@@ -2265,7 +2260,6 @@ Projects are saved as JSON files with the following structure:
       "priority": "Normal",
       "shape": "Default",
       "show_in_timeline": true,
-      "scheduling_options": "End date is calculated",
       "details": ""
     }
   ],

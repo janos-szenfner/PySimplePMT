@@ -827,7 +827,6 @@ def task_dict_with_status():
         'status': 'Inactive',
         'shape': 'Default',
         'show_in_timeline': True,
-        'scheduling_options': 'End date is calculated',
         'details': '',
         'calendar_id': None,
         'style': None
@@ -861,7 +860,6 @@ def task_dict_without_status():
         'priority': 'Normal',
         'shape': 'Default',
         'show_in_timeline': True,
-        'scheduling_options': 'End date is calculated',
         'details': '',
         'calendar_id': None,
         'style': None

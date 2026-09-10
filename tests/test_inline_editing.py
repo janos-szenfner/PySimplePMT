@@ -196,11 +196,32 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
 
         sent.assert_called_once_with('u1')
 
-    def test_another_column_opens_nothing(self):
-        """Only the two that are typed over are typed over."""
-        self.double_click('u1', column='Start')
+    def test_a_column_without_its_own_editor_opens_nothing(self):
+        """
+        Progress is edited in the form, not in place.
+
+        The schedule columns (Duration, Start, End) grew their own cell
+        editors (issues #23 and #31); a column that did not opens nothing
+        here - the form is a click away.
+        """
+        self.double_click('u1', column='Progress')
 
         self.assertIsNone(self.task_list._cell_editor)
+
+    def test_a_schedule_column_is_routed_to_its_own_editor(self):
+        """
+        A leaf's Duration, Start and End are typed in place (issues #23, #31).
+
+        u2 is the leaf; u1 has a child, so it rolls its dates up and its
+        schedule cells open the form instead.
+        """
+        from unittest import mock
+
+        for column in ('Duration', 'Start', 'End'):
+            with mock.patch.object(self.task_list,
+                                   'edit_schedule_cell') as sent:
+                self.double_click('u2', column=column)
+            sent.assert_called_once_with('u2', column)
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")

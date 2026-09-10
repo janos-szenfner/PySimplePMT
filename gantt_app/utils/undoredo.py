@@ -1145,7 +1145,6 @@ class ProjectStateTracker:
             'estimated': kwargs.get('estimated', task.estimated),
             'shape': kwargs.get('shape', task.shape),
             'show_in_timeline': kwargs.get('show_in_timeline', task.show_in_timeline),
-            'scheduling_options': kwargs.get('scheduling_options', task.scheduling_options),
             # Advanced tab. Listed here for the reason the note below gives:
             # left out, editing any field would reset the deadline and the
             # constraint to their defaults, and undo would not carry them.

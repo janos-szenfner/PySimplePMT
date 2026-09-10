@@ -162,29 +162,25 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
-        "Scheduling options: which field is calculated",
+        "Editing the start, end and duration",
         [
-            "Three fields describe the same thing twice over - a start, a "
-            "finish and a length - so one of them is always worked out from "
-            "the other two. The Scheduling options menu says which:",
+            "All three boxes are yours to type in, in the editor and in the "
+            "task grid alike, and changing one settles the other two - there "
+            "is no scheduling-options menu to choose first. Which field you "
+            "change decides what follows:",
 
-            "It sits directly above the Start date, because it decides "
-            "which of the three boxes under it you can type in. The one it "
-            "is calculating is shaded.",
+            "Change the Duration and the end moves; the start stays put.",
 
-            "End date is calculated - you give the start and the duration, "
-            "and the finish follows. The usual choice, and the default.",
+            "Change the End date and the start moves; the duration is kept.",
 
-            "Start date is calculated - you give the finish and the "
-            "duration, and the start is worked back from it. For work that "
-            "has to be finished by a date.",
+            "Change the Start date and a Start No Earlier Than constraint is "
+            "set on that date, so auto-scheduling cannot drag the task back "
+            "before it; the end is kept and the duration follows. That is the "
+            "one way the start is pinned - remove the constraint on the "
+            "Advanced tab to hand the start back to the links.",
 
-            "Duration is calculated - you give both dates, and the effort "
-            "between them is counted.",
-
-            "The calculated field is shaded and filled in for you as you "
-            "type in the other two. It updates live; there is no need to "
-            "save to see what it will be.",
+            "The three settle when you save the editor, or when you leave the "
+            "cell in the grid, rather than letter by letter as you type.",
         ],
     ),
     (
@@ -750,6 +746,15 @@ GUIDE_SECTIONS = (
             "is nothing to confirm about choosing from a list of the only "
             "valid answers. It is one step in the undo history, the editor "
             "shows it, and choosing Milestone marks the row as one.",
+
+            "Double-click the Duration, Start or End cell to type into it in "
+            "place (issues #23 and #31). Changing one settles the other two "
+            "by the same rules as the editor: a new duration moves the end, a "
+            "new end moves the start, and a new start is pinned with a Start "
+            "No Earlier Than. Enter stores it, Escape leaves it alone, and a "
+            "value that is not a date or a whole number of days is refused. A "
+            "row with children takes these from the work beneath it, so its "
+            "cells open the editor rather than a typing box.",
 
             "You can type the links straight into the Dependencies column. "
             "Double-click the cell and write the number of the task this "

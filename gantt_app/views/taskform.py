@@ -658,14 +658,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_priority(frame)
 
         self._heading(frame, "Schedule", rule=True)
-        self._build_scheduling_options(frame)
         self._build_dates(frame)
         self._build_duration(frame)
         self._build_milestone(frame)
 
         # Now that all three of them exist. _update_field_states stands
-        # aside while the form is still being built, so the call inside
-        # _build_scheduling_options no longer reaches anything.
+        # aside while the form is still being built, so the earlier calls
+        # no longer reach anything.
         self._update_field_states()
 
         # Titles itself, since it is not built at all in a plan that has no
@@ -786,102 +785,56 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._field(frame, "Colors:", self.color_entry,
                     sticky=tk.W, label_sticky=tk.NW)
 
-    def _build_scheduling_options(self, frame):
-        """The scheduling options dropdown."""
-        self.scheduling_options_var = ctk.StringVar(
-            value=self.template.scheduling_options if self.template.scheduling_options in [
-                "Start date is calculated", "End date is calculated", "Duration is calculated"
-            ] else "End date is calculated")
-        self.scheduling_options_menu = ctk.CTkOptionMenu(
-            frame, variable=self.scheduling_options_var,
-            values=["Start date is calculated", "End date is calculated", "Duration is calculated"]
-        )
-        self._field(frame, "Scheduling options:",
-                    self.scheduling_options_menu, where=self.HALF)
-        
-        # Trace the variable to update field states when changed
-        self.scheduling_options_var.trace_add("write", self._on_scheduling_mode_changed)
-
-    def _on_scheduling_mode_changed(self, *args):
-        """Grey the newly calculated box out, and work its value out."""
-        self._update_field_states()
-        self._recalculate_schedule()
-
     def _update_field_states(self):
         """
-        Grey out the boxes the form is filling in for the user.
+        Grey out only the boxes the task type genuinely forbids.
 
         DEVELOPMENT NOTES:
         ------------------
-        What the task type forbids is applied after the mode, not before. A
-        row with children takes its dates and its length from the work
-        inside it, and a milestone has neither an end nor a length; enabling
-        everything and then greying out only what the mode calls calculated
-        handed those back, so the dates of a task that brackets others could
-        be typed over and were then overwritten by its children.
+        Start, end and duration are all the user's to type now that the
+        scheduling-options mode is gone (issue #31): changing any one settles
+        the other two on Save, by the rules in Project.reconcile_schedule.
+        What stays greyed is what the type forbids - a row with children takes
+        its dates and its length from the work beneath it, and a milestone has
+        neither an end nor a length.
 
-        Each field is worked out as one answer and set once, rather than
-        being enabled and then disabled again - which flickered, and left
-        the shading of a field depending on which rule spoke last.
+        Each field is worked out as one answer and set once, rather than being
+        enabled and then disabled again - which flickered, and left the shading
+        of a field depending on which rule spoke last.
         """
-        mode = self.scheduling_options_var.get()
         if getattr(self, 'duration_entry', None) is None:
             return                      # the form is still being built
 
         dates_editable = self._should_show_dates()
         milestone = self.is_milestone_var.get()
 
-        calculated = {
-            "Start date is calculated": self.start_date_entry,
-            "End date is calculated": self.end_date_entry,
-            "Duration is calculated": self.duration_entry,
-        }.get(mode)
-
         for widget in (self.start_date_entry, self.end_date_entry,
                        self.duration_entry):
             if widget is None:
                 continue
 
-            enabled = widget is not calculated
+            enabled = True
             if widget in (self.start_date_entry, self.end_date_entry):
-                enabled = enabled and dates_editable
+                enabled = dates_editable
             if widget is self.end_date_entry and milestone:
                 enabled = False
             if widget is self.duration_entry:
-                enabled = enabled and self._should_show_duration()
+                enabled = self._should_show_duration()
 
             self._set_field_enabled(widget, enabled)
 
     # ------------------------------------------------------------------
-    # Working the calculated field out
+    # The schedule fields
     # ------------------------------------------------------------------
     #
     # DEVELOPMENT NOTES:
     # ------------------
-    # The scheduling menu chooses which of the start date, the end date and
-    # the duration the form works out from the other two. It used to do
-    # nothing but grey the chosen box out: nothing ever filled it in, so on
-    # the setting every task opens with - End date is calculated - the end
-    # date could not be typed and was not derived either, and no task's end
-    # date could be changed at all.
-    #
-    # Durations are inclusive, as everywhere else in the application: a task
-    # running from Monday to Friday lasts five days.
-    #
-    # They are also working days, so the arithmetic goes through the project's
-    # working calendar rather than through timedelta - see
-    # gantt_app.workdaycalendar. Five days from a Thursday ends on the
-    # following Wednesday, because the Saturday and the Sunday between them
-    # are not worked. Adding four days to the start instead put the end on the
-    # Monday and spent two days of the task over a weekend.
-
-    #: How the calculated box is filled in, by which one it is.
-    SCHEDULING_MODES = (
-        "Start date is calculated",
-        "End date is calculated",
-        "Duration is calculated",
-    )
-    DEFAULT_SCHEDULING_MODE = "End date is calculated"
+    # Start, end and duration are three plain boxes with no mode over them
+    # (issue #31). The form does not derive one from the others as they are
+    # typed; it stores what is entered and reconciles the three on Save, by
+    # the rules in Project.reconcile_schedule - a new duration moves the end,
+    # a new end moves the start, and a new start is pinned with a Start No
+    # Earlier Than. Durations are inclusive working days, as everywhere else.
 
     def _build_working_calendar(self, frame):
         """
@@ -939,35 +892,29 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         DEVELOPMENT NOTES:
         ------------------
-        The start is rolled forward first, then the rest is recalculated from
-        it. Recalculating alone would have left the start box on the Thursday
-        a weekend-only task can never begin on: add_working_days rolls the
-        start forward internally to reach the right finish, so the end date
-        was correct while the start beside it was not, and the form disagreed
-        with the plan it was about to write.
-
-        Not done in the mode where the start is the calculated box - there it
-        is derived from the finish, and writing to it here would be overwritten
-        a line later anyway.
+        The start is rolled forward onto a working day: picking a weekend-only
+        calendar for a task starting on a Thursday should show it moving to the
+        Saturday there and then. The reconciliation on Save works the end and
+        the length out from wherever the start ends up.
         """
         if self._recalculating:
             return
         if getattr(self, 'start_date_entry', None) is None:
             return                      # the form is still being built
 
-        mode = getattr(self, 'scheduling_options_var', None)
-        if mode is not None and mode.get() != "Start date is calculated":
-            start = self._read_date(self.start_date_entry)
-            if start is not None:
-                moved = self.working_calendar.get_next_working_day(start)
-                if moved != start:
-                    self._recalculating = True
-                    try:
-                        self._write_date(self.start_date_entry, moved)
-                    finally:
-                        self._recalculating = False
+        start = self._read_date(self.start_date_entry)
+        if start is not None:
+            moved = self.working_calendar.get_next_working_day(start)
+            if moved != start:
+                self._recalculating = True
+                try:
+                    self._write_date(self.start_date_entry, moved)
+                finally:
+                    self._recalculating = False
 
-        self._recalculate_schedule()
+        # The length is kept and the end re-walked from wherever the start
+        # ended up, so a task pushed onto a Monday still holds its days.
+        self._apply_live_rule('duration')
 
     def chosen_calendar_id(self) -> Optional[str]:
         """
@@ -996,71 +943,73 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _recalculate_schedule(self, *_args):
         """
-        Fill the calculated box in from the two the user fills in.
+        Re-run the live field checks after a schedule box changes.
 
-        Silent about anything it cannot read: this runs on every keystroke,
-        and half-typed dates are what typing a date looks like. What the user
-        has got wrong by the time they press Save is _read_schedule's to say.
+        Kept as the check-only endpoint for callers that are not settling one
+        field against the others - the create reader, and the form's own
+        validity pass.
         """
         if self._recalculating:
             return
-        if (getattr(self, 'duration_entry', None) is None
-                or getattr(self, 'scheduling_options_var', None) is None):
+        if getattr(self, 'duration_entry', None) is None:
             return                      # the form is still being built
-
-        self._recalculating = True
-        try:
-            self._fill_calculated_field()
-        except (tk.TclError, ValueError, OverflowError):
-            logger.debug("Nothing to work the schedule out from yet")
-        finally:
-            self._recalculating = False
-
-        # Once, on the way out, rather than twice for every box written to.
-        # Writing a date empties the box before it fills it, and each of
-        # those is a change the checks would otherwise answer - so a
-        # keystroke in the name marked the end date missing and unmissing
-        # again on its way past.
         self._check_fields()
 
-    def _fill_calculated_field(self):
+    def _apply_live_rule(self, field: str):
         """
-        Work out whichever of the three the mode names, and write it.
+        Settle the other two schedule boxes as one of the three is typed.
+
+        PARAMETERS:
+        -----------
+        field : str
+            Which box changed - 'start_date', 'end_date' or 'duration'.
 
         DEVELOPMENT NOTES:
         ------------------
-        Only the two boxes the answer is derived from are read. Reading all
-        three meant the box being calculated could stop its own calculation:
-        a duration left at -87 by a half-finished edit made _typed_duration
-        raise, which was caught as "nothing to work it out from yet", so the
-        duration stayed at -87 and the save was refused for it.
+        The editing rules of issue #31, shown live as they will be saved: a
+        new duration moves the end (start held), a new end moves the start
+        (duration held), and a new start leaves the length to follow (end
+        held) - the Start No Earlier Than that a start edit also sets is
+        applied on Save, not on every keystroke. Silent about half-typed dates,
+        which is what typing one looks like; _read_schedule / reconcile have
+        the last word when Save is pressed. The re-entry guard stops the box
+        this writes from setting the rule off again.
         """
-        if self.is_milestone_var.get():
-            return                      # a milestone is a day with no length
+        if self._recalculating:
+            return
+        if getattr(self, 'duration_entry', None) is None:
+            return                      # the form is still being built
 
-        mode = self.scheduling_options_var.get()
-        calendar = self.working_calendar
+        if not self.is_milestone_var.get():
+            calendar = self.working_calendar
+            self._recalculating = True
+            try:
+                if field == 'duration':
+                    start = self._read_date(self.start_date_entry)
+                    length = self._typed_duration()
+                    if start is not None and length:
+                        self._write_date(self.end_date_entry,
+                                         calendar.add_working_days(start, length))
+                elif field == 'end_date':
+                    end = self._read_date(self.end_date_entry)
+                    length = self._typed_duration()
+                    if end is not None and length:
+                        self._write_date(
+                            self.start_date_entry,
+                            calendar.subtract_working_days(end, length))
+                elif field == 'start_date':
+                    start = self._read_date(self.start_date_entry)
+                    end = self._read_date(self.end_date_entry)
+                    if start is not None and end is not None:
+                        length = calendar.working_days_between(start, end)
+                        if length >= 1:
+                            self.duration_var.set(str(length))
+            except (tk.TclError, ValueError, OverflowError):
+                logger.debug("Nothing to settle the schedule from yet")
+            finally:
+                self._recalculating = False
 
-        if mode == "Duration is calculated":
-            start = self._read_date(self.start_date_entry)
-            end = self._read_date(self.end_date_entry)
-            if start is None or end is None:
-                return
-            self._write_duration(calendar.working_days_between(start, end))
-        elif mode == "End date is calculated":
-            start = self._read_date(self.start_date_entry)
-            length = self._typed_duration()
-            if start is None or length is None:
-                return
-            self._write_date(self.end_date_entry,
-                             calendar.add_working_days(start, length))
-        elif mode == "Start date is calculated":
-            end = self._read_date(self.end_date_entry)
-            length = self._typed_duration()
-            if end is None or length is None:
-                return
-            self._write_date(self.start_date_entry,
-                             calendar.subtract_working_days(end, length))
+        self._check_fields()
 
     def _typed_duration(self) -> Optional[int]:
         """
@@ -1125,35 +1074,17 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             raise ValueError("Progress runs from 0 to 100.")
         return progress
 
-    def _write_duration(self, days: int):
-        """
-        Put a length in the duration box, through a disabled one.
-
-        A span that runs backwards is not written. It happens in passing
-        while a pair of dates is being retyped, and putting "-87" in the box
-        on the way would leave it there if the user stopped at that point.
-        The end date falling before the start is what the form says instead.
-
-        Written through the variable rather than into the widget. A disabled
-        entry refuses delete() and insert() outright, which is why the state
-        was being flipped around them, and the variable is what the box shows
-        either way - so the box the mode has greyed out still updates.
-        """
-        if days < 1:
-            return
-
-        self.duration_var.set(str(days))
-
     def _read_schedule(self):
         """
-        The start, end and length the form describes.
+        The start, end and length a newly created task should hold.
 
         RETURNS:
         --------
         tuple
-            (start, end, duration), the one the scheduling mode names having
-            been worked out from the other two rather than read back out of
-            the box showing it.
+            (start, end, duration). The end is taken from its box, or worked
+            out from the start and the duration when only those were given -
+            a create has no earlier value to reconcile against, so it just
+            settles what was entered (issue #31).
 
         RAISES:
         -------
@@ -1197,19 +1128,45 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         return start, end, worked
 
+    def _typed_schedule(self):
+        """
+        The start, end and duration exactly as typed, for reconciling an edit.
+
+        RETURNS:
+        --------
+        tuple
+            (start, end, duration) read straight from the boxes - end and
+            duration are None where the box is empty or the type has none. The
+            three are not derived from one another here: which one the user
+            changed is what Project.reconcile_schedule reads them for, so each
+            has to come back as it was left (issue #31).
+
+        RAISES:
+        -------
+        ValueError
+            When the start, or a filled date box, cannot be read.
+        """
+        start = self._typed_date(self.start_date_entry, "start date")
+        if start is None:
+            raise ValueError("Enter a start date.")
+        if self.is_milestone_var.get():
+            return start, None, None
+        end = self._typed_date(self.end_date_entry, "end date")
+        duration = self._typed_duration()
+        return start, end, duration
+
     def _field_edited(self, key):
         """
-        Note the change, work the calculated box out, and check the form.
+        Note the change and settle the schedule against the edited date.
 
-        A change this made itself is not one to answer: _recalculate_schedule
-        checks the form once when it is done, and treating its own writes as
-        the user's would have the form marking a box it is halfway through
-        filling in.
+        A change this made itself is not one to answer: _apply_live_rule
+        writes the box it derives, and treating its own writes as the user's
+        would have the form chasing a box it is halfway through filling in.
         """
         if self._recalculating:
             return
         super()._field_edited(key)
-        self._recalculate_schedule()
+        self._apply_live_rule(key)
 
     def _build_duration(self, frame):
         """
@@ -1218,16 +1175,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         DEVELOPMENT NOTES:
         ------------------
         Watched through a variable, like the checked fields in formcheck, so
-        the box the mode is deriving fills itself in as the duration is typed.
-        The three date fields were watched and this one was not, so on the
-        setting every task opens with - End date is calculated - typing a
-        duration changed nothing on screen. The end date caught up only when
-        Save read the form, which meant the number in front of the user and
-        the date beside it disagreed right up until the task was saved.
-
-        The initial value is set before the trace is attached. The scheduling
-        menu is built after this box, so a trace firing here would run
-        _fill_calculated_field before there was a mode for it to read.
+        the live validity checks run as the duration is typed. The value is
+        set before the trace is attached, so seeding the box does not fire a
+        check before the rest of the form exists.
         """
         # Check if duration should be editable for this task type
         duration_editable = self._should_show_duration()
@@ -1259,7 +1209,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _duration_edited(self, *_args):
         """
-        Work the calculated box out again, the duration having changed.
+        Move the end date to follow the new duration (issue #31 rule 1).
 
         Guarded like formcheck's watcher: a variable's trace can fire while
         the dialog is being torn down, when the boxes it would read are gone.
@@ -1270,7 +1220,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         except tk.TclError:
             return
 
-        self._recalculate_schedule()
+        self._apply_live_rule('duration')
 
     def _build_priority(self, frame):
         """The priority dropdown."""

@@ -3,18 +3,18 @@ The reference window behind the task editor's Help button.
 
 WHY THIS MODULE EXISTS:
 ======================
-The editor asks for a type, two dates, a duration, a scheduling mode, a
-calendar, a milestone flag and a percentage, and what those mean to the plan
-is not obvious from the form: which of the three date fields is being worked
-out for you, why a finish lands where it does, which days count as worked,
-why turning Milestone on empties a box, what a sub-task does to its
-parent's dates. The form has no room to say, and the answers do not change
-often enough to belong on it.
+The editor asks for a type, two dates, a duration, a calendar, a milestone
+flag and a percentage, and what those mean to the plan is not obvious from
+the form: how changing one of the three schedule boxes settles the other two,
+why a finish lands where it does, which days count as worked, why turning
+Milestone on empties a box, what a sub-task does to its parent's dates. The
+form has no room to say, and the answers do not change often enough to belong
+on it.
 
-It answers all of it: every field on the form, how the calculated one is
-worked out, which days the calendar counts as worked and why a task moved
-after being saved. The Dependency tab keeps its own reference, which answers
-the same kind of question about links.
+It answers all of it: every field on the form, how the start, end and
+duration settle against each other, which days the calendar counts as worked
+and why a task moved after being saved. The Dependency tab keeps its own
+reference, which answers the same kind of question about links.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -142,26 +142,24 @@ HELP_SECTIONS = (
         ],
     ),
     (
-        "Scheduling options: which field is calculated",
+        "Editing the start, end and duration",
         [
-            "The start, the finish and the duration describe the same thing "
-            "twice over, so one of them is always worked out from the other "
-            "two. This menu says which, and the calculated box is shaded to "
-            "show it is not yours to type in.",
+            "All three boxes are yours to type in, and changing one settles "
+            "the other two (there is no scheduling-options menu to set first). "
+            "Which one you change decides what follows:",
 
-            "End date is calculated - you give the start and the duration, "
-            "and the finish follows. The usual choice, and the default.",
+            "Change the Duration and the end moves; the start stays put.",
 
-            "Start date is calculated - you give the finish and the duration, "
-            "and the start is worked back from it. For work that has to be "
-            "finished by a date.",
+            "Change the End date and the start moves; the duration stays the "
+            "same.",
 
-            "Duration is calculated - you give both dates, and the working "
-            "effort between them is counted.",
+            "Change the Start date and a Start No Earlier Than constraint is "
+            "set on that date, so auto-scheduling cannot drag it back; the end "
+            "stays put and the duration follows. Remove the constraint on the "
+            "Advanced tab to let the start be driven by the links again.",
 
-            "It updates live, as you type in the other two boxes. There is no "
-            "need to save to see what the answer will be, and the answer "
-            "shown is the one the scheduler will use.",
+            "The three are settled when you save (or, in the grid, when you "
+            "leave the cell), not letter by letter as you type.",
         ],
     ),
     (
@@ -424,15 +422,12 @@ HELP_SECTIONS = (
         "Why a box is shaded",
         [
             "A shaded box is one the application is filling in, not one that "
-            "is broken. Three things do it:",
-
-            "The field the Scheduling options menu names as calculated. "
-            "Change the menu and a different box becomes yours to type in.",
+            "is broken. Two things do it:",
 
             "The end date of a milestone, which has none by definition.",
 
-            "The duration of a row with children, which is what its "
-            "children span rather than a number of its own.",
+            "The dates and the duration of a row with children, which are "
+            "what its children span rather than numbers of its own.",
         ],
     ),
     (

@@ -891,46 +891,26 @@ class TestWhereTheFieldsSit(DialogTestCase):
                 if text in ("Basic Information", "Schedule", "Calendar",
                             "Display")]
 
-    def test_the_scheduling_menu_comes_before_the_dates(self):
+    def test_the_start_date_is_first_under_the_schedule_heading(self):
         """
-        It says which of the three boxes under it the form fills in.
-
-        Read after them it explained a greyed-out box the user had already
-        tried to type in.
+        With the scheduling-options menu gone, the start date opens the
+        section (issue #31).
         """
-        labels = self.labels(self.dialog())
-
-        self.assertLess(labels.index("Scheduling options:"),
-                        labels.index("Start Date:"))
-
-    def test_it_sits_immediately_above_the_start_date(self):
-        """Nothing in between, or it is explaining something else."""
-        labels = self.labels(self.dialog())
-
-        self.assertEqual(labels[labels.index("Scheduling options:") + 1],
-                         "Start Date:")
-
-    def test_it_is_the_first_thing_under_the_schedule_heading(self):
-        """Which is the other half of putting it above the dates."""
         labels = self.labels(self.dialog())
 
         self.assertEqual(labels[labels.index("Schedule") + 1],
-                         "Scheduling options:")
+                         "Start Date:")
 
-    def test_the_calculated_box_is_greyed_from_the_moment_it_opens(self):
+    def test_all_three_schedule_boxes_open_live(self):
         """
-        The menu is built before the boxes it greys out now.
-
-        It used to grey them from inside its own builder, which ran last;
-        moved first, that call reaches nothing and the form has to make it
-        again once all three exist.
+        No mode greys any of them from the moment the form opens; each is
+        the user's to type (issue #31).
         """
         dialog = self.dialog()
 
-        self.assertEqual(dialog.scheduling_options_var.get(),
-                         "End date is calculated")
-        self.assertFalse(dialog._field_is_live(dialog.end_date_entry))
         self.assertTrue(dialog._field_is_live(dialog.start_date_entry))
+        self.assertTrue(dialog._field_is_live(dialog.end_date_entry))
+        self.assertTrue(dialog._field_is_live(dialog.duration_entry))
 
     def test_the_sections_read_in_order(self):
         """What the row is, when it happens, which week, how it is drawn."""
@@ -1110,7 +1090,10 @@ class TestWhereTheFieldsSit(DialogTestCase):
         """
         dialog = self.dialog()
 
-        for menu in (dialog.scheduling_options_menu, dialog.shape_menu):
+        menus = [dialog.shape_menu]
+        if getattr(dialog, 'calendar_var', None) is not None:
+            menus.append(dialog.calendar_menu)
+        for menu in menus:
             self.assertEqual(int(menu.cget('width')), dialog.MENU_WIDTH)
 
     def test_they_do_not_stretch_when_the_window_grows(self):
