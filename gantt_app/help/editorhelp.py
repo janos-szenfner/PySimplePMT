@@ -323,8 +323,11 @@ HELP_SECTIONS = (
             "On hard-lock the start or finish to the date, overriding a "
             "predecessor that would push the task later; Start and Finish No "
             "Earlier Than floor the start or finish, moving the task later "
-            "when the links would place it sooner. A task left at N/A - which "
-            "is every task until you set one - stays driven purely by its "
+            "when the links would place it sooner. As Late As Possible pushes "
+            "the task as late as it can go without extending its summary or "
+            "delaying a task that waits for it, so a row set this way ends "
+            "level with the phase it sits in. A task left at N/A - which is "
+            "every task until you set one - stays driven purely by its "
             "dependencies, so turning constraints on elsewhere never disturbs "
             "an unconstrained task.",
 

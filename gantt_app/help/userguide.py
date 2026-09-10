@@ -205,8 +205,10 @@ GUIDE_SECTIONS = (
             "A constraint drives the schedule. Must Start/Finish On hard-lock "
             "the boundary to the date and override a predecessor that would "
             "push the task later; Start/Finish No Earlier Than floor it, "
-            "moving the task later when the links would place it sooner. A "
-            "task left at N/A stays driven purely by its dependencies, so a "
+            "moving the task later when the links would place it sooner; As "
+            "Late As Possible pushes the task as late as its phase and its "
+            "successors allow, so it ends level with the summary it sits in. "
+            "A task left at N/A stays driven purely by its dependencies, so a "
             "constraint set on one task never disturbs an unconstrained one.",
 
             "Constraint date - enabled only for the six constraints that "

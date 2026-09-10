@@ -3613,15 +3613,20 @@ class Project:
           the task later when a link would otherwise place it earlier. They
           only ever move it later, so they settle in step with the link pass.
 
-        NA, ASAP and ALAP carry no date and never move a task here; SNLT and
-        FNLT bound the *late* dates (the float), not the early dates a forward
-        pass places, so they do not move a task either - both are checked for
-        conflict instead; see constraint_conflict. A task left at NA - which
-        is every task until a planner sets one - returns immediately, so the
-        schedule of an unconstrained plan is exactly what it was before.
+        As Late As Possible carries no date but does move a task here: it is
+        pushed to finish as late as its collection and its successors allow
+        (issue #26); see _place_as_late_as_possible. NA and ASAP never move a
+        task; SNLT and FNLT bound the *late* dates (the float), not the early
+        dates a forward pass places, so they do not move a task either - both
+        are checked for conflict instead; see constraint_conflict. A task left
+        at NA - which is every task until a planner sets one - returns
+        immediately, so the schedule of an unconstrained plan is exactly what
+        it was before.
         """
         ctype = task.constraint_type
         cd = task.constraint_date
+        if ctype == 'ALAP':
+            return self._place_as_late_as_possible(task)
         if ctype not in ('MSO', 'MFO', 'SNET', 'FNET') or cd is None:
             return False
 
@@ -3663,6 +3668,76 @@ class Project:
             return False
         task.start_date = new_start
         task.end_date = new_end
+        return True
+
+    def _place_as_late_as_possible(self, task: Task) -> bool:
+        """
+        Push an As Late As Possible task to the latest finish it may have.
+
+        RETURNS:
+        --------
+        bool
+            True when the task moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The ceiling is the latest this task can finish without extending its
+        collection or delaying a task that waits for it (issue #26): the end
+        of the other work under its parent - the summary's own finish, which
+        the other rows drive - capped at the working day before any successor
+        starts. A child with nothing later beside it and no successor has
+        nothing to slide against and is left where it is.
+
+        It only ever moves the task later, like the rest of the forward pass,
+        so it settles in step with it: the ceiling is read from where the
+        other rows currently sit, and a link that already holds is left alone.
+        A row set As Late As Possible therefore ends level with its summary -
+        "line 6 must end at the same time as the summary line".
+        """
+        calendar = self.calendar_for(task)
+
+        ceilings = []
+
+        # The other work under the same parent - the summary's finish, driven
+        # by the rows this one is meant to end level with.
+        if task.parent_task_id is not None:
+            sibling_ends = [
+                (t.end_date or t.start_date)
+                for t in self.tasks
+                if t.parent_task_id == task.parent_task_id and t.id != task.id
+                and (t.end_date or t.start_date) is not None
+            ]
+            if sibling_ends:
+                ceilings.append(max(sibling_ends))
+
+        # No later than a successor lets it: the working day before the
+        # earliest task that waits for this one starts.
+        for other in self.tasks:
+            if other.start_date is None:
+                continue
+            if any(dep.task_id == task.id for dep in other.dependencies):
+                before = calendar.get_previous_working_day(
+                    other.start_date - timedelta(days=1))
+                ceilings.append(before)
+
+        if not ceilings:
+            return False
+
+        new_end = calendar.get_previous_working_day(min(ceilings))
+        current_end = task.end_date or task.start_date
+
+        # As late as possible only ever moves a task later.
+        if current_end is not None and as_date(new_end) <= as_date(current_end):
+            return False
+
+        if task.effective_milestone:
+            task.start_date = new_end
+            task.end_date = None
+            return True
+
+        duration = self.working_duration(task)
+        task.end_date = new_end
+        task.start_date = calendar.subtract_working_days(new_end, duration)
         return True
 
     def constraint_conflict(self, task: Task) -> Optional[dict]:
@@ -4018,8 +4093,13 @@ class Project:
         pass: a link-less child has no schedule of its own to protect, so it
         tracks the collection start rather than keeping an arbitrary offset
         (issue #25).
+
+        A task with a constraint of its own is left to that constraint. An As
+        Late As Possible child, in particular, is pulled to the end of its
+        collection, not the start (issue #26) - aligning it here would fight
+        place_by_constraint every pass.
         """
-        if task.dependencies:
+        if task.dependencies or task.constraint_type != 'NA':
             return False
         floor = self._collection_start_for(task)
         if floor is None:
