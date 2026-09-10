@@ -3898,6 +3898,79 @@ class Project:
                     delta.days)
         return True
 
+    def _collection_start_for(self, task: Task) -> Optional[datetime]:
+        """
+        The dependency-driven start a task inherits from its collection.
+
+        RETURNS:
+        --------
+        Optional[datetime]
+            The constrained start of the nearest ancestor collection that
+            carries a start-driving predecessor (FS/SS), or None when no
+            ancestor does.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A dependency on a collection row says when the whole collection may
+        begin, so the work inside it that waits for nothing of its own begins
+        then too (issue #25). Rolling the collection up from its children left
+        a child that had been placed later sitting past the date the
+        collection's predecessor allowed, with nothing to pull it back. The
+        nearest ancestor is used, so a child inside a constrained sub-phase
+        follows that sub-phase rather than the outermost one.
+        """
+        parent_id = task.parent_task_id
+        seen: Set[str] = set()
+        while parent_id and parent_id not in seen:
+            seen.add(parent_id)
+            parent = self.get_task_by_id(parent_id)
+            if parent is None:
+                break
+            if any(not dep.constrains_finish for dep in parent.dependencies):
+                start, _end = self.constrained_dates(parent)
+                return start
+            parent_id = parent.parent_task_id
+        return None
+
+    def _align_orphan_child(self, task: Task) -> bool:
+        """
+        Place a link-less child at the start its collection's predecessor sets.
+
+        RETURNS:
+        --------
+        bool
+            True when the child moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Only a leaf with no links of its own is aligned - anything that waits
+        for a task of its own follows that instead, and a child chain inside
+        the collection sequences from wherever its own first link lands. The
+        alignment moves the child either way, unlike the forward-only link
+        pass: a link-less child has no schedule of its own to protect, so it
+        tracks the collection start rather than keeping an arbitrary offset
+        (issue #25).
+        """
+        if task.dependencies:
+            return False
+        floor = self._collection_start_for(task)
+        if floor is None:
+            return False
+
+        calendar = self.calendar_for(task)
+        new_start = calendar.get_next_working_day(floor)
+        if task.effective_milestone:
+            new_end = None
+        else:
+            new_end = calendar.add_working_days(
+                new_start, self.working_duration(task))
+
+        if new_start == task.start_date and new_end == task.end_date:
+            return False
+        task.start_date = new_start
+        task.end_date = new_end
+        return True
+
     #: Cap on the reschedule fixed-point loop. Auto-scheduling and roll-up
     #: feed each other - moving a leaf resizes its parent, which can move a
     #: task linked to that parent - so the pass repeats until nothing changes.
@@ -4180,19 +4253,26 @@ class Project:
         which is what makes this leave the effort alone: the task ends up
         somewhere else in calendar time holding exactly the work it held.
 
-        Containers are skipped. A row with children takes its dates from
-        the children beneath it - see roll_up_summaries - and those are on
-        working days by the time this is done with them, so bracketing them
-        cannot land on a weekend.
+        Any row with children is skipped, not only a Phase. A row takes its
+        dates from the children beneath it when it has any - see
+        roll_up_summaries, which brackets "anything with children, whatever it
+        is called" - and those are on working days by the time this is done
+        with them. Skipping only the Phase type left a Task or Subtask that
+        had grown children being rebuilt here from its own stored duration
+        while roll_up rebuilt it from its children: the two disagreed and took
+        turns for all twelve passes, so a plan with a Task-typed phase never
+        settled (issue #25). The reschedule loop already treats every row with
+        children as a summary; this now agrees with it.
 
         Running twice changes nothing: a task already on working days spanning
         its own duration is left exactly where it is, which is what lets this
         sit inside the reschedule loop.
         """
         changed = False
+        summary_ids = self.get_summary_task_ids()
 
         for task in self.tasks:
-            if task.is_container:
+            if task.is_container or task.id in summary_ids:
                 continue
 
             wanted = task.start_date
@@ -4440,6 +4520,11 @@ class Project:
                     if self.apply_dependency_constraints(
                             task, preserve_duration=True,
                             forward_only=forward_only):
+                        moved = True
+                    # A child with no links of its own follows the date its
+                    # collection's predecessor sets, rather than sitting where
+                    # it happened to be placed (issue #25).
+                    elif self._align_orphan_child(task):
                         moved = True
                 if self.place_by_constraint(task):
                     moved = True

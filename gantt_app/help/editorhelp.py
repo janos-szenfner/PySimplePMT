@@ -412,6 +412,12 @@ HELP_SECTIONS = (
             "end of another, a Hard link pins the date exactly while a Soft "
             "one is only a floor, and a lag is a wait built into the link - "
             "counted in the project's working days.",
+
+            "A link on a summary (a row with children) reaches the work "
+            "inside it: any child that waits for nothing of its own begins "
+            "when the summary can, on the date its predecessor sets. A child "
+            "that must follow another says so with its own link, and that "
+            "chain runs in order from there.",
         ],
     ),
     (

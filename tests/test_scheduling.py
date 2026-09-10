@@ -786,16 +786,15 @@ class TestSummaryRollUp(unittest.TestCase):
         self.assertEqual(self.parent().end_date,
                          max(c.end_date for c in children))
 
-    def test_the_children_keep_their_order(self):
+    def test_link_less_children_follow_the_collection_predecessor(self):
         """
-        The branch is moved, not rescheduled.
+        A dependency on a collection drives the work inside it (issue #25).
 
-        Every row moves by the same number of calendar days, so what
-        somebody set up inside the branch survives. The working calendar is
-        then enforced, which can push a row that landed on a Saturday to the
-        Monday and so move it a day further than its neighbour - the right
-        way round, since work does not happen on a day nobody works, but it
-        means an internal gap is preserved in spirit rather than to the day.
+        The children carry no links of their own, so the phase's predecessor
+        is what says when they may begin: both start on the date it sets,
+        rather than keeping the arbitrary offsets they happened to have. A
+        child that must keep its place after another says so with a link -
+        see test_a_child_chain_sequences_from_the_collection_start.
         """
         other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
                      end_date=datetime(2026, 9, 5))
@@ -806,8 +805,33 @@ class TestSummaryRollUp(unittest.TestCase):
 
         first = self.project.get_task_by_id("C1")
         second = self.project.get_task_by_id("C2")
-        self.assertLess(first.start_date, second.start_date)
-        self.assertLess(first.end_date, second.end_date)
+        # Both begin when the collection can, not where they sat before.
+        self.assertEqual(first.start_date, second.start_date)
+        self.assertGreater(first.start_date, other.end_date)
+        # The summary still brackets exactly the work beneath it.
+        self.assertEqual(self.parent().start_date, first.start_date)
+
+    def test_a_child_chain_sequences_from_the_collection_start(self):
+        """
+        A link inside the collection keeps its sequence (issue #25).
+
+        Only a link-less child follows the collection start; one that waits
+        for a sibling follows that sibling instead, so a chain still runs in
+        order from wherever its first, link-less member begins.
+        """
+        other = Task(id="Z", name="Z", start_date=datetime(2026, 9, 1),
+                     end_date=datetime(2026, 9, 5))
+        self.project.add_task(other)
+        self.parent().add_dependency("Z", 'FS', 'Hard')
+        # C2 now waits for C1 rather than standing free.
+        self.project.get_task_by_id("C2").add_dependency("C1", 'FS', 'Hard')
+
+        self.project.reschedule()
+
+        first = self.project.get_task_by_id("C1")
+        second = self.project.get_task_by_id("C2")
+        self.assertGreater(first.start_date, other.end_date)   # follows the phase
+        self.assertGreater(second.start_date, first.end_date)  # follows C1
 
     def test_a_plan_linked_through_a_summary_settles(self):
         """

@@ -452,6 +452,12 @@ GUIDE_SECTIONS = (
 
             "A task cannot depend on itself, on its own subtasks, or in a "
             "circle.",
+
+            "A link on a summary row reaches the work inside it. A child that "
+            "waits for nothing of its own begins when the summary can - on "
+            "the date its predecessor sets - rather than sitting where it "
+            "happened to be placed. A child that must follow another carries "
+            "its own link, and that chain sequences in order from there.",
         ],
     ),
     (
