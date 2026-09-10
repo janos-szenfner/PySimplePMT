@@ -334,12 +334,14 @@ HELP_SECTIONS = (
             "constraints and As Late As Possible, a red lock for Must Start "
             "and Must Finish On.",
 
-            "If the date you pick contradicts the network - a Must Finish On "
-            "earlier than a predecessor can allow, or a No-Later date the "
-            "links cannot meet - saving raises a conflict dialog naming the "
-            "task in the way. Keep Constraint forces the date and marks the "
-            "task at negative float (a red bar and a warning sign); Cancel "
-            "Constraint drops it back to N/A.",
+            "If the date contradicts the network - a Must Finish On earlier "
+            "than a predecessor can allow, or a No-Later date the task lands "
+            "past (held there by a link, by its parent phase, or by where it "
+            "already sits) - saving raises a conflict dialog. Keep Constraint "
+            "forces the date and marks the task at negative float (a red bar "
+            "and a warning sign); Remove Predecessors, offered when the task "
+            "has links to drop, clears them and pulls the task onto the date "
+            "so it is met; Cancel Constraint drops it back to N/A.",
         ],
     ),
     (

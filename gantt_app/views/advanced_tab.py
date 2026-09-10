@@ -568,10 +568,12 @@ class ConstraintConflictDialog(ctk.CTkToplevel):
         What Project.constraint_conflict returned - the constraint, its date,
         the reason, and the predecessor tasks it clashes with.
 
-    The reader chooses Keep Constraint (force it, flag the negative float) or
-    Cancel Constraint (drop it back to N/A). The choice is left in ``result``
-    as ``"keep"`` or ``"cancel"``; ``"cancel"`` is also what closing the
-    window means, so an unanswered dialog never forces a bad constraint.
+    The reader chooses Keep Constraint (force it, flag the negative float),
+    Remove Predecessors (drop this task's links so it can meet the date - only
+    offered when it has links to drop, issue #28), or Cancel Constraint (drop
+    it back to N/A). The choice is left in ``result`` as ``"keep"``,
+    ``"remove"`` or ``"cancel"``; ``"cancel"`` is also what closing the window
+    means, so an unanswered dialog never forces a bad constraint.
     """
 
     def __init__(self, master, conflict: dict):
@@ -610,11 +612,15 @@ class ConstraintConflictDialog(ctk.CTkToplevel):
                          text_color=theme.MUTED_TEXT).pack(
                 padx=20, pady=(0, 4), anchor=tk.W)
 
+        # Only mention removing predecessors when there are any to remove.
+        can_remove = bool(conflict.get('predecessors'))
+        removal = (" Remove Predecessors drops this task's links so it can meet"
+                   " the date." if can_remove else "")
         ctk.CTkLabel(
             self, justify=tk.LEFT, wraplength=420, text_color=theme.MUTED_TEXT,
             text=("Keep Constraint forces the date and flags the affected "
-                  "tasks with a negative-float warning. Cancel Constraint "
-                  "drops it back to N/A."),
+                  "tasks with a negative-float warning." + removal +
+                  " Cancel Constraint drops it back to N/A."),
         ).pack(padx=20, pady=(0, 12), anchor=tk.W)
 
         row = ctk.CTkFrame(self, fg_color="transparent")
@@ -624,6 +630,12 @@ class ConstraintConflictDialog(ctk.CTkToplevel):
                       border_color=theme.SEPARATOR, text_color=theme.TEXT,
                       hover_color=theme.MENU_HOVER,
                       command=self._cancel).pack(side=tk.LEFT, padx=5)
+        if can_remove:
+            ctk.CTkButton(row, text="Remove Predecessors", width=170,
+                          fg_color="transparent", border_width=1,
+                          border_color=theme.SEPARATOR, text_color=theme.TEXT,
+                          hover_color=theme.MENU_HOVER,
+                          command=self._remove).pack(side=tk.LEFT, padx=5)
         ctk.CTkButton(row, text="Keep Constraint", width=150,
                       fg_color=theme.NEGATIVE_TEXT, hover_color="#962d22",
                       command=self._keep).pack(side=tk.LEFT, padx=5)
@@ -634,13 +646,17 @@ class ConstraintConflictDialog(ctk.CTkToplevel):
         self.result = "keep"
         self.destroy()
 
+    def _remove(self):
+        self.result = "remove"
+        self.destroy()
+
     def _cancel(self):
         self.result = "cancel"
         self.destroy()
 
     @classmethod
     def ask(cls, master, conflict: dict) -> str:
-        """Show the dialog modally and return "keep" or "cancel"."""
+        """Show the dialog modally and return "keep", "remove" or "cancel"."""
         dialog = cls(master, conflict)
         dialog.wait_window()
         return dialog.result

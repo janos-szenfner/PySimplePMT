@@ -219,11 +219,13 @@ GUIDE_SECTIONS = (
             "red lock marks Must Start On and Must Finish On.",
 
             "If the date contradicts the network - a Must Finish On earlier "
-            "than a predecessor allows, or a No-Later date the links cannot "
-            "meet - saving raises a conflict dialog naming the task in the "
-            "way. Keep Constraint forces it and marks the affected task at "
-            "negative float; Cancel Constraint drops it back to N/A. Every "
-            "constraint change is a single Undo step.",
+            "than a predecessor allows, or a No-Later date the task lands past "
+            "(held there by a link, by its parent phase, or by where it "
+            "already sits) - saving raises a conflict dialog. Keep Constraint "
+            "forces it and marks the affected task at negative float; Remove "
+            "Predecessors, when the task has links to drop, clears them and "
+            "pulls the task onto the date; Cancel Constraint drops it back to "
+            "N/A. Every constraint change is a single Undo step.",
         ],
     ),
     (

@@ -1790,10 +1790,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         ------------------
         The CPM check (REQ-UI-041 §3): a constraint that contradicts the
         network - a Must Finish On earlier than a predecessor allows, a
-        No-Later date the links cannot meet - interrupts the save with the
+        No-Later date the task cannot meet - interrupts the save with the
         conflict dialog. Keep forces it (and the negative float is then
-        flagged on the chart and in the list); Cancel drops it back to N/A
-        and aborts the save so nothing is committed behind the reader's back.
+        flagged on the chart and in the list); Remove Predecessors drops this
+        task's links so it can meet the date, and keeps the constraint (issue
+        #28); Cancel drops the constraint back to N/A and aborts the save so
+        nothing is committed behind the reader's back. Remove is only offered
+        when the task actually has predecessor links to drop.
         """
         if getattr(task, 'constraint_type', 'NA') == 'NA':
             return True
@@ -1807,10 +1810,60 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             logger.info("Constraint conflict on %r kept by the user",
                         task.name)
             return True
+        if choice == 'remove':
+            self._remove_predecessors(task)
+            logger.info("Constraint conflict on %r resolved by removing its "
+                        "predecessor links", task.name)
+            return True
         self.advanced_tab.revert_to_na()
         logger.info("Constraint conflict on %r cancelled; reverted to N/A",
                     task.name)
         return False
+
+    def _remove_predecessors(self, task) -> None:
+        """
+        Drop the edited task's predecessor links, so a No-Later date is met.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The links are cleared everywhere the save might read them from: the
+        task the check ran against (the new task on a create), the Dependency
+        tab's editor when it has been opened, and the live task when it has
+        not - see the save path, which takes the editor's links only when the
+        tab exists and keeps the task's own otherwise.
+
+        A No-Later-Than does not drive the forward pass, so removing the links
+        alone would leave the task where it sat, still breaking its date. It
+        is pulled to the date it was given (Project.dates_meeting_constraint).
+        The General tab's start was read before this ran, so the pulled dates
+        are stashed for the save path to apply over it; see _apply.
+        """
+        task.dependencies = []
+        editor = getattr(self, '_dependency_editor', None)
+        if editor is not None:
+            editor.links = []
+            try:
+                editor.refresh()
+            except Exception:
+                logger.debug("Could not refresh the Dependency tab after "
+                             "clearing its links")
+        live = getattr(self, 'task', None)
+        if live is not None:
+            live.dependencies = []
+
+        new_start, new_end = self.project.dates_meeting_constraint(task)
+        if new_start is not None:
+            task.start_date, task.end_date = new_start, new_end
+            self._forced_dates = (new_start, new_end)
+            try:
+                if getattr(self, 'start_date_entry', None) is not None:
+                    self.start_date_entry.set_date(new_start)
+                if new_end is not None and getattr(
+                        self, 'end_date_entry', None) is not None:
+                    self.end_date_entry.set_date(new_end)
+            except Exception:
+                logger.debug("Could not update the date entries after "
+                             "removing predecessors")
 
     def _reconcile_effort(self, old_task, duration, assignments,
                           effort_type, effort_driven):

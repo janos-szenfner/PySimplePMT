@@ -111,6 +111,22 @@ def has_deadline(plan, name, date):
     plan["project"].get_task_by_id(name).deadline = _day(date)
 
 
+@given(parsers.re(r'a summary "(?P<parent>[^"]+)" with a child '
+                  r'"(?P<child>[^"]+)" starting "(?P<start>[\d-]+)"$'))
+def summary_with_child(plan, parent, child, start):
+    """A parent row bracketing one child placed on the given day (issue #28)."""
+    project = plan["project"]
+    when = _day(start)
+    parent_task = Task(id=parent, name=parent, start_date=when,
+                       end_date=project.calendar.add_working_days(when, 1),
+                       task_type="Phase")
+    child_task = Task(id=child, name=child, start_date=when,
+                      end_date=project.calendar.add_working_days(when, 1),
+                      parent_task_id=parent)
+    project.add_task(parent_task)
+    project.add_task(child_task)
+
+
 # --- scheduling / remembering ----------------------------------------------
 @given("the plan is rescheduled")
 @when("the plan is rescheduled")
@@ -307,10 +323,29 @@ def flagged_negative_float(plan, name):
     assert name in plan["project"].tasks_in_conflict()
 
 
+@then(parsers.parse('"{name}" is reported in conflict'))
+def reported_conflict_plain(plan, name):
+    assert plan["project"].constraint_conflict(
+        plan["project"].get_task_by_id(name)) is not None, "expected a conflict"
+
+
 @then(parsers.parse('"{name}" is not reported in conflict'))
 def not_in_conflict(plan, name):
     assert plan["project"].constraint_conflict(
         plan["project"].get_task_by_id(name)) is None
+
+
+@when(parsers.parse('"{name}"\'s predecessors are removed to meet its '
+                    'constraint'))
+def remove_predecessors_to_meet(plan, name):
+    """The model side of the Remove Predecessors resolution (issue #28)."""
+    project = plan["project"]
+    task = project.get_task_by_id(name)
+    new_start, new_end = project.dates_meeting_constraint(task)
+    task.dependencies = []
+    if new_start is not None:
+        task.start_date, task.end_date = new_start, new_end
+    project.apply_schedule()
 
 
 @then("no task is flagged at negative float")
@@ -341,6 +376,8 @@ def answering_the_dialog(conflict, choice, expected):
         dialog.update_idletasks()
         if choice == "keep":
             dialog._keep()
+        elif choice == "remove":
+            dialog._remove()
         else:
             dialog._cancel()
         assert dialog.result == expected

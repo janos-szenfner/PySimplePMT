@@ -110,10 +110,39 @@ Feature: Advanced tab constraints and deadlines
     Then "B" is not reported in conflict
     And no task is flagged at negative float
 
+  # --- issue #28: a No-Later date the task already sits past is a conflict ---
+
+  Scenario: A task sitting past its Start No Later Than is a conflict
+    Given a two-day task "T" starting "2026-10-20"
+    When "T" is given a "SNLT" constraint on "2026-10-05"
+    Then "T" is reported in conflict
+    And "T" is flagged at negative float
+
+  Scenario: A Start No Later Than the task can still meet is no conflict
+    Given a two-day task "T" starting "2026-10-05"
+    When "T" is given a "SNLT" constraint on "2026-10-20"
+    Then "T" is not reported in conflict
+
+  Scenario: A child held past its date by its summary is a conflict
+    Given a summary "P" with a child "C" starting "2026-10-20"
+    When "C" is given a "SNLT" constraint on "2026-10-05"
+    Then "C" is reported in conflict
+
+  Scenario: Removing predecessors pulls a task to meet its Start No Later Than
+    Given task "A" of 5 working days and task "B" of 2 working days
+    And "B" has a "FS" link to "A"
+    And the plan is rescheduled
+    When "B" is given a "SNLT" constraint on "2026-10-05"
+    Then "B" is reported in conflict with predecessor "A"
+    When "B"'s predecessors are removed to meet its constraint
+    Then "B" is not reported in conflict
+    And "B" starts on "2026-10-05"
+
   @needs_display
-  Scenario: The conflict dialog offers Keep and Cancel
+  Scenario: The conflict dialog offers Keep, Remove Predecessors and Cancel
     Given a conflict report for a task
     Then answering the conflict dialog "keep" returns "keep"
+    And answering the conflict dialog "remove" returns "remove"
     And answering the conflict dialog "cancel" returns "cancel"
 
   @needs_display

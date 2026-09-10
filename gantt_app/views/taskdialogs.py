@@ -152,6 +152,12 @@ class EditTaskDialog(TaskFormDialog):
                 probe.dependencies = self._dependency_editor.get_links()
             if not self._constraint_permitted(probe):
                 return False
+            # Remove Predecessors pulls the task to meet its No-Later date;
+            # the General tab's start was read above, so apply the pulled
+            # dates over it here (issue #28).
+            forced = self.__dict__.pop('_forced_dates', None)
+            if forced is not None:
+                start, end = forced
 
             # Capture the pre-edit task before mutating the live object. The
             # dialog has to keep self.task in step with the project, but using
@@ -491,8 +497,11 @@ class CreateTaskDialog(TaskFormDialog):
             )
             task.__post_init__()
             # CPM conflict check before the task joins the plan; Cancel aborts.
+            # Remove Predecessors repositions the new task in place, so the
+            # stashed dates are only cleared here, not re-applied (issue #28).
             if not self._constraint_permitted(task):
                 return False
+            self.__dict__.pop('_forced_dates', None)
             logger.info("Created task %s %r with %d resource assignment(s)",
                         task.id, task.name, len(task.resource_assignments))
             if task.deadline or task.constraint_type != 'NA':

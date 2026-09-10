@@ -3712,22 +3712,43 @@ class Project:
             return (calendar.get_next_working_day(a)
                     > calendar.get_next_working_day(b))
 
-        # For a finish constraint (MFO/FNLT) a start the links push past the
-        # date is as much a conflict as a finish that is: the task cannot end
-        # by the date if it cannot even begin by then. So both required edges
-        # are weighed against the date.
+        def _max_date(a, b):
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return max(a, b)
+
+        # For a hard lock (MSO/MFO) the conflict is whether the *links* push a
+        # boundary past the lock date, so only the dependency-required dates
+        # are weighed.
         start_late = req_start is not None and _later(req_start, cd)
         finish_late = req_end is not None and _later(req_end, cd)
+
+        # A No-Later-Than is broken whenever the task actually lands past its
+        # date, whatever holds it there. Reading only the direct links missed a
+        # task delayed by its parent summary or sitting late for any other
+        # reason - a child whose summary starts after the date reported no
+        # conflict at all (issue #28). The scheduler is forward-only and never
+        # pulls a task earlier than where it sits, so its placed boundary is
+        # the earliest it will really begin/finish; the required date is folded
+        # in for the case a caller has not rescheduled yet.
+        placed_start = task.start_date
+        placed_end = task.end_date or task.start_date
+        eff_start = _max_date(req_start, placed_start)
+        eff_end = _max_date(req_end, placed_end)
+        start_breaks = eff_start is not None and _later(eff_start, cd)
+        finish_breaks = eff_end is not None and _later(eff_end, cd)
 
         reason = None
         if ctype == 'MSO' and start_late:
             reason = 'predecessor'          # links push start past the lock
         elif ctype == 'MFO' and (finish_late or start_late):
             reason = 'predecessor'          # links push finish past the lock
-        elif ctype == 'SNLT' and start_late:
-            reason = 'late'                 # cannot start by the No-Later date
-        elif ctype == 'FNLT' and (finish_late or start_late):
-            reason = 'late'                 # cannot finish by the No-Later date
+        elif ctype == 'SNLT' and start_breaks:
+            reason = 'late'                 # starts after the No-Later date
+        elif ctype == 'FNLT' and (finish_breaks or start_breaks):
+            reason = 'late'                 # finishes after the No-Later date
 
         if reason is None:
             return None
@@ -3744,6 +3765,42 @@ class Project:
             'reason': reason,
             'predecessors': predecessors,
         }
+
+    def dates_meeting_constraint(self, task: Task):
+        """
+        The (start, end) that would satisfy a task's No-Later-Than date.
+
+        RETURNS:
+        --------
+        Tuple[Optional[datetime], Optional[datetime]]
+            Where a Start/Finish No Later Than task should sit to meet its
+            date - the working day on or before it, holding the task's
+            duration. (None, None) for any other constraint, so a caller can
+            tell "nothing to do" from a real placement.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        This is the placement the "Remove Predecessors" resolution pulls a
+        task to once its links are gone (issue #28): a No-Later-Than does not
+        drive the forward pass, so with the blocking links removed the task
+        would otherwise stay where it was and keep breaking its date. The
+        working day on or before the date is used so the calendar cannot then
+        push the start past the date it was meant to meet.
+        """
+        cd = task.constraint_date
+        if cd is None or task.constraint_type not in ('SNLT', 'FNLT'):
+            return None, None
+        calendar = self.calendar_for(task)
+        duration = self.working_duration(task)
+        if task.constraint_type == 'SNLT':
+            start = calendar.get_previous_working_day(cd)
+            end = (None if task.effective_milestone
+                   else calendar.add_working_days(start, duration))
+            return start, end
+        end = calendar.get_previous_working_day(cd)
+        start = (end if task.effective_milestone
+                 else calendar.subtract_working_days(end, duration))
+        return start, end
 
     def tasks_in_conflict(self) -> set:
         """
