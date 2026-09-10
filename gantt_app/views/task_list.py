@@ -626,7 +626,8 @@ class DragDropTaskList(ctk.CTkFrame):
             on_indent=self.indent_task,
             on_outdent=self.outdent_task,
             on_edit=self.edit_task,
-            on_delete=self.delete_task,
+            on_delete=self.delete_tasks,
+            on_add_to_timeline=self.add_to_timeline,
             on_create=self.create_task,
             on_undo=self.undo,
             on_redo=self.redo,
@@ -1284,44 +1285,122 @@ class DragDropTaskList(ctk.CTkFrame):
             )
 
     def delete_task(self, task_id: str):
+        """Delete a single task; see :meth:`delete_tasks`."""
+        self.delete_tasks([task_id])
+
+    def delete_tasks(self, task_ids):
         """
-        Delete a task, after confirming, and refresh the list.
+        Delete one or more selected tasks, after confirming, as one step.
 
         PARAMETERS:
         -----------
-        task_id : str
-            The task to delete.
+        task_ids : str or list[str]
+            The task(s) to delete. A single id is accepted for the callers
+            that still delete one row.
 
         DEVELOPMENT NOTES:
         ------------------
-        Deleting a task takes its sub-tasks with it, so the confirmation says
-        how many will go. A right-click and a menu entry is a short path to
-        losing a branch of the plan, and the count is the part a user cannot
-        see from the row itself.
+        Issue #17: deleting a multi-row selection removed only the clicked
+        row. Every row picked out now goes, and the whole delete is one entry
+        in the undo history rather than one per row, so a single Undo brings
+        them all back.
 
-        The delete is undoable, which the prompt says so that confirming
-        feels less final than it looks.
+        The selection is reduced to its top-most rows: a task takes its
+        sub-tasks with it, so a selection holding both a parent and its child
+        must not try to delete the child a second time once the parent has
+        taken it. The confirmation says how many rows go in all - the count
+        of sub-tasks is the part a reader cannot see from the rows.
         """
-        task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if isinstance(task_ids, str):
+            task_ids = [task_ids]
+        ids = [tid for tid in task_ids
+               if self.project.get_task_by_id(tid) is not None]
+        if not ids:
             return
+        ids = list(self.project.topmost_of(ids))
 
-        subtasks = self.project.get_subtasks(task_id)
-        if subtasks:
-            detail = (f"\n\nIts {len(subtasks)} sub-task(s) will be deleted "
-                      f"as well.")
+        total = sum(1 + len(self.project.get_subtasks(tid)) for tid in ids)
+        if len(ids) == 1 and total == 1:
+            first = self.project.get_task_by_id(ids[0])
+            prompt = f"Delete '{first.name}'?\n\nThis can be undone."
+        elif len(ids) == 1:
+            first = self.project.get_task_by_id(ids[0])
+            prompt = (f"Delete '{first.name}' and its {total - 1} "
+                      f"sub-task(s)?\n\nThis can be undone.")
         else:
-            detail = ""
+            prompt = (f"Delete {len(ids)} selected task(s)? "
+                      f"{total} row(s) in all, sub-tasks included."
+                      f"\n\nThis can be undone.")
 
         if not messagebox.askyesno(
-            "Delete Task",
-            f"Delete '{task.name}'?{detail}\n\nThis can be undone.",
-            icon=messagebox.WARNING,
+            "Delete Task", prompt, icon=messagebox.WARNING,
         ):
             return
 
-        logger.info("Deleting task %s %r", task.id, task.name)
-        self.remove_task(task_id)
+        logger.info("Deleting %d selected task(s): %s", len(ids), ids)
+
+        def apply() -> bool:
+            removed = False
+            for tid in ids:
+                # A parent deleted earlier may already have taken this row.
+                if self.project.get_task_by_id(tid) is None:
+                    continue
+                if self.project.remove_task(tid):
+                    removed = True
+            return removed
+
+        if self.project_tracker:
+            self.project_tracker.run_as_command(apply, "Delete Tasks")
+        else:
+            apply()
+
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    def add_to_timeline(self, task_ids):
+        """
+        Put every selected row on the Gantt timeline (issue #34).
+
+        PARAMETERS:
+        -----------
+        task_ids : str or list[str]
+            The rows whose Show-in-timeline flag to turn on.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The companion to a new task starting off the timeline (issue #33):
+        the right-click menu's Add to Timeline turns the flag on for the
+        whole selection at once, as one undoable step, so a planner can pick
+        out the rows they want drawn and add them together. Rows already on
+        the timeline are left alone, and if none changed nothing is recorded.
+        """
+        if isinstance(task_ids, str):
+            task_ids = [task_ids]
+        ids = [tid for tid in task_ids
+               if self.project.get_task_by_id(tid) is not None]
+        if not ids:
+            return
+
+        def apply() -> bool:
+            changed = False
+            for tid in ids:
+                task = self.project.get_task_by_id(tid)
+                if task is not None and not task.show_in_timeline:
+                    task.show_in_timeline = True
+                    changed = True
+            return changed
+
+        if self.project_tracker:
+            self.project_tracker.run_as_command(apply, "Add to Timeline")
+        else:
+            apply()
+
+        logger.info("Added %d task(s) to the timeline: %s", len(ids), ids)
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+        self._say(f"Added {self._count(ids)} to the timeline.")
 
     def on_rows_changed(self, callback):
         """

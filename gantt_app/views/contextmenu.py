@@ -102,7 +102,8 @@ class TaskContextMenu:
                  on_create=None, on_undo=None, on_redo=None,
                  can_undo=None, can_redo=None,
                  on_copy=None, on_cut=None, on_paste=None,
-                 can_copy_or_cut=None, can_paste=None):
+                 can_copy_or_cut=None, can_paste=None,
+                 on_add_to_timeline=None):
         self.tree = tree
         self._project_getter = project_getter
         self._on_move = on_move
@@ -110,6 +111,7 @@ class TaskContextMenu:
         self._on_outdent = on_outdent
         self._on_edit = on_edit
         self._on_delete = on_delete
+        self._on_add_to_timeline = on_add_to_timeline
         self._on_create = on_create
         self._on_undo = on_undo
         self._on_redo = on_redo
@@ -406,6 +408,16 @@ class TaskContextMenu:
             command=lambda: self._after_menu(self._invoke_delete, task_id),
         )
 
+        # Add to Timeline turns the Show-in-timeline flag on for every
+        # selected row (issue #34) - the way a planner puts the tasks they
+        # want drawn onto the Gantt, since a new task starts off it.
+        menu.add_command(
+            label="Add to Timeline",
+            state=tk.NORMAL if (has_task and self._on_add_to_timeline)
+            else tk.DISABLED,
+            command=lambda: self._invoke_add_to_timeline(task_id),
+        )
+
         menu.add_separator()
 
         # Add Copy, Cut, Paste menu items
@@ -578,14 +590,29 @@ class TaskContextMenu:
             logger.exception("Could not edit task %s", task_id)
 
     def _invoke_delete(self, task_id):
-        """Delete the clicked task."""
+        """Delete every selected row, or the clicked one when none is picked."""
         if not self._on_delete:
             return
-        logger.info("Context menu: delete task %s", task_id)
+        delete_ids = self._selection_including(task_id)
+        logger.info("Context menu: delete %d task(s) %s",
+                    len(delete_ids), delete_ids)
         try:
-            self._on_delete(task_id)
+            self._on_delete(delete_ids)
         except Exception:
-            logger.exception("Could not delete task %s", task_id)
+            logger.exception("Could not delete task(s) %s", delete_ids)
+
+    def _invoke_add_to_timeline(self, task_id):
+        """Turn Show-in-timeline on for every selected row."""
+        if not self._on_add_to_timeline:
+            return
+        timeline_ids = self._selection_including(task_id)
+        logger.info("Context menu: add %d task(s) to the timeline %s",
+                    len(timeline_ids), timeline_ids)
+        try:
+            self._on_add_to_timeline(timeline_ids)
+        except Exception:
+            logger.exception("Could not add task(s) %s to the timeline",
+                             timeline_ids)
 
     def _invoke_copy(self, selected_ids):
         """Copy selected tasks to clipboard."""

@@ -4,11 +4,18 @@ Feature: Unsaved changes protection
   Background:
     Given the application is open
 
-  Scenario: Closing a clean project exits immediately
+  Scenario: Closing a clean project asks to confirm, then exits
     Given the project has no unsaved changes
+    And the user will confirm closing
     When the user tries to close the application
     Then the application exits
     And the project is no longer dirty
+
+  Scenario: The close confirmation can be declined
+    Given the project has no unsaved changes
+    And the user will decline closing
+    When the user tries to close the application
+    Then the application stays open
 
   Scenario: Closing a dirty project can be cancelled
     Given the project has unsaved changes

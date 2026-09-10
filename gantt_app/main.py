@@ -1031,14 +1031,29 @@ class GanttApp(ctk.CTk):
         main window disappeared.
         """
         try:
-            action = self.check_unsaved_changes(
-                title="Exit",
-                message="Do you want to save your project before exiting?",
-            )
-            if action == "cancel":
-                return
-            if action == "save":
-                if not self.save_project():
+            if self.is_dirty:
+                # Unsaved work: offer to save, and let Cancel call it off.
+                action = self.check_unsaved_changes(
+                    title="Close PySimplePMT",
+                    message=("You have unsaved changes.\n\nSave your work "
+                             "before closing PySimplePMT?"),
+                )
+                if action == "cancel":
+                    logger.info("Application close cancelled at the save prompt")
+                    return
+                if action == "save":
+                    if not self.save_project():
+                        return
+            else:
+                # Nothing unsaved, but closing the whole application is still
+                # worth confirming (issue #21) rather than quitting on a
+                # stray click of the window's close button.
+                if not messagebox.askyesno(
+                    "Close PySimplePMT",
+                    "Are you sure you want to close PySimplePMT?",
+                    icon="question",
+                ):
+                    logger.info("Application close cancelled by user")
                     return
         except Exception:
             logger.exception("Error while preparing to exit; closing anyway")

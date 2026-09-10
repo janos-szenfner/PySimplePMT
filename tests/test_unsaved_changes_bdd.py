@@ -73,6 +73,18 @@ def saving_will_succeed(app, monkeypatch):
     monkeypatch.setattr(app.toolbar, "save_project", app.mark_clean)
 
 
+@given("the user will confirm closing")
+def the_user_will_confirm_closing(monkeypatch):
+    monkeypatch.setattr("gantt_app.main.messagebox.askyesno",
+                        lambda *args, **kwargs: True)
+
+
+@given("the user will decline closing")
+def the_user_will_decline_closing(monkeypatch):
+    monkeypatch.setattr("gantt_app.main.messagebox.askyesno",
+                        lambda *args, **kwargs: False)
+
+
 @given(parsers.parse('the new project name will be "{name}"'))
 def the_new_project_name_will_be(name, monkeypatch):
     monkeypatch.setattr(

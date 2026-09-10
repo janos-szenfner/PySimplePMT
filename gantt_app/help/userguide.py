@@ -547,7 +547,9 @@ GUIDE_SECTIONS = (
 
             "Show in timeline decides whether a row's bar is drawn. A new "
             "task starts off the timeline, so the chart shows only the tasks "
-            "you add to it; the row stays in the plan either way.",
+            "you add to it; the row stays in the plan either way. To put "
+            "several on at once, select them and choose Add to Timeline from "
+            "the right-click menu.",
 
             "Shape and Colour set how a bar is drawn. Settings > Gantt "
             "Settings holds the chart-wide options; the zoom controls and "
@@ -977,7 +979,7 @@ GUIDE_SECTIONS = (
             "it says - see Marking rows up above.",
 
             "The pencil edits the selected task. Renaming the plan itself is "
-            "Settings > Project Settings.",
+            "File > Project Settings.",
 
             "Creating work items is on Edit > Create, and opening or "
             "starting a plan is on the File menu.",
@@ -992,10 +994,15 @@ GUIDE_SECTIONS = (
     (
         "Files: saving and opening",
         [
-            "File > Save and File > Load use this application's own "
+            "File > Save and File > Open use this application's own "
             "JSON format, which carries everything: the tasks, the links, "
             "the calendars, the overrides and the per-task calendar "
             "assignments.",
+
+            "File > Close Project puts the current plan down and leaves a "
+            "fresh, blank one open, without closing the application; unsaved "
+            "work is offered a save first. Closing the application itself "
+            "asks to confirm, and to save unsaved work, before it quits.",
 
             "Save writes back to the file the plan came from and only asks "
             "where to put it the first time. Save As always asks, and the "

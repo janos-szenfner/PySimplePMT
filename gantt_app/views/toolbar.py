@@ -1177,15 +1177,21 @@ class Toolbar(ctk.CTkFrame):
         self.icon_toolbar.mark_on_track = self.mark_on_track
     
     def _delete_selected_tasks(self):
-        """Delete selected tasks from the task list."""
-        if hasattr(self.task_list, 'get_selected_task_ids'):
-            selected_ids = self.task_list.get_selected_task_ids()
-            if selected_ids and self.project:
-                if messagebox.askyesno("Delete", f"Delete {len(selected_ids)} selected task(s)?"):
-                    for task_id in selected_ids:
-                        self.project.remove_task(task_id)
-                    if self.on_project_changed:
-                        self.on_project_changed()
+        """
+        Delete the selected tasks through the list's own multi-delete.
+
+        Routes to DragDropTaskList.delete_tasks so the keyboard and icon-bar
+        Delete behave exactly like the right-click one: every selected row
+        goes, as a single undoable step, with one confirmation and a refresh
+        (issue #17). The old loop here deleted straight off the project,
+        skipping undo and the redraw.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'delete_tasks'):
+            return
+        selected_ids = task_list.get_selected_task_ids()
+        if selected_ids:
+            task_list.delete_tasks(selected_ids)
 
     def _convert_to_new_menu_format(self):
         """
@@ -1289,6 +1295,7 @@ class Toolbar(ctk.CTkFrame):
                     {"text": "Open Project...", "command": self.load_project},
                     {"text": "Save Project...", "command": self.save_project},
                     {"text": "Save Project As...", "command": self.save_project_as},
+                    {"text": "Close Project", "command": self.close_project},
                     {"text": "Project Settings...", "command": self.open_settings},
                 ],
             },
@@ -2093,6 +2100,49 @@ class Toolbar(ctk.CTkFrame):
                 self.master.mark_clean()
         else:
             logger.info("New-project name dialog cancelled")
+
+    def close_project(self):
+        """
+        Close the current file, leaving a fresh blank project open.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Issue #21: the only way to close a file was to close the window,
+        which quit the whole application. File > Close Project now empties the
+        current plan back to a blank one - the same reset New Project does,
+        without asking for a name - so a planner can put a file down without
+        leaving the program. Unsaved work is offered a save first, and Cancel
+        there abandons the close.
+        """
+        logger.info("Closing the current project via toolbar")
+        if hasattr(self.master, 'check_unsaved_changes'):
+            action = self.master.check_unsaved_changes(
+                title="Close Project",
+                message=("Do you want to save the current project before "
+                         "closing it?"))
+            if action == "cancel":
+                logger.info("Close-project cancelled by user")
+                return
+            if action == "save":
+                if not self.master.save_project():
+                    logger.info("Close-project cancelled because save failed")
+                    return
+
+        # Save now writes to a fresh file, not the one just closed.
+        self.current_file_path = None
+        self.project.name = "New Project"
+        self.project.tasks = []
+        self.project.start_date = None
+        self.project.end_date = None
+        self.project.resource_repository = ResourceRepository()
+
+        self._forget_the_previous_plan()
+
+        if self.on_project_changed:
+            self.on_project_changed()
+
+        if hasattr(self.master, 'mark_clean'):
+            self.master.mark_clean()
 
     def _selected_task_ids(self):
         """

@@ -1144,7 +1144,7 @@ Two rows, one above the other, because they are two different things.
 **The menu bar** names everything the application can do, the way a menu bar
 on any desktop does:
 
-- **File**: New Project, Open Project, Save Project, Save Project As, Project Settings — the last a unified tabbed window with Project, Resource, Gantt and Calendar categories, each linked to its existing full editor
+- **File**: New Project, Open Project, Save Project, Save Project As, Close Project (puts the current plan down and leaves a fresh blank one open, without quitting), Project Settings — the last a unified tabbed window with Project, Resource, Gantt and Calendar categories, each linked to its existing full editor
 - **Actions**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
 - **Edit**: Create (Phase, Task, Subtask, Milestone), Undo, Redo, Cut, Copy,

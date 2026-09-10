@@ -502,7 +502,10 @@ class SnapshotCommand(Command):
     #: what they did to every row the change reached, not only to the row the
     #: user touched.
     FIELDS = ('id', 'parent_task_id', 'task_type',
-              'start_date', 'end_date', 'duration')
+              'start_date', 'end_date', 'duration',
+              # show_in_timeline is here so the right-click Add to Timeline
+              # (issue #34), which flips it as a snapshot action, undoes.
+              'show_in_timeline')
     project: Project
     apply: Callable[[], bool]
     label: str = "Change Tasks"

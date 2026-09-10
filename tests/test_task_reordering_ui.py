@@ -949,6 +949,7 @@ class TestContextMenu(TaskListTestCase):
                                   "Move down", "Move to bottom",
                                   "Indent", "Outdent",
                                   "Create", "Edit", "Delete",
+                                  "Add to Timeline",
                                   "Copy", "Cut", "Paste",
                                   "Paste as Sub-Task",
                                   "Undo", "Redo"])
