@@ -195,9 +195,10 @@ class EditTaskDialog(TaskFormDialog):
             if not self.task.is_container:
                 self.task.duration = duration
             self.task.priority = self.priority_var.get()
-            self.task.status = self.status_var.get()
-            logger.debug("Task %r status updated to %s", self.task.name,
-                         self.task.status)
+            self.task.status = self.status_value()
+            self.task.estimated = self.estimated_flag()
+            logger.debug("Task %r status updated to %s (estimated=%s)",
+                         self.task.name, self.task.status, self.task.estimated)
             self.task.shape = self.shape_var.get()
             self.task.show_in_timeline = self.show_in_timeline_var.get()
             self.task.earliest_begin = earliest_begin
@@ -245,6 +246,7 @@ class EditTaskDialog(TaskFormDialog):
                     duration=new_task.duration,
                     priority=new_task.priority,
                     status=new_task.status,
+                    estimated=new_task.estimated,
                     shape=new_task.shape,
                     show_in_timeline=new_task.show_in_timeline,
                     earliest_begin=new_task.earliest_begin,
@@ -485,7 +487,8 @@ class CreateTaskDialog(TaskFormDialog):
                 parent_task_id=parent_task_id,
                 duration=duration,
                 priority=self.priority_var.get(),
-                status=self.status_var.get(),
+                status=self.status_value(),
+                estimated=self.estimated_flag(),
                 shape=self.shape_var.get(),
                 show_in_timeline=self.show_in_timeline_var.get(),
                 earliest_begin=earliest_begin,

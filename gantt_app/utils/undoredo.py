@@ -1142,6 +1142,7 @@ class ProjectStateTracker:
             'duration': kwargs.get('duration', task.duration),
             'priority': kwargs.get('priority', task.priority),
             'status': kwargs.get('status', task.status),
+            'estimated': kwargs.get('estimated', task.estimated),
             'shape': kwargs.get('shape', task.shape),
             'show_in_timeline': kwargs.get('show_in_timeline', task.show_in_timeline),
             'earliest_begin': kwargs.get('earliest_begin', task.earliest_begin),

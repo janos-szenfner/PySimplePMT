@@ -621,6 +621,12 @@ class Task:
     details: str = ""
     is_milestone: bool = False
     status: str = "Active"
+    #: The Estimated checkbox, remembered independently of Inactive (issue
+    #: #36). status stays the single display/behaviour driver - Active,
+    #: Estimated or Inactive - while this records whether Estimated is ticked,
+    #: so a task made Inactive keeps its Estimated intent and returns to
+    #: Estimated when Inactive is cleared.
+    estimated: bool = False
     #: Which named calendar this task follows, or None to follow the plan's
     #: own - see gantt_app.calendarregistry. An id naming a calendar that has
     #: since been deleted falls back to the plan's own too, so removing a
@@ -678,6 +684,13 @@ class Task:
                 self.status, self.name
             )
             self.status = 'Active'
+
+        # A task whose status is Estimated is estimated by definition, so the
+        # editor's Estimated checkbox shows ticked for it whatever the file
+        # or caller said about the flag (issue #36). Inactive is left to
+        # carry its own estimated flag, which is the both-ticked case.
+        if self.status == 'Estimated':
+            self.estimated = True
 
         # Validate effort type (Advanced tab Task Type). An unknown value -
         # a hand-edit, a future type - reads as the safe default so the row
@@ -1114,6 +1127,7 @@ class Task:
             'duration': self.duration,
             'priority': self.priority,
             'status': self.status,
+            'estimated': self.estimated,
             'shape': self.shape,
             'show_in_timeline': self.show_in_timeline,
             'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
@@ -1228,6 +1242,10 @@ class Task:
             )
             status = 'Active'
 
+        # The Estimated flag; older files carry none, so an Estimated status
+        # backfills it (issue #36).
+        estimated = bool(data.get('estimated', status == 'Estimated'))
+
         assignments = data.get('resource_assignments')
         if not assignments and data.get('resource_id'):
             assignments = [{
@@ -1251,6 +1269,7 @@ class Task:
             duration=data.get('duration', None),
             priority=data.get('priority', DEFAULT_PRIORITY),
             status=status,
+            estimated=estimated,
             shape=data.get('shape', 'Default'),
             show_in_timeline=data.get('show_in_timeline', True),
             earliest_begin=earliest_begin,

@@ -272,9 +272,15 @@ HELP_SECTIONS = (
     (
         "Status",
         [
-            "Active, Estimated or Inactive, and Active unless you say "
-            "otherwise. It is the planner's own mark on the row, separate "
-            "from how far the work has got.",
+            "Two checkboxes, Estimated and Inactive. Neither ticked is the "
+            "ordinary Active row; there is no Active box, because anything "
+            "not Inactive is active. It is the planner's own mark on the row, "
+            "separate from how far the work has got.",
+
+            "Estimated can also be Inactive: tick both and the row reads as "
+            "Inactive - on the grid, the chart and the dashboard - while the "
+            "Estimated tick is remembered, so clearing Inactive brings the "
+            "row back to Estimated rather than to Active.",
 
             "Active is the ordinary case and leaves the list's Status column "
             "blank. Estimated shows a bold E, for a row whose dates or effort "

@@ -118,8 +118,12 @@ GUIDE_SECTIONS = (
             "above. Any row can be retyped, wherever it sits, and choosing "
             "Milestone here or in the Type column marks it as one.",
 
-            "Status - Active, Estimated or Inactive, Active by default. "
-            "Active is the ordinary case and shows nothing in the list's "
+            "Status - an Estimated checkbox and an Inactive one, both clear "
+            "by default for the ordinary Active row (there is no Active box; "
+            "anything not Inactive is active). Ticking both reads as Inactive "
+            "everywhere while the Estimated tick is remembered, so clearing "
+            "Inactive returns the row to Estimated. "
+            "Active shows nothing in the list's "
             "Status column; Estimated shows a bold E and Inactive a bold I - "
             "the letter alone is bold, not the row. An Inactive row is also "
             "struck through in grey, and its bar is dropped from the Gantt "

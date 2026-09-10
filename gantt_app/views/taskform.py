@@ -29,7 +29,7 @@ import customtkinter as ctk
 from gantt_app import theme
 from gantt_app.calendarregistry import describe_week
 from gantt_app.models import (
-    Task, Project, TASK_TYPES, TASK_STATUSES, CONTAINER_TYPES,
+    Task, Project, TASK_TYPES, CONTAINER_TYPES,
 )
 from gantt_app.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
@@ -1342,26 +1342,54 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
     def _build_status(self, frame):
         """
-        Active, Estimated or Inactive, between the percentage and priority.
+        The status, as an Estimated and an Inactive checkbox (issue #36).
 
         DEVELOPMENT NOTES:
         ------------------
+        Two checkboxes in place of the old three-way dropdown. Anything not
+        Inactive is active, so there is no Active box; Estimated is remembered
+        even while Inactive, so a task set both ways returns to Estimated when
+        Inactive is cleared. The single status field is still what the grid,
+        the chart and the KPIs read - see status_value, which derives it: both
+        ticked reads as Inactive.
+
         The middle of the three fields on that row; see _cell for what THIRD
-        means to the grid. Read with getattr rather than off the attribute,
-        because the template is whatever the dialog was seeded with and an
-        older one - a task read back from a file written before the field
-        existed - carries no status at all.
+        means. getattr guards a template read back from a file with no status.
         """
-        template_status = getattr(self.template, 'status', None)
-        if template_status is None:
-            logger.debug("The template carries no status; using Active")
-            template_status = 'Active'
-        self.status_var = ctk.StringVar(value=template_status)
-        self.status_menu = ctk.CTkOptionMenu(
-            frame, variable=self.status_var,
-            values=list(TASK_STATUSES)
-        )
-        self._field(frame, "Status:", self.status_menu, where=self.THIRD)
+        status = getattr(self.template, 'status', None) or 'Active'
+        estimated_seed = (status == 'Estimated') or (
+            status == 'Inactive' and getattr(self.template, 'estimated', False))
+        inactive_seed = (status == 'Inactive')
+
+        self.estimated_var = ctk.BooleanVar(value=estimated_seed)
+        self.inactive_var = ctk.BooleanVar(value=inactive_seed)
+
+        holder = ctk.CTkFrame(frame, fg_color='transparent')
+        self.estimated_check = ctk.CTkCheckBox(
+            holder, text="Estimated", variable=self.estimated_var)
+        self.estimated_check.pack(side=tk.LEFT)
+        self.inactive_check = ctk.CTkCheckBox(
+            holder, text="Inactive", variable=self.inactive_var)
+        self.inactive_check.pack(side=tk.LEFT, padx=(12, 0))
+        self._field(frame, "Status:", holder, where=self.THIRD)
+
+    def status_value(self) -> str:
+        """
+        The single status the two checkboxes stand for.
+
+        Inactive wins when both are ticked, so a task that is Estimated and
+        Inactive reads as Inactive to the grid, the chart and the KPIs; then
+        Estimated alone; then Active when neither is ticked.
+        """
+        if self.inactive_var.get():
+            return 'Inactive'
+        if self.estimated_var.get():
+            return 'Estimated'
+        return 'Active'
+
+    def estimated_flag(self) -> bool:
+        """Whether the Estimated checkbox is ticked, kept even while Inactive."""
+        return bool(self.estimated_var.get())
 
     def _build_show_in_timeline(self, frame):
         """The show in timeline checkbox."""
