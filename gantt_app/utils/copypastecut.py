@@ -860,8 +860,9 @@ class ClipboardService:
             task_dict['start_date'] = datetime.fromisoformat(task_dict['start_date'])
         if 'end_date' in task_dict and task_dict['end_date']:
             task_dict['end_date'] = datetime.fromisoformat(task_dict['end_date'])
-        if 'earliest_begin' in task_dict and task_dict['earliest_begin']:
-            task_dict['earliest_begin'] = datetime.fromisoformat(task_dict['earliest_begin'])
+        for date_key in ('constraint_date', 'deadline'):
+            if task_dict.get(date_key):
+                task_dict[date_key] = datetime.fromisoformat(task_dict[date_key])
         
         if 'style' in task_dict:
             from gantt_app.taskstyle import TaskStyle

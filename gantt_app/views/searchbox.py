@@ -97,7 +97,7 @@ def task_haystack(task, project=None) -> str:
         str(task.shape or ''),
     ]
 
-    for moment in (task.start_date, task.end_date, task.earliest_begin):
+    for moment in (task.start_date, task.end_date, task.constraint_date):
         if moment is not None:
             parts.append(moment.strftime('%Y-%m-%d'))
 

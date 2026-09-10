@@ -495,13 +495,15 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
                                                       'ConstraintDate'))
         # A Start No Earlier Than sitting on the task's own start says only
         # "stay where you are", which the dates already say. Only a floor
-        # naming some other date is carrying information worth keeping.
+        # naming some other date is carrying information worth keeping, and it
+        # comes in as the SNET constraint it is (issue #32).
         if (constraint == CONSTRAINT_START_NO_EARLIER_THAN
                 and constraint_date is not None
                 and constraint_date.date() != start.date()):
-            task.earliest_begin = datetime(constraint_date.year,
-                                           constraint_date.month,
-                                           constraint_date.day)
+            task.constraint_type = 'SNET'
+            task.constraint_date = datetime(constraint_date.year,
+                                            constraint_date.month,
+                                            constraint_date.day)
 
         if uid is not None:
             by_uid[uid] = task.id

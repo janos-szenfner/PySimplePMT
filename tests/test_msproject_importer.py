@@ -159,16 +159,19 @@ class RoundTripTestCase(unittest.TestCase):
         """
         Every piece of work is exported with a Start No Earlier Than on its
         own start date, which says only "stay where you are". Reading that
-        back as an Earliest begin would put a floor on every task in a plan
+        back as a constraint would put a floor on every task in a plan
         that had none.
         """
         for task in self.imported.tasks:
-            self.assertIsNone(task.earliest_begin, task.name)
+            self.assertEqual(task.constraint_type, 'NA', task.name)
+            self.assertIsNone(task.constraint_date, task.name)
 
     def test_a_real_floor_does_come_back(self):
         """One naming a date other than the start is carrying information."""
         project = sample_project()
-        project.get_task_by_id("T2").earliest_begin = datetime(2026, 7, 10)
+        tender = project.get_task_by_id("T2")
+        tender.constraint_type = 'SNET'
+        tender.constraint_date = datetime(2026, 7, 10)
 
         handle, path = tempfile.mkstemp(suffix=".xml")
         os.close(handle)
@@ -179,7 +182,9 @@ class RoundTripTestCase(unittest.TestCase):
             os.unlink(path)
 
         tender = [t for t in imported.tasks if t.name == "Tender"][0]
-        self.assertEqual(tender.earliest_begin.date(), datetime(2026, 7, 10).date())
+        self.assertEqual(tender.constraint_type, 'SNET')
+        self.assertEqual(tender.constraint_date.date(),
+                         datetime(2026, 7, 10).date())
 
 
 class PerTaskCalendarTestCase(unittest.TestCase):

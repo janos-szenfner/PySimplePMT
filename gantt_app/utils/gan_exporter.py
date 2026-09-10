@@ -199,8 +199,8 @@ def _task_attributes(row: PlanRow, calendar: WorkingCalendar) -> Dict[str, str]:
     whichever they were built against, this application's own importer
     included.
 
-    An Earliest begin date becomes thirdDate with its constraint flag set,
-    which is where GanttProject keeps the same idea.
+    A Start No Earlier Than constraint becomes thirdDate with its constraint
+    flag set, which is where GanttProject keeps the same idea (issue #32).
     """
     task = row.task
     milestone = task.effective_milestone
@@ -227,8 +227,8 @@ def _task_attributes(row: PlanRow, calendar: WorkingCalendar) -> Dict[str, str]:
         logger.debug("Exporting task %r with status %s", task.name,
                      task.status)
 
-    if task.earliest_begin is not None:
-        attributes['thirdDate'] = _iso(task.earliest_begin)
+    if task.constraint_type == 'SNET' and task.constraint_date is not None:
+        attributes['thirdDate'] = _iso(task.constraint_date)
         attributes['thirdDate-constraint'] = '1'
 
     return attributes

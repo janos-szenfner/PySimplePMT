@@ -124,10 +124,12 @@ class MSProjectDocumentTestCase(unittest.TestCase):
         self.assertEqual(self.value(phase, 'ConstraintType'), '0')
         self.assertIsNone(self.value(phase, 'ConstraintDate'))
 
-    def test_an_earliest_begin_date_wins_over_the_inferred_pin(self):
-        """A floor the user typed beats one this export worked out."""
+    def test_a_start_no_earlier_than_wins_over_the_inferred_pin(self):
+        """A floor the user set beats one this export worked out (issue #32)."""
         project = sample_project()
-        project.get_task_by_id("T2").earliest_begin = datetime(2026, 7, 10)
+        tender = project.get_task_by_id("T2")
+        tender.constraint_type = 'SNET'
+        tender.constraint_date = datetime(2026, 7, 10)
 
         root = ET.fromstring(generate_msproject_content(project))
         tender = [task for task in root.findall('ms:Tasks/ms:Task', NS)

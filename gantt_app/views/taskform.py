@@ -662,7 +662,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_dates(frame)
         self._build_duration(frame)
         self._build_milestone(frame)
-        self._build_earliest_begin(frame)
 
         # Now that all three of them exist. _update_field_states stands
         # aside while the form is still being built, so the call inside
@@ -1272,63 +1271,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             return
 
         self._recalculate_schedule()
-
-    def _build_earliest_begin(self, frame):
-        """
-        The earliest begin date, with a button to copy the start date in.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        The three controls belong to a frame of their own, and are packed
-        into that. Built against the form frame instead - which every other
-        row is placed in with grid - pack and grid each took the form's size
-        to be theirs to decide, and settled it between them by resizing it at
-        one another until the process stopped responding. Opening a task for
-        editing hung the application on the spot.
-        """
-        self.earliest_begin_var = ctk.BooleanVar(value=False)
-
-        row_frame = ctk.CTkFrame(frame, fg_color='transparent')
-        self.earliest_begin_check = ctk.CTkCheckBox(
-            row_frame, text="", variable=self.earliest_begin_var
-        )
-        self.earliest_begin_entry = DateEntry(
-            row_frame, date=self.template.earliest_begin)
-        copy_button = ctk.CTkButton(
-            row_frame, text="Copy begin date", width=120,
-            command=self._copy_begin_date
-        )
-
-        self.earliest_begin_check.pack(side=tk.LEFT)
-        self.earliest_begin_entry.pack(side=tk.LEFT, padx=5)
-        copy_button.pack(side=tk.LEFT, padx=5)
-
-        self._field(frame, "Earliest begin:", row_frame, sticky=tk.W)
-
-        # The date and the button beside it mean nothing until the box is
-        # ticked, so they are greyed until it is. _field paints the row's
-        # frame, which is not a box, so these are painted by name.
-        self._earliest_begin_button = copy_button
-        self.earliest_begin_var.trace_add(
-            'write', lambda *_args: self._update_earliest_begin())
-        self._update_earliest_begin()
-
-    def _update_earliest_begin(self):
-        """Let the earliest begin date be set only when it is asked for."""
-        wanted = bool(self.earliest_begin_var.get())
-        self._set_field_enabled(self.earliest_begin_entry, wanted)
-        try:
-            self._earliest_begin_button.configure(
-                state=tk.NORMAL if wanted else tk.DISABLED)
-        except (tk.TclError, ValueError):
-            logger.debug("Could not set the state of Copy begin date")
-
-    def _copy_begin_date(self):
-        """Copy the start date to the earliest begin date."""
-        if hasattr(self, 'start_date_entry') and self.start_date_entry:
-            start_date = self._read_date(self.start_date_entry)
-            if start_date:
-                self.earliest_begin_entry.set_date(start_date)
 
     def _build_priority(self, frame):
         """The priority dropdown."""

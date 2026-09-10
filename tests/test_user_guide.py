@@ -78,7 +78,7 @@ class TestTheGuideCovers(unittest.TestCase):
         """Which is what "why did my task move" comes down to."""
         body = self.body()
         for phrase in ('working day', 'calendar day', 'duration',
-                       'earliest begin', 'scheduling options'):
+                       'constraint', 'scheduling options'):
             self.assertIn(phrase, body, phrase)
 
     def test_the_link_types_are_all_named(self):
@@ -434,8 +434,8 @@ class TestTheTaskEditorReference(unittest.TestCase):
     ------------------
     It used to explain the form's older half - dates, milestones, progress,
     colour - and say nothing about the fields that decide where a task
-    actually lands: the scheduling mode, the calendar, the earliest begin
-    date. Somebody asking "why did this finish there" found nothing.
+    actually lands: the scheduling mode, the calendar, the scheduling
+    constraint. Somebody asking "why did this finish there" found nothing.
     """
 
     def body(self) -> str:
@@ -451,7 +451,7 @@ class TestTheTaskEditorReference(unittest.TestCase):
         """A box with nothing said about it is the one being looked up."""
         body = self.body()
         for field in ('type', 'start date', 'end date', 'duration',
-                      'is milestone', 'scheduling options', 'earliest begin',
+                      'is milestone', 'scheduling options', 'constraint',
                       'working calendar', 'progress', 'priority',
                       'show in timeline', 'shape', 'colour', 'details'):
             self.assertIn(field, body, field)

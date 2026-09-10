@@ -156,10 +156,6 @@ GUIDE_SECTIONS = (
             "Is milestone - marks the row as a moment with no length. Its "
             "finish and duration stop applying.",
 
-            "Earliest begin - a floor on when the work can start: material "
-            "not delivered, a gate not passed. It only ever pushes a task "
-            "later, never earlier.",
-
             "Working calendar - which calendar this task is scheduled "
             "against. See 'A task on its own calendar' below. The dropdown "
             "only appears when the plan has named calendars to choose from.",
@@ -1117,8 +1113,8 @@ GUIDE_SECTIONS = (
             "A dependency moved it. A hard link pins a date exactly; check "
             "the Dependency tab for what it follows and with what lag.",
 
-            "An Earliest begin date is holding it. That is a floor and only "
-            "ever pushes work later.",
+            "A Start No Earlier Than constraint is holding it. That is a "
+            "floor on the Advanced tab and only ever pushes work later.",
 
             "It follows a calendar of its own. Check the Working calendar "
             "field in the editor - a weekend-only task cannot start on a "

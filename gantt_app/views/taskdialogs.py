@@ -137,11 +137,6 @@ class EditTaskDialog(TaskFormDialog):
             start, end, duration = self._read_schedule()
             progress = self._typed_progress()
 
-            earliest_begin = None
-            if self.earliest_begin_var.get():
-                earliest_begin = self._typed_date(self.earliest_begin_entry,
-                                                  "earliest begin date")
-
             details = self.details_text.get("1.0", tk.END).strip()
             # Read (and validate) the Advanced tab before anything is written,
             # so a bad date there stops the save with the rest untouched.
@@ -201,7 +196,6 @@ class EditTaskDialog(TaskFormDialog):
                          self.task.name, self.task.status, self.task.estimated)
             self.task.shape = self.shape_var.get()
             self.task.show_in_timeline = self.show_in_timeline_var.get()
-            self.task.earliest_begin = earliest_begin
             self.task.scheduling_options = self.scheduling_options_var.get()
             self.task.deadline = advanced['deadline']
             self.task.constraint_type = advanced['constraint_type']
@@ -249,7 +243,6 @@ class EditTaskDialog(TaskFormDialog):
                     estimated=new_task.estimated,
                     shape=new_task.shape,
                     show_in_timeline=new_task.show_in_timeline,
-                    earliest_begin=new_task.earliest_begin,
                     scheduling_options=new_task.scheduling_options,
                     deadline=new_task.deadline,
                     constraint_type=new_task.constraint_type,
@@ -464,11 +457,6 @@ class CreateTaskDialog(TaskFormDialog):
                                 start_date=start, task_type=task_type)
                 task_type = child_type_for(parent, stand_in)
 
-            earliest_begin = None
-            if self.earliest_begin_var.get():
-                earliest_begin = self._typed_date(self.earliest_begin_entry,
-                                                  "earliest begin date")
-
             details = self.details_text.get("1.0", tk.END).strip()
             assignments = self.resource_tab.get_assignments()
             advanced = self.advanced_tab.read_values()
@@ -491,7 +479,6 @@ class CreateTaskDialog(TaskFormDialog):
                 estimated=self.estimated_flag(),
                 shape=self.shape_var.get(),
                 show_in_timeline=self.show_in_timeline_var.get(),
-                earliest_begin=earliest_begin,
                 scheduling_options=self.scheduling_options_var.get(),
                 deadline=advanced['deadline'],
                 constraint_type=advanced['constraint_type'],

@@ -155,20 +155,22 @@ class TestMovingTheWholePlan(PlanTestCase):
         self.assertEqual(project.get_task_by_id('c').start_date
                          - project.get_task_by_id('a').start_date, gap)
 
-    def test_an_earliest_begin_moves_with_it(self):
+    def test_a_constraint_date_moves_with_it(self):
         """
-        A floor set relative to the plan around it moves with that plan.
+        A constraint set relative to the plan around it moves with that plan.
 
         Left behind, a plan shifted six months later is full of constraints
-        nobody wrote.
+        nobody wrote (issue #32).
         """
         project = self.plan()
-        project.get_task_by_id('c').earliest_begin = MONDAY + timedelta(days=7)
-        floor = project.get_task_by_id('c').earliest_begin
+        task = project.get_task_by_id('c')
+        task.constraint_type = 'SNET'
+        task.constraint_date = MONDAY + timedelta(days=7)
+        floor = task.constraint_date
 
         project.shift_to_start(datetime(2026, 9, 14))
 
-        self.assertGreater(project.get_task_by_id('c').earliest_begin, floor)
+        self.assertGreater(project.get_task_by_id('c').constraint_date, floor)
 
     def test_moving_it_where_it_already_is_changes_nothing(self):
         """And says so, so a caller can skip the redraw."""

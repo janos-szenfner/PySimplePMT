@@ -240,20 +240,6 @@ HELP_SECTIONS = (
         ],
     ),
     (
-        "Earliest begin",
-        [
-            "A floor on when the work can start: material not delivered, a "
-            "gate not passed, a contract not signed.",
-
-            "It only ever pushes a task later, never earlier. A task whose "
-            "links would have started it sooner waits; one that was already "
-            "starting later is left alone.",
-
-            "Tick the box to use it. Copy begin date fills it in from the "
-            "start date already on the form.",
-        ],
-    ),
-    (
         "% Completion",
         [
             "Progress runs from 0 to 100 and shades that much of the task's "
@@ -307,8 +293,8 @@ HELP_SECTIONS = (
             "the links, not by how important it is.",
 
             "If a high-priority task has to happen first, say so with a "
-            "dependency or an earliest begin date. Priority alone will not "
-            "move it.",
+            "dependency or a Start No Earlier Than constraint. Priority alone "
+            "will not move it.",
         ],
     ),
     (
@@ -453,8 +439,8 @@ HELP_SECTIONS = (
             "A dependency moved it. A Hard link pins a date exactly; check "
             "the Dependency tab for what this task follows and with what lag.",
 
-            "An Earliest begin date is holding it. That is a floor and only "
-            "ever pushes work later.",
+            "A Start No Earlier Than constraint is holding it. That is a "
+            "floor on the Advanced tab and only ever pushes work later.",
 
             "It follows a calendar of its own. A weekend-only task cannot "
             "start on a Tuesday, whatever was typed.",

@@ -356,16 +356,18 @@ def _constraint(row: PlanRow) -> Tuple[str, Optional[str]]:
     DEVELOPMENT NOTES:
     ------------------
     See the note on the module for why work is pinned and summaries are not.
-    An Earliest begin date is the same idea as Start No Earlier Than and wins
-    where it is set, since it is a floor the user typed rather than one this
-    export inferred - and the two agree anyway whenever the floor is what put
-    the task where it is.
+    A task the planner has given a Start No Earlier Than exports on that date;
+    every other work task exports a floor on its own start, which is where the
+    schedule has already put it (issue #32).
     """
     if row.is_summary:
         return CONSTRAINT_ASAP, None
 
     task = row.task
-    floor = task.earliest_begin or task.start_date
+    if task.constraint_type == 'SNET' and task.constraint_date is not None:
+        floor = task.constraint_date
+    else:
+        floor = task.start_date
     return CONSTRAINT_START_NO_EARLIER_THAN, _moment(floor, DAY_START)
 
 

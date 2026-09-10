@@ -400,20 +400,26 @@ class TestALengthWrittenOntoATask(DependencyTestCase):
         self.assertEqual(project.working_duration(phase), 20)
 
 
-class TestEarliestBegin(DependencyTestCase):
+class TestStartNoEarlierThan(DependencyTestCase):
     """
-    A date the work cannot begin before.
+    A Start No Earlier Than constraint: a date the work cannot begin before.
 
     WHY THESE EXIST:
     ================
-    The form has offered an earliest begin date, and the file has saved it,
-    since before there was a scheduler to read it. Nothing did: a date typed
-    there changed nothing at all.
+    The retired "Earliest begin" field was exactly this constraint by another
+    name (issue #32), so the floor it used to describe is proved here on the
+    SNET constraint that carries the idea now. place_by_constraint applies it
+    inside reschedule, so a date set here does move the task.
     """
+
+    def _floor(self, moment):
+        """Give ``self.second`` a Start No Earlier Than on ``moment``."""
+        self.second.constraint_type = 'SNET'
+        self.second.constraint_date = moment
 
     def test_it_pushes_a_task_forward(self):
         """A task cannot begin before the date it is given."""
-        self.second.earliest_begin = datetime(2026, 3, 2)
+        self._floor(datetime(2026, 3, 2))
 
         self.project.reschedule()
 
@@ -421,7 +427,7 @@ class TestEarliestBegin(DependencyTestCase):
 
     def test_it_lands_on_a_working_day(self):
         """A Sunday floor means the Monday, like every other date."""
-        self.second.earliest_begin = datetime(2026, 3, 1)   # a Sunday
+        self._floor(datetime(2026, 3, 1))   # a Sunday
 
         self.project.reschedule()
 
@@ -431,7 +437,7 @@ class TestEarliestBegin(DependencyTestCase):
         """A task already starting later is left where it is."""
         self.second.start_date = datetime(2026, 6, 1)
         self.second.end_date = datetime(2026, 6, 5)
-        self.second.earliest_begin = datetime(2026, 3, 2)
+        self._floor(datetime(2026, 3, 2))
 
         self.project.reschedule()
 
@@ -440,7 +446,7 @@ class TestEarliestBegin(DependencyTestCase):
     def test_the_task_keeps_its_length(self):
         """Being held back moves a task; it does not shorten it."""
         original = self.project.working_duration(self.second)
-        self.second.earliest_begin = datetime(2026, 3, 2)
+        self._floor(datetime(2026, 3, 2))
 
         self.project.reschedule()
 
@@ -448,7 +454,7 @@ class TestEarliestBegin(DependencyTestCase):
 
     def test_a_plan_with_one_still_settles(self):
         """The floor only ever moves a task later, so the pass converges."""
-        self.second.earliest_begin = datetime(2026, 3, 2)
+        self._floor(datetime(2026, 3, 2))
         self.project.reschedule()
 
         self.assertFalse(self.project.reschedule())

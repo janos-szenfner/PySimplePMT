@@ -566,7 +566,6 @@ class Task:
         priority: Task priority level
         shape: Visual shape for the task
         show_in_timeline: Whether to show in timeline view
-        earliest_begin: Earliest possible start date
         scheduling_options: Scheduling mode for the task
         details: Additional notes/details about the task
         is_milestone: Legacy flag, now determined by task_type='Milestone'
@@ -595,7 +594,6 @@ class Task:
     priority: str = DEFAULT_PRIORITY
     shape: str = "Default"
     show_in_timeline: bool = True
-    earliest_begin: Optional[datetime] = None
     scheduling_options: str = "End date is calculated"
     #: A target finish the task should not slip past. Informational: it does
     #: not pin the schedule (see the Advanced tab / REQ-UI-041), but a finish
@@ -1130,7 +1128,6 @@ class Task:
             'estimated': self.estimated,
             'shape': self.shape,
             'show_in_timeline': self.show_in_timeline,
-            'earliest_begin': self.earliest_begin.isoformat() if self.earliest_begin else None,
             'scheduling_options': self.scheduling_options,
             'deadline': self.deadline.isoformat() if self.deadline else None,
             'constraint_type': self.constraint_type,
@@ -1183,14 +1180,6 @@ class Task:
             except (ValueError, TypeError):
                 end_date = None
         
-        # Handle earliest_begin (could be string, datetime, or None)
-        earliest_begin = data.get('earliest_begin')
-        if isinstance(earliest_begin, str):
-            try:
-                earliest_begin = datetime.fromisoformat(earliest_begin)
-            except (ValueError, TypeError):
-                earliest_begin = None
-        
         # Handle backward compatibility for scheduling_options
         scheduling_options = data.get('scheduling_options', 'End date is calculated')
         # Map old values to new ones
@@ -1224,6 +1213,21 @@ class Task:
         # or a hand-edit that left a stray date is tidied here.
         if constraint_type not in CONSTRAINTS_WITH_DATE:
             constraint_date = None
+
+        # Migrate the retired "Earliest begin" floor (issue #32). It was
+        # exactly a Start No Earlier Than by another name, so a plan that
+        # carries one and no real constraint keeps its floor as SNET. A task
+        # that already has a constraint set keeps that - the constraint is the
+        # canonical one, and the legacy floor is dropped.
+        legacy_floor = data.get('earliest_begin')
+        if isinstance(legacy_floor, str):
+            try:
+                legacy_floor = datetime.fromisoformat(legacy_floor)
+            except (ValueError, TypeError):
+                legacy_floor = None
+        if (legacy_floor is not None and constraint_type == 'NA'):
+            constraint_type = 'SNET'
+            constraint_date = legacy_floor
 
         # Advanced tab Task Type / Effort-Driven. Absent in every plan saved
         # before this feature, which open as Fixed Units, effort-driven and
@@ -1272,7 +1276,6 @@ class Task:
             estimated=estimated,
             shape=data.get('shape', 'Default'),
             show_in_timeline=data.get('show_in_timeline', True),
-            earliest_begin=earliest_begin,
             scheduling_options=scheduling_options,
             deadline=deadline,
             constraint_type=constraint_type,
@@ -2517,8 +2520,8 @@ class Project:
                 task.start_date += delta
             if task.end_date is not None:
                 task.end_date += delta
-            if task.earliest_begin is not None:
-                task.earliest_begin += delta
+            if task.constraint_date is not None:
+                task.constraint_date += delta
 
         self.enforce_working_calendar()
         self.roll_up_summaries()
@@ -2573,9 +2576,9 @@ class Project:
         because both ends moved together. Rescheduling from the new date
         instead would collapse every gap somebody had put there on purpose.
 
-        The earliest begin dates move with it. They are floors somebody set
+        The constraint dates move with it. They are dates somebody set
         relative to the plan around them, and a plan shifted six months
-        later with its floors left behind is a plan full of constraints
+        later with its constraints left behind is a plan full of dates
         nobody wrote.
 
         The calendar is enforced afterwards, so a task whose new start lands
@@ -2598,8 +2601,8 @@ class Project:
                 task.start_date += delta
             if task.end_date is not None:
                 task.end_date += delta
-            if task.earliest_begin is not None:
-                task.earliest_begin += delta
+            if task.constraint_date is not None:
+                task.constraint_date += delta
 
         self.enforce_working_calendar()
         self.reschedule()
@@ -3830,8 +3833,8 @@ class Project:
                 task.start_date += delta
             if task.end_date is not None:
                 task.end_date += delta
-            if task.earliest_begin is not None:
-                task.earliest_begin += delta
+            if task.constraint_date is not None:
+                task.constraint_date += delta
 
         logger.info("Moved %r and the %d row(s) it holds %d day(s), to follow "
                     "what it waits for", summary.name, len(branch) - 1,
@@ -4103,7 +4106,7 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        Three rules. Two come from gantt_app.workdaycalendar:
+        Two rules, both from gantt_app.workdaycalendar:
 
           * A task cannot start on a non-working day, so a start landing on a
             Saturday is pushed to the Monday.
@@ -4112,10 +4115,9 @@ class Project:
             further out without holding any more work, and one that had been
             given a finish on a Sunday ends on the Friday instead.
 
-        The third is the task's own earliest begin date, which is a floor on
-        when the work can start. The form has offered it, and the file has
-        saved it, since before there was a scheduler to read it - so a date
-        typed there did nothing at all.
+        A start floor is no longer weighed here: the Start No Earlier Than
+        constraint carries that idea now, and place_by_constraint applies it
+        in the same reschedule loop this runs in (issue #32).
 
         The duration is read before either date moves and written back after,
         which is what makes this leave the effort alone: the task ends up
@@ -4137,14 +4139,6 @@ class Project:
                 continue
 
             wanted = task.start_date
-            if task.earliest_begin is not None and wanted < task.earliest_begin:
-                # A date the user has said the work cannot begin before -
-                # material not delivered, a gate not passed. It is a floor,
-                # so it only ever pushes a task later.
-                logger.debug("%r cannot begin before %s; moving it there",
-                             task.name, task.earliest_begin.date())
-                wanted = task.earliest_begin
-
             calendar = self.calendar_for(task)
             new_start = calendar.get_next_working_day(wanted)
 
@@ -4548,7 +4542,7 @@ class Project:
 
           * **Forward** - the earliest each task can finish. Taken from the
             plan as scheduled rather than recomputed from the network, so a
-            task deliberately held back by an earliest begin date, or simply
+            task deliberately held back by a start constraint, or simply
             placed later, is measured where it actually is. Recomputing would
             answer a different question - how early *could* everything be -
             and would call a task critical that has a fortnight of air in

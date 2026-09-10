@@ -594,7 +594,6 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
             'duration': dialog.duration_entry,
             'progress': dialog.progress_entry,
             'notes': dialog.details_text,
-            'earliest begin': dialog.earliest_begin_entry,
         }
         for label, widget in boxes.items():
             background = dialog._entry_of(widget).cget('fg_color')
@@ -619,26 +618,6 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
         self.assertEqual(str(entry.cget('state')), 'disabled')
         self.assertEqual(entry.cget('fg_color'),
                          TaskFormDialog.FIELD_BG_DISABLED)
-
-    def test_the_earliest_begin_date_waits_for_its_tick_box(self):
-        """
-        It means nothing until it is asked for, so it is greyed until then.
-
-        Which is what the reference this form follows does with it.
-        """
-        from gantt_app.views.taskform import TaskFormDialog
-
-        dialog = self.edit_dialog()
-        entry = dialog._entry_of(dialog.earliest_begin_entry)
-
-        self.assertEqual(str(entry.cget('state')), 'disabled')
-        self.assertEqual(entry.cget('fg_color'),
-                         TaskFormDialog.FIELD_BG_DISABLED)
-
-        dialog.earliest_begin_var.set(True)
-
-        self.assertEqual(str(entry.cget('state')), 'normal')
-        self.assertEqual(entry.cget('fg_color'), TaskFormDialog.FIELD_BG)
 
     def test_a_caption_goes_back_to_black_when_its_box_comes_back(self):
         """Greying is undone, not only applied."""

@@ -66,7 +66,7 @@ This is a complete implementation of a project management tool with:
 - **Rows that line up**: the chart draws the rows the task list is showing, in its order and at its row height, so a bar sits on the line of the task it belongs to. Fold a branch away and its bars go with it; scroll the list and the chart follows
 - **Critical Path**: Automatic calculation and visualization of the critical path. The icon on the bar paints every critical row light red in the task list — press it again to clear — and **View → Critical Path...** opens the full float table
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in **working** days and Hard/Rubber link hardness. A start link and a finish link on the same task state a span - Start-Start onto the first task and Finish-Finish onto the last makes a row cover the stretch between them, and its duration follows from the two dates rather than being carried over. A hard link pins a date but still has to clear any rubber floor set by another link
-- **Earliest Begin Date**: a floor on when a task's work can start, applied alongside the links and the working calendar
+- **Scheduling Constraints**: the nine MS Project constraints on the Advanced tab, from As Soon As Possible to Must Start On. Start No Earlier Than floors when a task's work can begin, applied alongside the links and the working calendar
 - **Checked as you type**: The task editor outlines a date it cannot use and says why beneath the form, rather than waiting for Save. A name is not required — a row may be left unnamed, or share a name with another — so the name box is never marked
 - **Auto-Scheduling**: Moving a task drags whatever depends on it, so links stay satisfied
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
@@ -190,7 +190,7 @@ desktop asks for.
 ## Implemented Features
 
 ### Core Data Models (`models.py`)
-- **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, earliest_begin, scheduling_options, details
+- **Task Class**: id, name, task_type, start_date, end_date, duration, progress, dependencies, color, is_milestone, parent_task_id, priority, shape, show_in_timeline, scheduling_options, constraint_type, constraint_date, details
 - **Work Item Types**: `Phase`, `Task`, `Subtask`, `Milestone`. `Phase` is a container, taking its dates and progress from what is inside it; `Subtask` and `Milestone` hold nothing. Two older types are rewritten when a task is built, so plans saved by earlier versions load unchanged: the hyphenated `Sub-Task` becomes `Subtask`, and `Deliverable` - a level that used to sit between `Phase` and `Task` - becomes `Task`, which is the level it always described
 - **The Levels, and Moving Between Them**: the types describe a three-level plan, `Phase > Task > Subtask`, with a `Milestone` allowed at any level. **A row keeps its type wherever it is moved.** Indent and outdent change where it sits and nothing else, so a `Task` indented under another `Task` is still a `Task` and can still hold sub-tasks of its own. `child_type_for()` still settles the type of a row *created* under a parent, or read out of an imported outline that states depth and nothing else — a row arriving without a type anybody chose — but it is no longer applied to one being moved
 - **Project Class**: name, tasks, start_date, end_date, calendar
@@ -373,7 +373,7 @@ actually put its first row.
 
 One box, no field to choose first — somebody who knew which field it was in
 would not need to search. It matches against everything a work item carries:
-name, ID, type, notes, both dates, earliest begin, duration, progress,
+name, ID, type, notes, both dates, the constraint date, duration, progress,
 priority, shape, each dependency's target and kind, and the calendar the task
 follows.
 
@@ -2210,7 +2210,6 @@ The application starts with a complete sample project with tasks and subtasks:
 - `priority`: One of the levels in `priority.py`; 'Normal' by default
 - `shape`: How the bar is drawn - 'Default', 'Rectangle' or 'Rounded'
 - `show_in_timeline`: Whether the task appears in the chart at all
-- `earliest_begin`: A date the task may not start before, or None
 - `scheduling_options`: Which of the three the form derives - 'Start date is
   calculated', 'End date is calculated' or 'Duration is calculated'
 - `details`: Free text, shown in the notes panel beside the form
@@ -2248,7 +2247,6 @@ Projects are saved as JSON files with the following structure:
       "priority": "Normal",
       "shape": "Default",
       "show_in_timeline": true,
-      "earliest_begin": null,
       "scheduling_options": "End date is calculated",
       "details": ""
     },
@@ -2267,7 +2265,6 @@ Projects are saved as JSON files with the following structure:
       "priority": "Normal",
       "shape": "Default",
       "show_in_timeline": true,
-      "earliest_begin": null,
       "scheduling_options": "End date is calculated",
       "details": ""
     }
@@ -2435,7 +2432,7 @@ and returns a `TaskFloat` per task: early start and finish, late start and
 finish, total float, and whether it is critical.
 
 - **Forward pass**: where each task is, *as scheduled*, rather than recomputed
-  from the network. A task deliberately held back — by an earliest begin date,
+  from the network. A task deliberately held back — by a start constraint,
   or simply placed later — is measured where it actually is. Recomputing would
   answer a different question ("how early could everything be") and would call
   a task critical that has a fortnight of air in front of it
@@ -2602,7 +2599,7 @@ Unit tests cover:
 - ✅ **Icon Toolbar**: That every icon carries a drawing and reaches the handler connected to it, which buttons the row holds, where the dividers fall, and that nothing on it is live without a plan open
 - ✅ **Hover Text**: That every button's caption reaches the canvas the pointer will actually be over - a CTkButton is a frame and the mouse is never on it - and that attaching does not bind the same handler twice
 - ✅ **Working-Day Calendar**: Weekends, holidays, recurring holidays, a week with no working day in it, durations to dates and back, the EU public holidays including the movable Easter feasts, and the manual date overrides that outrank all of them
-- ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the earliest begin date, roll-up through nested containers, and that the pass settles
+- ✅ **Scheduling**: Each link type and the edge it holds, lead and lag in working days, hard against rubber, a span stated by two links, the Start No Earlier Than floor, roll-up through nested containers, and that the pass settles
 - ✅ **Holiday Dialog**: What it offers, searching a couple of hundred countries and a thousand regions, when regions appear, the batch buttons, what Apply hands back and what Cancel does not
 - ✅ **Country Regions**: That every country the holidays package knows is placed in exactly one region and none is left out — this is the check that fires when a new release of the package adds a country, and it names the one to add — and that a subdivision code is grouped by its country
 - ✅ **Desktop Integration**: That the packaged icon is named what the desktop entry asks for, at every size the theme wants, and that the window class matches what the entry declares
@@ -2654,7 +2651,7 @@ Done:
 - [x] Shared working-day calendar model (`workdaycalendar.py`)
 - [x] EU public holidays, chosen per project
 - [x] Apply GAN dependency lag and SS/FF/SF dependency types
-- [x] Earliest begin date honoured by the scheduler
+- [x] Start No Earlier Than constraint honoured by the scheduler
 - [x] Timeline zoom/pan
 - [x] Undo/Redo functionality
 - [x] Copy, Cut and Paste
