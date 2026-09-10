@@ -13,7 +13,6 @@ and system clipboard integration.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 import copy
-import json
 
 from gantt_app.shortcuts import bind_all
 from gantt_app.utils.log import get_logger
@@ -30,9 +29,10 @@ ENTITY_TYPES = ('task', 'phase', 'subtask', 'milestone')
 #: Container types that can accept pasted items
 CONTAINER_TYPES = ('phase', 'task')
 
-#: What separates the readable summary on the desktop clipboard from the
-#: JSON after it. See ClipboardService._clipboard_text.
-CLIPBOARD_MARKER = '\n--- PySimplePMT tasks ---\n'
+#: The columns written to the desktop clipboard, tab-separated so a
+#: spreadsheet splits them into cells and a note shows them as a table. See
+#: ClipboardService._clipboard_text (issue #16).
+CLIPBOARD_COLUMNS = ("Task Name", "Type", "Start", "End", "Duration", "Status")
 
 #: What each kind of item may be pasted into, by the type of the row it
 #: would go under. An empty tuple means the top level and nowhere else.
@@ -551,86 +551,107 @@ class ClipboardService:
     
     def _resolve_payload(self) -> Optional[ClipboardPayload]:
         """
-        The clipboard to paste from: this window's, or the desktop's.
-
-        RETURNS:
-        --------
-        Optional[ClipboardPayload]
-            None when neither holds anything of ours.
+        The clipboard to paste from: this window's own, in-memory copy.
 
         DEVELOPMENT NOTES:
         ------------------
-        This window's own comes first. It holds the whole item and whether
-        the operation was a cut, which the text on the desktop clipboard
-        cannot say as exactly.
+        Issue #16: internal copy, cut and paste never go through the desktop
+        clipboard. That clipboard carries a readable text table for other
+        programs, not a plan to paste back - and reading it back would let
+        anything a user copied in another application land in the plan. So a
+        paste reads only what this window itself copied or cut.
         """
-        if self.active_payload:
-            return self.active_payload
-
-        text = self._read_system_clipboard()
-        if not text:
-            return None
-
-        _summary, _, encoded = text.rpartition(CLIPBOARD_MARKER)
-        if not encoded:
-            logger.debug("The desktop clipboard holds text, but not a plan "
-                         "of ours")
-            return None
-
-        try:
-            data = json.loads(encoded)
-            return ClipboardPayload(
-                operation=data.get('operation', 'copy'),
-                source_container_id=data.get('source_container_id'),
-                items=[
-                    ClipboardItem(id=item['id'], type=item['type'],
-                                  payload=item['payload'])
-                    for item in data.get('items', [])
-                ]
-            )
-        except (json.JSONDecodeError, KeyError, TypeError):
-            logger.debug("The desktop clipboard carries our marker but not "
-                         "something that reads back as tasks")
-            return None
+        return self.active_payload
 
     def _clipboard_text(self) -> str:
         """
-        What to put on the desktop clipboard for the current payload.
+        The readable, tab-separated table to put on the desktop clipboard.
 
         RETURNS:
         --------
         str
-            A readable list of what was copied, then a marker line, then the
-            same thing as JSON.
+            A header row and one row per copied task - name (indented to show
+            nesting), type, start, end, duration and status - tab-separated.
 
         DEVELOPMENT NOTES:
         ------------------
-        Both at once, because the two readers want different things. Pasted
-        into a mail or a note, the top of it is a list of task names and
-        dates somebody can read. Pasted back into this application, the part
-        after the marker is what is read, and carries everything a task has.
-
-        Tk's clipboard holds one string per selection, and which MIME types
-        a platform will offer alongside it differs by platform - so this is
-        one string that answers both rather than two that only work on X11.
+        Issue #16: what leaves the application is for other programs. Pasted
+        into a spreadsheet the tabs split it into columns; pasted into a note
+        it reads as a table. It is deliberately not the internal payload:
+        pasting back into this application reads the in-memory copy, never the
+        desktop clipboard (see _resolve_payload), so nothing here has to be a
+        plan that reads back - and the JSON that used to sit here, which other
+        programs could not use, is gone.
         """
         payload = self.active_payload
-        lines = [f"{len(payload.items)} item(s) "
-                 f"{'cut' if payload.operation == 'cut' else 'copied'} "
-                 f"from {self.project.name}:"]
+        if not payload or not payload.items:
+            return ""
+        rows = ["\t".join(CLIPBOARD_COLUMNS)]
         for item in payload.items:
-            name = item.payload.get('name', item.id)
-            lines.append(f"  - {name} ({item.type})")
+            rows.append("\t".join(self._clipboard_row(item)))
+        return "\n".join(rows)
 
-        encoded = json.dumps({
-            'operation': payload.operation,
-            'source_container_id': payload.source_container_id,
-            'items': [
-                {'id': item.id, 'type': item.type, 'payload': item.payload}
-                for item in payload.items
-            ],
-        })
-        return "\n".join(lines) + f"\n{CLIPBOARD_MARKER}" + encoded
+    def _clipboard_row(self, item) -> List[str]:
+        """One task as its clipboard columns, reading the live task first."""
+        task = self._get_task_by_id(item.id)
+        data = item.payload
+        raw_name = (task.name if task else data.get('name')) or item.id
+        name = raw_name.replace('\t', ' ').replace('\n', ' ')
+        indent = "    " * self._clipboard_depth(item.id)
+
+        if task is not None:
+            start = self._day_text(task.start_date)
+            end = self._day_text(task.end_date)
+            duration = task.duration_days
+            status = task.status or ""
+        else:
+            start = self._day_text_from_iso(data.get('start_date'))
+            end = self._day_text_from_iso(data.get('end_date'))
+            duration = data.get('duration')
+            status = data.get('status') or ""
+
+        return [f"{indent}{name}", (item.type or "").capitalize(),
+                start, end, self._duration_text(duration), status]
+
+    def _clipboard_depth(self, task_id: str) -> int:
+        """How deep a task sits, so its clipboard name can be indented."""
+        depth = 0
+        seen = set()
+        task = self._get_task_by_id(task_id)
+        while task and task.parent_task_id and task.parent_task_id not in seen:
+            seen.add(task.parent_task_id)
+            task = self._get_task_by_id(task.parent_task_id)
+            if task is None:
+                break
+            depth += 1
+        return depth
+
+    @staticmethod
+    def _day_text(value) -> str:
+        """A datetime as YYYY-MM-DD, or '' when there is none."""
+        try:
+            return value.strftime("%Y-%m-%d") if value else ""
+        except (AttributeError, ValueError):
+            return ""
+
+    @staticmethod
+    def _day_text_from_iso(value) -> str:
+        """A saved ISO date string as YYYY-MM-DD, or '' when unusable."""
+        from datetime import datetime
+
+        if not value:
+            return ""
+        try:
+            return datetime.fromisoformat(value).strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return ""
+
+    @staticmethod
+    def _duration_text(days) -> str:
+        """A day count as '1 day' / 'N days', or '' when unknown."""
+        if days is None:
+            return ""
+        return f"{days} day" if days == 1 else f"{days} days"
 
     def _write_to_system_clipboard(self) -> None:
         """
@@ -656,17 +677,6 @@ class ClipboardService:
             self.clipboard_widget.clipboard_append(self._clipboard_text())
         except Exception:
             logger.exception("Could not write to the desktop clipboard")
-
-    def _read_system_clipboard(self) -> str:
-        """The desktop clipboard's text, or '' when there is none to read."""
-        if self.clipboard_widget is None:
-            return ''
-        try:
-            return self.clipboard_widget.clipboard_get()
-        except Exception:
-            # Empty, or holding something that is not text at all
-            logger.debug("Nothing readable on the desktop clipboard")
-            return ''
 
     def _get_task_by_id(self, task_id: str) -> Optional['Task']:
         """Get task by ID from the project."""

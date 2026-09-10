@@ -588,7 +588,16 @@ GUIDE_SECTIONS = (
             "moving, renaming and re-dating rows.",
 
             "Cut, Copy and Paste move rows about, including into and out of "
-            "containers. A row cannot be pasted inside itself.",
+            "containers. A row cannot be pasted inside itself. This copy is "
+            "the application's own and does not go through the system "
+            "clipboard, so copying rows in another program cannot land them "
+            "in your plan.",
+
+            "Copy (and Cut) also put a plain, tab-separated table of the "
+            "selected rows - name, type, start, end, duration and status - on "
+            "the system clipboard, so you can paste the tasks straight into a "
+            "spreadsheet or a note. Pasting that back into the plan does "
+            "nothing; the plan pastes only what you copied inside it.",
 
             "Calendar changes are not on the undo stack. Changing a "
             "calendar setting back moves the plan back, which is how that "
