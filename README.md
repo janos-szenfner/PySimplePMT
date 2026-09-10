@@ -1144,14 +1144,14 @@ Two rows, one above the other, because they are two different things.
 **The menu bar** names everything the application can do, the way a menu bar
 on any desktop does:
 
-- **File**: New Project, Load Project, Save Project, Save Project As
+- **File**: New Project, Open Project, Save Project, Save Project As, Project Settings — the last a unified tabbed window with Project, Resource, Gantt and Calendar categories, each linked to its existing full editor
 - **Actions**: Import (MS Project, GAN, Mermaid, XLSX) and Export (GAN, MS
   Project, Mermaid, HTML, SVG, PNG, PDF, XLSX)
-- **Settings**: a unified tabbed window with Project, Resource, Gantt and Calendar categories, each linked to its existing full editor
 - **Edit**: Create (Phase, Task, Subtask, Milestone), Undo, Redo, Cut, Copy,
   Paste - the clipboard three carry the key they answer to, written the way
   this platform writes it (`⌘X` on a Mac, `Ctrl+X` elsewhere)
-- **View**: System UI mode, Critical Path..., Help
+- **View**: System UI mode, Grid View Only, Charts, Critical Path...
+- **About**: Help, About PySimplePMT, Changelog
 - **Log**: Opens the application log window, at the end of the row
 
 **The action bar** under it carries the handful worth reaching for without
@@ -2128,8 +2128,8 @@ pysimplepmt --log-file      # print the log file path
    - **Save Project As...** always asks, and the plan follows the new file
    - Project is saved in JSON format
 
-9. **Load Project**
-   - Choose **Project -> Load Project...**
+9. **Open Project**
+   - Choose **File -> Open Project...**
    - Select a previously saved JSON file
 
 10. **Create New Project**

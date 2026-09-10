@@ -46,10 +46,9 @@ class TestMenuOrder(unittest.TestCase):
         self.tree = menu_tree()
 
     def test_top_level_order(self):
-        """File, Actions, Settings, Edit, View, then About last."""
+        """File, Actions, Edit, View, then About last (Settings folded in)."""
         self.assertEqual([menu['text'] for menu in self.tree],
-                         ['File', 'Actions', 'Settings', 'Edit', 'View',
-                          'About'])
+                         ['File', 'Actions', 'Edit', 'View', 'About'])
 
     def test_file_comes_first(self):
         """
@@ -79,11 +78,11 @@ class TestMenuContents(unittest.TestCase):
         self.tree = menu_tree()
 
     def test_file_menu(self):
-        """File holds the file lifecycle actions."""
+        """File holds the file lifecycle actions and Project Settings."""
         self.assertEqual(
             labels(find(self.tree, 'File')['items']),
-            ['New Project...', 'Load Project...', 'Save Project...',
-             'Save Project As...'])
+            ['New Project...', 'Open Project...', 'Save Project...',
+             'Save Project As...', 'Project Settings...'])
 
     def test_actions_menu_nests_import_and_export(self):
         """Actions carries Baseline, Import and Export as submenus."""
@@ -111,13 +110,19 @@ class TestMenuContents(unittest.TestCase):
                          ['GAN...', 'MS Project...', 'Mermaid...', 'HTML...',
                           'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
 
-    def test_settings_opens_the_unified_tabbed_hub(self):
-        """Settings has one entry for the Project, Resource, Gantt and Calendar tabs."""
-        items = find(self.tree, 'Settings')['items']
+    def test_project_settings_opens_the_unified_tabbed_hub(self):
+        """Project Settings, now under File, opens the tabbed settings hub."""
+        items = find(self.tree, 'File')['items']
+        project_settings = next(i for i in items
+                                if i['text'] == 'Project Settings...')
 
-        self.assertEqual(labels(items), ['Settings...'])
-        self.assertNotIn('submenu', items[0])
-        self.assertTrue(callable(items[0]['command']))
+        self.assertNotIn('submenu', project_settings)
+        self.assertTrue(callable(project_settings['command']))
+
+    def test_there_is_no_top_level_settings_menu(self):
+        """Settings moved into File, so no standalone Settings menu remains."""
+        self.assertIsNone(
+            next((m for m in self.tree if m['text'] == 'Settings'), None))
 
     def test_calendar_settings_is_reached_from_the_settings_hub(self):
         """Calendar configuration remains available through the unified hub."""
@@ -149,13 +154,14 @@ class TestMenuContents(unittest.TestCase):
 
         self.assertEqual(view,
                          ['System UI mode', 'Grid View Only', 'Charts',
-                          'Critical Path...', 'Help'])
+                          'Critical Path...'])
         self.assertNotIn('Project Info', view)
+        self.assertNotIn('Help', view)
 
-    def test_the_about_menu_holds_about_and_changelog(self):
-        """About sits beside View, with the app-about window and changelog."""
+    def test_the_about_menu_holds_help_about_and_changelog(self):
+        """About gathers Help, the app-about window and the changelog."""
         about = labels(find(self.tree, 'About')['items'])
-        self.assertEqual(about, ['About PySimplePMT', 'Changelog'])
+        self.assertEqual(about, ['Help', 'About PySimplePMT', 'Changelog'])
 
     def test_the_theme_modes_sit_under_system_ui_mode(self):
         """

@@ -237,8 +237,7 @@ class TestMenuStructure(unittest.TestCase):
         menu_tree = Toolbar._menu_definitions(self.stub)
         
         menu_texts = [menu['text'] for menu in menu_tree]
-        expected_order = ['File', 'Actions', 'Settings', 'Edit', 'View',
-                          'About']
+        expected_order = ['File', 'Actions', 'Edit', 'View', 'About']
 
         self.assertEqual(menu_texts, expected_order,
                         f"Menu order incorrect. Expected: {expected_order}, Got: {menu_texts}")
@@ -256,10 +255,12 @@ class TestMenuStructure(unittest.TestCase):
         # Check that all expected top-level menus are present
         self.assertIn('File', converted)
         self.assertIn('Actions', converted)
-        self.assertIn('Settings', converted)
         self.assertIn('Edit', converted)
         self.assertIn('View', converted)
+        self.assertIn('About', converted)
         self.assertNotIn('Project', converted)
+        # Settings folded into File as Project Settings; no standalone menu.
+        self.assertNotIn('Settings', converted)
         
         # Check that Edit menu has all items
         edit_items = [item.get('label', item.get('text', '')) for item in converted['Edit']]

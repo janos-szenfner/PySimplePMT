@@ -1286,9 +1286,10 @@ class Toolbar(ctk.CTkFrame):
                 'text': 'File',
                 'items': [
                     {"text": "New Project...", "command": self.new_project},
-                    {"text": "Load Project...", "command": self.load_project},
+                    {"text": "Open Project...", "command": self.load_project},
                     {"text": "Save Project...", "command": self.save_project},
                     {"text": "Save Project As...", "command": self.save_project_as},
+                    {"text": "Project Settings...", "command": self.open_settings},
                 ],
             },
             {
@@ -1327,12 +1328,6 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "PDF...", "command": self.export_pdf},
                         {"text": "XLSX...", "command": self.export_xlsx},
                     ]},
-                ],
-            },
-            {
-                'text': 'Settings',
-                'items': [
-                    {"text": "Settings...", "command": self.open_settings},
                 ],
             },
             {
@@ -1384,12 +1379,12 @@ class Toolbar(ctk.CTkFrame):
                     # critical rows in the list instead; see
                     # highlight_critical_path
                     {"text": "Critical Path...", "command": self.show_critical_path},
-                    {"text": "Help", "command": self.show_help},
                 ],
             },
             {
                 'text': 'About',
                 'items': [
+                    {"text": "Help", "command": self.show_help},
                     {"text": "About PySimplePMT", "command": self.show_about},
                     {"text": "Changelog", "command": self.show_changelog},
                 ],
@@ -1994,10 +1989,10 @@ class Toolbar(ctk.CTkFrame):
 
     
     def load_project(self):
-        """Load a project from a JSON file chosen by the user."""
+        """Open a project from a JSON file chosen by the user."""
         file_path = filedialog.askopenfilename(
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
-            title="Load Project"
+            title="Open Project"
         )
 
         if not file_path:

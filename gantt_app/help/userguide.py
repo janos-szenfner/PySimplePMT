@@ -11,7 +11,7 @@ mean", or "which calendar is this task on", and those are the questions that
 send somebody to the source code.
 
 This is the whole of it in one window, opened by the ? on the icon bar or
-View > Help, with a search box across the top - because a guide this long is
+About > Help, with a search box across the top - because a guide this long is
 not read, it is looked things up in.
 
 DEVELOPMENT NOTES:
@@ -1190,7 +1190,7 @@ GUIDE_SECTIONS = (
 
 class UserGuideWindow(ReferenceWindow):
     """
-    The full guide, opened by the ? on the icon bar or View > Help.
+    The full guide, opened by the ? on the icon bar or About > Help.
 
     Larger than the two short references and searchable, which is the whole
     difference: they explain the form in front of the reader, and this
