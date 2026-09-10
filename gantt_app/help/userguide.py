@@ -545,8 +545,9 @@ GUIDE_SECTIONS = (
             "A Milestone is a diamond. Dependencies are drawn as arrows "
             "between the rows they link.",
 
-            "Show in timeline hides a row's bar without removing the row "
-            "from the plan.",
+            "Show in timeline decides whether a row's bar is drawn. A new "
+            "task starts off the timeline, so the chart shows only the tasks "
+            "you add to it; the row stays in the plan either way.",
 
             "Shape and Colour set how a bar is drawn. Settings > Gantt "
             "Settings holds the chart-wide options; the zoom controls and "

@@ -378,9 +378,12 @@ HELP_SECTIONS = (
     (
         "Show in timeline, Shape and Colour",
         [
-            "Show in timeline hides this row's bar from the chart without "
-            "removing the row from the plan. Its dates still count towards "
-            "its parent's, and anything depending on it still follows it.",
+            "Show in timeline decides whether this row's bar is drawn on the "
+            "chart. A new task starts off the timeline, so the chart stays "
+            "empty until you put a task on it; tick this to add its bar. "
+            "Hidden or not, the row stays in the plan - its dates still count "
+            "towards its parent's, and anything depending on it still follows "
+            "it.",
 
             "Shape changes how the bar is drawn. Colour carries no meaning "
             "to the application: nothing is scheduled, grouped or exported "

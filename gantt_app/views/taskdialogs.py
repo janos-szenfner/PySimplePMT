@@ -375,6 +375,11 @@ class CreateTaskDialog(TaskFormDialog):
             is_milestone=self.is_milestone,
             task_type=self.task_type,
             parent_task_id=self.parent_task.id if self.parent_task else None,
+            # A newly created task is off the timeline until the planner puts
+            # it there (issue #33): the Gantt stays empty by default and shows
+            # only the tasks the PM chooses. Existing tasks, imports and
+            # loaded plans keep whatever they already carry.
+            show_in_timeline=False,
         )
 
     def seed_type_locked(self):
