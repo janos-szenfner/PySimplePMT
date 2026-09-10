@@ -1367,14 +1367,6 @@ class Toolbar(ctk.CTkFrame):
             {
                 'text': 'View',
                 'items': [
-                    {"text": "System UI mode", "submenu": [
-                        {"text": "Sync with system",
-                         "command": self.use_system_theme},
-                        {"text": "Always Day (light)",
-                         "command": self.use_light_theme},
-                        {"text": "Always Night (dark)",
-                         "command": self.use_dark_theme},
-                    ]},
                     {"text": "Grid View Only", "type": "toggle",
                      "variable": "grid_view_only_var",
                      "command": self.toggle_grid_view_only},
@@ -1711,6 +1703,7 @@ class Toolbar(ctk.CTkFrame):
             baseline_manager=self.baseline_manager,
             initial_tab=initial_tab,
             on_baseline_changed=self.refresh_menus,
+            theme_controller=self.theme_controller,
         )
         return self._settings_window
 
@@ -2804,28 +2797,27 @@ class Toolbar(ctk.CTkFrame):
     
     def _set_theme_mode(self, mode: str):
         """
-        Put the application into one of the three modes.
+        Put the application into one of the three theme modes.
 
-        The three entries under View > System UI mode are separate named
-        methods rather than one parameterised entry, because every menu leaf
-        has to name a real method - see test_every_leaf_names_a_real_method,
-        which is what stops an entry pointing at a command that was renamed
-        out from under it.
+        The appearance controls moved to Project Settings > System UI (see
+        SettingsWindow), but these named methods stay as the toolbar's theme
+        API - the day/night button and the tests reach the ThemeController
+        through them.
         """
         if self.theme_controller is None:
             return
         self.theme_controller.set_mode(mode)
 
     def use_system_theme(self):
-        """View > System UI mode > Sync with system."""
+        """Follow the system's light/dark setting."""
         self._set_theme_mode(theme.MODE_SYSTEM)
 
     def use_light_theme(self):
-        """View > System UI mode > Always Day."""
+        """Always day (light)."""
         self._set_theme_mode(theme.MODE_LIGHT)
 
     def use_dark_theme(self):
-        """View > System UI mode > Always Night."""
+        """Always night (dark)."""
         self._set_theme_mode(theme.MODE_DARK)
 
     def show_help(self):

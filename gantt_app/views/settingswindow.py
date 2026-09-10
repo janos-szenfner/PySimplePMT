@@ -17,7 +17,8 @@ class SettingsWindow(ctk.CTkToplevel):
     """Modern four-tab hub that preserves the existing settings editors."""
 
     GEOMETRY = "800x600"
-    TABS = ("Project", "Resource", "Gantt", "Calendar", "Presets", "Baseline")
+    TABS = ("Project", "Resource", "Gantt", "Calendar", "Presets", "Baseline",
+            "System UI")
 
     def __init__(
         self,
@@ -30,12 +31,14 @@ class SettingsWindow(ctk.CTkToplevel):
         baseline_manager: Optional[BaselineManager] = None,
         initial_tab: str = "Project",
         on_baseline_changed: Optional[Callable[[], None]] = None,
+        theme_controller=None,
         **kwargs,
     ):
         super().__init__(master, **kwargs)
         self.project = project
         self.baseline_manager = baseline_manager
         self.on_baseline_changed = on_baseline_changed
+        self.theme_controller = theme_controller
         self._openers: Dict[str, Callable[[], None]] = {
             "Project": open_project,
             "Resource": open_resource,
@@ -68,7 +71,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ).pack(anchor=tk.W)
         ctk.CTkLabel(
             heading,
-            text="Configure the project, resources, chart, calendars and baselines.",
+            text="Configure the project, resources, chart, calendars, "
+                 "baselines and appearance.",
             text_color=theme.MUTED_TEXT,
         ).pack(anchor=tk.W, pady=(2, 0))
 
@@ -82,6 +86,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self._build_calendar_tab()
         self._build_presets_tab()
         self._build_baseline_tab()
+        self._build_system_ui_tab()
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill=tk.X, padx=20, pady=(0, 18))
@@ -322,6 +327,106 @@ class SettingsWindow(ctk.CTkToplevel):
         self.baseline_manager.clear_baseline(number)
         self._build_baseline_tab()
         logger.info("Cleared data for baseline %d from settings", number)
+
+    def _build_system_ui_tab(self):
+        """
+        The appearance controls, moved here from the View menu.
+
+        The old View > System UI mode submenu (Sync with system / Always Day /
+        Always Night) becomes a day-or-night toggle and a Sync with System
+        button, wired to the same ThemeController, so the workflow is the same
+        while the controls live under Project Settings.
+        """
+        logger.debug("Building System UI settings tab")
+        self._suppress_theme_switch = False
+
+        frame = ctk.CTkScrollableFrame(self.tabs["System UI"])
+        frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+        card = ctk.CTkFrame(frame, corner_radius=12)
+        card.pack(fill=tk.X, padx=14, pady=14)
+        ctk.CTkLabel(
+            card, text="System UI", font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(anchor=tk.W, padx=20, pady=(20, 6))
+        ctk.CTkLabel(
+            card,
+            text="Choose day or night, or hand the choice back to the "
+                 "system so the application follows the desktop's own "
+                 "light and dark setting.",
+            justify=tk.LEFT, anchor=tk.W, wraplength=650,
+            text_color=theme.MUTED_TEXT,
+        ).pack(fill=tk.X, padx=20, pady=(0, 16))
+
+        toggle_row = ctk.CTkFrame(card, fg_color="transparent")
+        toggle_row.pack(fill=tk.X, padx=20, pady=6)
+        ctk.CTkLabel(toggle_row, text="Night mode", width=170,
+                     anchor=tk.W).pack(side=tk.LEFT)
+        self._theme_switch = ctk.CTkSwitch(
+            toggle_row, text="", command=self._on_theme_switch)
+        self._theme_switch.pack(side=tk.LEFT)
+
+        self._sync_button = ctk.CTkButton(
+            card, text="Sync with System", height=38,
+            command=self._on_sync_system)
+        self._sync_button.pack(fill=tk.X, padx=20, pady=(16, 6))
+
+        self._theme_status = ctk.CTkLabel(
+            card, text="", anchor=tk.W, text_color=theme.MUTED_TEXT)
+        self._theme_status.pack(fill=tk.X, padx=20, pady=(0, 20))
+
+        self._refresh_system_ui()
+        if self.theme_controller is not None:
+            # Owner-scoped, so it is dropped when this window is destroyed.
+            self.theme_controller.subscribe(
+                lambda _mode, _appearance: self._refresh_system_ui(),
+                owner=self._theme_switch)
+
+    def _refresh_system_ui(self):
+        """Reflect the controller's current mode in the toggle and status."""
+        controller = self.theme_controller
+        switch = getattr(self, "_theme_switch", None)
+        if switch is None:
+            return
+        try:
+            if controller is None:
+                switch.configure(state=tk.DISABLED)
+                self._sync_button.configure(state=tk.DISABLED)
+                self._theme_status.configure(
+                    text="Theme control is not available here.")
+                return
+
+            self._suppress_theme_switch = True
+            if controller.is_dark:
+                switch.select()
+            else:
+                switch.deselect()
+            self._suppress_theme_switch = False
+
+            if controller.following_system:
+                self._theme_status.configure(
+                    text=f"Following the system ({controller.appearance}).")
+            else:
+                self._theme_status.configure(
+                    text=f"Manual ({controller.appearance}).")
+        except tk.TclError:
+            pass
+
+    def _on_theme_switch(self):
+        """Toggle takes manual control: on is night, off is day."""
+        if self._suppress_theme_switch or self.theme_controller is None:
+            return
+        wanted = theme.MODE_DARK if self._theme_switch.get() else theme.MODE_LIGHT
+        logger.info("System UI toggle set to %s", wanted)
+        self.theme_controller.set_mode(wanted)
+        self._refresh_system_ui()
+
+    def _on_sync_system(self):
+        """Hand the choice back to the desktop."""
+        if self.theme_controller is None:
+            return
+        logger.info("System UI set to follow the system")
+        self.theme_controller.sync_with_system()
+        self._refresh_system_ui()
 
     def open_editor(self, tab_name: str):
         """Close the hub and open the selected existing settings editor."""

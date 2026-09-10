@@ -153,30 +153,19 @@ class TestMenuContents(unittest.TestCase):
         view = labels(find(self.tree, 'View')['items'])
 
         self.assertEqual(view,
-                         ['System UI mode', 'Grid View Only', 'Charts',
-                          'Critical Path...'])
+                         ['Grid View Only', 'Charts', 'Critical Path...'])
         self.assertNotIn('Project Info', view)
         self.assertNotIn('Help', view)
+
+    def test_the_appearance_controls_left_the_view_menu(self):
+        """System UI mode moved to Project Settings > System UI tab."""
+        view = labels(find(self.tree, 'View')['items'])
+        self.assertNotIn('System UI mode', view)
 
     def test_the_about_menu_holds_help_about_and_changelog(self):
         """About gathers Help, the app-about window and the changelog."""
         about = labels(find(self.tree, 'About')['items'])
         self.assertEqual(about, ['Help', 'About PySimplePMT', 'Changelog'])
-
-    def test_the_theme_modes_sit_under_system_ui_mode(self):
-        """
-        All three, so the choice is visible rather than a hidden toggle.
-
-        The old entry was a single Toggle Theme that flipped whatever was on
-        screen, with no way to say "follow the desktop again" and no sign of
-        which of the two you were in.
-        """
-        view = find(self.tree, 'View')['items']
-        entry = next(i for i in view if i['text'] == 'System UI mode')
-
-        self.assertEqual(labels(entry['submenu']),
-                         ['Sync with system', 'Always Day (light)',
-                          'Always Night (dark)'])
 
     def test_edit_menu(self):
         """

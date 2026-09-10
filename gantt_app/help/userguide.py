@@ -577,7 +577,9 @@ GUIDE_SECTIONS = (
             "detaches from the desktop. Sync with system appears beside it "
             "only while that manual choice is in force, and puts it back.",
 
-            "The same three modes are under View > System UI mode. The "
+            "The same choice lives under File > Project Settings, on the "
+            "System UI tab: a Night mode toggle for day or night, and a Sync "
+            "with System button to hand the choice back to the desktop. The "
             "choice is remembered between runs.",
         ],
     ),
