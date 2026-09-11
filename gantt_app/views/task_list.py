@@ -119,6 +119,9 @@ class DragDropTaskList(ctk.CTkFrame):
         ttk.Style(self.tree).configure('Gantt.Treeview', indent=24)
         self.tree.configure(style='Gantt.Treeview')
         logger.debug("Applied 24px hierarchy indentation to the task tree")
+        # The fixed "No" gutter re-greys for the new appearance too.
+        if getattr(self, 'id_tree', None) is not None:
+            self._apply_gutter_style()
 
     def _is_search_context(self, task) -> bool:
         """
@@ -510,7 +513,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # branch away. The names used to be prefixed with '|--' to stand in
         # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
-            'ID', 'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
+            'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
             'Dependencies', 'Milestone', 'Outline',
             'Baseline Start', 'Start Variance', 'Baseline Finish',
             'Finish Variance', 'Baseline Duration', 'Duration Variance',
@@ -526,7 +529,6 @@ class DragDropTaskList(ctk.CTkFrame):
         # was nested and looked flat, with the whole hierarchy expressed in
         # 34 pixels of empty space nobody could see.
         self.tree.heading('#0', text='Task Name', anchor=tk.W)
-        self.tree.heading('ID', text='ID', anchor=tk.W)
         self.tree.heading('Type', text='Type', anchor=tk.W)
         self.tree.heading('Status', text='Status', anchor=tk.W)
         self.tree.heading('Duration', text='Duration (Days)', anchor=tk.W)
@@ -561,7 +563,6 @@ class DragDropTaskList(ctk.CTkFrame):
         # longer fits. minwidth keeps a column from being dragged shut.
         # Wide, because it now holds the names as well as the indentation
         self.tree.column('#0', width=300, minwidth=120, stretch=False)
-        self.tree.column('ID', width=60, minwidth=40, stretch=False)
         self.tree.column('Type', width=90, minwidth=60, stretch=False)
         self.tree.column('Status', width=64, minwidth=48, stretch=False)
         self.tree.column('Duration', width=110, minwidth=60, stretch=False)
@@ -588,15 +589,33 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.configure(yscrollcommand=self._rows_scrolled,
                             xscrollcommand=hsb.set)
         self._vertical_scrollbar = vsb
-        
-        # Grid layout
-        self.tree.grid(row=0, column=0, sticky=tk.NSEW)
-        vsb.grid(row=0, column=1, sticky=tk.NS)
-        hsb.grid(row=1, column=0, sticky=tk.EW)
-        
+
+        # The fixed "No" gutter: a read-only Treeview pinned to the left of
+        # the list, showing the flat position number for every visible row.
+        # It carries none of the outline - no expander, no indentation - so
+        # the numbers stay flush whatever a row's type or depth, and it is
+        # rebuilt to mirror the main tree's visible rows and scrolls with it.
+        # A ttk.Treeview cannot place a plain column left of its own outline
+        # column, so the row number lives in a widget of its own.
+        self.id_tree = ttk.Treeview(
+            tree_frame, columns=(), show='tree headings',
+            selectmode='none', takefocus=0)
+        self.id_tree.heading('#0', text='No', anchor=tk.W)
+        self.id_tree.column('#0', width=52, minwidth=44, stretch=False,
+                            anchor=tk.W)
+        self._apply_gutter_style()
+        for _seq in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            self.id_tree.bind(_seq, self._gutter_wheel)
+
+        # Grid layout: the gutter, then the tree, then the vertical scrollbar.
+        self.id_tree.grid(row=0, column=0, sticky=tk.NS)
+        self.tree.grid(row=0, column=1, sticky=tk.NSEW)
+        vsb.grid(row=0, column=2, sticky=tk.NS)
+        hsb.grid(row=1, column=1, sticky=tk.EW)
+
         tree_frame.grid_rowconfigure(0, weight=1)
-        tree_frame.grid_columnconfigure(0, weight=1)
-        
+        tree_frame.grid_columnconfigure(1, weight=1)
+
         # Store reference to tree_frame for DnD
         self.tree_frame = tree_frame
 
@@ -605,9 +624,17 @@ class DragDropTaskList(ctk.CTkFrame):
         self._apply_row_tag_colours()
         
         # Folding a branch away changes which rows are on show, which the
-        # chart beside the list draws from
+        # chart beside the list draws from - and which numbers the gutter
+        # shows. The gutter is refreshed after idle so the tree's open state
+        # has settled before its visible rows are read.
         self.tree.bind('<<TreeviewOpen>>', self._tell_row_watchers, add='+')
         self.tree.bind('<<TreeviewClose>>', self._tell_row_watchers, add='+')
+        self.tree.bind('<<TreeviewOpen>>',
+                       lambda _e: self.after_idle(self._refresh_id_gutter),
+                       add='+')
+        self.tree.bind('<<TreeviewClose>>',
+                       lambda _e: self.after_idle(self._refresh_id_gutter),
+                       add='+')
 
         # Bind events
         self.tree.bind('<Double-1>', self.on_double_click)
@@ -1559,7 +1586,74 @@ class DragDropTaskList(ctk.CTkFrame):
         show changes - a scroll, a branch folded away, a row added.
         """
         self._vertical_scrollbar.set(first, last)
+        gutter = getattr(self, 'id_tree', None)
+        if gutter is not None:
+            try:
+                gutter.yview_moveto(first)
+            except tk.TclError:
+                pass
         self._tell_row_watchers()
+
+    def _apply_gutter_style(self):
+        """
+        Colour the fixed "No" gutter grey, and re-colour it on a theme change.
+
+        Grey, like a disabled field, to say it is a fixed key the reader does
+        not type in; the selection colour is greyed too, so clicking it never
+        looks like an edit.
+        """
+        theme.style_treeview('IdGutter.Treeview',
+                             row_height=self.GRID_ROW_HEIGHT)
+        style = ttk.Style()
+        grey = theme.now(theme.FIELD_BG_DISABLED)
+        muted = theme.now(theme.MUTED_TEXT)
+        style.configure('IdGutter.Treeview', background=grey,
+                        fieldbackground=grey, foreground=muted, indent=0)
+        style.map('IdGutter.Treeview',
+                  background=[('selected', grey)],
+                  foreground=[('selected', muted)])
+        if getattr(self, 'id_tree', None) is not None:
+            self.id_tree.configure(style='IdGutter.Treeview')
+
+    def _gutter_wheel(self, event):
+        """Route a wheel roll over the gutter to the list it sits beside."""
+        if getattr(event, 'num', 0) == 4:
+            self.tree.yview_scroll(-1, 'units')
+        elif getattr(event, 'num', 0) == 5:
+            self.tree.yview_scroll(1, 'units')
+        else:
+            self.tree.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+        return 'break'
+
+    def _refresh_id_gutter(self):
+        """
+        Redraw the "No" gutter so it mirrors the list's visible rows.
+
+        One flat, unindented row per row the list is showing, top to bottom,
+        each carrying that row's position number. Rebuilt whenever the visible
+        set changes - a repopulate, a branch folded away - and re-aligned to
+        wherever the list is scrolled.
+        """
+        gutter = getattr(self, 'id_tree', None)
+        if gutter is None or not gutter.winfo_exists():
+            return
+        try:
+            gutter.delete(*gutter.get_children(''))
+        except tk.TclError:
+            return
+
+        numbers = getattr(self, '_display_ids', None) \
+            or self.project.display_ids()
+        width = self.project.ID_WIDTH
+        for task_id in self.visible_rows():
+            number = numbers.get(task_id)
+            label = '' if number is None else str(number).zfill(width)
+            gutter.insert('', tk.END, text=label)
+
+        try:
+            gutter.yview_moveto(self.tree.yview()[0])
+        except (tk.TclError, IndexError):
+            pass
 
     def _tell_row_watchers(self, _event=None):
         """Let the chart know the rows have moved or changed."""
@@ -1890,11 +1984,11 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.tree.winfo_exists():
             if slot_number is None:
                 self.tree['displaycolumns'] = (
-                    'ID', 'Type', 'Status', 'Duration', 'Start', 'End',
+                    'Type', 'Status', 'Duration', 'Start', 'End',
                     'Progress', 'Dependencies', 'Milestone', 'Outline')
             else:
                 self.tree['displaycolumns'] = (
-                    'ID', 'Type', 'Status', 'Duration', 'Start', 'End',
+                    'Type', 'Status', 'Duration', 'Start', 'End',
                     'Progress', 'Dependencies', 'Milestone', 'Outline',
                     'Baseline Start', 'Start Variance', 'Baseline Finish',
                     'Finish Variance', 'Baseline Duration', 'Duration Variance',
@@ -3007,6 +3101,9 @@ class DragDropTaskList(ctk.CTkFrame):
         # when the answer to what is on show is still half of it.
         self._tell_row_watchers()
 
+        # The "No" gutter mirrors the settled rows, folds and scroll included.
+        self._refresh_id_gutter()
+
     def _capture_view_state(self) -> dict:
         """
         What the reader has done to the list, before it is torn down.
@@ -3215,9 +3312,10 @@ class DragDropTaskList(ctk.CTkFrame):
                                  text=task.name,
                                  open=True,
                                  values=(
-                                     # What the row shows is its position,
-                                     # not its identity; see display_ids
-                                     self._display_label(task),
+                                     # The position number is no longer here;
+                                     # it is drawn in the fixed "No" gutter to
+                                     # the left, mirroring this row - see
+                                     # _refresh_id_gutter.
                                      type_str,
                                      status_str,
                                      duration_str,

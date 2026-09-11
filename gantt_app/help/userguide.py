@@ -713,12 +713,14 @@ GUIDE_SECTIONS = (
             "expander that folds its branch away. The work under it is "
             "indented one level per step down the plan.",
 
-            "The ID column numbers the rows down the list: 1 at the top "
-            "through to the last row, with no gaps. It is a position rather "
-            "than a name, so it follows whatever you do to the plan - "
-            "insert a row and everything below it moves down a number, "
-            "delete one and they close back up, drag a row or indent it and "
-            "the numbers follow it.",
+            "The No column, the grey strip down the left, numbers the rows: "
+            "1 at the top through to the last row, with no gaps, and flush - "
+            "the same for a task, a sub-task or a milestone, whatever its "
+            "depth. It is grey and not typed in, to show it is a fixed "
+            "position rather than a name, so it follows whatever you do to "
+            "the plan - insert a row and everything below it moves down a "
+            "number, delete one and they close back up, drag a row or indent "
+            "it and the numbers follow it.",
 
             "The Predecessors column names what a task waits for by those "
             "same numbers, so the links renumber with the rows.",
