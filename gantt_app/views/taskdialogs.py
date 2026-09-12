@@ -204,6 +204,7 @@ class EditTaskDialog(TaskFormDialog):
                 duration, assignments = reconciled
 
             self.task.name = name
+            self.task.label = self.label_entry.get().strip()
             # Whatever the menu says, wherever the row sits; see
             # seed_type_locked
             self.task.task_type = self.task_type_var.get()
@@ -257,6 +258,7 @@ class EditTaskDialog(TaskFormDialog):
                     old_task.id,
                     old_task=old_task,
                     name=new_task.name,
+                    label=new_task.label,
                     task_type=new_task.task_type,
                     start_date=new_task.start_date,
                     end_date=new_task.end_date,
@@ -491,6 +493,7 @@ class CreateTaskDialog(TaskFormDialog):
             task = Task(
                 id=self.project.next_task_id(),
                 name=name,
+                label=self.label_entry.get().strip(),
                 start_date=start,
                 end_date=end,
                 progress=progress,
@@ -570,6 +573,7 @@ class CreateTaskDialog(TaskFormDialog):
         name.
         """
         self.name_entry.delete(0, tk.END)
+        self.label_entry.delete(0, tk.END)
         self.progress_entry.delete(0, tk.END)
         self.progress_entry.insert(0, "0")
         self.duration_entry.delete(0, tk.END)

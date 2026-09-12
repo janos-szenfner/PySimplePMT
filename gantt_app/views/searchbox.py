@@ -90,6 +90,7 @@ def task_haystack(task, project=None) -> str:
 
     parts: List[str] = parts_head + [
         str(task.name or ''),
+        str(getattr(task, 'label', '') or ''),
         str(task.task_type or ''),
         str(task.details or ''),
         str(task.priority or ''),

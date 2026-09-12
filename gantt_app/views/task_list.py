@@ -514,7 +514,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # branch away. The names used to be prefixed with '|--' to stand in
         # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
-            'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
+            'Label', 'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
             'Dependencies', 'Milestone', 'Outline',
             'Baseline Start', 'Start Variance', 'Baseline Finish',
             'Finish Variance', 'Baseline Duration', 'Duration Variance',
@@ -531,6 +531,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # was nested and looked flat, with the whole hierarchy expressed in
         # 34 pixels of empty space nobody could see.
         self.tree.heading('#0', text='Task Name', anchor=tk.W)
+        self.tree.heading('Label', text='Label', anchor=tk.W)
         self.tree.heading('Type', text='Type', anchor=tk.W)
         self.tree.heading('Status', text='Status', anchor=tk.W)
         self.tree.heading('Duration', text='Duration (Days)', anchor=tk.W)
@@ -566,6 +567,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # longer fits. minwidth keeps a column from being dragged shut.
         # Wide, because it now holds the names as well as the indentation
         self.tree.column('#0', width=300, minwidth=120, stretch=False)
+        self.tree.column('Label', width=140, minwidth=60, stretch=False)
         self.tree.column('Type', width=90, minwidth=60, stretch=False)
         self.tree.column('Status', width=64, minwidth=48, stretch=False)
         self.tree.column('Duration', width=110, minwidth=60, stretch=False)
@@ -720,6 +722,8 @@ class DragDropTaskList(ctk.CTkFrame):
             self.edit_dependencies_cell(item)
         elif cell == 'Type':
             self.edit_type_cell(item)
+        elif cell == 'Label':
+            self.edit_label_cell(item)
         elif cell in ('Duration', 'Start', 'End') \
                 and self._schedule_cell_editable(item, cell):
             self.edit_schedule_cell(item, cell)
@@ -995,6 +999,62 @@ class DragDropTaskList(ctk.CTkFrame):
             task.name = name
 
         logger.info("Renamed task %s to %r", task_id, name)
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    # ------------------------------------------------------------------
+    # The Label column
+    # ------------------------------------------------------------------
+
+    def edit_label_cell(self, task_id: str):
+        """
+        Type over a task's label in the grid.
+
+        Free text like the name box - see issue #52. Unlike the schedule
+        cells it is open on every row: a label says something about the row
+        rather than scheduling it, so a summary may carry one too.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+        self._open_cell_editor(task_id, 'Label', task.label or '',
+                               self._commit_label)
+
+    def _commit_label(self):
+        """Store what was typed over a task's label."""
+        text, task_id = self._editor_text()
+        if task_id is None:
+            return
+
+        label = text.strip()
+        task = self.project.get_task_by_id(task_id)
+        if task is not None and task.label == label:
+            return
+
+        self.set_task_label(task_id, label)
+
+    def set_task_label(self, task_id: str, label: str):
+        """
+        Set a task's label as one undoable step, and redraw.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being labelled.
+        label : str
+            The free text it now carries; empty clears it.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None or task.label == label:
+            return
+
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id, label=label)
+        else:
+            task.label = label
+
+        logger.info("Labelled task %s %r", task_id, label)
         self.update_task_list()
         if self.on_project_changed:
             self.on_project_changed()
@@ -1287,7 +1347,12 @@ class DragDropTaskList(ctk.CTkFrame):
         The plan is rescheduled afterwards rather than the dates being left
         as they were: a link that has just been stated is one the dates are
         supposed to obey, and a column that accepted a link and moved
-        nothing would look like it had not worked.
+        nothing would look like it had not worked. Not forward-only, on
+        purpose: the automatic pass only pushes later, which left a typed
+        Start-Start or Start-Finish link silently unapplied whenever the
+        date it asked for was earlier than where the task sat (issue #47).
+        A deliberate edit is allowed to pull the task back - the same
+        licence a date edit already has through the undo history.
         """
         task = self.project.get_task_by_id(task_id)
         if task is None:
@@ -1301,7 +1366,7 @@ class DragDropTaskList(ctk.CTkFrame):
         else:
             task.dependencies = links
 
-        self.project.apply_schedule()
+        self.project.apply_schedule(forward_only=False)
         logger.info("Set %d dependency(ies) on task %s", len(links), task_id)
 
         self.update_task_list()
@@ -1988,12 +2053,12 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.tree.winfo_exists():
             if slot_number is None:
                 self.tree['displaycolumns'] = (
-                    'Type', 'Status', 'Duration', 'Start', 'End',
+                    'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
                     'Progress', 'Dependencies', 'Milestone', 'Outline',
                     'Task Calendar')
             else:
                 self.tree['displaycolumns'] = (
-                    'Type', 'Status', 'Duration', 'Start', 'End',
+                    'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
                     'Progress', 'Dependencies', 'Milestone', 'Outline',
                     'Baseline Start', 'Start Variance', 'Baseline Finish',
                     'Finish Variance', 'Baseline Duration', 'Duration Variance',
@@ -3332,6 +3397,7 @@ class DragDropTaskList(ctk.CTkFrame):
                                      # it is drawn in the fixed "No" gutter to
                                      # the left, mirroring this row - see
                                      # _refresh_id_gutter.
+                                     task.label or '',
                                      type_str,
                                      status_str,
                                      duration_str,

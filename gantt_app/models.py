@@ -615,6 +615,10 @@ class Task:
     #: automatically otherwise.
     manually_scheduled: bool = False
     details: str = ""
+    #: A short free-text tag shown beside the name, on the task grid and in
+    #: the editor under the title (issue #52). Informational only - it does
+    #: not take part in scheduling.
+    label: str = ""
     is_milestone: bool = False
     status: str = "Active"
     #: The Estimated checkbox, remembered independently of Inactive (issue
@@ -687,6 +691,10 @@ class Task:
         # carry its own estimated flag, which is the both-ticked case.
         if self.status == 'Estimated':
             self.estimated = True
+
+        # The label is text or nothing; a None handed in is nothing
+        if self.label is None:
+            self.label = ""
 
         # Validate effort type (Advanced tab Task Type). An unknown value -
         # a hand-edit, a future type - reads as the safe default so the row
@@ -1134,6 +1142,7 @@ class Task:
             'effort_driven': self.effort_driven,
             'manually_scheduled': self.manually_scheduled,
             'details': self.details,
+            'label': self.label,
             'calendar_id': self.calendar_id,
             'resource_assignments': list(self.resource_assignments),
             # None for a row nobody has formatted, which is nearly all of
@@ -1270,6 +1279,8 @@ class Task:
             effort_driven=effort_driven,
             manually_scheduled=manually_scheduled,
             details=data.get('details', ''),
+            # Absent in every plan saved before the field existed (issue #52)
+            label=str(data.get('label') or ''),
             calendar_id=data.get('calendar_id') or None,
             resource_assignments=assignments,
             # Absent in every plan saved before formatting existed, which
@@ -2516,9 +2527,20 @@ class Project:
                     self.name, delta.days, as_date(deadline))
         return True
 
-    def apply_schedule(self) -> bool:
+    def apply_schedule(self, forward_only: bool = True) -> bool:
         """
         Settle the plan from whichever end it is scheduled from.
+
+        PARAMETERS:
+        -----------
+        forward_only : bool
+            Passed to reschedule for a forward-scheduled plan. False is for
+            a deliberate edit - a link just typed into the Dependencies
+            column is meant to be obeyed exactly, so a Start-Start or
+            Start-Finish link is allowed to pull its task earlier rather
+            than looking like it did nothing (issue #47). The automatic
+            passes keep the default: they repair violations without closing
+            deliberate slack.
 
         RETURNS:
         --------
@@ -2534,11 +2556,12 @@ class Project:
         A plan scheduled forward gets exactly what it always got: reschedule
         and nothing else. That is not a courtesy - it is the whole of the
         existing behaviour, and every plan is forward until somebody says
-        otherwise.
+        otherwise. A plan scheduled from its finish is packed as late as it
+        goes either way, so the flag has no meaning there.
         """
         if self.schedule_from == SCHEDULE_FROM_FINISH:
             return self.apply_backward_schedule()
-        return self.reschedule()
+        return self.reschedule(forward_only=forward_only)
 
     def shift_to_start(self, new_start: datetime) -> bool:
         """
@@ -2672,6 +2695,17 @@ class Project:
         is the cheap direction: it stops at the first hit, and a plan has
         far fewer links than tasks.
 
+        The loop does not have to run through links alone. A row that holds
+        work takes its dates from the rows inside it, so waiting on such a
+        row is waiting on all of them: a child that links to its own parent,
+        or to a task that waits on one of its ancestors, closes a loop the
+        links alone do not show. Left open, that loop did not settle - each
+        pass moved the child past the end the summary had just rolled up,
+        and the summary followed, until the plan's end was years out and a
+        collector read a duration in the thousands (issue #47). The walk
+        therefore also counts reaching any row above the successor - the
+        roll-up carries the wait the rest of the way down.
+
         This lived in the task list, which is a view. It is a fact about the
         plan, and the Dependencies column needed the same answer - so rather
         than have two of it, it is here.
@@ -2681,21 +2715,52 @@ class Project:
         if self.is_descendant(predecessor_id, successor_id):
             return True
 
+        targets = {successor_id} | self._ancestor_ids(successor_id)
+        return self._waits_on(predecessor_id, targets)
+
+    def _waits_on(self, source_id: str, target_ids) -> bool:
+        """
+        Whether a task's dates already read any of the named ones.
+
+        PARAMETERS:
+        -----------
+        source_id : str
+            The task whose inputs are walked.
+        target_ids : Collection[str]
+            The ids to look for.
+
+        RETURNS:
+        --------
+        bool
+            True when a task the source reads - through its own links, or
+            through a row whose dates roll up from the work inside it -
+            is one of the targets.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Two kinds of edge are followed, matching how the schedule is
+        actually computed: a task reads its predecessors, and a row with
+        children reads the rows it brackets (see roll_up_summaries). The
+        second is what makes a link from a child to a task waiting on its
+        parent circular - the parent's dates are the child's dates.
+        """
+        children = self._children_by_parent()
+        targets = set(target_ids)
         seen = set()
-        stack = [predecessor_id]
+        stack = [source_id]
         while stack:
             current = stack.pop()
             if current in seen:
                 continue
             seen.add(current)
+            if current in targets:
+                return True
 
             task = self.get_task_by_id(current)
             if task is None:
                 continue
-            for link in task.dependency_ids:
-                if link == successor_id:
-                    return True
-                stack.append(link)
+            stack.extend(task.dependency_ids)
+            stack.extend(child.id for child in children.get(current, []))
 
         return False
 
@@ -2752,6 +2817,16 @@ class Project:
                 continue
             if predecessor in taken:
                 errors.append(f"Task {item.number} is listed more than once.")
+                continue
+            if self.is_descendant(task_id, predecessor):
+                errors.append(
+                    f"Task {item.number} holds this task inside it, so "
+                    f"linking them would run in a circle.")
+                continue
+            if self.is_descendant(predecessor, task_id):
+                errors.append(
+                    f"This task holds task {item.number} inside it, so "
+                    f"linking them would run in a circle.")
                 continue
 
             # Against what has been accepted so far as well as what is

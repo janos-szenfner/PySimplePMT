@@ -864,3 +864,178 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
         from gantt_app.shortcuts import sequences
 
         self.assertNotEqual(set(sequences('.')), set(sequences('.', alt=True)))
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTheLabelColumn(InlineEditingTestCase):
+    """
+    A free-text Label column beside the name, editable in place (#52).
+
+    WHY THESE EXIST:
+    ================
+    The label is a short tag that rides along with the row - shown in the
+    grid, written in the editor under the title, and typed over in the cell
+    like the name and the schedule boxes. It never takes part in
+    scheduling, which is what makes it editable on every row, containers
+    included.
+    """
+
+    def label_of(self, task_id='u1') -> str:
+        """What the plan says the row is tagged with."""
+        return self.project.get_task_by_id(task_id).label
+
+    def label_cell(self, task_id='u1') -> str:
+        """What the grid says the row is tagged with."""
+        columns = list(self.task_list.tree.cget('columns'))
+        index = columns.index('Label')
+        return self.task_list.tree.item(task_id, 'values')[index]
+
+    def test_the_column_sits_beside_the_name(self):
+        """First of the data columns, right of the tree column."""
+        self.assertEqual(
+            list(self.task_list.tree.cget('columns'))[0], 'Label')
+
+    def test_the_heading_says_label(self):
+        """The column is called what the issue calls it."""
+        self.assertEqual(
+            self.task_list.tree.heading('Label', 'text'), 'Label')
+
+    def test_a_double_click_opens_a_box_over_the_cell(self):
+        """Routed like the other cells that keep their own editors."""
+        from unittest import mock
+
+        with mock.patch.object(self.task_list, 'edit_label_cell') as sent:
+            self.double_click('u1', column='Label')
+
+        sent.assert_called_once_with('u1')
+
+    def test_the_box_opens_holding_the_label(self):
+        """Ready to be replaced, like the name box."""
+        self.project.get_task_by_id('u1').label = 'urgent'
+        self.task_list.update_task_list()
+
+        self.task_list.edit_label_cell('u1')
+
+        self.assertIsNotNone(self.task_list._cell_editor)
+        self.assertEqual(self.task_list._cell_editor.get(), 'urgent')
+
+    def test_enter_stores_it(self):
+        """On the task, which is what makes it real."""
+        self.double_click('u1', column='Label')
+        self.type_into_editor('urgent')
+
+        self.task_list._commit_label()
+
+        self.assertEqual(self.label_of(), 'urgent')
+        self.assertEqual(self.label_cell(), 'urgent')
+
+    def test_a_container_row_can_carry_one(self):
+        """u1 has a child; the label says nothing about its dates."""
+        self.task_list.edit_label_cell('u1')
+        self.type_into_editor('phase one')
+
+        self.task_list._commit_label()
+
+        self.assertEqual(self.label_of(), 'phase one')
+
+    def test_an_empty_box_clears_it(self):
+        """Like the name, a label need not be there at all."""
+        self.project.get_task_by_id('u1').label = 'urgent'
+
+        self.task_list.edit_label_cell('u1')
+        self.type_into_editor('   ')
+        self.task_list._commit_label()
+
+        self.assertEqual(self.label_of(), '')
+
+    def test_surrounding_space_is_trimmed(self):
+        """The label is what was meant, not what the keyboard left."""
+        self.task_list.edit_label_cell('u1')
+        self.type_into_editor('  blocked  ')
+
+        self.task_list._commit_label()
+
+        self.assertEqual(self.label_of(), 'blocked')
+
+    def test_writing_what_is_already_there_costs_nothing(self):
+        """No redraw, and nothing added to undo."""
+        depth = len(self.manager.undo_stack)
+
+        self.task_list.set_task_label('u1', '')
+
+        self.assertEqual(len(self.manager.undo_stack), depth)
+
+    def test_it_is_one_step_in_the_undo_history(self):
+        """Like a label typed into the editor."""
+        depth = len(self.manager.undo_stack)
+
+        self.task_list.set_task_label('u1', 'urgent')
+
+        self.assertEqual(len(self.manager.undo_stack), depth + 1)
+
+    def test_undo_puts_the_old_label_back(self):
+        """In the model and in the grid."""
+        self.task_list.set_task_label('u1', 'urgent')
+
+        self.manager.undo()
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.label_of(), '')
+        self.assertEqual(self.label_cell(), '')
+
+    def test_labelling_does_not_disturb_the_rest_of_the_task(self):
+        """
+        The tracker rebuilds a task from a list of fields, so anything
+        missing from that list is reset by any update at all.
+        """
+        task = self.project.get_task_by_id('u1')
+        task.calendar_id = 'weekend'
+        task.progress = 40
+
+        self.task_list.set_task_label('u1', 'urgent')
+
+        task = self.project.get_task_by_id('u1')
+        self.assertEqual(task.calendar_id, 'weekend')
+        self.assertEqual(task.progress, 40)
+
+
+class TestTheLabelField(unittest.TestCase):
+    """The field itself: on the task, and in the saved file."""
+
+    def test_a_task_defaults_to_no_label(self):
+        """Plans written before the field existed carry none."""
+        task = Task(id='t1', name='One', start_date=BASE)
+
+        self.assertEqual(task.label, '')
+
+    def test_the_label_survives_a_save_and_load(self):
+        """Round-tripped through the file like every other field."""
+        task = Task(id='t1', name='One', start_date=BASE, label='urgent')
+
+        again = Task.from_dict(task.to_dict())
+
+        self.assertEqual(again.label, 'urgent')
+
+    def test_a_file_written_before_the_field_opens_without_one(self):
+        """The key is simply absent, and the task loads blank."""
+        task = Task(id='t1', name='One', start_date=BASE)
+        saved = task.to_dict()
+        del saved['label']
+
+        self.assertEqual(Task.from_dict(saved).label, '')
+
+    def test_a_null_label_reads_as_blank(self):
+        """A hand-edited file can hold anything."""
+        task = Task(id='t1', name='One', start_date=BASE)
+        saved = task.to_dict()
+        saved['label'] = None
+
+        self.assertEqual(Task.from_dict(saved).label, '')
+
+    def test_the_search_finds_a_row_by_its_label(self):
+        """A field left out of the haystack reads as search being broken."""
+        from gantt_app.views.searchbox import task_matches
+
+        task = Task(id='t1', name='One', start_date=BASE, label='legal')
+
+        self.assertTrue(task_matches(task, 'legal'))

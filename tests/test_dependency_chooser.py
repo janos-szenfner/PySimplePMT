@@ -206,5 +206,54 @@ class TestChoosingACandidate(ChooserTestCase):
         self.assertNotIn(first, self.editor.candidate_menu.cget('values'))
 
 
+class TestALoopIsRefused(ChooserTestCase):
+    """
+    A link that would run in a circle is refused with the reason (issue #47).
+
+    The loop does not have to run through links alone: a row that holds work
+    takes its dates from the rows inside it, so a link from a child to a task
+    that waits on its parent is circular however it is typed.
+    """
+
+    def setUp(self):
+        """The edited task sits inside a summary the candidate waits on."""
+        super().setUp()
+        from gantt_app.models import Dependency
+
+        parent = Task(id="S", name="Summary", task_type="Phase",
+                      start_date=BASE, end_date=BASE + timedelta(days=40))
+        self.project.add_task(parent)
+        # The task being edited becomes a child of the summary.
+        self.project.tasks[0].parent_task_id = parent.id
+        # The candidate waits on the summary, so it waits on the child.
+        self.project.get_task_by_id("002").dependencies = [
+            Dependency("S", "FS", "Hard")]
+        self.editor.refresh(notify=False)
+
+    def test_adding_it_is_refused_with_the_reason(self):
+        from unittest import mock
+
+        values = self.editor.candidate_menu.cget('values')
+        label = next(v for v in values if v.endswith('Task 2'))
+        self.editor.candidate_var.set(label)
+
+        with mock.patch(
+                'gantt_app.views.dependency_editor.messagebox.showerror'
+        ) as prompt:
+            self.editor.add_selected()
+
+        self.assertEqual(self.editor.links, [])
+        self.assertTrue(prompt.called, "the user was told nothing")
+
+    def test_a_link_that_closes_no_loop_is_still_added(self):
+        values = self.editor.candidate_menu.cget('values')
+        label = next(v for v in values if v.endswith('Task 3'))
+        self.editor.candidate_var.set(label)
+
+        self.editor.add_selected()
+
+        self.assertEqual(len(self.editor.links), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1159,6 +1159,7 @@ class ProjectStateTracker:
             'manually_scheduled': kwargs.get(
                 'manually_scheduled', task.manually_scheduled),
             'details': kwargs.get('details', task.details),
+            'label': kwargs.get('label', task.label),
             # Every field the task carries has to be listed here, not just
             # the ones a caller is likely to change: the new task is built
             # from this dictionary alone, so anything left out is reset to

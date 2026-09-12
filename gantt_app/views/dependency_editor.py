@@ -335,6 +335,31 @@ class DependencyEditor(ctk.CTkFrame):
                                 parent=self.winfo_toplevel())
             return
 
+        # The same guard the Dependencies column applies, run against the
+        # links chosen so far rather than only the stored ones: a loop can
+        # be closed by a link added earlier in this dialog. The look-out
+        # points are the task and the rows above it - a row that holds work
+        # takes its dates from the rows inside it, so a task waiting on
+        # something that waits on one of those closes the loop through the
+        # roll-up (issue #47). A task being created is not in the plan for
+        # the plan to answer for, so its parent is asked about directly.
+        targets = {self.task.id}
+        targets |= self.project._ancestor_ids(self.task.id)
+        if self.task.parent_task_id is not None:
+            targets.add(self.task.parent_task_id)
+            targets |= self.project._ancestor_ids(self.task.parent_task_id)
+
+        with self.project._links_replaced(self.task.id, self.links):
+            circular = self.project._waits_on(match.id, targets)
+        if circular:
+            messagebox.showerror(
+                "Circular Dependency",
+                f"{label} already waits for this task - through its own "
+                f"links or through a row that holds it - so linking them "
+                f"would run in a circle.",
+                parent=self.winfo_toplevel())
+            return
+
         dep_type = TYPE_CODE_BY_LABEL.get(self.type_var.get(), 'FS')
         self.links.append(Dependency(match.id, dep_type,
                                      self.hardness_var.get(), self._lag()))

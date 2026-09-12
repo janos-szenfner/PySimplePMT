@@ -650,6 +650,11 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.name_entry = ctk.CTkEntry(frame)
         self._field(frame, "Name:", self.name_entry)
         self.name_entry.insert(0, self.seed_name())
+        # Under the title, free text: a short tag shown beside the name on
+        # the task grid (issue #52)
+        self.label_entry = ctk.CTkEntry(frame)
+        self._field(frame, "Label:", self.label_entry)
+        self.label_entry.insert(0, self.template.label or '')
         self._build_type(frame)
         self._build_identity(frame)
         self._build_parent(frame)
