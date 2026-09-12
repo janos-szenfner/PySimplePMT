@@ -365,15 +365,23 @@ _UNIT_DAYS = {'day': 1, 'week': 7, 'month': 30.44,
 _UNIT_LABEL = {'day': '22', 'week': '22', 'month': 'Sep',
                'quarter': 'Q3', 'half': 'H2', 'year': '2026'}
 
+#: How many months the month-sized units run for - the only units whose
+#: length is counted that way rather than in days.
+_UNIT_MONTHS = {'month': 1, 'quarter': 3, 'half': 6}
+
+
+def _measure_px(text: str, font_size: int) -> float:
+    """The pixel width of a header label at the cell font size."""
+    font = _font(max(6, int(font_size) - 2))
+    try:
+        return font.getbbox(text)[2]
+    except AttributeError:                  # very old Pillow
+        return font.getsize(text)[0]
+
 
 def _unit_label_px(unit: str, font_size: int) -> float:
     """How much room one cell of the unit needs, at a given font size."""
-    font = _font(max(6, int(font_size) - 2))
-    try:
-        width = font.getbbox(_UNIT_LABEL[unit])[2]
-    except AttributeError:                  # very old Pillow
-        width = font.getsize(_UNIT_LABEL[unit])[0]
-    return width + HEADER_CELL_PAD_PX
+    return _measure_px(_UNIT_LABEL[unit], font_size) + HEADER_CELL_PAD_PX
 
 
 def _header_mode(days: int, plot_span: float, font_size: int) -> str:
@@ -404,13 +412,12 @@ def _unit_start(day: date, unit: str) -> date:
     if unit == 'week':
         # Weeks are read from Monday, so a cell starts on one.
         return day - timedelta(days=day.weekday())
-    if unit == 'month':
-        return day.replace(day=1)
-    if unit == 'quarter':
-        return date(day.year, (day.month - 1) // 3 * 3 + 1, 1)
-    if unit == 'half':
-        return date(day.year, 1 if day.month <= 6 else 7, 1)
-    return date(day.year, 1, 1)
+    if unit == 'year':
+        return date(day.year, 1, 1)
+    # Months, quarters and halves are all month-sized: a unit begins on
+    # the first month of its own size that contains the date.
+    size = _UNIT_MONTHS[unit]
+    return date(day.year, (day.month - 1) // size * size + 1, 1)
 
 
 def _unit_next(day: date, unit: str) -> date:
@@ -419,16 +426,10 @@ def _unit_next(day: date, unit: str) -> date:
         return day + timedelta(days=1)
     if unit == 'week':
         return day + timedelta(days=7)
-    if unit == 'month':
-        return (date(day.year + 1, 1, 1) if day.month == 12
-                else date(day.year, day.month + 1, 1))
-    if unit == 'quarter':
-        return (date(day.year + 1, 1, 1) if day.month > 9
-                else date(day.year, day.month + 3, 1))
-    if unit == 'half':
-        return (date(day.year + 1, 1, 1) if day.month > 6
-                else date(day.year, 7, 1))
-    return date(day.year + 1, 1, 1)
+    if unit == 'year':
+        return date(day.year + 1, 1, 1)
+    years, month = divmod(day.month - 1 + _UNIT_MONTHS[unit], 12)
+    return date(day.year + years, month + 1, 1)
 
 
 def _unit_label(day: date, unit: str) -> str:
@@ -455,13 +456,8 @@ def _fit_label(candidates, width_px: float, font_size: int) -> str:
     to "SEP" - and a span with room for none is left blank rather than
     bleeding into its neighbour.
     """
-    font = _font(max(6, int(font_size) - 2))
     for text in candidates:
-        try:
-            width = font.getbbox(text)[2]
-        except AttributeError:              # very old Pillow
-            width = font.getsize(text)[0]
-        if width <= width_px - HEADER_CELL_PAD_PX:
+        if _measure_px(text, font_size) <= width_px - HEADER_CELL_PAD_PX:
             return text
     return ''
 
