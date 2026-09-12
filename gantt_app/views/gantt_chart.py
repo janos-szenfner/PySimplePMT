@@ -92,7 +92,7 @@ class GanttChart(ctk.CTkFrame):
         self.task_color = '#1f6aa5'
         self.milestone_color = '#f39c12'
         self.dependency_color = '#e74c3c'
-        self.critical_path_color = '#f39c12'
+        self.critical_path_color = '#e74c3c'
         
         # Chart settings (can be customized via GanttChartSettingsDialog)
         self.chart_settings = {
@@ -598,6 +598,10 @@ class GanttChart(ctk.CTkFrame):
         settings['dependency_color'] = self.dependency_color
         settings['critical_path_color'] = self.critical_path_color
         settings.update(getattr(self, 'chart_settings', {}) or {})
+        # The same highlight the task list paints: its toggle answers for
+        # the chart too, so the bars go red with the rows and back with them.
+        shown = getattr(self.task_list, 'critical_path_rows_shown', None)
+        settings['show_critical_path'] = bool(shown and shown())
         return settings
 
     def _figure_settings(self):

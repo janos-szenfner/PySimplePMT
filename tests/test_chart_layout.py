@@ -681,5 +681,52 @@ class TestBaselineOverlaySplitsRows(unittest.TestCase):
         self.assertNotEqual(bottom_pixel, (255, 255, 255))
 
 
+class TestCriticalPathHighlight(ChartLayoutTestCase):
+    """
+    Bars on the critical path go red only while the highlight is on.
+
+    The task list paints its critical rows when the toolbar icon is pressed;
+    the chart answers through the show_critical_path setting, so the two
+    agree about when the highlight is showing.
+    """
+
+    def _colours(self, layout):
+        """Every painted thing, by task id."""
+        found = {}
+        for group in (layout.bars, layout.summaries, layout.milestones):
+            for item in group:
+                found[item['task_id']] = item['color']
+        return found
+
+    def test_critical_bars_take_the_critical_colour_when_on(self):
+        self.project.apply_schedule()
+        layout = layout_chart(self.project, width=800,
+                              settings={'show_critical_path': True})
+        critical = {t.id for t in self.project.get_critical_path()}
+        colours = self._colours(layout)
+        for task in self.project.tasks:
+            expected = ('#e74c3c' if task.id in critical
+                        else task.color)
+            self.assertEqual(colours[task.id], expected, task.name)
+
+    def test_bars_keep_their_own_colour_when_off(self):
+        self.project.apply_schedule()
+        layout = layout_chart(self.project, width=800,
+                              settings={'show_critical_path': False})
+        for task in self.project.tasks:
+            self.assertEqual(self._colours(layout)[task.id], task.color,
+                             task.name)
+
+    def test_a_caller_that_does_not_say_still_gets_the_highlight(self):
+        """The historical behaviour: critical painted unless told not to."""
+        self.project.apply_schedule()
+        layout = layout_chart(self.project, width=800)
+        critical = {t.id for t in self.project.get_critical_path()}
+        colours = self._colours(layout)
+        self.assertTrue(any(colours[t.id] == '#e74c3c'
+                            for t in self.project.tasks
+                            if t.id in critical))
+
+
 if __name__ == '__main__':
     unittest.main()

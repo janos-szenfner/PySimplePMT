@@ -59,7 +59,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     'task_color': '#1f6aa5',
     'milestone_color': '#f39c12',
     'dependency_color': '#e74c3c',
-    'critical_path_color': '#f39c12',
+    'critical_path_color': '#e74c3c',
+    #: Whether tasks on the critical path are drawn in critical_path_color.
+    #: The screen chart answers with the toolbar's highlight toggle; callers
+    #: that do not say get the historical behaviour, which is to show them.
+    'show_critical_path': True,
     # The calendar strip across the top. Light values, like everything
     # above: GanttChartView.screen_settings swaps them for the appearance
     # in force, and the exporters keep these so a PNG or a PDF stays light.
@@ -458,7 +462,8 @@ def build_gantt_figure(project: Project,
     tasks = visible_tasks
     positions = {task.id: index for index, task in enumerate(tasks)}
 
-    critical_ids = {t.id for t in project.get_critical_path()}
+    critical_ids = ({t.id for t in project.get_critical_path()}
+                    if resolved.get('show_critical_path') else set())
 
     figure = go.Figure()
     _add_tasks(figure, tasks, project, positions,
@@ -466,8 +471,9 @@ def build_gantt_figure(project: Project,
     _add_milestones(figure, tasks, positions)
     _add_dependencies(figure, tasks, project, positions,
                       resolved['dependency_color'])
-    _add_critical_path(figure, project, positions,
-                       resolved['critical_path_color'])
+    if critical_ids:
+        _add_critical_path(figure, project, positions,
+                           resolved['critical_path_color'])
 
     min_date, max_date = calculate_date_range(tasks)
     min_date = as_date(min_date)

@@ -1900,6 +1900,7 @@ class Toolbar(ctk.CTkFrame):
 
         if task_list.critical_path_rows_shown():
             task_list.clear_critical_path_rows()
+            self._redraw_critical_chart()
             self._report("Critical path highlight off.")
             return
 
@@ -1908,6 +1909,7 @@ class Toolbar(ctk.CTkFrame):
 
         painted = task_list.show_critical_path_rows(
             task.id for task in self.project.get_critical_path())
+        self._redraw_critical_chart()
 
         if painted:
             self._report(f"{painted} rows on the critical path "
@@ -1915,6 +1917,16 @@ class Toolbar(ctk.CTkFrame):
         else:
             self._report("Nothing is on the critical path: "
                          "every task has float.")
+
+    def _redraw_critical_chart(self):
+        """
+        Redraw the chart so its bars take the highlight the list just took.
+
+        The rows the chart is drawn against have not changed - only what
+        they mean - so _rows_changed would see nothing to redraw for.
+        """
+        if self.gantt_chart is not None:
+            self.gantt_chart.draw_chart()
 
     def _report(self, message: str):
         """Say something in the status bar, where there is one."""

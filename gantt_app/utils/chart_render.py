@@ -632,7 +632,10 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
                          min_date=min_date, total_days=total_days)
 
     positions = {task.id: index for index, task in enumerate(tasks)}
-    critical = {t.id for t in project.get_critical_path()}
+    # Painted in critical_path_color only while the highlight is on - the
+    # toolbar toggle answers for the window, exports for themselves.
+    critical = ({t.id for t in project.get_critical_path()}
+                if resolved.get('show_critical_path') else set())
     # A task with sub-tasks spans the work beneath it rather than being work
     # of its own, so it is drawn as a bracket instead of a solid bar
     summary_ids = project.get_summary_task_ids()
