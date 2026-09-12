@@ -31,6 +31,7 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.models import TASK_TYPES, Task, Project
+from gantt_app.calendarregistry import PROJECT_DEFAULT_LABEL
 from gantt_app.dependencysyntax import format_links
 from gantt_app.taskstyle import resolve as resolve_style
 from gantt_app.utils.undoredo import ProjectStateTracker
@@ -518,6 +519,7 @@ class DragDropTaskList(ctk.CTkFrame):
             'Baseline Start', 'Start Variance', 'Baseline Finish',
             'Finish Variance', 'Baseline Duration', 'Duration Variance',
             'Baseline Work', 'Work Variance', 'Baseline Cost', 'Cost Variance',
+            'Task Calendar',
         ), show='tree headings')
 
         # Configure columns.
@@ -548,6 +550,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Work Variance', text='Work Var', anchor=tk.W)
         self.tree.heading('Baseline Cost', text='Base Cost', anchor=tk.W)
         self.tree.heading('Cost Variance', text='Cost Var', anchor=tk.W)
+        self.tree.heading('Task Calendar', text='Task Calendar', anchor=tk.W)
         
         # Column widths. #0 holds only the expander, so it stays narrow.
         #
@@ -582,6 +585,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('Work Variance', width=80, minwidth=60, stretch=False)
         self.tree.column('Baseline Cost', width=85, minwidth=60, stretch=False)
         self.tree.column('Cost Variance', width=80, minwidth=60, stretch=False)
+        self.tree.column('Task Calendar', width=110, minwidth=80, stretch=False)
         
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
@@ -1985,7 +1989,8 @@ class DragDropTaskList(ctk.CTkFrame):
             if slot_number is None:
                 self.tree['displaycolumns'] = (
                     'Type', 'Status', 'Duration', 'Start', 'End',
-                    'Progress', 'Dependencies', 'Milestone', 'Outline')
+                    'Progress', 'Dependencies', 'Milestone', 'Outline',
+                    'Task Calendar')
             else:
                 self.tree['displaycolumns'] = (
                     'Type', 'Status', 'Duration', 'Start', 'End',
@@ -1993,8 +1998,19 @@ class DragDropTaskList(ctk.CTkFrame):
                     'Baseline Start', 'Start Variance', 'Baseline Finish',
                     'Finish Variance', 'Baseline Duration', 'Duration Variance',
                     'Baseline Work', 'Work Variance', 'Baseline Cost',
-                    'Cost Variance')
+                    'Cost Variance', 'Task Calendar')
         self.update_task_list()
+
+    def _task_calendar_label(self, task) -> str:
+        """
+        The calendar the row is scheduled against, by name.
+
+        A task that names nothing - or names a calendar that has since been
+        removed - follows the plan's own, which is what resolve() answers;
+        the column says so the way the task editor's dropdown does.
+        """
+        named = self.project.calendars.get(getattr(task, 'calendar_id', None))
+        return named.name if named is not None else PROJECT_DEFAULT_LABEL
 
     def _task_variance_strings(self, task) -> tuple:
         """Return the baseline variance values for a task row."""
@@ -3325,7 +3341,8 @@ class DragDropTaskList(ctk.CTkFrame):
                                      deps_str,
                                      milestone_str,
                                      str(self.project.outline_level(task.id)),
-                                 ) + self._task_variance_strings(task))
+                                 ) + self._task_variance_strings(task)
+                                 + (self._task_calendar_label(task),))
         
         # What the row is. How it is painted is decided afterwards, once
         # every row is in place and the order they are drawn in is known -

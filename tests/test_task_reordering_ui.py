@@ -1384,5 +1384,63 @@ class TestShiftRangeSelection(TaskListTestCase):
         self.assertEqual(self.task_list._selection_anchor, "001")
 
 
+class TestTaskCalendarColumn(TaskListTestCase):
+    """
+    The Task Calendar column at the end of the grid (issue #37).
+
+    Every task follows a calendar - the plan's own unless the row names one
+    of the named calendars - and the column says which, the way the task
+    editor's Working calendar dropdown does.
+    """
+
+    def calendar_of(self, task_id):
+        """What the Task Calendar cell says for a row."""
+        columns = list(self.task_list.tree.cget('columns'))
+        index = columns.index('Task Calendar')
+        return self.task_list.tree.item(task_id, 'values')[index]
+
+    def test_it_is_the_last_column(self):
+        """Right of every column the grid had before it."""
+        self.assertEqual(
+            list(self.task_list.tree.cget('columns'))[-1], 'Task Calendar')
+
+    def test_the_heading_says_task_calendar(self):
+        """The issue asks for the column by that name."""
+        self.assertEqual(
+            self.task_list.tree.heading('Task Calendar', 'text'),
+            'Task Calendar')
+
+    def test_a_row_on_the_plan_calendar_says_so(self):
+        """Nothing picked follows the project's own."""
+        self.assertEqual(self.calendar_of("001"), "Project Default")
+
+    def test_a_row_on_a_named_calendar_names_it(self):
+        """The name, the way the editor's dropdown shows it."""
+        named = self.project.calendars.create("Weekend-Only Shift")
+        self.project.get_task_by_id("004").calendar_id = named.id
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.calendar_of("004"), "Weekend-Only Shift")
+
+    def test_a_row_naming_a_gone_calendar_falls_back(self):
+        """A deleted calendar resolves to the plan's own, and says so."""
+        named = self.project.calendars.create("Night Shift")
+        task = self.project.get_task_by_id("005")
+        task.calendar_id = named.id
+        self.project.calendars.remove(named.id)
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.calendar_of("005"), "Project Default")
+
+    def test_it_survives_a_baseline_compare_toggle(self):
+        """The column is shown whether the variance columns are or not."""
+        self.task_list.set_active_baseline(None, 1)
+        self.assertIn('Task Calendar',
+                      self.task_list.tree.cget('displaycolumns'))
+        self.task_list.set_active_baseline(None, None)
+        self.assertIn('Task Calendar',
+                      self.task_list.tree.cget('displaycolumns'))
+
+
 if __name__ == '__main__':
     unittest.main()
