@@ -23,7 +23,7 @@ from gantt_app.resource_model import ResourceRepository
 from gantt_app.taskstyle import TaskStyle
 from gantt_app.calendarregistry import CalendarRegistry, default_registry
 from gantt_app.workdaycalendar import (
-    WorkingCalendar, as_date, default_calendar,
+    IntersectingCalendar, WorkingCalendar, as_date, default_calendar,
 )
 
 
@@ -632,6 +632,11 @@ class Task:
     #: since been deleted falls back to the plan's own too, so removing a
     #: calendar never leaves a task without one.
     calendar_id: Optional[str] = None
+    #: MS Project's "Scheduling ignores resource calendars": set, the task is
+    #: scheduled on its own calendar alone instead of the intersection with
+    #: its resources' - the override for work that cannot wait for somebody's
+    #: week (issue #38).
+    ignores_resource_calendars: bool = False
     #: How this row is painted in the task list: its ink, its fill and its
     #: emphasis. Default for almost every row in almost every plan - see
     #: gantt_app.taskstyle, which is also where the defaults a summary row
@@ -1144,6 +1149,7 @@ class Task:
             'details': self.details,
             'label': self.label,
             'calendar_id': self.calendar_id,
+            'ignores_resource_calendars': self.ignores_resource_calendars,
             'resource_assignments': list(self.resource_assignments),
             # None for a row nobody has formatted, which is nearly all of
             # them; see TaskStyle.to_dict
@@ -1282,6 +1288,9 @@ class Task:
             # Absent in every plan saved before the field existed (issue #52)
             label=str(data.get('label') or ''),
             calendar_id=data.get('calendar_id') or None,
+            # Absent in every plan saved before the field existed (issue #38)
+            ignores_resource_calendars=bool(
+                data.get('ignores_resource_calendars', False)),
             resource_assignments=assignments,
             # Absent in every plan saved before formatting existed, which
             # opens with plain rows rather than failing
@@ -1348,7 +1357,8 @@ class Project:
         --------
         WorkingCalendar
             The named calendar the task follows, or the plan's own when it
-            names none - or names one that no longer exists.
+            names none - or names one that no longer exists - crossed with
+            the calendars of whatever resources are on it.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -1357,8 +1367,30 @@ class Project:
         per-task calendar work at all. The plan-wide numbers - the span the
         chart draws, where the project starts - stay on `self.calendar`,
         because they are not about any one task.
+
+        The calendar the task follows is then crossed with the calendars of
+        the resources on it (issue #38): a member's empty weekday or booked
+        days off are days the task cannot spend, whatever the plan says. A
+        task whose ignores_resource_calendars is set skips that - its own
+        calendar alone decides, which is what the flag is for.
         """
-        return self.calendars.resolve(task.calendar_id, self.calendar)
+        base = self.calendars.resolve(task.calendar_id, self.calendar)
+        if getattr(task, 'ignores_resource_calendars', False):
+            return base
+        # A resource that works no weekday at all cannot be intersected into
+        # a schedule; it is left out rather than making every day off.
+        resources = [
+            resource for resource in (
+                self.resource_repository.resources.get(a.get('resource_id'))
+                for a in task.resource_assignments
+            )
+            if resource is not None
+            and any(hours > 0
+                    for hours in resource.daily_capacity_hours.values())
+        ]
+        if not resources:
+            return base
+        return IntersectingCalendar(base, resources)
 
     def __setattr__(self, name: str, value) -> None:
         """Invalidate the ID index whenever the task list is replaced."""
@@ -3536,6 +3568,10 @@ class Project:
             return max(int(task.duration), 1)
         if task.end_date is None:
             return 1
+        # Measured on the calendar the task is actually scheduled on -
+        # resources included. Anything else disagrees with itself between
+        # passes: a span that grew to cover a resource's days off would
+        # measure bigger next time and grow again without settling.
         return max(self.calendar_for(task).working_days_between(
             task.start_date, task.end_date), 1)
 

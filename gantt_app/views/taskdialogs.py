@@ -231,6 +231,8 @@ class EditTaskDialog(TaskFormDialog):
             self.task.constraint_date = constraint_date
             self.task.effort_type = advanced['effort_type']
             self.task.effort_driven = advanced['effort_driven']
+            self.task.ignores_resource_calendars = \
+                advanced['ignores_resource_calendars']
             logger.debug(
                 "Task %r advanced set: deadline=%s constraint=%s%s",
                 self.task.name,
@@ -278,6 +280,8 @@ class EditTaskDialog(TaskFormDialog):
                     constraint_date=new_task.constraint_date,
                     effort_type=new_task.effort_type,
                     effort_driven=new_task.effort_driven,
+                    ignores_resource_calendars=\
+                        new_task.ignores_resource_calendars,
                     calendar_id=new_task.calendar_id,
                     details=new_task.details,
                     resource_assignments=list(new_task.resource_assignments),
@@ -514,6 +518,8 @@ class CreateTaskDialog(TaskFormDialog):
                 constraint_date=advanced['constraint_date'],
                 effort_type=advanced['effort_type'],
                 effort_driven=advanced['effort_driven'],
+                ignores_resource_calendars=\
+                    advanced['ignores_resource_calendars'],
                 calendar_id=self.chosen_calendar_id(),
                 details=details,
                 resource_assignments=list(assignments),

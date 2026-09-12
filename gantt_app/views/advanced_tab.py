@@ -70,6 +70,13 @@ EFFORT_DRIVEN_TOOLTIP = (
     "moved by the change.\n"
     "Direct edits to duration, work or units follow the Task Type instead."
 )
+RESOURCE_CALENDARS_TOOLTIP = (
+    "Set: the task is scheduled on its own calendar alone, and the days "
+    "off and short weeks of the resources on it stop applying - the "
+    "override for work that cannot wait.\n"
+    "Available while the task follows a named calendar rather than the "
+    "project's own."
+)
 
 
 class AdvancedTab(ctk.CTkFrame):
@@ -110,6 +117,7 @@ class AdvancedTab(ctk.CTkFrame):
         # tab.) The same order is the keyboard tab order, §12.1.
         self._build_constraint()
         self._build_task_type()
+        self._build_resource_calendars()
         self._build_deadline()
         self._apply_constraint_state()
         self._apply_effort_state()
@@ -336,6 +344,52 @@ class AdvancedTab(ctk.CTkFrame):
         return value if value in EFFORT_TYPES else EFFORT_FIXED_UNITS
 
     # ------------------------------------------------------------------
+    # Scheduling ignores resource calendars
+    # ------------------------------------------------------------------
+    def _build_resource_calendars(self):
+        """
+        The checkbox that lifts a task off its resources' calendars.
+
+        MS Project's rule (issue #38): a resource only works where its own
+        calendar and the task's agree, and this flag is the escape - set,
+        the task's calendar alone decides its days. It only answers when
+        the task follows a named calendar of its own, which the editor's
+        Working calendar dropdown is what sets.
+        """
+        self._heading("Scheduling", rule=True)
+
+        holder = self._row_frame("Ignores resource calendars:")
+        self.ignores_calendars_var = ctk.BooleanVar(
+            value=bool(getattr(self.task, 'ignores_resource_calendars',
+                               False)))
+        self.ignores_calendars_check = ctk.CTkCheckBox(
+            holder, text="", width=24, variable=self.ignores_calendars_var)
+        self.ignores_calendars_check.pack(side=tk.LEFT)
+        attach_tooltip(self.ignores_calendars_check,
+                       RESOURCE_CALENDARS_TOOLTIP)
+
+        self.set_ignores_calendars_enabled(
+            bool(getattr(self.task, 'calendar_id', None)))
+        self._hint("Enabled when the task follows a named calendar - set it "
+                   "in the General tab's Working calendar dropdown.")
+
+    def set_ignores_calendars_enabled(self, enabled: bool):
+        """
+        Grey the checkbox while no named calendar is chosen.
+
+        The override needs a task calendar to stand on; without one the box
+        cannot be set, matching what MS Project does to it (issue #38). The
+        form calls this when its Working calendar dropdown moves.
+        """
+        try:
+            self.ignores_calendars_check.configure(
+                state=tk.NORMAL if enabled else tk.DISABLED)
+        except (tk.TclError, ValueError):
+            logger.debug("Could not set the ignores-calendars state")
+        if not enabled:
+            self.ignores_calendars_var.set(False)
+
+    # ------------------------------------------------------------------
     # Validation on blur - reject an unparseable date, restore, and warn
     # ------------------------------------------------------------------
     def _watch_blur(self, entry: DateEntry, key: str):
@@ -482,6 +536,8 @@ class AdvancedTab(ctk.CTkFrame):
             'constraint_date': constraint_date,
             'effort_type': effort_type,
             'effort_driven': effort_driven,
+            'ignores_resource_calendars': bool(
+                self.ignores_calendars_var.get()),
         }
 
     def apply_to(self, task) -> None:
@@ -499,6 +555,7 @@ class AdvancedTab(ctk.CTkFrame):
         task.constraint_date = values['constraint_date']
         task.effort_type = values['effort_type']
         task.effort_driven = values['effort_driven']
+        task.ignores_resource_calendars = values['ignores_resource_calendars']
 
     def set_values(self, task) -> None:
         """Reload the controls from a task, e.g. after a Save & New reset."""
@@ -523,6 +580,11 @@ class AdvancedTab(ctk.CTkFrame):
         self.effort_type_var.set(effort_type)
         self.effort_driven_var.set(bool(task.effort_driven))
         self._apply_effort_state()
+
+        self.ignores_calendars_var.set(
+            bool(getattr(task, 'ignores_resource_calendars', False)))
+        self.set_ignores_calendars_enabled(
+            bool(getattr(task, 'calendar_id', None)))
 
     def mark_mixed(self) -> None:
         """

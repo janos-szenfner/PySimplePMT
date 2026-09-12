@@ -1118,6 +1118,120 @@ class WorkingCalendar:
                 f"overrides={len(self.overrides)})")
 
 
+class IntersectingCalendar:
+    """
+    A task calendar crossed with the calendars of its assigned resources.
+
+    A resource works only where its own calendar and the task's agree, which
+    is the rule MS Project schedules by (issue #38): the plan's Monday-Friday
+    week says nothing about a member's four-day pattern or a fortnight off,
+    and a task assigned to them stretches over the days they are away rather
+    than spending effort it cannot.
+
+    With several resources the day counts when any one of them can work it -
+    they take the task forward in parallel on their own days, and the
+    finish is where the last of the shared work lands. A task with nobody
+    assigned, or whose assignments all resolve to a week with no working
+    day at all, keeps the base calendar: a resource that never works cannot
+    be intersected into a schedule.
+
+    The interface is WorkingCalendar's: the scheduler asks the same
+    questions of either and does not know which it has.
+    """
+
+    def __init__(self, base: WorkingCalendar, resources: Iterable):
+        self.base = base
+        self.resources = list(resources)
+
+    def is_working_day(self, check_date: DateLike) -> bool:
+        """A day the task calendar works and at least one resource can work."""
+        if not self.base.is_working_day(check_date):
+            return False
+        return any(resource.works_on(check_date)
+                   for resource in self.resources)
+
+    def get_next_working_day(self, current_date: DateLike) -> DateLike:
+        """The first day on or after the date that both sides work."""
+        moved = current_date
+        for _ in range(MAX_STEPS):
+            if self.is_working_day(moved):
+                return moved
+            moved += timedelta(days=1)
+        logger.warning(
+            "No day worked by task and resource within %d days of %s; "
+            "leaving it where it is", MAX_STEPS, current_date
+        )
+        return current_date
+
+    def get_previous_working_day(self, current_date: DateLike) -> DateLike:
+        """The last day on or before the date that both sides work."""
+        moved = current_date
+        for _ in range(MAX_STEPS):
+            if self.is_working_day(moved):
+                return moved
+            moved -= timedelta(days=1)
+        logger.warning(
+            "No day worked by task and resource within %d days of %s; "
+            "leaving it where it is", MAX_STEPS, current_date
+        )
+        return current_date
+
+    def add_working_days(self, start_date: DateLike,
+                         duration_days: int) -> DateLike:
+        """The inclusive finish, spending duration only on days both work."""
+        if duration_days <= 0:
+            return start_date
+        current = self.get_next_working_day(start_date)
+        remaining = duration_days
+        for _ in range(MAX_STEPS):
+            if remaining <= 1:
+                return current
+            current += timedelta(days=1)
+            if self.is_working_day(current):
+                remaining -= 1
+        logger.warning("Duration of %s days from %s did not resolve within "
+                       "%d steps", duration_days, start_date, MAX_STEPS)
+        return current
+
+    def subtract_working_days(self, end_date: DateLike,
+                              duration_days: int) -> DateLike:
+        """The inclusive start, given the finish - add_working_days reversed."""
+        if duration_days <= 0:
+            return end_date
+        current = self.get_previous_working_day(end_date)
+        remaining = duration_days
+        for _ in range(MAX_STEPS):
+            if remaining <= 1:
+                return current
+            current -= timedelta(days=1)
+            if self.is_working_day(current):
+                remaining -= 1
+        logger.warning("Duration of %s days back from %s did not resolve "
+                       "within %d steps", duration_days, end_date, MAX_STEPS)
+        return current
+
+    def working_days_between(self, start_date: DateLike,
+                             end_date: DateLike) -> int:
+        """How many days in the inclusive span both sides work."""
+        if as_date(end_date) < as_date(start_date):
+            return 0
+        worked = 0
+        current = as_date(start_date)
+        last = as_date(end_date)
+        for _ in range(MAX_STEPS):
+            if current > last:
+                break
+            if self.is_working_day(current):
+                worked += 1
+            current += timedelta(days=1)
+        return worked
+
+    @staticmethod
+    def elapsed_days(start_date: DateLike, end_date: DateLike) -> int:
+        """Calendar days spanned; the same measure WorkingCalendar gives."""
+        return WorkingCalendar.elapsed_days(start_date, end_date)
+
+
 #: The calendar used when nothing else has been said: Monday to Friday, no
 #: holidays. Held as a module-level instance so a Task measuring its own
 #: duration agrees with a Project scheduling it. A project carrying its own

@@ -1167,6 +1167,9 @@ class ProjectStateTracker:
             # both missing, which meant editing a task's name silently put
             # it back on the plan's calendar and stripped its formatting.
             'calendar_id': kwargs.get('calendar_id', task.calendar_id),
+            'ignores_resource_calendars': kwargs.get(
+                'ignores_resource_calendars',
+                getattr(task, 'ignores_resource_calendars', False)),
             'style': kwargs.get('style', task.style),
             'resource_assignments': list(kwargs.get(
                 'resource_assignments', task.resource_assignments)),

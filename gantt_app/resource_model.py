@@ -178,6 +178,20 @@ class Resource:
                                                     value, unit),
                                 preserve_pattern=True)
 
+    def works_on(self, day) -> bool:
+        """
+        Whether the resource's own calendar works the given date.
+
+        A weekday the resource carries no capacity for is never worked - a
+        part-timer's empty Monday stays empty - and a date inside a days-off
+        range is off whatever its weekday's hours say.
+        """
+        value = day.date() if isinstance(day, datetime) else day
+        if self.daily_capacity_hours.get(DAYS[value.weekday()], 0.0) <= 0:
+            return False
+        return not any(r.start_date <= value <= r.end_date
+                       for r in self.days_off)
+
     def workload_status(self, workload_by_day: Dict[str, float]) -> Dict[str, dict]:
         status = {}
         for day in DAYS:

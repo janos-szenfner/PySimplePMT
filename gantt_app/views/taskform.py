@@ -917,6 +917,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                 finally:
                     self._recalculating = False
 
+        # The Advanced tab's resource-calendar override only answers while a
+        # named calendar is chosen, so it follows this dropdown.
+        tab = getattr(self, 'advanced_tab', None)
+        if tab is not None:
+            tab.set_ignores_calendars_enabled(
+                self.chosen_calendar_id() is not None)
+
         # The length is kept and the end re-walked from wherever the start
         # ended up, so a task pushed onto a Monday still holds its days.
         self._apply_live_rule('duration')
