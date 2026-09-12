@@ -515,61 +515,6 @@ class TestTheTaskEditorReference(unittest.TestCase):
                          date(2026, 9, 12))
 
 
-class TestMoreDatesOnTheAxis(unittest.TestCase):
-    """
-    How many date labels the chart shows.
-
-    DEVELOPMENT NOTES:
-    ------------------
-    The step was chosen to keep the count under a dozen whatever the width,
-    so a month-long plan was labelled once a week however wide the window -
-    and widening it added blank space between the same four dates.
-    """
-
-    def steps(self, days, width, font_size=12):
-        """The gap the axis would use, in days."""
-        from gantt_app.utils.chart_render import _tick_step
-        return _tick_step(days, width, font_size)
-
-    def test_a_wider_chart_shows_more_dates(self):
-        """Which is the whole complaint."""
-        narrow = self.steps(34, 600)
-        wide = self.steps(34, 1900)
-
-        self.assertLess(wide, narrow)
-
-    def test_a_month_on_a_normal_window_is_not_weekly(self):
-        """It was every seven days, which came to four labels."""
-        self.assertLessEqual(self.steps(34, 1400), 3)
-
-    def test_labels_are_never_packed_closer_than_they_fit(self):
-        """A denser axis is only an improvement while it stays readable."""
-        from gantt_app.utils.chart_render import _tick_label_px
-
-        for days in (14, 34, 90, 365):
-            for width in (500, 900, 1400, 1900, 2400):
-                step = self.steps(days, width)
-                labels = days / step
-                self.assertLessEqual(labels * _tick_label_px(12), width * 1.05,
-                                     f"{days}d at {width}px")
-
-    def test_bigger_type_thins_the_labels_out(self):
-        """
-        The tick size follows the chart's font_size, which is a setting.
-
-        A fixed label width was safe at the default and overlapped the moment
-        anybody made the type bigger.
-        """
-        self.assertGreaterEqual(self.steps(34, 1400, font_size=20),
-                                self.steps(34, 1400, font_size=10))
-
-    def test_a_caller_with_no_width_still_gets_a_step(self):
-        """The exporters ask without one."""
-        from gantt_app.utils.chart_render import _tick_step
-
-        self.assertGreater(_tick_step(34), 0)
-
-
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestTheHelpButtonSitsUnderLog(unittest.TestCase):
     """
@@ -821,16 +766,59 @@ class TestTheCalendarStrip(unittest.TestCase):
         self.assertTrue(starts)
         self.assertEqual(len(starts), len(layout.date_ticks))
 
-    def test_a_long_plan_falls_back_to_weeks_then_months(self):
-        """A day cell that cannot be read is worse than none."""
+    def test_a_long_plan_falls_back_through_the_units(self):
+        """A cell that cannot be read is worse than a coarser one."""
         from gantt_app.utils.chart_render import layout_chart
 
-        weeks = layout_chart(self.plan(days=120), width=1400)
-        months = layout_chart(self.plan(days=1200), width=900)
+        modes = [layout_chart(self.plan(days=days), width=width).header_mode
+                 for days, width in ((24, 1400), (120, 1400), (400, 1400),
+                                     (1200, 900), (3000, 900), (8000, 900))]
 
-        self.assertEqual(weeks.header_mode, 'week')
-        self.assertEqual(months.header_mode, 'month')
-        self.assertEqual(months.day_cells, [])
+        self.assertEqual(modes, ['day', 'week', 'month',
+                                 'quarter', 'half', 'year'])
+
+    def test_coarse_cells_name_their_unit(self):
+        """A month cell reads Sep, a quarter reads Q3 - the year is above."""
+        from gantt_app.utils.chart_render import layout_chart
+
+        months = layout_chart(self.plan(days=400), width=1400)
+        quarters = layout_chart(self.plan(days=1200), width=900)
+
+        self.assertEqual([c[2] for c in months.day_cells[:3]],
+                         ['Aug', 'Sep', 'Oct'])
+        self.assertTrue(all(c[2].startswith('Q')
+                            for c in quarters.day_cells))
+
+    def test_the_band_carries_years_once_the_cells_do_not(self):
+        """Months under years is the two-line header the issue asked for."""
+        from gantt_app.utils.chart_render import layout_chart
+
+        layout = layout_chart(self.plan(days=400), width=1400)
+
+        self.assertEqual([b[2] for b in layout.month_bands], ['2026', '2027'])
+
+    def test_a_band_that_cannot_fit_its_label_shortens_it(self):
+        """SEPTEMBER 2026 down to SEP - an empty band is the last resort."""
+        from gantt_app.utils.chart_render import _fit_label
+
+        day = datetime(2026, 9, 1)
+        full = (day.strftime('%B %Y').upper(),
+                day.strftime('%b %Y').upper(),
+                day.strftime('%b').upper())
+
+        self.assertEqual(_fit_label(full, 200, 12), 'SEPTEMBER 2026')
+        self.assertEqual(_fit_label(full, 95, 12), 'SEP 2026')
+        self.assertEqual(_fit_label(full, 45, 12), 'SEP')
+        self.assertEqual(_fit_label(full, 20, 12), '')
+
+    def test_the_year_floor_still_names_its_bands(self):
+        """The coarsest header is a row of years, not a blank strip."""
+        from gantt_app.utils.chart_render import layout_chart
+
+        layout = layout_chart(self.plan(days=8000), width=900)
+
+        self.assertEqual(layout.day_cells, [])
+        self.assertTrue(all(b[2] for b in layout.month_bands))
 
     def test_the_month_band_survives_every_mode(self):
         """It is what says where in the calendar the chart is."""

@@ -30,7 +30,7 @@ built into Pillow, so no font file has to be found or shipped.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from xml.sax.saxutils import escape
@@ -150,18 +150,21 @@ class ChartLayout:
     markers: List[Dict[str, Any]] = field(default_factory=list)
     row_labels: List[Tuple[float, str]] = field(default_factory=list)
     date_ticks: List[Tuple[float, str]] = field(default_factory=list)
-    #: The month band across the top: (x0, x1, "DECEMBER 2020").
+    #: The band across the top: (x0, x1, label). It carries the unit
+    #: containing the cells - months over days and weeks, years over
+    #: anything coarser - and the years themselves on the 'year' floor.
     month_bands: List[Tuple[float, float, str]] = field(default_factory=list)
-    #: The cells under it: (x0, x1, label, is_today, is_working, starts_week).
+    #: The cells under it: (x0, x1, label, is_today, is_working, starts_unit).
     #:
-    #: One per day where the days are wide enough to label, one per week
-    #: below that, and none at all when even a week is too narrow - see
-    #: _header_mode. The label is the day of the month; the month and the
-    #: year are in the band above, which is what lets a cell be 22px wide
-    #: rather than the 82px a full date needed.
+    #: One per unit where the cells are wide enough to label - a day, a
+    #: week, a month, a quarter or a half-year - and none at all on the
+    #: 'year' floor, where the band is the header; see _header_mode. The
+    #: label is the day of the month in the two finest modes; the month
+    #: and the year live in the band above, which is what lets a cell be
+    #: 22px wide rather than the 82px a full date needed.
     day_cells: List[Tuple[float, float, str, bool, bool, bool]] = field(
         default_factory=list)
-    #: Which of the three the header is in: 'day', 'week' or 'month'.
+    #: Which unit the header's cells are in - one of HEADER_UNITS.
     header_mode: str = 'month'
     #: The left and right edges of the plotting area, which the header's
     #: closing rules run between.
@@ -342,14 +345,6 @@ def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
     ]
 
 
-#: Clear space to leave between two date labels, in pixels.
-#:
-#: The labels themselves are measured - see _tick_label_px - so this is only
-#: the gap, and it is what stops "2026-08-17" and "2026-08-19" reading as one
-#: long number.
-TICK_LABEL_GAP_PX = 28
-
-
 #: What one day cell needs, in pixels: the widest day number plus padding.
 #:
 #: A cell is delimited by rules on either side, so it needs padding rather
@@ -358,110 +353,118 @@ TICK_LABEL_GAP_PX = 28
 #: month and the year moved up into the band.
 HEADER_CELL_PAD_PX = 10
 
-#: Below this, a week cell is not worth labelling either and the strip drops
-#: to the month band alone.
-MIN_WEEK_CELL_PX = 26
+#: The units the header's lower tier steps through as room runs out, finest
+#: to coarsest. 'day' gives every day a cell; 'year' is the floor - there is
+#: nothing coarser to fall back on, so its band simply goes unlabelled when
+#: even a year cannot carry its name.
+HEADER_UNITS = ('day', 'week', 'month', 'quarter', 'half', 'year')
+
+#: How many days one cell of each unit spans, and the label it has to fit.
+_UNIT_DAYS = {'day': 1, 'week': 7, 'month': 30.44,
+              'quarter': 91.31, 'half': 182.62, 'year': 365.25}
+_UNIT_LABEL = {'day': '22', 'week': '22', 'month': 'Sep',
+               'quarter': 'Q3', 'half': 'H2', 'year': '2026'}
 
 
-def _day_cell_px(font_size: int) -> float:
-    """How much room one day cell needs, at a given font size."""
+def _unit_label_px(unit: str, font_size: int) -> float:
+    """How much room one cell of the unit needs, at a given font size."""
     font = _font(max(6, int(font_size) - 2))
     try:
-        width = font.getbbox('22')[2]
+        width = font.getbbox(_UNIT_LABEL[unit])[2]
     except AttributeError:                  # very old Pillow
-        width = font.getsize('22')[0]
+        width = font.getsize(_UNIT_LABEL[unit])[0]
     return width + HEADER_CELL_PAD_PX
 
 
 def _header_mode(days: int, plot_span: float, font_size: int) -> str:
     """
-    Which of the three headers the available room allows.
+    Which header the available room allows.
 
     RETURNS:
     --------
     str
-        'day' when every day can carry its own number, 'week' when only a
-        week can, and 'month' when neither will fit and the band is left to
-        say where in the calendar the chart is.
+        The finest of HEADER_UNITS whose cells can still carry their
+        labels - 'day' when every day can carry its own number, 'year'
+        when nothing finer fits.
     """
     if days <= 0 or plot_span <= 0:
         return 'month'
 
     per_day = plot_span / days
-    if per_day >= _day_cell_px(font_size):
-        return 'day'
-    if per_day * 7 >= MIN_WEEK_CELL_PX:
-        return 'week'
-    return 'month'
+    for unit in HEADER_UNITS:
+        if per_day * _UNIT_DAYS[unit] >= _unit_label_px(unit, font_size):
+            return unit
+    return 'year'
 
 
-def _tick_label_px(font_size: int) -> float:
+def _unit_start(day: date, unit: str) -> date:
+    """The first day of the unit the date sits in."""
+    if unit == 'day':
+        return day
+    if unit == 'week':
+        # Weeks are read from Monday, so a cell starts on one.
+        return day - timedelta(days=day.weekday())
+    if unit == 'month':
+        return day.replace(day=1)
+    if unit == 'quarter':
+        return date(day.year, (day.month - 1) // 3 * 3 + 1, 1)
+    if unit == 'half':
+        return date(day.year, 1 if day.month <= 6 else 7, 1)
+    return date(day.year, 1, 1)
+
+
+def _unit_next(day: date, unit: str) -> date:
+    """The first day of the unit after the one the date starts."""
+    if unit == 'day':
+        return day + timedelta(days=1)
+    if unit == 'week':
+        return day + timedelta(days=7)
+    if unit == 'month':
+        return (date(day.year + 1, 1, 1) if day.month == 12
+                else date(day.year, day.month + 1, 1))
+    if unit == 'quarter':
+        return (date(day.year + 1, 1, 1) if day.month > 9
+                else date(day.year, day.month + 3, 1))
+    if unit == 'half':
+        return (date(day.year + 1, 1, 1) if day.month > 6
+                else date(day.year, 7, 1))
+    return date(day.year + 1, 1, 1)
+
+
+def _unit_label(day: date, unit: str) -> str:
+    """What a cell or band of the unit reads."""
+    if unit in ('day', 'week'):
+        # The containing month and year are in the band above, which is
+        # what lets a cell be a bare day number 22px wide.
+        return str(day.day)
+    if unit == 'month':
+        return day.strftime('%b')
+    if unit == 'quarter':
+        return f"Q{(day.month - 1) // 3 + 1}"
+    if unit == 'half':
+        return 'H1' if day.month <= 6 else 'H2'
+    return str(day.year)
+
+
+def _fit_label(candidates, width_px: float, font_size: int) -> str:
     """
-    How much room one date label needs, at a given font size.
+    The first candidate that fits the span, else ''.
 
-    Measured from the font rather than assumed, because the tick size
-    follows the chart's font_size setting - which the user can raise in
-    View > Settings. A fixed number was safe at the default and overlapped
-    the moment anybody made the type bigger.
+    A band running off the chart edge, or one squeezed by a coarse mode,
+    still shows the longest name it has room for - "SEPTEMBER 2026" down
+    to "SEP" - and a span with room for none is left blank rather than
+    bleeding into its neighbour.
     """
     font = _font(max(6, int(font_size) - 2))
-    sample = '2026-08-17'
-    try:
-        width = font.getbbox(sample)[2]
-    except AttributeError:                  # very old Pillow
-        width = font.getsize(sample)[0]
-    return width + TICK_LABEL_GAP_PX
+    for text in candidates:
+        try:
+            width = font.getbbox(text)[2]
+        except AttributeError:              # very old Pillow
+            width = font.getsize(text)[0]
+        if width <= width_px - HEADER_CELL_PAD_PX:
+            return text
+    return ''
 
-#: The gaps a date axis is allowed to step by, in days.
-#:
-#: Three, four and five are in here for the middle sizes. Without them the
-#: list jumped straight from 2 to 7, so a month-long plan on a wide window
-#: was labelled once a week however much room there was - which is what a
-#: chart showing four dates across its whole width was.
-TICK_STEPS = (1, 2, 3, 4, 5, 7, 10, 14, 21, 30, 60, 90, 180, 365)
-
-
-def _tick_step(days: int, plot_span: float = 0, font_size: int = 12) -> int:
-    """
-    Choose the gap between date labels.
-
-    PARAMETERS:
-    -----------
-    days : int
-        How many days the axis covers.
-    plot_span : float
-        How many pixels it covers. Zero falls back to a fixed dozen labels,
-        for a caller that has no width to offer.
-    font_size : int
-        The chart's font size, which the tick labels are sized from.
-
-    RETURNS:
-    --------
-    int
-        Days between labels: the smallest step in TICK_STEPS whose labels
-        still fit.
-
-    DEVELOPMENT NOTES:
-    ------------------
-    Worked out from the room available rather than from a fixed count. A
-    dozen labels is right for a narrow window and wrong for a wide one, and
-    it was the same dozen either way - so widening the window, or zooming
-    in, added blank space between the same four dates rather than
-    more dates.
-
-    The pixel budget is what decides it now, so a wider chart or a deeper
-    zoom shows more of the calendar, and a narrow one thins the labels out
-    rather than overlapping them.
-    """
-    if plot_span > 0:
-        fits = max(2, int(plot_span // _tick_label_px(font_size)))
-    else:
-        fits = 12
-
-    for step in TICK_STEPS:
-        if days / step <= fits:
-            return step
-    return max(1, int(days // fits))
 
 
 #: Horizontal space each day should get before the chart starts scrolling.
@@ -768,57 +771,56 @@ def _build_date_header(layout: 'ChartLayout', project: Project,
     """
     font_size = layout.settings.get('font_size', 12)
     layout.header_mode = _header_mode(total_days, plot_span, font_size)
+    mode = layout.header_mode
 
     calendar = project.calendar
     today = datetime.now().date()
     min_date = as_date(min_date)
     max_date = as_date(max_date)
-    day = min_date
     last = max_date
 
-    # ---- the month band -------------------------------------------------
-    band_start, band_key = day, (day.year, day.month)
-    walk = day
+    # ---- the band -------------------------------------------------------
+    # The unit containing whatever the cells show: months above days and
+    # weeks, years above months, quarters and halves. On the 'year' floor
+    # the band carries the years itself - there is no containing unit left
+    # and no tier beneath it.
+    band_unit = 'month' if mode in ('day', 'week') else 'year'
+    walk = _unit_start(min_date, band_unit)
     while walk <= last:
-        key = (walk.year, walk.month)
-        if key != band_key:
-            layout.month_bands.append(
-                (x_for(band_start), x_for(walk),
-                 band_start.strftime('%B %Y').upper()))
-            band_start, band_key = walk, key
-        walk += timedelta(days=1)
-    layout.month_bands.append(
-        (x_for(band_start), x_for(walk), band_start.strftime('%B %Y').upper()))
+        finish = _unit_next(walk, band_unit)
+        width_px = x_for(finish) - x_for(walk)
+        if band_unit == 'month':
+            candidates = (walk.strftime('%B %Y').upper(),
+                          walk.strftime('%b %Y').upper(),
+                          walk.strftime('%b').upper())
+        else:
+            candidates = (str(walk.year), f"'{walk.year % 100}")
+        layout.month_bands.append(
+            (x_for(walk), x_for(finish),
+             _fit_label(candidates, width_px, font_size)))
+        if mode == 'year':
+            layout.date_ticks.append((x_for(walk), walk.strftime('%Y-%m-%d')))
+        walk = finish
 
-    # ---- the cells under it ---------------------------------------------
-    if layout.header_mode == 'month':
-        # Nothing fits; the band alone says where in the calendar this is,
-        # and the gridlines fall back to the stepped dates.
-        step = _tick_step(total_days, plot_span, font_size)
-        tick = min_date
-        while tick <= max_date:
-            layout.date_ticks.append((x_for(tick), tick.strftime('%Y-%m-%d')))
-            tick += timedelta(days=step)
+    if mode == 'year':
+        # The band alone says where in the calendar this is.
         return
 
-    span = 1 if layout.header_mode == 'day' else 7
-    walk = day
-    if span == 7:
-        # Weeks are read from Monday, so the first cell starts on one
-        walk -= timedelta(days=walk.weekday())
-
+    # ---- the cells under it ---------------------------------------------
+    walk = _unit_start(min_date, mode)
     while walk <= last:
-        finish = walk + timedelta(days=span)
-        starts_week = walk.weekday() == 0
+        finish = _unit_next(walk, mode)
+        starts_unit = mode != 'day' or walk.weekday() == 0
         layout.day_cells.append((
-            x_for(walk), x_for(finish), str(walk.day),
-            as_date(walk) == today,
-            calendar.is_working_day(walk),
-            starts_week,
+            x_for(walk), x_for(finish), _unit_label(walk, mode),
+            walk <= today < finish,
+            (calendar.is_working_day(walk)
+             if mode in ('day', 'week') else True),
+            starts_unit,
         ))
-        # A rule down the chart at the start of each week, which is what
+        # A rule down the chart at the start of each unit, which is what
         # gives the strip its rhythm now that the weekday letters are gone
-        if starts_week:
+        if starts_unit:
             layout.date_ticks.append((x_for(walk), walk.strftime('%Y-%m-%d')))
         walk = finish
 
@@ -897,7 +899,7 @@ def _svg_date_header(layout: 'ChartLayout', s: Dict[str, Any],
             f'dominant-baseline="central" font-family="sans-serif" '
             f'font-size="{font_size - 2}" fill="{ink}">{escape(label)}</text>')
 
-    if layout.day_cells:
+    if layout.day_cells or layout.month_bands:
         parts.append(
             f'<line x1="{layout.plot_right:.1f}" y1="{plot_top}" '
             f'x2="{layout.plot_right:.1f}" y2="{cell_bottom}" '
@@ -1215,7 +1217,7 @@ def _draw_date_header(draw, layout: 'ChartLayout', s: Dict[str, Any],
     # ---- the rules closing the strip off --------------------------------
     # The cells draw a rule on their left edge only, so the last one needs
     # its right edge drawn or the strip ends in mid-air.
-    if layout.day_cells:
+    if layout.day_cells or layout.month_bands:
         draw.line([(sx(layout.plot_right), sx(plot_top)),
                    (sx(layout.plot_right), sx(cell_bottom))],
                   fill=s['header_week_rule'], width=line_width)
