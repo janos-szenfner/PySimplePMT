@@ -84,7 +84,7 @@ CONSTRAINT_START_NO_EARLIER_THAN = '4'
 #: Colours, matching the GanttProject import so a plan does not change
 #: appearance depending on which format it arrived in.
 DEFAULT_COLOR = '#1f6aa5'
-MILESTONE_COLOR = '#e74c3c'
+MILESTONE_COLOR = '#f39c12'
 
 #: Ceiling on expanding one calendar exception that names a range of dates.
 MAX_EXCEPTION_SPAN = 366 * 5

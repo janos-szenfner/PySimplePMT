@@ -19,7 +19,7 @@ MERMAID_THEMES = {
     "Default": {
         "bg_color": "#ffffff",
         "task_color": "#1f6aa5",
-        "milestone_color": "#e74c3c",
+        "milestone_color": "#f39c12",
         "dependency_color": "#e74c3c",
         "text_color": "#000000",
         "grid_color": "#ecf0f1"

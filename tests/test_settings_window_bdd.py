@@ -63,7 +63,6 @@ def the_unified_settings_window_is_open(settings_context):
         settings_context["project"],
         open_project=callbacks["Project"],
         open_resource=callbacks["Resource"],
-        open_gantt=callbacks["Gantt"],
         open_calendar=callbacks["Calendar"],
     )
     window.withdraw()
@@ -140,12 +139,6 @@ def resource_tab_shows_counts(settings_window):
     text = "\n".join(_widget_texts(settings_window.tabs["Resource"]))
     assert "Resources" in text and "2" in text
     assert "Teams" in text and "1" in text
-
-
-@then("the Gantt tab offers the existing Gantt settings editor")
-def gantt_tab_offers_editor(settings_window):
-    text = "\n".join(_widget_texts(settings_window.tabs["Gantt"]))
-    assert "Open Gantt Settings" in text
 
 
 @then("the Calendar tab shows working days, holiday countries, and named calendars")

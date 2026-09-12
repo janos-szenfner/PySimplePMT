@@ -430,7 +430,7 @@ class TestGANColors(unittest.TestCase):
         self.assertIn('default', colors)
         self.assertIn('milestone', colors)
         self.assertEqual(colors['default'], '#1f6aa5')
-        self.assertEqual(colors['milestone'], '#e74c3c')
+        self.assertEqual(colors['milestone'], '#f39c12')
 
     def test_parse_colors_from_xml(self):
         """RGB colour definitions convert to hex."""

@@ -129,8 +129,8 @@ class XLSXImporter:
             when the sheet carries an explicit 'Parent Task' column.
         """
         self.default_color = "#1f6aa5"
-        self.milestone_color = "#e74c3c"
-        self.phase_color = "#34495e"
+        self.milestone_color = "#f39c12"
+        self.phase_color = "#2ecc71"
         self.group_by_phase = group_by_phase
 
     # ------------------------------------------------------------------

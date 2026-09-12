@@ -17,7 +17,7 @@ class SettingsWindow(ctk.CTkToplevel):
     """Modern four-tab hub that preserves the existing settings editors."""
 
     GEOMETRY = "800x600"
-    TABS = ("Project", "Resource", "Gantt", "Calendar", "Presets", "Baseline",
+    TABS = ("Project", "Resource", "Calendar", "Presets", "Baseline",
             "System UI")
 
     def __init__(
@@ -26,7 +26,6 @@ class SettingsWindow(ctk.CTkToplevel):
         project,
         open_project: Callable[[], None],
         open_resource: Callable[[], None],
-        open_gantt: Callable[[], None],
         open_calendar: Callable[[], None],
         baseline_manager: Optional[BaselineManager] = None,
         initial_tab: str = "Project",
@@ -42,7 +41,6 @@ class SettingsWindow(ctk.CTkToplevel):
         self._openers: Dict[str, Callable[[], None]] = {
             "Project": open_project,
             "Resource": open_resource,
-            "Gantt": open_gantt,
             "Calendar": open_calendar,
         }
 
@@ -71,8 +69,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ).pack(anchor=tk.W)
         ctk.CTkLabel(
             heading,
-            text="Configure the project, resources, chart, calendars, "
-                 "baselines and appearance.",
+            text="Configure the project, resources, calendars, baselines "
+                 "and appearance.",
             text_color=theme.MUTED_TEXT,
         ).pack(anchor=tk.W, pady=(2, 0))
 
@@ -82,7 +80,6 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self._build_project_tab()
         self._build_resource_tab()
-        self._build_gantt_tab()
         self._build_calendar_tab()
         self._build_presets_tab()
         self._build_baseline_tab()
@@ -173,20 +170,6 @@ class SettingsWindow(ctk.CTkToplevel):
                 ("Active project", self.project.name or "New Project"),
             ),
             "Open Resource Settings",
-        )
-
-    def _build_gantt_tab(self):
-        """Build the Gantt settings overview."""
-        self._card(
-            "Gantt",
-            "Gantt Chart Settings",
-            "Configure chart fonts, theme, task and milestone colours, "
-            "dependency lines, background, and grid appearance.",
-            (
-                ("Chart", "Current project Gantt chart"),
-                ("Appearance", "Uses the active application theme"),
-            ),
-            "Open Gantt Settings",
         )
 
     def _build_calendar_tab(self):

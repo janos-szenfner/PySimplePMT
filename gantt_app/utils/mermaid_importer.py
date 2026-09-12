@@ -56,8 +56,8 @@ class MermaidImporter:
             flat task list instead.
         """
         self.default_color = "#1f6aa5"
-        self.milestone_color = "#e74c3c"
-        self.section_color = "#34495e"
+        self.milestone_color = "#f39c12"
+        self.section_color = "#2ecc71"
         self.group_by_section = group_by_section
 
     def _parse_date(self, date_str: str, date_format: str = "%Y-%m-%d") -> Optional[datetime]:

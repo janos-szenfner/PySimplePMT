@@ -57,7 +57,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     'text_color': '#000000',
     'grid_color': '#ecf0f1',
     'task_color': '#1f6aa5',
-    'milestone_color': '#e74c3c',
+    'milestone_color': '#f39c12',
     'dependency_color': '#e74c3c',
     'critical_path_color': '#f39c12',
     # The calendar strip across the top. Light values, like everything

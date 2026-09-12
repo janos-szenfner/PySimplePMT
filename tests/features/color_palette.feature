@@ -126,9 +126,9 @@ Feature: Color palette functionality
   Scenario: Create dialog defaults by task type
     Given a project
     When creating a task dialog for "Task" type
-    Then the color entry should default to "#3498db"
+    Then the color entry should default to "#1f6aa5"
     When creating a task dialog for "Milestone" type
-    Then the color entry should default to "#e74c3c"
+    Then the color entry should default to "#f39c12"
 
   # COLUMN SIZING TESTS (need display)
 

@@ -90,7 +90,7 @@ class GanttChart(ctk.CTkFrame):
         
         # Colors - these match the theme used in the exporters
         self.task_color = '#1f6aa5'
-        self.milestone_color = '#e74c3c'
+        self.milestone_color = '#f39c12'
         self.dependency_color = '#e74c3c'
         self.critical_path_color = '#f39c12'
         

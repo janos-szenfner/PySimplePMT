@@ -879,8 +879,8 @@ class Task:
         )
     
     @classmethod
-    def create_milestone(cls, name: str, date: datetime, 
-                        color: str = "#e74c3c", 
+    def create_milestone(cls, name: str, date: datetime,
+                        color: str = "#f39c12",
                         dependencies: List[str] = None,
                         task_id: str = None) -> 'Task':
         """
@@ -905,9 +905,9 @@ class Task:
         )
     
     @classmethod
-    def create_subtask(cls, name: str, parent_task: 'Task', 
+    def create_subtask(cls, name: str, parent_task: 'Task',
                       end_date: Optional[datetime] = None,
-                      color: str = "#9b59b6",
+                      color: str = "#1f6aa5",
                       progress: int = 0,
                       dependencies: List[str] = None,
                       task_id: str = None) -> 'Task':
@@ -923,7 +923,7 @@ class Task:
         end_date : datetime, optional
             End date for the subtask. If not provided, only start_date is set.
         color : str, optional
-            Hex color for visualization (default: purple)
+            Hex color for visualization (default: the task blue)
         progress : int, optional
             Initial progress percentage (default: 0)
         dependencies : List[str], optional
@@ -966,8 +966,8 @@ class Task:
         )
     
     @classmethod
-    def create_phase(cls, name: str, start_date: datetime, 
-                     color: str = "#34495e", progress: int = 0,
+    def create_phase(cls, name: str, start_date: datetime,
+                     color: str = "#2ecc71", progress: int = 0,
                      dependencies: List[str] = None, task_id: str = None) -> 'Task':
         """
         Create a new Phase (high-level lifecycle container).
@@ -979,7 +979,7 @@ class Task:
         start_date : datetime
             Start date of the phase
         color : str, optional
-            Hex color for visualization (default: gray)
+            Hex color for visualization (default: green)
         progress : int, optional
             Initial progress percentage (default: 0)
         dependencies : List[str], optional

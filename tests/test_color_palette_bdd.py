@@ -400,7 +400,7 @@ def creating_a_task_dialog_for(root, project, task_type):
 
 @then(parsers.parse('the color entry should default to "{color}"'))
 def check_create_dialog_color_default(create_dialog, color):
-    """A task opens blue, a milestone red; see DEFAULT_COLORS."""
+    """A task opens blue, a milestone orange; see DEFAULT_COLORS."""
     assert create_dialog.color_entry.get() == color
     create_dialog.destroy()
 

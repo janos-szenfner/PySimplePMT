@@ -26,7 +26,6 @@ from gantt_app.utils.mpp_importer import (
 )
 from gantt_app.utils.mermaid_importer import import_mermaid_file
 from gantt_app.utils.xlsx_importer import import_xlsx_file
-from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
 from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.gan_exporter import export_project_to_gan
 from gantt_app.utils.msproject_exporter import export_project_to_msproject
@@ -1698,7 +1697,6 @@ class Toolbar(ctk.CTkFrame):
             self.project,
             open_project=self.edit_project_info,
             open_resource=self.open_resource_settings,
-            open_gantt=self.open_gantt_chart_settings,
             open_calendar=self.edit_holidays,
             baseline_manager=self.baseline_manager,
             initial_tab=initial_tab,
@@ -2480,21 +2478,11 @@ class Toolbar(ctk.CTkFrame):
 
     def export_mermaid(self):
         """Export the current project to a Mermaid (.mmd) file."""
-        # Ask for file path
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".mmd",
-            filetypes=[("Mermaid Files", "*.mmd"), ("All Files", "*.*")],
-            title="Export Mermaid File"
-        )
-        
-        if not file_path:
-            return
-        
-        # Export project to Mermaid
-        if export_project_to_mermaid(self.project, file_path):
-            messagebox.showinfo("Success", "Project exported to Mermaid successfully!")
-        else:
-            messagebox.showerror("Error", "Failed to export project to Mermaid")
+        # Text size, theme and where to save are asked on the export sheet
+        # first; the file is written from there.
+        from gantt_app.views.mermaidexport import export_mermaid_dialog
+        export_mermaid_dialog(self.winfo_toplevel(), self.project,
+                              gantt_chart=self.gantt_chart)
     
     def export_svg(self):
         """Export the Gantt chart to a scalable SVG file."""
@@ -2880,35 +2868,6 @@ class Toolbar(ctk.CTkFrame):
             theme_controller=self.theme_controller,
         )
 
-    def open_gantt_chart_settings(self):
-        """Open the Gantt chart settings dialog."""
-        if self.gantt_chart:
-            from gantt_app.views.ganttsettingsw import GanttChartSettingsDialog
-            
-            try:
-                dialog = GanttChartSettingsDialog(
-                    self.master, 
-                    self.gantt_chart,
-                    on_settings_changed=self._on_gantt_settings_changed
-                )
-                dialog.wait_window()
-            except Exception as e:
-                logger.exception("Could not open Gantt chart settings")
-                messagebox.showerror(
-                    "Settings Error",
-                    f"Could not open Gantt chart settings:\n{e}"
-                )
-        else:
-            messagebox.showerror(
-                "Error",
-                "Gantt chart is not available. Cannot open settings."
-            )
-    
-    def _on_gantt_settings_changed(self, settings: Dict):
-        """Handle Gantt chart settings changes."""
-        logger.debug("Gantt chart settings changed: %s", settings)
-        # The chart will be redrawn automatically by the settings dialog
-    
     def set_project(self, project: Project):
         """Set a new project for the toolbar."""
         self.project = project

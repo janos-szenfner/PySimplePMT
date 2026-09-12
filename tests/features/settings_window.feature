@@ -6,7 +6,7 @@ Feature: Unified tabbed settings window
     And the unified Settings window is open
 
   Scenario: The Settings window presents its categories
-    Then the Settings tabs are "Project, Resource, Gantt, Calendar, Presets, Baseline, System UI"
+    Then the Settings tabs are "Project, Resource, Calendar, Presets, Baseline, System UI"
 
   Scenario: Project tab shows the current project summary
     When the Project tab is selected
@@ -15,10 +15,6 @@ Feature: Unified tabbed settings window
   Scenario: Resource tab shows repository counts
     When the Resource tab is selected
     Then the Resource tab shows resource and team counts
-
-  Scenario: Gantt tab describes chart appearance settings
-    When the Gantt tab is selected
-    Then the Gantt tab offers the existing Gantt settings editor
 
   Scenario: Calendar tab shows calendar counts
     When the Calendar tab is selected
@@ -33,7 +29,6 @@ Feature: Unified tabbed settings window
       | tab      |
       | Project  |
       | Resource |
-      | Gantt    |
       | Calendar |
 
   Scenario: Escape or Close leaves settings unchanged

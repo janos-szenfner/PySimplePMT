@@ -484,19 +484,27 @@ def _group_tasks_by_section(tasks: List[Task], project: Project,
 
 
 def generate_mermaid_content(project: Project,
-                            include_date_format: bool = True) -> str:
+                            include_date_format: bool = True,
+                            mermaid_theme: Optional[str] = None,
+                            font_size: Optional[int] = None) -> str:
     """
     Generate Mermaid Gantt chart content from a Project.
-    
+
     This is the main content generation function. It creates a complete
     Mermaid Gantt chart string that can be saved to a file or used directly.
-    
+
     PARAMETERS:
     -----------
     project : Project
         The project to export
     include_date_format : bool, optional
         Whether to include the dateFormat directive (default: True)
+    mermaid_theme : Optional[str]
+        A Mermaid theme name - 'default', 'base', 'dark', 'forest' or
+        'neutral' - written into the init directive so a renderer draws the
+        chart in it (https://mermaid.ai/open-source/config/theming.html).
+    font_size : Optional[int]
+        The text size in px, written as the themeVariables fontSize.
         
     RETURNS:
     --------
@@ -522,7 +530,17 @@ def generate_mermaid_content(project: Project,
     lines = []
     used_ids = set()
     id_to_mermaid_id = {}  # Map internal task IDs to Mermaid IDs
-    
+
+    # The init directive tells a renderer which theme and text size to draw
+    # with; it has to sit ahead of the 'gantt' keyword to be read.
+    init: Dict[str, object] = {}
+    if mermaid_theme:
+        init['theme'] = str(mermaid_theme).lower()
+    if font_size:
+        init['themeVariables'] = {'fontSize': f'{int(font_size)}px'}
+    if init:
+        lines.append(f"%%{{init: {json.dumps(init)}}}%%")
+
     # Start with gantt directive
     lines.append("gantt")
     
@@ -602,8 +620,10 @@ def generate_mermaid_content(project: Project,
     return "\n".join(lines)
 
 
-def export_project_to_mermaid(project: Project, filepath: str, 
-                              include_date_format: bool = True) -> bool:
+def export_project_to_mermaid(project: Project, filepath: str,
+                              include_date_format: bool = True,
+                              mermaid_theme: Optional[str] = None,
+                              font_size: Optional[int] = None) -> bool:
     """
     Export a Project to Mermaid Gantt chart format.
     
@@ -618,6 +638,11 @@ def export_project_to_mermaid(project: Project, filepath: str,
         Path where the Mermaid file should be saved
     include_date_format : bool, optional
         Whether to include the dateFormat directive (default: True)
+    mermaid_theme : Optional[str]
+        A Mermaid theme name for the init directive; see
+        generate_mermaid_content.
+    font_size : Optional[int]
+        The text size in px for the init directive.
         
     RETURNS:
     --------
@@ -655,7 +680,8 @@ def export_project_to_mermaid(project: Project, filepath: str,
         path.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate Mermaid content
-        content = generate_mermaid_content(project, include_date_format)
+        content = generate_mermaid_content(project, include_date_format,
+                                           mermaid_theme, font_size)
         
         # Write to file atomically, preserving the previous file as a backup
         with open(temp_path, 'w', encoding='utf-8') as f:

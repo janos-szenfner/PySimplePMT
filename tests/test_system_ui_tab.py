@@ -72,7 +72,7 @@ class TestSystemUITab(unittest.TestCase):
         window = SettingsWindow(
             self.root, Project(name="P"),
             open_project=noop, open_resource=noop,
-            open_gantt=noop, open_calendar=noop,
+            open_calendar=noop,
             theme_controller=controller)
         window.withdraw()
         window.update_idletasks()

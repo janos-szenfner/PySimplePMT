@@ -242,7 +242,7 @@ class GANImporter:
             calendar days.
         """
         self.default_color = "#1f6aa5"
-        self.milestone_color = "#e74c3c"
+        self.milestone_color = "#f39c12"
         self.respect_calendar = respect_calendar
 
     def parse_date(self, date_str: str) -> Optional[datetime]:
