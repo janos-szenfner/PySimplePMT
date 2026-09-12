@@ -591,6 +591,8 @@ class DragDropTaskList(ctk.CTkFrame):
         
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        theme.style_scrollbar(vsb)
+        theme.style_scrollbar(hsb)
 
         self.tree.configure(yscrollcommand=self._rows_scrolled,
                             xscrollcommand=hsb.set)

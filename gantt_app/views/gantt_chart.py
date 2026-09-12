@@ -749,6 +749,10 @@ class GanttChart(ctk.CTkFrame):
                                  command=canvas.yview)
         horizontal = ttk.Scrollbar(container, orient=tk.HORIZONTAL,
                                    command=canvas.xview)
+        # Classic scrollbars on Tk 8.5 take no TScrollbar style; see
+        # theme.style_scrollbar
+        theme.style_scrollbar(vertical)
+        theme.style_scrollbar(horizontal)
         canvas.configure(yscrollcommand=vertical.set,
                          xscrollcommand=horizontal.set)
 

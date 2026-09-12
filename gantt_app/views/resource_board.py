@@ -289,6 +289,7 @@ class ResourceBoard(ctk.CTkFrame):
         self.task_tree_scrollbar = ttk.Scrollbar(
             self.backlog_frame, orient="vertical",
             command=self.task_tree.yview)
+        theme.style_scrollbar(self.task_tree_scrollbar)
         self.task_tree.configure(yscrollcommand=self.task_tree_scrollbar.set)
         self.task_tree_scrollbar.grid(row=0, column=1, sticky="ns")
 
@@ -405,6 +406,8 @@ class ResourceBoard(ctk.CTkFrame):
         self.heatmap_vbar = ttk.Scrollbar(
             self.heatmap_frame, orient="vertical",
             command=self.heatmap_canvas.yview)
+        theme.style_scrollbar(self.heatmap_hbar)
+        theme.style_scrollbar(self.heatmap_vbar)
         self.heatmap_canvas.configure(
             xscrollcommand=self.heatmap_hbar.set,
             yscrollcommand=self.heatmap_vbar.set)

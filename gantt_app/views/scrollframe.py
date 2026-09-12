@@ -41,6 +41,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+from gantt_app import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -91,6 +92,7 @@ class ScrollFrame(ctk.CTkFrame):
 
         self.scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL,
                                        command=self.canvas.yview)
+        theme.style_scrollbar(self.scrollbar)
         self.canvas.configure(yscrollcommand=self._scrolled)
 
         self.content = ctk.CTkFrame(self.canvas, fg_color='transparent')

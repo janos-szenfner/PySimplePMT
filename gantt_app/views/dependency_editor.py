@@ -184,6 +184,7 @@ class DependencyEditor(ctk.CTkFrame):
 
         scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL,
                                   command=self.tree.yview)
+        theme.style_scrollbar(scrollbar)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.grid(row=0, column=0, sticky=tk.NSEW)
         scrollbar.grid(row=0, column=1, sticky=tk.NS)

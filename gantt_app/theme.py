@@ -314,6 +314,7 @@ def style_chrome() -> None:
     scrollbar as 'Vertical.TScrollbar', which inherits from 'TScrollbar' but
     can be overridden by a theme that sets it directly.
     """
+    import tkinter as tk
     from tkinter import ttk
 
     style = ttk.Style()
@@ -339,6 +340,64 @@ def style_chrome() -> None:
                         lightcolor=now(SASH_LIGHT), darkcolor=now(SASH_DARK))
     except Exception:
         logger.debug("Could not colour the pane divider on this platform")
+
+    # The styles above never reach a classic scrollbar - Tk 8.5's
+    # "ttk.Scrollbar" is one, and it takes its colours on the widget; see
+    # style_scrollbar. Recolour the ones already built so a theme change
+    # reaches them; ones built later are styled where they are created.
+    try:
+        _restyle_scrollbars(tk._default_root)
+    except Exception:
+        logger.debug("Could not recolour existing scrollbars", exc_info=True)
+
+
+def _restyle_scrollbars(widget) -> None:
+    """Walk a widget tree recolouring every classic scrollbar in it."""
+    if widget is None:
+        return
+    try:
+        children = widget.winfo_children()
+    except Exception:
+        return
+    for child in children:
+        try:
+            is_scrollbar = child.winfo_class() == 'Scrollbar'
+        except Exception:
+            continue
+        if is_scrollbar:
+            style_scrollbar(child)
+        _restyle_scrollbars(child)
+
+
+def style_scrollbar(scrollbar) -> None:
+    """
+    Colour one scrollbar for the appearance in force.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    ttk.Scrollbar is not always a ttk widget. On the Tk 8.5 build macOS
+    still ships it constructs a *classic* scrollbar - winfo_class is
+    'Scrollbar' and there is no -style option - which ignores every
+    TScrollbar style style_chrome sets and keeps its pale trough and
+    white body on a dark window. Classic scrollbars take their colours
+    straight on the widget, which is what this does; on a build where the
+    widget really is ttk the configure raises TclError and the TScrollbar
+    style that already covers it is left alone.
+
+    Called where the scrollbars are built rather than once at startup:
+    the chart's pair is rebuilt on every redraw, so a global pass would
+    colour the ones that exist and miss all the rest.
+    """
+    try:
+        scrollbar.configure(
+            background=now(SCROLL_THUMB),
+            troughcolor=now(SCROLL_TROUGH),
+            activebackground=now(SCROLL_THUMB_ACTIVE),
+            highlightthickness=0, bd=0,
+            highlightbackground=now(SCROLL_TROUGH))
+    except Exception:
+        # A real ttk scrollbar refuses these options - its style has it.
+        pass
 
 
 #: Whether the one-time ttk style setup has already run.

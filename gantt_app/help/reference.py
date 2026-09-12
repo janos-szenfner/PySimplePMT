@@ -216,6 +216,7 @@ class ReferenceWindow(ctk.CTkToplevel):
         )
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL,
                                   command=self.text.yview)
+        theme.style_scrollbar(scrollbar)
         self.text.configure(yscrollcommand=scrollbar.set)
 
         self.text.grid(row=0, column=0, sticky=tk.NSEW)

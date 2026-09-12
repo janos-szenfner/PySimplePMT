@@ -160,6 +160,7 @@ class DataGrid(ctk.CTkFrame):
         self.tree.grid(row=0, column=0, sticky="nsew")
         self.scrollbar = ttk.Scrollbar(
             self, orient="vertical", command=self.tree.yview)
+        theme.style_scrollbar(self.scrollbar)
         self.scrollbar.grid(row=0, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=self.scrollbar.set)
         self.grid_rowconfigure(0, weight=1)

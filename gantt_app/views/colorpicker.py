@@ -23,6 +23,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
+from gantt_app import theme
 from gantt_app.views.modal import take_grab
 from gantt_app.utils.log import get_logger
 
@@ -359,6 +360,7 @@ class ColorPickerPopup(ctk.CTkToplevel):
 
         self._scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL,
                                         command=self._canvas.yview)
+        theme.style_scrollbar(self._scrollbar)
         self._canvas.configure(yscrollcommand=self._scrollbar.set)
 
         self._grid_frame = ctk.CTkFrame(self._canvas, fg_color='transparent')

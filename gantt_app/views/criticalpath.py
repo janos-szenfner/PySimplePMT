@@ -143,6 +143,7 @@ class CriticalPathWindow(ctk.CTkToplevel):
 
         vertical = ttk.Scrollbar(frame, orient=tk.VERTICAL,
                                  command=self.tree.yview)
+        theme.style_scrollbar(vertical)
         self.tree.configure(yscrollcommand=vertical.set)
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
