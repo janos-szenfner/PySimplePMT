@@ -81,16 +81,18 @@ class TestLinking(LinkingTestCase):
 
         self.assertEqual(made, [("001", "002"), ("002", "003")])
 
-    def test_a_row_keeps_the_links_it_already_had(self):
+    def test_a_row_with_a_predecessor_is_left_alone(self):
         """
-        Linking adds to a plan rather than stating everything a row waits
-        for, so a link to something outside the selection survives.
+        Links a row already holds survive, and it gains none.
+
+        A successor that already waits for something is skipped: the row is
+        sequenced already, and adding the row above it as well would only
+        restate - or fight - the link it has. See issue #18.
         """
         self.project.get_task_by_id("003").add_dependency("004")
 
-        self.project.link_tasks(["002", "003"])
-
-        self.assertEqual(sorted(self.links("003")), ["002", "004"])
+        self.assertEqual(self.project.link_tasks(["002", "003"]), [])
+        self.assertEqual(self.links("003"), ["004"])
 
     def test_linking_the_same_rows_twice_changes_nothing(self):
         """The second press has nothing to add."""
@@ -376,14 +378,18 @@ class TestLinkingRowsThatHoldWork(LinkingTestCase):
         self.assertEqual(list(self.project.get_task_by_id("002").dependencies),
                          [])
 
-    def test_a_selection_is_chained_at_its_top_level(self):
+    def test_a_selection_chains_every_row_it_can(self):
         """
-        Selecting a branch and the rows in it is one thing running after
-        another, not four.
+        The chain runs down the whole selection, not just its top level.
+
+        A parent is never linked to its own child, but the row that follows
+        a finished branch waits on the branch's last row - so the whole plan
+        selected links the last row of one branch to the first row of the
+        next. See issue #18.
         """
         made = self.project.link_tasks([t.id for t in self.project.tasks])
 
-        self.assertEqual(made, [("001", "003")])
+        self.assertEqual(made, [("002", "003")])
 
     def test_a_collector_moves_when_it_is_linked(self):
         """The red dot with nothing behind it."""
@@ -448,3 +454,76 @@ class TestLinkingRowsThatHoldWork(LinkingTestCase):
             collector.duration,
             calendar.working_days_between(collector.start_date,
                                           collector.end_date))
+
+
+class TestLinkingTheWholePlan(LinkingTestCase):
+    """
+    Issue #18: a selection that includes sub-tasks must chain them too.
+
+    WHY THESE EXIST:
+    ================
+    topmost_of dropped every selected row that had a selected ancestor, so
+    selecting the whole plan collapsed to the five outermost rows and the
+    chain touched none of the siblings inside the branches. The plan below
+    is the reported one; the expected chain is 4->5, 6->7, 7->8 and 10->11,
+    with the rows that already wait for something left exactly as they were.
+    """
+
+    def setUp(self):
+        """The plan from issue #18: branches, existing links, a milestone."""
+        super().setUp()
+        self.project = Project(name="Plan")
+        rows = (
+            ("001", "Project Planning", "Task", None),
+            ("002", "Requirements Gathering", "Subtask", "001"),
+            ("003", "Design Phase", "Task", None),
+            ("004", "UI Mockups", "Subtask", "003"),
+            ("005", "UX planning", "Subtask", "003"),
+            ("006", "feature1", "Subtask", "005"),
+            ("007", "feature3", "Subtask", "005"),
+            ("008", "feature2", "Subtask", "005"),
+            ("009", "Implementation", "Task", None),
+            ("010", "Design Review", "Milestone", None),
+            ("011", "T3", "Task", None),
+        )
+        for task_id, name, task_type, parent in rows:
+            self.project.add_task(Task(
+                id=task_id, name=name, start_date=BASE,
+                end_date=BASE + timedelta(days=2), duration=2,
+                task_type=task_type, parent_task_id=parent))
+        self.project.get_task_by_id("003").add_dependency("001")
+        self.project.get_task_by_id("009").add_dependency("003")
+        review = self.project.get_task_by_id("010")
+        review.add_dependency("003")
+        review.add_dependency("009")
+
+    def test_the_chain_runs_through_the_branches(self):
+        """Every free row waits for the selected row above it."""
+        made = self.project.link_tasks(
+            [t.id for t in self.project.tasks])
+
+        self.assertEqual(made, [("004", "005"), ("006", "007"),
+                                ("007", "008"), ("010", "011")])
+
+    def test_rows_that_already_wait_are_untouched(self):
+        """Existing predecessors are kept, and no new ones are added."""
+        self.project.link_tasks([t.id for t in self.project.tasks])
+
+        self.assertEqual(self.links("003"), ["001"])
+        self.assertEqual(self.links("009"), ["003"])
+        self.assertEqual(sorted(self.links("010")), ["003", "009"])
+
+    def test_selection_order_does_not_matter(self):
+        """A bottom-first selection chains the same pairs."""
+        picked = [t.id for t in reversed(self.project.tasks)]
+
+        self.assertEqual(self.project.link_tasks(picked),
+                         [("004", "005"), ("006", "007"),
+                          ("007", "008"), ("010", "011")])
+
+    def test_a_subset_chains_just_that_span(self):
+        """Picking the inside of a branch chains its siblings."""
+        made = self.project.link_tasks(["004", "005", "006", "007", "008"])
+
+        self.assertEqual(made, [("004", "005"), ("006", "007"),
+                                ("007", "008")])

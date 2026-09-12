@@ -2867,31 +2867,30 @@ class Project:
         reason buried; skipping is what the user can see, because the rows
         that did link say so in their own column.
 
-        A chain is built from the topmost rows of the selection. A row that
-        holds work is bracketed by that work, so a selection of a row and
-        the rows inside it is one thing running one after another, not four,
-        and chaining every row of it in reading order linked each container
-        to the first thing inside it. That is a contradiction rather than a
-        long chain: the container's dates are rolled up from its children,
-        so a child made to wait for its own parent waits for a date that is
-        computed from it. The plan then never settled - each pass moved it
-        further out - which is how a plan starting in August came to start
-        the following January.
+        The chain runs over the whole selection in display order, not just
+        its top level: collapsing the selection first dropped every sibling
+        link inside a branch, so selecting the plan chained only the outer
+        rows. A pair where one row holds the other is skipped instead - the
+        container's dates are rolled up from its children, so a child made
+        to wait for its own parent waits for a date computed from it. That
+        is a contradiction rather than a long chain, and the plan never
+        settles - each pass moves it further out, which is how a plan
+        starting in August came to start the following January.
+
+        A successor that already waits for something is left alone: the row
+        is already sequenced, and adding the row above it as well would only
+        restate - or fight - the link it has.
         """
-        chosen = [self.get_task_by_id(task_id)
-                  for task_id in self.topmost_of(task_ids)]
+        chosen = self._in_display_order(task_ids)
         if len(chosen) < 2:
             return []
 
         linked = []
         for predecessor, successor in zip(chosen, chosen[1:]):
-            if successor.get_dependency(predecessor.id) is not None:
+            if successor.dependencies:
                 continue
             if (self.is_descendant(successor.id, predecessor.id)
                     or self.is_descendant(predecessor.id, successor.id)):
-                # Belt and braces: topmost_of has already dropped these, but
-                # a caller reaching the plan directly must not be able to
-                # write a link the scheduler cannot honour
                 logger.info("Not linking %s to %s: one holds the other",
                             predecessor.id, successor.id)
                 continue
