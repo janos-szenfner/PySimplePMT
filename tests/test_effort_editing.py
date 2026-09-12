@@ -85,6 +85,62 @@ class TestEditorEffortWiring(unittest.TestCase):
         self.assertEqual(duration, 5)                       # locked
         self.assertEqual(out[0]['resource_split'], 200.0)   # U = 80/40 -> 2.0
 
+    def _resourced_task(self, effort_driven, days=10):
+        """A Fixed Units task with one 100% resource, work = duration."""
+        return _task(duration=days, effort_type=EFFORT_FIXED_UNITS,
+                     effort_driven=effort_driven,
+                     resource_assignments=[
+                         {'resource_id': 'R1',
+                          'estimated_hours': days * 8.0,
+                          'resource_split': 100.0}])
+
+    def test_adding_a_resource_to_an_effort_driven_task_halves_duration(self):
+        """Issue #30's core case: ED on, a second 100% resource, and the
+        save preserves the work so the duration halves."""
+        old = self._resourced_task(effort_driven=True)
+        assignments = [
+            {'resource_id': 'R1', 'estimated_hours': 80.0,
+             'resource_split': 100.0},
+            {'resource_id': 'R2', 'estimated_hours': 0.0,   # seeded by the
+             'resource_split': 100.0}]                      # Assign tab
+        duration, out = _reconcile(self.project, old, 10, assignments)
+
+        self.assertEqual(duration, 5)                       # 80h / 2.0
+        self.assertEqual(
+            sum(a['estimated_hours'] for a in out), 80.0)   # preserved
+
+    def test_adding_a_resource_with_ed_off_grows_work(self):
+        """The same add with ED off holds the duration; the work doubles."""
+        old = self._resourced_task(effort_driven=False)
+        assignments = [
+            {'resource_id': 'R1', 'estimated_hours': 80.0,
+             'resource_split': 100.0},
+            {'resource_id': 'R2', 'estimated_hours': 0.0,
+             'resource_split': 100.0}]
+        duration, out = _reconcile(self.project, old, 10, assignments,
+                                   effort_driven=False)
+
+        self.assertEqual(duration, 10)                      # held
+        self.assertEqual(
+            sum(a['estimated_hours'] for a in out), 160.0)
+
+    def test_removing_a_resource_from_an_ed_task_extends_duration(self):
+        """The removed resource's hours pass to the one left, so the work
+        is conserved and the duration extends back."""
+        old = _task(duration=5, effort_type=EFFORT_FIXED_UNITS,
+                    effort_driven=True,
+                    resource_assignments=[
+                        {'resource_id': 'R1', 'estimated_hours': 40.0,
+                         'resource_split': 100.0},
+                        {'resource_id': 'R2', 'estimated_hours': 40.0,
+                         'resource_split': 100.0}])
+        assignments = [{'resource_id': 'R1', 'estimated_hours': 40.0,
+                        'resource_split': 100.0}]
+        duration, out = _reconcile(self.project, old, 5, assignments)
+
+        self.assertEqual(duration, 10)                      # 80h / 1.0
+        self.assertEqual(out[0]['estimated_hours'], 80.0)
+
 
 if __name__ == '__main__':
     unittest.main()

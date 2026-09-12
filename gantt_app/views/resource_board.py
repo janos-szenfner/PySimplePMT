@@ -11,6 +11,7 @@ for the heatmap.  Full drag-and-drop and a plotly renderer can be layered on
 later without changing the public shape of the class.
 """
 
+import copy
 import tkinter as tk
 from datetime import date, datetime, timedelta
 from tkinter import ttk
@@ -122,6 +123,11 @@ class ResourceBoard(ctk.CTkFrame):
         The active project.
     on_status : Callable[[str], None]
         Optional callback to mirror status messages to the footer.
+    on_project_changed : Callable[[], None]
+        Optional callback fired when an assign or de-assign has changed the
+        project, so the rest of the view can reschedule and redraw.
+    project_tracker :
+        Optional undo tracker; assignment changes go through it when given.
     """
 
     def __init__(
@@ -129,10 +135,14 @@ class ResourceBoard(ctk.CTkFrame):
         parent,
         project: Project,
         on_status: Optional[Callable[[str], None]] = None,
+        on_project_changed: Optional[Callable[[], None]] = None,
+        project_tracker=None,
     ) -> None:
         super().__init__(parent)
         self.project = project
         self.on_status = on_status
+        self.on_project_changed = on_project_changed
+        self.project_tracker = project_tracker
 
         self._selected_task_id: Optional[str] = None
         self._selected_resource_id: Optional[str] = None
@@ -925,17 +935,48 @@ class ResourceBoard(ctk.CTkFrame):
             self._say(f"{resource.name} is already assigned to this task.")
             return
 
-        effort = self._task_effort(task) or 8.0
-        task.resource_assignments.append({
+        # Effort-driven decides what the new resource does to a resourced,
+        # auto-scheduled task: work conserved shortens the duration,
+        # duration conserved grows the work - the same maths the task
+        # editor's save runs (issue #30). Seeding the new assignment at zero
+        # hours is what lets the engine see the roster change; a task the
+        # maths does not govern keeps the effort it always got.
+        from gantt_app import effort as eff
+        hpd = getattr(self.project, 'hours_per_day', eff.DEFAULT_HOURS_PER_DAY)
+        old_state = eff.state_from_task(task, hpd)
+        managed = (eff.logic_applies(old_state) and not task.is_container
+                   and old_state.total_units > 0)
+
+        probe = copy.copy(task)
+        probe.resource_assignments = [dict(a) for a in task.resource_assignments]
+        probe.resource_assignments.append({
             "resource_id": resource.id,
-            "estimated_hours": effort,
+            "estimated_hours": 0.0 if managed else (self._task_effort(task)
+                                                    or 8.0),
             "resource_split": 100.0,
         })
+
+        duration = task.duration
+        if managed:
+            new_state = eff.state_from_task(probe, hpd)
+            result, conflict = eff.reconcile(old_state, new_state)
+            if conflict is None:
+                eff.write_state_to_task(new_state, probe, hpd)
+                duration = probe.duration
+
+        if self.project_tracker:
+            self.project_tracker.update_task(
+                task_id,
+                resource_assignments=probe.resource_assignments,
+                duration=duration)
+        else:
+            task.resource_assignments = probe.resource_assignments
+            task.duration = duration
 
         logger.info("Assigned %r to task %s (%s)",
                     resource.name, task.id, task.name)
         self._say(f"Assigned {resource.name} to {task.name}.")
-        self.refresh()
+        self._changed()
 
     def _assign_selected(self) -> None:
         self._assign_task(self._selected_task_id or "",
@@ -952,11 +993,21 @@ class ResourceBoard(ctk.CTkFrame):
             return
 
         count = len(task.resource_assignments)
-        task.resource_assignments.clear()
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id=task.id,
+                                             resource_assignments=[])
+        else:
+            task.resource_assignments.clear()
         logger.info("Cleared %d assignment(s) from task %s (%s)",
                     count, task.id, task.name)
         self._say(f"De-assigned {count} resource(s) from {task.name}.")
         self._selected_resource_id = None
+        self._changed()
+
+    def _changed(self) -> None:
+        """Tell the app the project changed, then redraw this board."""
+        if self.on_project_changed:
+            self.on_project_changed()
         self.refresh()
 
     def _say(self, message: str) -> None:

@@ -550,7 +550,9 @@ class GanttApp(ctk.CTk):
         # 4-Panel Resource Planning view, overlaid with the paned task view.
         # Lifting one or the other swaps the main viewport.
         self.resource_board = ResourceBoard(
-            content_frame, self.project, on_status=self._show_status)
+            content_frame, self.project, on_status=self._show_status,
+            on_project_changed=self.update_all,
+            project_tracker=self.project_tracker)
         self.resource_board.grid(
             row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
 

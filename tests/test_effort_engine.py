@@ -426,6 +426,132 @@ class TestReconcileConflict(unittest.TestCase):
         self.assertIn("Work", text)
 
 
+class TestReconcileRoster(unittest.TestCase):
+    """Roster changes through reconcile - the save path the editor takes.
+
+    Effort-Driven only speaks when a resource is added or removed, which the
+    form shows as a changed assignment list rather than an edit to duration
+    or work (issue #30's table). On, the work is conserved; off, the
+    duration is.
+    """
+
+    def _old_new(self, etype, ed, old_workers, new_workers,
+                 duration_hours=80):
+        """old/new states from (id, units, hours) triples."""
+        old = _state(effort_type=etype, effort_driven=ed,
+                     duration_hours=duration_hours,
+                     work=sum(h for _i, _u, h in old_workers),
+                     assignments=[Assignment(i, u, h)
+                                  for i, u, h in old_workers])
+        new = _state(effort_type=etype, effort_driven=ed,
+                     duration_hours=duration_hours,
+                     work=sum(h for _i, _u, h in new_workers),
+                     assignments=[Assignment(i, u, h)
+                                  for i, u, h in new_workers])
+        return old, new
+
+    def test_fixed_units_ed_on_add_halves_duration(self):
+        old, new = self._old_new(EFFORT_FIXED_UNITS, True,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 1.0, 80.0), ('R2', 1.0, 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 80)               # preserved
+        self.assertEqual(new.duration_hours, 40)     # 80 / 2.0
+
+    def test_fixed_units_ed_off_add_grows_work(self):
+        old, new = self._old_new(EFFORT_FIXED_UNITS, False,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 1.0, 80.0), ('R2', 1.0, 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 80)     # preserved
+        self.assertEqual(new.work, 160)              # 80 x 2.0
+
+    def test_fixed_duration_ed_on_add_redistributes_units(self):
+        old, new = self._old_new(EFFORT_FIXED_DURATION, True,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 1.0, 80.0), ('R2', 1.0, 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 80)               # preserved
+        self.assertEqual(new.duration_hours, 80)     # fixed
+        self.assertAlmostEqual(new.total_units, 1.0)  # 0.5 each
+
+    def test_fixed_duration_ed_off_add_grows_work(self):
+        old, new = self._old_new(EFFORT_FIXED_DURATION, False,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 1.0, 80.0), ('R2', 1.0, 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 80)
+        self.assertEqual(new.work, 160)
+        self.assertAlmostEqual(new.total_units, 2.0)  # units stay
+
+    def test_fixed_work_add_halves_duration(self):
+        old, new = self._old_new(EFFORT_FIXED_WORK, True,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 1.0, 80.0), ('R2', 1.0, 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 80)
+        self.assertEqual(new.duration_hours, 40)     # 80 / 2.0
+
+    def test_ed_on_removal_transfers_the_work(self):
+        """The removed resource's hours pass to those left, so work is
+        conserved and duration extends - the inverse of the add."""
+        old, new = self._old_new(EFFORT_FIXED_UNITS, True,
+                                 [('R1', 1.0, 40.0), ('R2', 1.0, 40.0)],
+                                 [('R1', 1.0, 40.0)],
+                                 duration_hours=40)
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.work, 80)               # 40 kept + 40 returned
+        self.assertEqual(new.duration_hours, 80)     # 80 / 1.0
+
+    def test_ed_off_removal_shrinks_work(self):
+        old, new = self._old_new(EFFORT_FIXED_UNITS, False,
+                                 [('R1', 1.0, 40.0), ('R2', 1.0, 40.0)],
+                                 [('R1', 1.0, 40.0)],
+                                 duration_hours=40)
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 40)     # preserved
+        self.assertEqual(new.work, 40)               # the hours left with it
+
+    def test_the_first_resource_still_takes_duration_x_units(self):
+        """No work existed to conserve, so a zero-work task's first resource
+        gets duration x units whatever the toggle says."""
+        old, new = self._old_new(EFFORT_FIXED_UNITS, True,
+                                 [], [('R1', 1.0, 0.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 80)
+        self.assertEqual(new.work, 80)               # 80 x 1.0
+
+    def test_a_duration_edit_on_top_of_an_add_still_wins(self):
+        """The toggle only chooses when the planner did not."""
+        old, new = self._old_new(EFFORT_FIXED_UNITS, True,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 1.0, 80.0), ('R2', 1.0, 0.0)])
+        new.duration_hours = 160
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 160)    # kept
+        self.assertEqual(new.work, 320)              # 160 x 2.0
+
+    def test_a_same_roster_units_edit_is_not_effort_driven(self):
+        """Editing a split is an units edit, not a roster change: the held
+        values follow the task type's own rule either way."""
+        old, new = self._old_new(EFFORT_FIXED_UNITS, True,
+                                 [('R1', 1.0, 80.0)],
+                                 [('R1', 0.5, 80.0)])
+        result, conflict = reconcile(old, new)
+        self.assertIsNone(conflict)
+        self.assertEqual(new.duration_hours, 80)
+        self.assertEqual(new.work, 40)               # 80 x 0.5
+
+
 class TestTaskAdapter(unittest.TestCase):
     """Lifting a Task into a state and writing a reconciled one back."""
 

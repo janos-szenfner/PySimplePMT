@@ -38,11 +38,14 @@ from gantt_app.models import (
 )
 
 #: A single resource's share of a task: which resource, and how much of one
-#: full-time equivalent it is committing (1.0 = 100%).
+#: full-time equivalent it is committing (1.0 = 100%), plus the hours it is
+#: doing of the work - needed when a roster change has to say how much work
+#: left the task with a removed resource.
 @dataclass
 class Assignment:
     resource_id: str
     units: float = 1.0
+    hours: float = 0.0
 
 
 @dataclass
@@ -556,6 +559,17 @@ def reconcile(old: EffortState, new: EffortState,
     otherwise. The effort maths is gated: a task with no assignment carrying
     real units (Task_Type_FRS §8.3, U_total = Σ of units > 0), or one that is
     a milestone / summary / manually scheduled, is left exactly as edited.
+
+    A change to the roster itself - a resource added or removed - is where
+    Effort-Driven speaks (Task_Type_FRS §4.2, issue #30): on, the work is
+    conserved, so the duration follows (or Fixed Duration redistributes its
+    units); off, the duration is conserved and the work grows or shrinks
+    with the roster. Because conserving work means a removed resource's
+    hours pass to those left, the roster's share of the work change is not
+    the planner's edit: it is put back before the diff is read, so only a
+    work change made on top of the transfer counts as the planner choosing
+    work. An explicit edit to an adjustable number still wins over the
+    toggle, exactly as it does for a same-roster edit.
     """
     if not logic_applies(new) or new.total_units <= 0:
         return EffortResult(message="No effort recalculation for this task."), \
@@ -563,6 +577,15 @@ def reconcile(old: EffortState, new: EffortState,
 
     fixed = _FIXED_BY_TYPE[new.effort_type]
     adjustable = [v for v in _VARS if v != fixed]
+
+    old_ids = sorted(a.resource_id for a in old.assignments)
+    new_ids = sorted(a.resource_id for a in new.assignments)
+    roster_changed = old_ids != new_ids
+    if roster_changed and effort_driven_effective(new):
+        remaining = {a.resource_id for a in new.assignments}
+        new.work += sum(a.hours for a in old.assignments
+                        if a.resource_id not in remaining)
+
     changed = classify_changes(old, new)
     changed_adjustable = [v for v in adjustable if changed[v]]
 
@@ -575,6 +598,20 @@ def reconcile(old: EffortState, new: EffortState,
         keep = changed_adjustable[0]
     else:
         keep = None
+
+    if preserve is None and roster_changed \
+            and set(changed_adjustable) <= {'units'}:
+        # The planner changed only the roster - for Fixed Duration that
+        # itself reads as a units change, the roster's own footprint rather
+        # than a units edit - so the toggle chooses the conserved quantity:
+        # work when effort-driven (duration, or Fixed Duration's units,
+        # follows), duration otherwise (work follows). A task that had no
+        # work yet has nothing to conserve - the first resource takes
+        # duration x units, as it always did.
+        if effort_driven_effective(new) and new.work > 0:
+            keep = 'work' if 'work' in adjustable else 'units'
+        else:
+            keep = 'duration' if 'duration' in adjustable else 'units'
 
     _recompute(new, fixed, keep)
     return (EffortResult(message="Recalculated.",
@@ -634,7 +671,8 @@ def state_from_task(task, hours_per_day: float = DEFAULT_HOURS_PER_DAY) -> Effor
     zero units, which the gate in :func:`reconcile` treats as "no effort
     logic", so nothing about it is touched.
     """
-    assignments = [Assignment(a.get('resource_id', ''), _assignment_units(a))
+    assignments = [Assignment(a.get('resource_id', ''),
+                              _assignment_units(a), _assignment_hours(a))
                    for a in task.resource_assignments]
     work = sum(_assignment_hours(a) for a in task.resource_assignments)
     duration_days = task.duration or 0
