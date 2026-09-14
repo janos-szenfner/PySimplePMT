@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.69.4 - 2026-09-15
+
+- **Filters can be named, saved and written as a query.** The Filter
+  window now has two tabs. **Basic** keeps the per-column rules - a
+  contains-box for text, a from/to pair for numbers and dates, a tick per
+  value for the fixed-set columns. **Advanced** takes a query the way
+  Jira's JQL asks questions: `name ~ "art" AND progress < 50`, `type in
+  (...)`, `start within 2026-09-01, 2026-09-30`, empty checks, AND/OR/NOT
+  and parentheses, with dates read dashed, dotted or slashed. The entry is
+  checked as it is typed - the verdict line names the error and where it
+  sits, or counts the rows the query matches - a suggestion list offers
+  fields and values for the cursor's spot, and recent queries are kept.
+  What the Basic tab can say converts into a query, and a simple query
+  converts back. **More Filters** lists the standard and saved filters
+  with Apply, Highlight, New, Edit, Copy and Delete - one definition, both
+  uses - and the builder is MS Project's Filter Definition grid: And/Or
+  joins that start new groups, a test list that follows the field's kind,
+  and a value box that adapts to it. Saved definitions live in the project
+  file; a show-in-menu filter appears in the Highlight gallery and the
+  Filter button's new dropdown, and picking the active one again turns it
+  off.
+- **Reset Task List Visibility.** A button beside Reset Task List Layout
+  in Project Settings → Task Grid puts the columns back to the
+  application's default - Label hidden, everything else shown - repaints
+  the grid and marks the plan changed in one press.
+- **Check for Updates works in the packaged build.** The frozen
+  interpreter carried no CA certificates, so every HTTPS call to GitHub
+  failed certificate verification and the About window could only say it
+  could not check. certifi is now bundled, and both the check and the
+  download open their connections against it.
+- **The code is organised into packages.** gantt_app/ was a flat list of
+  modules; it now separates the domain and scheduling logic (`core/`) from
+  the windows and their furniture (`views/`) and the file-format and
+  platform machinery (`utils/`). No behaviour changes.
+
 ## 1.69.2 - 2026-09-15
 
 - **The View tab grew a column Filter.** A new Filter group opens a window

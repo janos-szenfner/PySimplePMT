@@ -72,6 +72,7 @@ This is a complete implementation of a project management tool with:
 - **Working-Day Calendar**: A duration is working effort, so a task crossing a weekend keeps its length and its bar reaches further out. Nothing is ever scheduled to start or finish on a Saturday, and a plan imported from a file that declared holidays keeps them
 - **Public Holidays**: Project → Working Week & Holidays... → National Holidays picks any of the ~250 countries the `holidays` package knows — **and their regions**, so Bavaria's three extra holidays are observed rather than Germany's national list alone. A search box finds a country or a region by name, and the 27 EU member states sit behind one button. A date that is a public holiday in *any* selected country or region becomes a non-working day. Easter Monday and the rest of the movable feasts are worked out per year, so a task spanning one is pushed out rather than losing the work planned for it
 - **Search**: a box on the ribbon's strip finds a row by anything written on it — name, ID, type, **label**, **notes** (so a ticket number pasted into the details is findable), either date, duration, progress, priority, what it depends on, and which calendar it follows. A match brings its parents along so you can see where it sits, and a `2 of 40` count sits beside the box so a filtered list is never mistaken for a short plan
+- **Filtering**: the ribbon's **Filter** opens a window with two tabs — **Basic** takes one rule per column (a contains-box for text, a from/to pair for numbers and dates, a tick per value for the fixed-set columns) and **Advanced** takes a JQL-style query (`name ~ "art" AND progress < 50`, `type in (...)`, `start within ...`, `AND`/`OR`/`NOT`, parentheses), validated live with a match count, autocomplete and recent queries. **More Filters** manages named filters — MS Project's Filter Definition grid for building them, Apply or Highlight for using them — and a filter marked show-in-menu appears in the Highlight gallery and the Filter dropdown. Filters are a view, not data — nothing is written to the plan unless you save a definition
 - **Built-in Help**: the **?** on the ribbon's strip and **File → Info → User Guide** open one searchable guide covering every field, the scheduling rules, the task types and hierarchy, the calendars, dependencies, float, and the import/export formats. The search box matches any text or number, highlights every hit, counts them, and walks them with Enter / Shift+Enter. Two shorter references stay where they were needed — a Help button on the task editor — searchable too, covering every field, how the calculated date is worked out, and how the working calendar decides — and one on the Dependency tab for the link types
 - **Day / Night Theme**: follows the desktop by default and keeps following it — the window switches when the OS does. The ribbon's **Day / Night** button (View → Appearance) flips it by hand and detaches from the OS; **Sync** appears beside it only while that override is in force. The same choice is under **File → Options → Project Settings → System UI** (a Night-mode toggle and a Sync with System button). The choice is remembered between runs
 - **Per-Task Calendars**: a task may follow a calendar of its own instead of the plan's — a weekend-only shift for a migration that can only touch production on a Saturday, a 24/7 run for an unattended load test. Set from the task editor's **Working calendar** dropdown, which re-dates the task as soon as it is picked. Three presets come with every plan; a task that names none follows the project's calendar exactly as before. A resourced task is also crossed with its **resources' calendars** — a member's days off stretch the finish rather than spending effort nobody has — and the Advanced tab's **Scheduling ignores resource calendars** is MS Project's escape for work that cannot wait for somebody's week
@@ -100,25 +101,26 @@ This is a complete implementation of a project management tool with:
 ```
 gantt_app/
 ├── __init__.py
-├── models.py              # Task and Project models (dates, links, deadline, constraint)
-├── taskstyle.py           # A row's ink, fill and emphasis, and the honest-chip presets
-├── presets.py             # Built-in and custom style presets, and their live broadcast
-├── baselines.py           # Up to ten schedule baselines: capture, compare, persist
-├── effort.py              # The Task Type / Effort-Driven reconciliation engine
-├── resource_model.py      # Resources, teams, schedules, leave and capacity
-├── workdaycalendar.py     # Working days, weekends, holidays, overrides
-├── update_check.py        # Asks GitHub whether a newer release exists
-├── update_download.py     # Downloads and verifies the installer the check finds
-├── calendarregistry.py    # Named calendars, and which one a task follows
-├── dependencysyntax.py    # Parsing the Dependencies column notation (3FS+1d, ...)
-├── priority.py            # The priority levels a work item can carry
-├── shortcuts.py           # Keyboard shortcut sequences, spelt out per platform
-├── startup_setting.py     # First-run window sizing and startup preferences
-├── theme.py               # Light or dark, who decides it, and the palette
 ├── main.py                # Main window, the paned view, and the view-tab switch
+│
+├── core/                  # The plan itself: model and scheduling logic, no widgets
+│   ├── __init__.py
+│   ├── models.py              # Task and Project models (dates, links, deadline, constraint)
+│   ├── taskstyle.py           # A row's ink, fill and emphasis, and the honest-chip presets
+│   ├── baselines.py           # Up to ten schedule baselines: capture, compare, persist
+│   ├── effort.py              # The Task Type / Effort-Driven reconciliation engine
+│   ├── resource_model.py      # Resources, teams, schedules, leave and capacity
+│   ├── workdaycalendar.py     # Working days, weekends, holidays, overrides
+│   ├── calendarregistry.py    # Named calendars, and which one a task follows
+│   ├── dependencysyntax.py    # Parsing the Dependencies column notation (3FS+1d, ...)
+│   └── priority.py            # The priority levels a work item can carry
 │
 ├── views/
 │   ├── __init__.py
+│   ├── theme.py           # Light or dark, who decides it, and the palette
+│   ├── presets.py         # Built-in and custom style presets, and their live broadcast
+│   ├── filterlang.py      # The query language behind the Filter window's Advanced tab
+│   ├── startup_setting.py # First-run window sizing and startup preferences
 │   ├── task_list.py       # Drag-to-reorder task list
 │   ├── taskform.py        # The task form shared by creating and editing
 │   ├── taskdialogs.py     # The Create Task and Edit Task dialogs
@@ -170,6 +172,9 @@ gantt_app/
 │
 ├── utils/
 │   ├── __init__.py
+│   ├── shortcuts.py        # Keyboard shortcut sequences, spelt out per platform
+│   ├── update_check.py     # Asks GitHub whether a newer release exists
+│   ├── update_download.py  # Downloads and verifies the installer the check finds
 │   ├── copypastecut.py     # The clipboard behind Copy, Cut and Paste
 │   ├── undoredo.py         # The undo/redo command stack every edit runs through
 │   ├── file_io.py          # JSON save/load functionality
@@ -859,7 +864,7 @@ the whole window when they are what you came for.
 - **Acts on the selection**: from the right-click menu, the ribbon's
   Clipboard group, or
   Cmd/Ctrl+C, X and V - the modifier is the platform's; see
-  `gantt_app.shortcuts`. Shortcuts stand aside while the focus is in a text
+  `gantt_app.utils.shortcuts`. Shortcuts stand aside while the focus is in a text
   box, so editing text behaves normally
 - **One answer to where a paste goes**: `ClipboardService.resolve_target`.
   Three routes ask - the keyboard, the ribbon and the right-click menu - and
@@ -1977,7 +1982,7 @@ no third-party asset in it.
 the hicolor theme asks for - 16, 24, 32, 48, 64, 128 and 256 - so menus, docks
 and task switchers each get the size they want rather than scaling one down.
 
-### Baseline Management (`gantt_app/baselines.py`)
+### Baseline Management (`gantt_app/core/baselines.py`)
 
 PySimplePMT can save, clear, rename and compare up to ten baselines for a plan.
 A baseline records each task's start, finish, duration, work hours, cost and
@@ -2775,11 +2780,12 @@ Done:
 - [x] GAN file export, with the calendar the durations were counted against
 - [x] Microsoft Project export as MSPDI, with the dates pinned so Project does not re-solve them
 - [x] Recursive copy of a whole branch — copying a task includes every nested descendant and preserves the copied hierarchy
+- [x] Filtering — per-column rules, saved named filters, and a JQL-style Advanced query language
 
 Still to do:
 
 - [ ] Resource management — **In progress**
-- [ ] Filtering and grouping
+- [ ] Grouping
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support
 - [ ] Resource levelling off the back of the float analysis
@@ -2792,5 +2798,5 @@ Copyright (c) 2026 Janos Szenfner.
 ---
 
 **Project Status**: Active Development
-**Version**: 1.69.0
-**Last Updated**: 2026-09-14
+**Version**: 1.69.4
+**Last Updated**: 2026-09-15
