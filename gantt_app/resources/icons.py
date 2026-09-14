@@ -270,6 +270,91 @@ ICON_STROKES: Dict[str, List[tuple]] = {
                   (0.26, 0.64), (0.40, 0.76), (0.70, 0.76)]),
         ('line', [(0.68, 0.20), (0.86, 0.38), (0.68, 0.56)]),
     ],
+    # The ribbon's own set: the views, the plan's settings, and the
+    # furniture around them. Same stroke vocabulary as the rest - a shape
+    # outlines, a line draws within it.
+    # The Gantt chart itself: three bars on two rails.
+    'gantt': [
+        ('line', [(0.10, 0.16), (0.90, 0.16)]),
+        ('line', [(0.10, 0.84), (0.90, 0.84)]),
+        ('fill', [(0.14, 0.30), (0.52, 0.44)]),
+        ('fill', [(0.34, 0.50), (0.72, 0.64)]),
+        ('fill', [(0.56, 0.70), (0.86, 0.84)]),
+    ],
+    # The dashboard: four tiles, one of them taller, like a report.
+    'dashboard': [
+        ('shape', [(0.12, 0.12), (0.46, 0.46)]),
+        ('shape', [(0.54, 0.12), (0.88, 0.30)]),
+        ('shape', [(0.54, 0.38), (0.88, 0.88)]),
+        ('shape', [(0.12, 0.54), (0.46, 0.88)]),
+    ],
+    # The plain grid the task list is: a ruled table.
+    'grid': [
+        ('shape', [(0.12, 0.16), (0.88, 0.84)]),
+        ('line', [(0.12, 0.42), (0.88, 0.42)]),
+        ('line', [(0.12, 0.63), (0.88, 0.63)]),
+        ('line', [(0.40, 0.16), (0.40, 0.84)]),
+        ('line', [(0.66, 0.16), (0.66, 0.84)]),
+    ],
+    # Settings: a cog - a ring with teeth, and the hole in the middle.
+    'settings': [
+        ('ellipse', [(0.26, 0.26), (0.74, 0.74)]),
+        ('ellipse', [(0.42, 0.42), (0.58, 0.58)]),
+        ('line', [(0.50, 0.08), (0.50, 0.22)]),
+        ('line', [(0.50, 0.78), (0.50, 0.92)]),
+        ('line', [(0.08, 0.50), (0.22, 0.50)]),
+        ('line', [(0.78, 0.50), (0.92, 0.50)]),
+        ('line', [(0.20, 0.20), (0.30, 0.30)]),
+        ('line', [(0.70, 0.70), (0.80, 0.80)]),
+        ('line', [(0.80, 0.20), (0.70, 0.30)]),
+        ('line', [(0.30, 0.70), (0.20, 0.80)]),
+    ],
+    # The calendar the plan's days live on: a page with the hooks on top.
+    'calendar': [
+        ('shape', [(0.14, 0.20), (0.86, 0.20), (0.86, 0.88),
+                   (0.14, 0.88)]),
+        ('line', [(0.14, 0.38), (0.86, 0.38)]),
+        ('line', [(0.34, 0.10), (0.34, 0.26)]),
+        ('line', [(0.66, 0.10), (0.66, 0.26)]),
+        ('line', [(0.28, 0.55), (0.44, 0.55)]),
+        ('line', [(0.54, 0.55), (0.70, 0.55)]),
+        ('line', [(0.28, 0.72), (0.44, 0.72)]),
+    ],
+    # A baseline: the flag a measurement is planted under.
+    'baseline': [
+        ('line', [(0.24, 0.12), (0.24, 0.90)]),
+        ('line', [(0.24, 0.16), (0.80, 0.16), (0.62, 0.32),
+                  (0.80, 0.48), (0.24, 0.48)]),
+        ('line', [(0.10, 0.90), (0.60, 0.90)]),
+    ],
+    # A resource: the person the work belongs to.
+    'resource': [
+        ('ellipse', [(0.36, 0.10), (0.64, 0.38)]),
+        ('shape', [(0.22, 0.88), (0.28, 0.62), (0.40, 0.50),
+                   (0.60, 0.50), (0.72, 0.62), (0.78, 0.88)]),
+    ],
+    # The event log: a page of lines.
+    'log': [
+        ('shape', [(0.22, 0.08), (0.78, 0.08), (0.78, 0.92),
+                   (0.22, 0.92)]),
+        ('line', [(0.32, 0.30), (0.68, 0.30)]),
+        ('line', [(0.32, 0.50), (0.68, 0.50)]),
+        ('line', [(0.32, 0.70), (0.58, 0.70)]),
+    ],
+    # Import and export: the same arrow through a door, its direction the
+    # only difference - into the box is taken in, out of it is given away.
+    'import_icon': [
+        ('shape', [(0.20, 0.14), (0.64, 0.14), (0.64, 0.86),
+                   (0.20, 0.86)]),
+        ('line', [(0.86, 0.50), (0.48, 0.50)]),
+        ('line', [(0.60, 0.36), (0.48, 0.50), (0.60, 0.64)]),
+    ],
+    'export_icon': [
+        ('shape', [(0.36, 0.14), (0.80, 0.14), (0.80, 0.86),
+                   (0.36, 0.86)]),
+        ('line', [(0.14, 0.50), (0.52, 0.50)]),
+        ('line', [(0.40, 0.36), (0.52, 0.50), (0.40, 0.64)]),
+    ],
 }
 
 #: Drawings already made, by (icon, size, colour).

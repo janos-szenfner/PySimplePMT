@@ -106,17 +106,23 @@ class TestTheGroupIsSetApart(StyleBarTestCase):
 
     def test_it_sits_between_two_dividers(self):
         """
-        Wedged against the buttons that indent and outdent, the B would
-        read as another action on the task rather than a new group.
+        It reads as its own group, not as one more row action.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        On the icon row this was two hairline dividers either side of the
+        bar. The ribbon sets groups apart with a captioned frame instead -
+        the Font group carries the bar, and the caption under it is what
+        tells the reader these buttons are a different kind of control.
         """
-        icons = self.toolbar.icon_toolbar
-        children = icons.winfo_children()
+        from gantt_app.views.ribbon import RibbonGroup
 
-        position = children.index(self.bar)
-        neighbours = (children[position - 1], children[position + 1])
+        parent = self.bar.master
+        while parent is not None and not isinstance(parent, RibbonGroup):
+            parent = getattr(parent, 'master', None)
 
-        for neighbour in neighbours:
-            self.assertIn(neighbour, icons.separators)
+        self.assertIsNotNone(parent)
+        self.assertEqual(parent.caption, 'Font')
 
     def test_it_follows_the_row_actions(self):
         """Formatting a row comes after the actions that change one."""

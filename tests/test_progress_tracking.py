@@ -233,13 +233,15 @@ class TestTheGroupIsSetApart(ProgressGroupTestCase):
             getattr(self.group.scope_button, 'tooltip_widget', None), Tooltip)
 
     def test_it_sits_between_two_dividers(self):
-        """Like the formatting group it stands beside."""
-        icons = self.toolbar.icon_toolbar
-        children = icons.winfo_children()
-        position = children.index(self.group)
+        """Like the formatting group it stands beside - its own group."""
+        from gantt_app.views.ribbon import RibbonGroup
 
-        self.assertIn(children[position - 1], icons.separators)
-        self.assertIn(children[position + 1], icons.separators)
+        parent = self.group.master
+        while parent is not None and not isinstance(parent, RibbonGroup):
+            parent = getattr(parent, 'master', None)
+
+        self.assertIsNotNone(parent)
+        self.assertEqual(parent.caption, 'Progress')
 
 
 class TestTheThresholds(ProgressGroupTestCase):

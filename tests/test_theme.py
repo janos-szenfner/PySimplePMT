@@ -759,11 +759,15 @@ class TestTheToolbarControl(unittest.TestCase):
         group - which by then is past the search box. So it appeared at the
         far left of the row, against undo and redo, a long way from the
         control it belongs to.
+
+        On the ribbon the right-hand group is the strip's own right-edge
+        frame; the buttons' shared parent is what the ordering is read off.
         """
         self.toolbar.use_light_theme()
         self.icons.update_idletasks()
 
-        right = [w for w in self.icons.pack_slaves()
+        parent = self.icons.theme_button.master
+        right = [w for w in parent.pack_slaves()
                  if w.pack_info().get('side') == 'right']
         toggle = right.index(self.icons.theme_button)
         sync = right.index(self.icons.theme_sync_button)
@@ -772,22 +776,27 @@ class TestTheToolbarControl(unittest.TestCase):
         self.assertEqual(sync, toggle + 1)
 
     def test_the_help_button_is_the_far_right_of_the_row(self):
-        """With the divider between it and the appearance controls."""
-        right = [w for w in self.icons.pack_slaves()
+        """The rightmost of the right-edge cluster on the strip."""
+        right = [w for w in self.icons.help_button.master.pack_slaves()
                  if w.pack_info().get('side') == 'right']
 
         self.assertIs(right[0], self.icons.help_button)
-        self.assertIn(right[1], self.icons.separators)
-        self.assertIs(right[2], self.icons.theme_button)
 
     def test_the_control_is_set_apart_by_a_divider(self):
         """
-        On both sides. It is a setting, not an action on the plan, and it is
-        not help either - the ? beside it has a divider of its own now, so
-        the sun, its caption and the question mark stop reading as one group
-        of three.
+        Set apart from the tabs and the actions.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        On the icon row this was a hairline divider either side of the
+        day/night control. The ribbon holds the three right-edge controls -
+        help, appearance, search - in a frame of their own at the strip's
+        right end, which is the same separation said a different way.
         """
-        self.assertEqual(len(self.icons.separators), 9)
+        parent = self.icons.help_button.master
+        self.assertIs(parent, self.icons.theme_button.master)
+        self.assertIs(parent, self.icons.search_box.master)
+        self.assertEqual(parent.pack_info().get('side'), 'right')
 
     def test_a_destroyed_toolbar_does_not_break_the_theme(self):
         """

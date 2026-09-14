@@ -1108,27 +1108,37 @@ class Toolbar(ctk.CTkFrame):
         # of actions worth reaching for without opening a menu.
         menu_config = self._convert_to_new_menu_format()
 
+        # The ribbon took the menu row's place, but the menu bar is still
+        # built - into a row that is never packed. Everything that asks the
+        # menus what the application can do - the baseline's active slot,
+        # the tests that read menu_config - reads this, and it answers
+        # without drawing a second bar over the ribbon.
         self.menu_row = ctk.CTkFrame(self, fg_color=WIN_MENU_BG,
                                      corner_radius=0)
-        self.menu_row.pack(side=tk.TOP, fill=tk.X)
 
         self.menu_bar = CustomMenuBar(self.menu_row, menu_config=menu_config)
         self.menu_bar.pack(side=tk.LEFT)
 
-        # The Log button sits at the end of the menu row, away from the
-        # actions, being a thing to look at rather than a thing to do
+        # The Log button was built for the end of the menu row; the ribbon
+        # carries it under View > Window now. Still made, so anything
+        # holding the reference finds a button - in a row nobody packs.
         self._create_theme_log_buttons()
 
-        self.icon_toolbar = IconToolbar(
+        from gantt_app.views.ribbon import RibbonBar
+        self.icon_toolbar = RibbonBar(
             self, self.project,
             on_project_changed=self.on_project_changed,
             undo_redo_manager=self.undo_redo_manager,
             clipboard_manager=self.clipboard_manager,
             theme_controller=self.theme_controller,
+            galleries=self._ribbon_galleries(),
         )
         self.icon_toolbar.pack(side=tk.TOP, fill=tk.X)
 
         self._connect_icon_toolbar()
+        #: The Grid Only button reads its pressed look off the same
+        #: variable the View menu ticks.
+        self.icon_toolbar.grid_view_only_var = self.grid_view_only_var
     
     #: Icon actions whose handler is not a method of this class by that name.
     ICON_HANDLER_OVERRIDES = {
@@ -1153,10 +1163,14 @@ class Toolbar(ctk.CTkFrame):
         if not hasattr(self, 'icon_toolbar'):
             return
 
+        actions = [action for _icon, _tooltip, action
+                   in self.icon_toolbar.ICON_ACTIONS if action]
+        #: The ribbon's buttons name actions beyond the icon row's; a plain
+        #: icon toolbar has no EXTRA_ACTIONS and this adds nothing.
+        actions += list(getattr(self.icon_toolbar, 'EXTRA_ACTIONS', ()))
+
         missing = []
-        for _icon, _tooltip, action in self.icon_toolbar.ICON_ACTIONS:
-            if not action:
-                continue                    # a divider
+        for action in actions:
             name = self.ICON_HANDLER_OVERRIDES.get(action, action)
             handler = getattr(self, name, None)
             if not callable(handler):
@@ -1174,6 +1188,66 @@ class Toolbar(ctk.CTkFrame):
         self.icon_toolbar.apply_task_style = self.apply_task_style
         self.icon_toolbar.set_task_progress = self.set_task_progress
         self.icon_toolbar.mark_on_track = self.mark_on_track
+
+    def _ribbon_galleries(self):
+        """
+        The item lists the ribbon's galleries open, keyed by name.
+
+        The imports and exports are fixed lists - the formats the
+        application reads and writes do not change between presses. The
+        compare list and the recent projects are callables instead: which
+        baselines exist and which files were opened last is different every
+        time the gallery opens, so the list is built then rather than kept.
+        """
+        return {
+            'import': [
+                {"label": "MS Project...", "command": self.import_mpp},
+                {"label": "GAN...", "command": self.import_gan},
+                {"label": "Mermaid...", "command": self.import_mermaid},
+                {"label": "XLSX...", "command": self.import_xlsx},
+            ],
+            'export': [
+                {"label": "GAN...", "command": self.export_gan},
+                {"label": "MS Project...", "command": self.export_msproject},
+                {"label": "Mermaid...", "command": self.export_mermaid},
+                {"label": "HTML...", "command": self.export_html},
+                {"label": "SVG...", "command": self.export_svg},
+                {"label": "PNG...", "command": self.export_png},
+                {"label": "PDF...", "command": self.export_pdf},
+                {"label": "XLSX...", "command": self.export_xlsx},
+            ],
+            'compare': self._compare_gallery_items,
+            'recent': self._recent_gallery_items,
+        }
+
+    def _compare_gallery_items(self):
+        """
+        What Compare Baseline drops: None, then every baseline slot.
+
+        The same entries the Baseline submenu builds - slot.status_label()
+        carries both the slot's name and whether it is the one being
+        compared against - built on demand so the list is never stale.
+        """
+        items = [{"label": "None (Current Only)",
+                  "command": partial(self._compare_baseline_selected, None)}]
+        manager = getattr(self, 'baseline_manager', None)
+        for slot in (manager.slots if manager is not None else []):
+            items.append({
+                "label": slot.status_label(),
+                "command": partial(self._compare_baseline_selected,
+                                   slot.number),
+            })
+        return items
+
+    def _recent_gallery_items(self):
+        """The recent projects, one entry per file the list still holds."""
+        settings = getattr(self.master, 'startup_settings', None)
+        recent = settings.recent if settings is not None else []
+        return [
+            {"label": entry.get("name") or entry.get("path", ""),
+             "command": partial(self.load_project_path, entry["path"])}
+            for entry in recent if entry.get("path")
+        ]
     
     def _delete_selected_tasks(self):
         """
@@ -3567,6 +3641,18 @@ class IconToolbar(ctk.CTkFrame):
 
         self._create_right_hand_controls()
 
+    def _mount(self):
+        """
+        Where the helpers place what they build.
+
+        The row itself by default. The ribbon points it at the group a
+        helper's controls belong in while that helper runs, so
+        _create_style_bar and the rest can be inherited unchanged - see
+        RibbonBar._build_group.
+        """
+        mount = getattr(self, '_mount_point', None)
+        return mount if mount is not None else self
+
     def _create_right_hand_controls(self):
         """
         Help, the day/night control and the search box, against the right.
@@ -3614,7 +3700,7 @@ class IconToolbar(ctk.CTkFrame):
 
         self._create_separator()
         self.style_bar = StyleBar(
-            self, on_apply=self._style_applied,
+            self._mount(), on_apply=self._style_applied,
             button_size=self.BUTTON_SIZE, icon_image=self._icon_image)
         self.style_bar.pack(side="left", padx=(1, 1), pady=0)
         self._create_separator()
@@ -3634,7 +3720,7 @@ class IconToolbar(ctk.CTkFrame):
         from gantt_app.views.progressgroup import ProgressGroup
 
         self.progress_group = ProgressGroup(
-            self, on_preset=self._progress_applied,
+            self._mount(), on_preset=self._progress_applied,
             on_mark_on_track=self._mark_on_track_applied,
             button_size=self.BUTTON_SIZE, icon_image=self._icon_image)
         self.progress_group.pack(side="left", padx=(1, 1), pady=0)
@@ -3690,7 +3776,7 @@ class IconToolbar(ctk.CTkFrame):
         """
         from gantt_app.views.searchbox import TaskSearchBox
 
-        self.search_box = TaskSearchBox(self, on_search=self._search_tasks)
+        self.search_box = TaskSearchBox(self._mount(), on_search=self._search_tasks)
         self.search_box.pack(side="right", padx=(2, 2), pady=2)
 
     def _search_tasks(self, needle: str):
@@ -3718,7 +3804,7 @@ class IconToolbar(ctk.CTkFrame):
         help withheld from exactly the person who needs it.
         """
         self.help_button = ctk.CTkButton(
-            self, text="" , width=self.BUTTON_SIZE, height=self.BUTTON_SIZE,
+            self._mount(), text="" , width=self.BUTTON_SIZE, height=self.BUTTON_SIZE,
             fg_color="transparent", hover_color=WIN_MENU_HOVER,
             text_color=WIN_MENU_TEXT, corner_radius=4,
             command=self.show_help,
@@ -3767,7 +3853,7 @@ class IconToolbar(ctk.CTkFrame):
         permanent badge nobody reads after the first day.
         """
         self.theme_button = ctk.CTkButton(
-            self, text="", width=self.THEME_BUTTON_WIDTH,
+            self._mount(), text="", width=self.THEME_BUTTON_WIDTH,
             height=self.BUTTON_SIZE,
             fg_color="transparent", hover_color=WIN_MENU_HOVER,
             text_color=WIN_MENU_TEXT, corner_radius=4, anchor="w",
@@ -3776,7 +3862,7 @@ class IconToolbar(ctk.CTkFrame):
         self.theme_button.pack(side="right", padx=2, pady=2)
 
         self.theme_sync_button = ctk.CTkButton(
-            self, text="", width=self.BUTTON_SIZE, height=self.BUTTON_SIZE,
+            self._mount(), text="", width=self.BUTTON_SIZE, height=self.BUTTON_SIZE,
             fg_color="transparent", hover_color=WIN_MENU_HOVER,
             text_color=theme.MUTED_TEXT, corner_radius=4,
             command=self._sync_theme,
@@ -3892,7 +3978,7 @@ class IconToolbar(ctk.CTkFrame):
             a left-packed divider among them lands at the far end of the
             actions instead, which is where the last one went.
         """
-        divider = ctk.CTkFrame(self, width=1, height=self.SEPARATOR_HEIGHT,
+        divider = ctk.CTkFrame(self._mount(), width=1, height=self.SEPARATOR_HEIGHT,
                                fg_color=SEPARATOR_COLOR, corner_radius=0)
         divider.pack(side=side, fill=None, padx=self.SEPARATOR_PAD, pady=6)
         divider.pack_propagate(False)
@@ -3976,7 +4062,7 @@ class IconToolbar(ctk.CTkFrame):
         command : Callable
             Function to call when button is clicked
         """
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(self._mount(), fg_color="transparent")
         btn_frame.pack(side="left", padx=1, pady=2)
 
         image = self._icon_image(icon_name)
