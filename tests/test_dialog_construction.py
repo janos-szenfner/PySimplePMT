@@ -798,6 +798,77 @@ class TestDependencyEditorLayout(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestDataGridColumnAlignment(unittest.TestCase):
+    """Values land under their own headings in the resource grids."""
+
+    def setUp(self):
+        import customtkinter as ctk
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+    def tearDown(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def _assert_alignment(self, grid):
+        """
+        Every value in a row sits under its own heading.
+
+        DataGrid used to name its columns '#0', '#1', ... but '#0' is the
+        tree column that show="headings" hides, so the first heading never
+        rendered and every value displayed one column to the left of where
+        it was meant. Reading a cell back through its column name - which
+        is how the displayed row maps - catches it: under the old names it
+        raised TclError("Display column #0 cannot be set").
+        """
+        tree = grid.tree
+        columns = tree.cget("columns")
+        self.assertNotIn("#0", columns)
+
+        rows = tree.get_children()
+        self.assertTrue(rows)
+        for item in rows:
+            values = tree.item(item, "values")
+            self.assertEqual(len(values), len(columns))
+            for column, expected in zip(columns, values):
+                self.assertEqual(tree.set(item, column), expected)
+
+    def test_the_standalone_grid_names_columns_safely(self):
+        import tkinter
+
+        from gantt_app.views.resourcesettings import DataGrid
+
+        grid = DataGrid(self.root,
+                        (("N", 40, 0, tkinter.CENTER),
+                         ("A", 80, 1, tkinter.W),
+                         ("B", 80, 1, tkinter.W)),
+                        on_select=lambda item_id: None,
+                        on_double_click=lambda item_id: None)
+        grid.add_row("row-1", ("v0", "v1", "v2"))
+        self._assert_alignment(grid)
+
+    def test_the_resource_and_team_grids_align(self):
+        from gantt_app.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool)
+        from gantt_app.views.resourcesettings import ResourceSettingsWindow
+
+        repository = ResourceRepository()
+        repository.add_resource(Resource(
+            id="r1", name="Lemon Cookie", role_type="Developer",
+            resource_type=ResourceType.NAMED))
+        repository.add_team(TeamPool(id="t1", name="Bakery"))
+
+        dialog = ResourceSettingsWindow(self.root, repository)
+        self.root.update_idletasks()
+
+        self._assert_alignment(dialog.resource_grid)
+        self._assert_alignment(dialog.team_grid)
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestExportFailureReporting(unittest.TestCase):
     """The export error path does not fail on its own imports."""
 

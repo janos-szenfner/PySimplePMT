@@ -154,9 +154,13 @@ class DataGrid(ctk.CTkFrame):
         self.on_double_click = on_double_click
         self._selected_id = None
         self._row_ids = []
+        # The names must not be '#0', '#1'... : '#0' is the tree column,
+        # which show="headings" hides, so a column named it lost its
+        # heading while its values still showed - every cell landing one
+        # header to the left of where it was meant (issue #54).
         self.tree = ttk.Treeview(
             self, show="headings",
-            columns=tuple(f"#{index}" for index in range(len(columns))))
+            columns=tuple(f"c{index}" for index in range(len(columns))))
         self.tree.grid(row=0, column=0, sticky="nsew")
         self.scrollbar = ttk.Scrollbar(
             self, orient="vertical", command=self.tree.yview)
@@ -166,9 +170,9 @@ class DataGrid(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         for index, (name, width, weight, anchor) in enumerate(columns):
-            self.tree.heading(f"#{index}", text=name, anchor=anchor)
+            self.tree.heading(f"c{index}", text=name, anchor=anchor)
             self.tree.column(
-                f"#{index}", width=width, minwidth=width,
+                f"c{index}", width=width, minwidth=width,
                 anchor=anchor, stretch=weight > 0)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
         if on_double_click:
