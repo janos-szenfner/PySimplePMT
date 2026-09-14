@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.log import get_logger
-from gantt_app.workdaycalendar import WorkingCalendar, as_date
+from gantt_app.core.workdaycalendar import WorkingCalendar, as_date
 
 logger = get_logger(__name__)
 

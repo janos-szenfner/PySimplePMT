@@ -12,7 +12,7 @@ the links and pulls the task to the date it was given.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task, Dependency
+from gantt_app.core.models import Project, Task, Dependency
 
 
 class TestNoLaterThanDetection(unittest.TestCase):

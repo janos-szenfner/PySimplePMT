@@ -17,8 +17,8 @@ from typing import Optional, Callable, List, Dict
 
 import customtkinter as ctk
 
-from gantt_app.models import Task, Project
-from gantt_app.resource_model import ResourceRepository
+from gantt_app.core.models import Task, Project
+from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.utils.file_io import save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
 from gantt_app.utils.mpp_importer import (
@@ -30,14 +30,14 @@ from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
 from gantt_app.utils.gan_exporter import export_project_to_gan
 from gantt_app.utils.msproject_exporter import export_project_to_msproject
 from gantt_app.utils.undoredo import UndoRedoManager
-from gantt_app.shortcuts import accelerator
-from gantt_app.shortcuts import any_key_with, is_key
-from gantt_app.shortcuts import IS_MACOS, modifiers_held
-from gantt_app.shortcuts import bind_all as bind_shortcut
+from gantt_app.utils.shortcuts import accelerator
+from gantt_app.utils.shortcuts import any_key_with, is_key
+from gantt_app.utils.shortcuts import IS_MACOS, modifiers_held
+from gantt_app.utils.shortcuts import bind_all as bind_shortcut
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views import tooltip as tooltips
 from gantt_app.views.tooltip import attach as attach_tooltip
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -55,7 +55,7 @@ LOG_ACCENT = "#b8860b"      # the Log button stays distinct
 LOG_ACCENT_HOVER = "#966d09"
 
 # The menu bar and its dropdowns. Every one is a (light, dark) pair from
-# gantt_app.theme: written as single colours the whole bar stayed light on a
+# gantt_app.views.theme: written as single colours the whole bar stayed light on a
 # dark desktop, which is why the window used to be half one thing and half
 # the other.
 WIN_MENU_BG = theme.MENU_BG
@@ -1051,7 +1051,7 @@ class Toolbar(ctk.CTkFrame):
         self.baseline_manager = baseline_manager
         self.undo_redo_manager = undo_redo_manager
         self.clipboard_manager = clipboard_manager
-        #: Who decides light or dark; see gantt_app.theme. Set before the
+        #: Who decides light or dark; see gantt_app.views.theme. Set before the
         #: menus are built, because the View menu is ticked from it. A
         #: toolbar built without one - which the tests do - simply has no
         #: theme entries that do anything.
@@ -1484,7 +1484,7 @@ class Toolbar(ctk.CTkFrame):
                      "command": self.redo},
                     # The key each one answers to, written the way this
                     # platform writes it: Cmd on a Mac, Ctrl elsewhere. See
-                    # gantt_app.shortcuts, which also binds them
+                    # gantt_app.utils.shortcuts, which also binds them
                     {"text": f"Cut  ({accelerator('X')})",
                      "command": self.cut_tasks},
                     {"text": f"Copy  ({accelerator('C')})",
@@ -1925,7 +1925,7 @@ class Toolbar(ctk.CTkFrame):
         DEVELOPMENT NOTES:
         ------------------
         The dialog hands back country codes and date rulings and nothing else;
-        what either means is the calendar's - see gantt_app.workdaycalendar.
+        what either means is the calendar's - see gantt_app.core.workdaycalendar.
         Setting them on the project's calendar is enough to change every date
         in the plan, because every date in the plan is worked out through it.
 
@@ -2494,7 +2494,7 @@ class Toolbar(ctk.CTkFrame):
 
         payload = payload or {}
         if payload.get('mode') == 'advanced':
-            from gantt_app import filterlang
+            from gantt_app.views import filterlang
             query = (payload.get('query') or '').strip()
             if not query:
                 messagebox.showinfo(
@@ -2560,7 +2560,7 @@ class Toolbar(ctk.CTkFrame):
 
     def _apply_query_filter(self, text: str):
         """Apply the Advanced tab's query to the grid."""
-        from gantt_app import filterlang
+        from gantt_app.views import filterlang
 
         task_list = getattr(self, 'task_list', None)
         if task_list is None:
@@ -3705,7 +3705,7 @@ class Toolbar(ctk.CTkFrame):
         window, which is the point of a hotkey - a reader who has just
         clicked a row should not have to click something else first.
 
-        The modifier is the platform's; see gantt_app.shortcuts. These were
+        The modifier is the platform's; see gantt_app.utils.shortcuts. These were
         written out as Control, which is not the key a Mac user reaches for
         and not one macOS reports for Cmd+B - so on a Mac the shortcuts did
         nothing at all while their captions promised otherwise.
@@ -3872,7 +3872,7 @@ class Toolbar(ctk.CTkFrame):
         bold off for rows that never had it. Common ground makes the press
         mean "make them all bold", which is what a reader intends.
         """
-        from gantt_app.taskstyle import ResolvedStyle, resolve
+        from gantt_app.core.taskstyle import ResolvedStyle, resolve
 
         selected = self._selected_task_ids()
         if not selected:
@@ -4142,7 +4142,7 @@ class Toolbar(ctk.CTkFrame):
         press, while a comment here said otherwise. See
         ProjectStateTracker.update_tasks.
         """
-        from gantt_app.taskstyle import TaskStyle
+        from gantt_app.core.taskstyle import TaskStyle
 
         selected = self._selected_task_ids()
         if not selected:

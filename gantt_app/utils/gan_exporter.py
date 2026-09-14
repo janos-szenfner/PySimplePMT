@@ -53,13 +53,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 
-from gantt_app.models import Project
+from gantt_app.core.models import Project
 from gantt_app.utils.log import get_logger
 from gantt_app.utils.plan_export import (
     HOLIDAY_HORIZON_DAYS, PlanRow, calendar_exceptions,
     duration_in_working_days, numbering, outline, plan_span,
 )
-from gantt_app.workdaycalendar import WorkingCalendar, as_date
+from gantt_app.core.workdaycalendar import WorkingCalendar, as_date
 
 logger = get_logger(__name__)
 
@@ -414,7 +414,7 @@ def export_project_to_gan(project: Project, filepath: str) -> bool:
 
     EXAMPLE:
     --------
-    >>> from gantt_app.models import Project, Task
+    >>> from gantt_app.core.models import Project, Task
     >>> from gantt_app.utils.gan_exporter import export_project_to_gan
     >>> from datetime import datetime, timedelta
     >>>

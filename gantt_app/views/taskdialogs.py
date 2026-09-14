@@ -24,7 +24,7 @@ import copy
 
 import customtkinter as ctk
 
-from gantt_app.models import Task, Project, TASK_TYPES, child_type_for
+from gantt_app.core.models import Task, Project, TASK_TYPES, child_type_for
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.taskform import TaskFormDialog
 from gantt_app.utils.log import get_logger

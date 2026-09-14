@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from gantt_app.models import DEPENDENCY_TYPES, LAG_DAYS, LAG_PERCENT
+from gantt_app.core.models import DEPENDENCY_TYPES, LAG_DAYS, LAG_PERCENT
 
 #: What separates one link from the next. Both, because a plan pasted out of
 #: a spreadsheet uses whichever its locale writes lists with.

@@ -89,7 +89,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -513,7 +513,7 @@ def generate_mermaid_content(project: Project,
         
     EXAMPLE:
     --------
-    >>> from gantt_app.models import Project, Task
+    >>> from gantt_app.core.models import Project, Task
     >>> from gantt_app.utils.mermaid_exporter import generate_mermaid_content
     >>> from datetime import datetime, timedelta
     >>> 
@@ -651,7 +651,7 @@ def export_project_to_mermaid(project: Project, filepath: str,
         
     EXAMPLE:
     --------
-    >>> from gantt_app.models import Project, Task
+    >>> from gantt_app.core.models import Project, Task
     >>> from gantt_app.utils.mermaid_exporter import export_project_to_mermaid
     >>> from datetime import datetime, timedelta
     >>> 

@@ -25,7 +25,7 @@ with the code.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.project_dashboard import (
     dashboard_rows, duration_by_type, kpi_metrics, weighted_progress,
 )
@@ -473,7 +473,7 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
         Every colour on a canvas is written into the item that carries it,
         so nothing here follows a theme change until it is drawn again.
         """
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         light = self.frame.canvas.cget('background')
         self.ctk.set_appearance_mode('dark')

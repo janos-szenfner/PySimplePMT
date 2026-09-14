@@ -27,7 +27,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.xlsx_exporter import (
     OPENPYXL_AVAILABLE, export_project_to_xlsx, generate_xlsx_bytes,
 )
@@ -405,7 +405,7 @@ class TestHolidaysReachTheFormulas(ExporterTestCase):
         holiday sheet at all - and recalculated in Excel straight through the
         shutdown.
         """
-        from gantt_app.workdaycalendar import DateOverride
+        from gantt_app.core.workdaycalendar import DateOverride
 
         project = self.build_project()
         shutdown = project.start_date.date() + timedelta(days=1)
@@ -431,7 +431,7 @@ class TestHolidaysReachTheFormulas(ExporterTestCase):
         showing the Monday. The finish is written as the date instead, so the
         sheet says what the plan says and only loses the recalculation.
         """
-        from gantt_app.workdaycalendar import DateOverride
+        from gantt_app.core.workdaycalendar import DateOverride
 
         project = Project(name="Make-up")
         project.add_task(Task(id="T1", name="Over the Saturday",
@@ -454,7 +454,7 @@ class TestHolidaysReachTheFormulas(ExporterTestCase):
         A day taken off by hand is just another date on the holiday sheet as
         far as WORKDAY is concerned, so the sheet stays live.
         """
-        from gantt_app.workdaycalendar import DateOverride
+        from gantt_app.core.workdaycalendar import DateOverride
 
         project = Project(name="Shutdown")
         project.add_task(Task(id="T1", name="Over the shutdown",

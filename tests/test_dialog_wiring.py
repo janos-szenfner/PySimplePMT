@@ -15,7 +15,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.views.taskdialogs import CreateTaskDialog, EditTaskDialog
 
@@ -127,7 +127,7 @@ class TestRequiredStartDate(unittest.TestCase):
         offers is the Monday: the same date the scheduler would settle on, so
         saving the form does not immediately move the task again.
         """
-        from gantt_app.models import Dependency
+        from gantt_app.core.models import Dependency
 
         required = self._required([Dependency(self.first.id, 'FS', 'Hard')],
                                   datetime(2024, 2, 1))
@@ -136,7 +136,7 @@ class TestRequiredStartDate(unittest.TestCase):
 
     def test_start_start_hard(self):
         """Start - Start pins to the predecessor's start."""
-        from gantt_app.models import Dependency
+        from gantt_app.core.models import Dependency
 
         required = self._required([Dependency(self.first.id, 'SS', 'Hard')],
                                   datetime(2024, 2, 1))
@@ -145,7 +145,7 @@ class TestRequiredStartDate(unittest.TestCase):
 
     def test_rubber_leaves_a_later_start(self):
         """A Rubber link does not pull a later start backwards."""
-        from gantt_app.models import Dependency
+        from gantt_app.core.models import Dependency
 
         required = self._required([Dependency(self.first.id, 'FS', 'Rubber')],
                                   datetime(2024, 2, 1))

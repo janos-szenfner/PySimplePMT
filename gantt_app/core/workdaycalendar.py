@@ -54,7 +54,7 @@ through untouched; only the calendar date decides whether a day is worked.
 This sits beside models.py rather than under utils/ because models imports it:
 everything in utils imports models, so reaching back into that package from
 here would run gantt_app.utils.__init__ mid-import and deadlock on a circular
-import. Same reason as gantt_app.priority, and the same reason the logger
+import. Same reason as gantt_app.core.priority, and the same reason the logger
 below comes from the standard library directly.
 """
 

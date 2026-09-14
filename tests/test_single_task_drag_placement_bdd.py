@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:
@@ -51,7 +51,7 @@ def the_issue_7_project_hierarchy(monkeypatch):
     def record_log(message, *args):
         log_messages.append(message % args if args else message)
 
-    monkeypatch.setattr("gantt_app.models.logger.info", record_log)
+    monkeypatch.setattr("gantt_app.core.models.logger.info", record_log)
     context = {
         "project": project,
         "root": root,

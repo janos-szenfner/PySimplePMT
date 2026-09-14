@@ -1,5 +1,5 @@
 """
-Unit tests for the update check (gantt_app/update_check.py, issue #41).
+Unit tests for the update check (gantt_app/utils/update_check.py, issue #41).
 
 The network is injected, so these are pure: they check the version parsing,
 the comparison, and that a failure comes back as "unknown" rather than
@@ -11,8 +11,8 @@ import ssl
 import unittest
 from unittest import mock
 
-from gantt_app import update_check
-from gantt_app.update_check import (
+from gantt_app.utils import update_check
+from gantt_app.utils.update_check import (
     STATUS_LATEST,
     STATUS_UNKNOWN,
     STATUS_UPDATE,

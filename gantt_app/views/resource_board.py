@@ -19,9 +19,9 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.models import Project, Task
-from gantt_app.resource_model import (
+from gantt_app.views import theme
+from gantt_app.core.models import Project, Task
+from gantt_app.core.resource_model import (
     Resource, ResourceRepository, ResourceType, TeamPool,
 )
 from gantt_app.utils.log import get_logger
@@ -945,7 +945,7 @@ class ResourceBoard(ctk.CTkFrame):
         # editor's save runs (issue #30). Seeding the new assignment at zero
         # hours is what lets the engine see the roster change; a task the
         # maths does not govern keeps the effort it always got.
-        from gantt_app import effort as eff
+        from gantt_app.core import effort as eff
         hpd = getattr(self.project, 'hours_per_day', eff.DEFAULT_HOURS_PER_DAY)
         old_state = eff.state_from_task(task, hpd)
         managed = (eff.logic_applies(old_state) and not task.is_container

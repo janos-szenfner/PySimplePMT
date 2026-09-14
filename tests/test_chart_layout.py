@@ -11,7 +11,7 @@ window, the PNG/PDF exports and the SVG at once. Nothing here needs a display.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.chart_render import (
     layout_chart, MIN_WIDTH, RowPlan, _current_bar_span, _baseline_bar_span,
     _current_summary, _baseline_summary, render_image,
@@ -636,7 +636,7 @@ class TestBaselineOverlaySplitsRows(unittest.TestCase):
 
     def test_shorter_baseline_is_visible_in_rendered_image(self):
         """A baseline that fits inside the current bar still shows up."""
-        from gantt_app.baselines import BaselineManager
+        from gantt_app.core.baselines import BaselineManager
 
         project = Project(name="Overlay Visibility")
         task = Task(id="t1", name="Task",

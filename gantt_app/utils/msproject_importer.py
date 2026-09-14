@@ -50,14 +50,14 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from gantt_app.calendarregistry import CalendarRegistry
-from gantt_app.models import Project, Task, child_type_for
+from gantt_app.core.calendarregistry import CalendarRegistry
+from gantt_app.core.models import Project, Task, child_type_for
 # The same stripping the GanttProject reader does, and for the same reason:
 # a file may or may not carry its namespace and both should parse through one
 # code path. It lives there because that reader needed it first.
 from gantt_app.utils.gan_importer import strip_namespaces
 from gantt_app.utils.log import get_logger
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 logger = get_logger(__name__)
 
@@ -358,7 +358,7 @@ def _parse_priority(text: Optional[str]) -> str:
 
 def _parse_status(text: Optional[str]) -> str:
     """Parse status, defaulting to Active if invalid."""
-    from gantt_app.models import TASK_STATUSES
+    from gantt_app.core.models import TASK_STATUSES
     if text in TASK_STATUSES:
         return text
     if text is not None:

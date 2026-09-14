@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.toolbar import Toolbar
 
 
@@ -234,7 +234,7 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
     def plan(self, rows):
         """A project from (id, type, parent) rows, in hierarchy order."""
         from datetime import datetime
-        from gantt_app.models import Project, Task
+        from gantt_app.core.models import Project, Task
 
         project = Project(name="Levels")
         for task_id, task_type, parent in rows:
@@ -358,7 +358,7 @@ class TestMovingSeveralRowsAtOnce(unittest.TestCase):
     def plan(self, rows):
         """A project from (id, parent) rows, in hierarchy order."""
         from datetime import datetime
-        from gantt_app.models import Project, Task
+        from gantt_app.core.models import Project, Task
 
         project = Project(name="Group")
         for task_id, parent in rows:
@@ -489,7 +489,7 @@ class TestTheOutlineLevel(unittest.TestCase):
         """A plan whose Nth task has the given parent."""
         from datetime import datetime
 
-        from gantt_app.models import Project, Task
+        from gantt_app.core.models import Project, Task
 
         built = Project(name="Levels")
         for index, parent in enumerate(parents, start=1):
@@ -559,7 +559,7 @@ class TestATaskCanAnswerItsOwnLength(unittest.TestCase):
     def task(self):
         """A five working day task."""
         from datetime import datetime
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
 
         return Task(id="T", name="T", task_type="Task",
                     start_date=datetime(2026, 1, 5),
@@ -567,7 +567,7 @@ class TestATaskCanAnswerItsOwnLength(unittest.TestCase):
 
     def test_it_hands_back_a_calendar(self):
         """Not a property object, which is what 3.13 gave."""
-        from gantt_app.workdaycalendar import WorkingCalendar
+        from gantt_app.core.workdaycalendar import WorkingCalendar
 
         self.assertIsInstance(self.task().working_calendar, WorkingCalendar)
 

@@ -10,7 +10,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 import pytest
 import uuid
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 # Load the Gherkin scenarios
@@ -964,7 +964,7 @@ def scan_for_property_calls():
     import ast
     import pathlib
 
-    from gantt_app import models
+    from gantt_app.core import models
 
     properties = {
         name for cls in (models.Task, models.Project)

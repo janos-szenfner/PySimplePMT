@@ -21,8 +21,8 @@ import unittest
 from datetime import date, datetime
 from unittest import mock
 
-from gantt_app.models import Project, Task
-from gantt_app.workdaycalendar import (
+from gantt_app.core.models import Project, Task
+from gantt_app.core.workdaycalendar import (
     DateOverride, EU_COUNTRIES, supported_countries,
 )
 
@@ -263,7 +263,7 @@ class TestTheListIsGroupedByRegion(HolidayDialogTestCase):
 
     def test_every_region_has_a_heading(self):
         """One per region, in the order the picker lists them."""
-        from gantt_app.workdaycalendar import REGION_ORDER
+        from gantt_app.core.workdaycalendar import REGION_ORDER
 
         window = self.dialog()
 
@@ -271,7 +271,7 @@ class TestTheListIsGroupedByRegion(HolidayDialogTestCase):
 
     def test_the_headings_come_in_order_down_the_list(self):
         """Africa & Middle East first, Other Territories last."""
-        from gantt_app.workdaycalendar import REGION_ORDER
+        from gantt_app.core.workdaycalendar import REGION_ORDER
 
         window = self.dialog()
         rows = self.region_rows(window)
@@ -288,7 +288,7 @@ class TestTheListIsGroupedByRegion(HolidayDialogTestCase):
         span is filed under a region it does not belong to, and nothing else
         in the dialog would notice.
         """
-        from gantt_app.workdaycalendar import region_of
+        from gantt_app.core.workdaycalendar import region_of
 
         window = self.dialog()
         rows = self.region_rows(window)
@@ -317,7 +317,7 @@ class TestTheListIsGroupedByRegion(HolidayDialogTestCase):
 
     def test_clearing_the_search_brings_them_all_back(self):
         """The headings are hidden rather than destroyed."""
-        from gantt_app.workdaycalendar import REGION_ORDER
+        from gantt_app.core.workdaycalendar import REGION_ORDER
 
         window = self.dialog()
         window.search_var.set('brazil')
@@ -996,7 +996,7 @@ class TestManagingTheCalendars(HolidayDialogTestCase):
     def setUp(self):
         """A dialog over the three presets."""
         super().setUp()
-        from gantt_app.calendarregistry import default_registry
+        from gantt_app.core.calendarregistry import default_registry
 
         self.registry = default_registry()
 
@@ -1111,7 +1111,7 @@ class TestAnEmptiedRegistryIsNotADeadEnd(HolidayDialogTestCase):
 
     def test_the_selector_is_built_even_with_nothing_in_it(self):
         """It is what New... hangs off."""
-        from gantt_app.calendarregistry import CalendarRegistry
+        from gantt_app.core.calendarregistry import CalendarRegistry
 
         window = self.dialog(registry=CalendarRegistry())
 
@@ -1121,7 +1121,7 @@ class TestAnEmptiedRegistryIsNotADeadEnd(HolidayDialogTestCase):
 
     def test_a_calendar_can_be_added_from_empty(self):
         """Which is the whole point of it still being there."""
-        from gantt_app.calendarregistry import CalendarRegistry
+        from gantt_app.core.calendarregistry import CalendarRegistry
 
         window = self.dialog(registry=CalendarRegistry())
 
@@ -1133,7 +1133,7 @@ class TestAnEmptiedRegistryIsNotADeadEnd(HolidayDialogTestCase):
 
     def test_the_calendars_reach_the_caller_on_apply(self):
         """Along with everything else, from the one press."""
-        from gantt_app.calendarregistry import CalendarRegistry
+        from gantt_app.core.calendarregistry import CalendarRegistry
 
         window = self.dialog(registry=CalendarRegistry())
         with mock.patch('tkinter.simpledialog.askstring',

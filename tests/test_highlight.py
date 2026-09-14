@@ -16,7 +16,7 @@ a Treeview, which needs a display, and is skipped where there is none.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:
@@ -250,7 +250,7 @@ class TestThePaintedRows(unittest.TestCase):
         return str(self.task_list.tree.tag_configure(tags[0], 'background'))
 
     def test_matched_rows_take_the_highlight_yellow(self):
-        from gantt_app import theme
+        from gantt_app.views import theme
         self.task_list.show_highlighted_rows({"A", "C"})
         self.assertEqual(self._fill("A"), theme.now(theme.GRID_HIGHLIGHT_BG))
         self.assertEqual(self._fill("C"), theme.now(theme.GRID_HIGHLIGHT_BG))
@@ -262,21 +262,21 @@ class TestThePaintedRows(unittest.TestCase):
             str(self.ctk.ThemeManager.theme["CTkFrame"]["fg_color"]))
 
     def test_the_paint_survives_a_rebuild(self):
-        from gantt_app import theme
+        from gantt_app.views import theme
         self.task_list.show_highlighted_rows({"A"})
         self.task_list.update_task_list()
         self.assertEqual(self._fill("A"), theme.now(theme.GRID_HIGHLIGHT_BG))
 
     def test_critical_red_beats_the_yellow(self):
         """A row both critical and matched stays red."""
-        from gantt_app import theme
+        from gantt_app.views import theme
         self.task_list.show_critical_path_rows({"A"})
         self.task_list.show_highlighted_rows({"A", "B"})
         self.assertEqual(self._fill("A"), theme.now(theme.GRID_CRITICAL_BG))
         self.assertEqual(self._fill("B"), theme.now(theme.GRID_HIGHLIGHT_BG))
 
     def test_the_yellow_follows_the_appearance(self):
-        from gantt_app import theme
+        from gantt_app.views import theme
         self.task_list.show_highlighted_rows({"A"})
         self.ctk.set_appearance_mode('dark')
         self.task_list.apply_theme()

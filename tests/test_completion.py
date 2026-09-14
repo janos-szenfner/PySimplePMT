@@ -18,7 +18,7 @@ No display is needed: this is the model, and none of it draws anything.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task, rolled_up_progress
+from gantt_app.core.models import Project, Task, rolled_up_progress
 
 
 def task(task_id, task_type, progress=0, days=1, parent=None,

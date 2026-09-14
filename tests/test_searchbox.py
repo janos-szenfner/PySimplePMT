@@ -21,7 +21,7 @@ kept apart and skip without one.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.searchbox import (
     matching_task_ids, task_haystack, task_matches, visible_task_ids,
 )
@@ -363,7 +363,7 @@ class TestTheListAndChartFollow(unittest.TestCase):
     def setUp(self):
         """The whole application, over a fake settings file."""
         from unittest import mock
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         saver = mock.patch.object(theme, 'save_mode', return_value=True)
         saver.start()

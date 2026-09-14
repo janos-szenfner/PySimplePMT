@@ -28,7 +28,7 @@ import tkinter as tk
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.taskstyle import (
+from gantt_app.core.taskstyle import (
     DEFAULT_BADGE, PRESETS, preset_badge,
 )
 
@@ -103,7 +103,7 @@ def manager():
     manager, which reads the real user settings.json - a test must neither
     depend on what is in it nor write to it.
     """
-    from gantt_app.presets import PresetManager
+    from gantt_app.views.presets import PresetManager
 
     path = os.path.join(tempfile.mkdtemp(), 'settings.json')
     return PresetManager(settings_path=path)
@@ -221,7 +221,7 @@ def a_preview_menu_for_the_presets(bar_root):
     watches for clicks, and a full update pumps that machinery. See the
     module note.
     """
-    from gantt_app.taskstyle import preset_badge
+    from gantt_app.core.taskstyle import preset_badge
     from gantt_app.views.toolbar import CTkDropdownMenu
 
     items = []
@@ -256,7 +256,7 @@ def check_row_shows_all_three(preview_menu, label):
     """Three columns: a badge, the name, and a chip drawn in the style."""
     import customtkinter as ctk
 
-    from gantt_app.taskstyle import preset_badge
+    from gantt_app.core.taskstyle import preset_badge
 
     def walk(widget):
         for kid in widget.winfo_children():

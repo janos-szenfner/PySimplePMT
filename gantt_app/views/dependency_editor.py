@@ -34,7 +34,7 @@ from typing import Callable, List, Optional
 
 import customtkinter as ctk
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     Dependency, Project, Task,
     DEPENDENCY_TYPES, DEPENDENCY_TYPE_LABELS, DEPENDENCY_HARDNESS,
 )
@@ -42,7 +42,7 @@ from gantt_app.models import (
 # only from a button is exactly what goes missing from a frozen build
 # without anyone noticing until someone clicks it
 from gantt_app.help.dependencyhelp import DependencyHelpWindow
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

@@ -20,12 +20,12 @@ its own.
 import unittest
 from datetime import date, datetime
 
-from gantt_app.calendarregistry import (
+from gantt_app.core.calendarregistry import (
     CalendarRegistry, NamedCalendar, PROJECT_DEFAULT_LABEL, default_registry,
     describe_week, preset_calendar, slugify,
 )
-from gantt_app.models import Project, Task
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.models import Project, Task
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 
 class TestSlugs(unittest.TestCase):

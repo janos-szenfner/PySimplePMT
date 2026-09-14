@@ -153,7 +153,7 @@ class TestSecondaryButtonsAreVisible(unittest.TestCase):
 
     def test_the_critical_path_recalculate_is_drawn(self):
         """The same button in the same state, in the other window."""
-        from gantt_app.models import Project
+        from gantt_app.core.models import Project
         from gantt_app.views.criticalpath import CriticalPathWindow
 
         window = CriticalPathWindow(self.root, Project(name="Empty"))

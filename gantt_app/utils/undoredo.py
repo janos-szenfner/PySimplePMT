@@ -79,7 +79,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Callable
 import copy
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

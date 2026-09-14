@@ -6,10 +6,10 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from gantt_app.shortcuts import (
+from gantt_app.utils.shortcuts import (
     IS_MACOS, any_key_with, bind_all, is_key, modifiers_held,
 )
-from gantt_app.resource_model import (
+from gantt_app.core.resource_model import (
     DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, DaysOffRange, Resource,
     ResourceType, SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,
@@ -18,7 +18,7 @@ from gantt_app.utils.log import get_logger
 from gantt_app.views import dialogs as messagebox
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible, take_grab
-from gantt_app import theme
+from gantt_app.views import theme
 from tkinter import simpledialog
 
 

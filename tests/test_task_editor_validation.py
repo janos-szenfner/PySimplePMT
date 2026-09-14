@@ -24,7 +24,7 @@ from unittest import mock
 import tkinter as tk
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:
@@ -546,7 +546,7 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
 
     def test_a_container_greys_everything_it_rolls_up(self):
         """A phase takes its dates and its length from the work inside it."""
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
         from gantt_app.views.taskform import TaskFormDialog
 
         phase = Task(id="P1", name="Planning", task_type="Phase",
@@ -597,7 +597,7 @@ class TestFieldsTheFormFillsInItself(EditorTestCase):
         that was built disabled - a container's end, here, which it takes
         from the work inside it.
         """
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
         from gantt_app.views.taskform import TaskFormDialog
 
         phase = Task(id="P1", name="Planning", task_type="Phase",

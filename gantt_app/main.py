@@ -13,16 +13,16 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.baselines import BaselineManager
-from gantt_app.models import Project, Task
-from gantt_app.resource_model import ResourceRepository
+from gantt_app.views import theme
+from gantt_app.core.baselines import BaselineManager
+from gantt_app.core.models import Project, Task
+from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.views.task_list import DragDropTaskList
 from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.resource_board import ResourceBoard
 from gantt_app.views.toolbar import Toolbar
-from gantt_app.startup_setting import StartupSettings, WelcomeModal
+from gantt_app.views.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.views.project_dashboard import ProjectDashboardFrame
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
 from gantt_app.utils.copypastecut import ClipboardManager, setup_keyboard_bindings
@@ -48,7 +48,7 @@ def set_appearance_from_system() -> str:
     preference - the name says system and it means it. The application's own
     startup goes through ThemeController instead, which honours a saved
     override; this is for a caller that wants the desktop's answer and
-    nothing else. The detection itself is gantt_app.theme's.
+    nothing else. The detection itself is gantt_app.views.theme's.
 
     The obvious call here is set_appearance_mode("system"), and that is what
     this used to be. It is a trap. Left in that mode CustomTkinter starts a
@@ -96,7 +96,7 @@ class GanttApp(ctk.CTk):
 
         # Who decides light or dark, and the watch on the desktop setting.
         # Held on the application because the toolbar's day/night control and
-        # the View menu both drive it - see gantt_app.theme.
+        # the View menu both drive it - see gantt_app.views.theme.
         self.theme_controller = theme.ThemeController()
         ctk.set_appearance_mode(self.theme_controller.appearance)
         self.theme_controller.start_watching(self)
@@ -664,7 +664,7 @@ class GanttApp(ctk.CTk):
         menu put it beside that task.
 
         Which modifier this binds - Command on a Mac, Control elsewhere -
-        is settled by gantt_app.shortcuts; see setup_keyboard_bindings.
+        is settled by gantt_app.utils.shortcuts; see setup_keyboard_bindings.
         """
         def on_copy():
             """Copy the selected rows."""

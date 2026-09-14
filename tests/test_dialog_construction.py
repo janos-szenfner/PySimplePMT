@@ -20,7 +20,7 @@ import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:
@@ -88,7 +88,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertTrue(hasattr(dialog, 'task_color_entry'))
 
     def test_the_resource_settings_dialog_builds_both_tabs(self):
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
         dialog = ResourceSettingsWindow(
@@ -103,7 +103,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.resource_edit_button.cget("state"), "disabled")
 
     def test_resource_settings_builds_daily_capacity_controls(self):
-        from gantt_app.resource_model import ResourceRepository, SchedulePattern
+        from gantt_app.core.resource_model import ResourceRepository, SchedulePattern
         from gantt_app.views.resourcesettings import ResourceEditorModal
 
         repository = ResourceRepository()
@@ -118,7 +118,7 @@ class TestDialogConstruction(unittest.TestCase):
                          "168 hours/week | 4.20 FTE")
 
     def test_resource_editor_has_all_four_workflow_tabs(self):
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceEditorModal
 
         dialog = ResourceEditorModal(self.root, ResourceRepository())
@@ -128,7 +128,7 @@ class TestDialogConstruction(unittest.TestCase):
                           "Assigned Tasks (Read-Only)"))
 
     def test_resource_editor_adds_and_removes_days_off(self):
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.datepicker import DateEntry
         from gantt_app.views.resourcesettings import ResourceEditorModal
 
@@ -146,7 +146,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.days_off, [])
 
     def test_generic_resource_name_is_generated_from_its_role(self):
-        from gantt_app.resource_model import ResourceRepository, ResourceType
+        from gantt_app.core.resource_model import ResourceRepository, ResourceType
         from gantt_app.views.resourcesettings import ResourceEditorModal
 
         repository = ResourceRepository()
@@ -161,7 +161,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertIs(resource.resource_type, ResourceType.GENERIC)
 
     def test_resource_grid_filters_and_selects_a_row(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType,
         )
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
@@ -183,7 +183,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.resource_edit_button.cget("state"), "normal")
 
     def test_team_split_recalculates_as_the_box_changes(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType, TeamPool,
         )
         from gantt_app.views.resourcesettings import TeamEditorModal
@@ -204,7 +204,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertIn("20 hours/week", dialog.team_capacity_summary.cget("text"))
 
     def test_team_split_keeps_200_percent_and_marks_over_capacity(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType, TeamPool,
         )
         from gantt_app.views.resourcesettings import TeamEditorModal
@@ -237,7 +237,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(allocation_status(101)[0], "Over capacitated")
 
     def test_fixed_team_editor_summary_uses_fixed_capacity(self):
-        from gantt_app.resource_model import ResourceRepository, SchedulePattern
+        from gantt_app.core.resource_model import ResourceRepository, SchedulePattern
         from gantt_app.views.resourcesettings import TeamEditorModal
 
         dialog = TeamEditorModal(self.root, ResourceRepository())
@@ -252,7 +252,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertIn("4.20 FTE (168 hours/week)", text)
 
     def test_new_team_does_not_acquire_existing_generic_resource(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType,
         )
         from gantt_app.views.resourcesettings import TeamEditorModal
@@ -270,7 +270,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(resource.team_memberships, {})
 
     def test_zero_team_split_unassigns_member_when_applied(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType, TeamPool,
         )
         from gantt_app.views.resourcesettings import TeamEditorModal
@@ -291,7 +291,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(resource.team_memberships, {})
 
     def test_team_grid_uses_the_wireframes_strict_columns(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType, TeamPool,
         )
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
@@ -315,7 +315,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.team_edit_button.cget("state"), "normal")
 
     def test_daily_contribution_summary_does_not_print_seven_days(self):
-        from gantt_app.resource_model import DAYS
+        from gantt_app.core.resource_model import DAYS
         from gantt_app.views.resourcesettings import _daily_summary
 
         standard = dict(zip(DAYS, [4, 4, 4, 4, 4, 0, 0]))
@@ -326,7 +326,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_resource_actions_live_in_a_sticky_footer(self):
         import customtkinter as ctk
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
         dialog = ResourceSettingsWindow(self.root, ResourceRepository())
@@ -341,7 +341,7 @@ class TestDialogConstruction(unittest.TestCase):
             self.assertEqual(button.cget("hover_color"), "#c0392b")
 
     def test_resource_settings_copy_paste_buttons_start_disabled(self):
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
         dialog = ResourceSettingsWindow(self.root, ResourceRepository())
@@ -352,7 +352,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.team_paste_button.cget("state"), "disabled")
 
     def test_copy_paste_resource_creates_an_independent_duplicate(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType,
         )
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
@@ -386,7 +386,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertNotEqual(copied.id, original.id)
 
     def test_copy_paste_team_keeps_settings_but_not_members(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType, TeamPool,
         )
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
@@ -417,7 +417,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertNotEqual(copied.id, "qa")
 
     def test_copy_paste_avoids_duplicate_names(self):
-        from gantt_app.resource_model import Resource, ResourceRepository, ResourceType
+        from gantt_app.core.resource_model import Resource, ResourceRepository, ResourceType
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
         repository = ResourceRepository()
@@ -437,7 +437,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertIn("John Doe (Copy 2)", names)
 
     def test_keyboard_shortcut_opens_editor_for_active_tab(self):
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
         dialog = ResourceSettingsWindow(self.root, ResourceRepository())
@@ -452,7 +452,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_double_click_opens_resource_editor(self):
         from unittest import mock
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType,
         )
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
@@ -473,7 +473,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_double_click_opens_team_editor(self):
         from unittest import mock
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             ResourceRepository, TeamPool,
         )
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
@@ -492,7 +492,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual(dialog.selected_team_id, "qa")
 
     def test_resource_settings_save_changes_uses_project_callback(self):
-        from gantt_app.resource_model import ResourceRepository
+        from gantt_app.core.resource_model import ResourceRepository
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
         calls = []
@@ -650,7 +650,7 @@ class TestDialogConstruction(unittest.TestCase):
 
     def test_editing_a_milestone_opens_with_the_box_ticked(self):
         """The same box, over a task that is already one."""
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
         from gantt_app.views.taskdialogs import EditTaskDialog
 
         milestone = Task(id="M1", name="Sign-off", task_type="Milestone",
@@ -851,7 +851,7 @@ class TestDataGridColumnAlignment(unittest.TestCase):
         self._assert_alignment(grid)
 
     def test_the_resource_and_team_grids_align(self):
-        from gantt_app.resource_model import (
+        from gantt_app.core.resource_model import (
             Resource, ResourceRepository, ResourceType, TeamPool)
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 

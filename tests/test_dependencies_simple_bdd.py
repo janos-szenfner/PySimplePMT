@@ -8,7 +8,7 @@ Run with:
 from datetime import datetime, timedelta
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     Dependency, DependencyList, Project, Task,
     DEPENDENCY_TYPE_LABELS,
 )

@@ -9,8 +9,8 @@ import json
 from datetime import datetime, timedelta
 import shutil
 
-from gantt_app.models import Task, Project
-from gantt_app.resource_model import Resource, ResourceType, TeamPool
+from gantt_app.core.models import Task, Project
+from gantt_app.core.resource_model import Resource, ResourceType, TeamPool
 from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 
 

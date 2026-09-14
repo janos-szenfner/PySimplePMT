@@ -22,9 +22,9 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.presets import DEFAULT_CUSTOM_BADGE, PresetManager, StylePreset
-from gantt_app.taskstyle import TaskStyle
+from gantt_app.views import theme
+from gantt_app.views.presets import DEFAULT_CUSTOM_BADGE, PresetManager, StylePreset
+from gantt_app.core.taskstyle import TaskStyle
 from gantt_app.utils.log import get_logger
 from gantt_app.views.colorpicker import ColorEntry
 from gantt_app.views.modal import grab_when_visible

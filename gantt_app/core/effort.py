@@ -29,7 +29,7 @@ the engine and its tests; later phases wire it to edits and assignments.
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     DEFAULT_HOURS_PER_DAY,
     EFFORT_FIXED_DURATION,
     EFFORT_FIXED_UNITS,

@@ -55,8 +55,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.models import Project, TASK_TYPES
+from gantt_app.views import theme
+from gantt_app.core.models import Project, TASK_TYPES
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

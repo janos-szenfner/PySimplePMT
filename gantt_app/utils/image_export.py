@@ -23,7 +23,7 @@ a self-contained package. It has been removed entirely.
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from gantt_app.models import Project
+from gantt_app.core.models import Project
 from gantt_app.utils.chart_figure import build_gantt_figure
 from gantt_app.utils.chart_render import render_image, render_svg
 from gantt_app.utils.log import get_logger

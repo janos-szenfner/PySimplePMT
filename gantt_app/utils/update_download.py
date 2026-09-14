@@ -3,7 +3,7 @@ Assisted update: download the new installer, verify it, then open it (#41).
 
 WHY THIS MODULE EXISTS:
 ======================
-The About window's update check (gantt_app.update_check) only reports that a
+The About window's update check (gantt_app.utils.update_check) only reports that a
 newer release exists. This module is the next step a planner can take from
 there without leaving the app: it downloads the platform's installer from the
 release, checks it against the release's published SHA256SUMS, and only then
@@ -32,7 +32,7 @@ import tempfile
 import urllib.request
 from typing import Callable, Optional
 
-from gantt_app.update_check import default_ssl_context
+from gantt_app.utils.update_check import default_ssl_context
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

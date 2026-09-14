@@ -10,10 +10,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from gantt_app.models import Project, Task
-from gantt_app.resource_model import ResourceRepository
+from gantt_app.core.models import Project, Task
+from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.utils.log import get_logger
-from gantt_app.workdaycalendar import WorkingCalendar, as_date
+from gantt_app.core.workdaycalendar import WorkingCalendar, as_date
 
 logger = get_logger(__name__)
 

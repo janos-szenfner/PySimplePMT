@@ -53,7 +53,7 @@ class UpdateInfo:
     download_url: Optional[str] = None
     error: Optional[str] = None
     #: The release's downloadable files, each {name, url, size}. Used by the
-    #: assisted download (gantt_app.update_download) to find the installer and
+    #: assisted download (gantt_app.utils.update_download) to find the installer and
     #: the SHA256SUMS to check it against.
     assets: list = field(default_factory=list)
 

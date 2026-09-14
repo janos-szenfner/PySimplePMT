@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from pytest_bdd import given, parsers, scenarios, then, when
 import pytest
 
-from gantt_app.resource_model import SchedulePattern, DAYS
+from gantt_app.core.resource_model import SchedulePattern, DAYS
 from gantt_app.views.resourcesettings import (
     _schedule_short,
     _daily_summary,

@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime, timedelta
 import copy
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.undoredo import (
     UndoRedoManager,
     AddTaskCommand,

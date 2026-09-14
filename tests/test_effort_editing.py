@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     EFFORT_FIXED_DURATION,
     EFFORT_FIXED_UNITS,
     Project,

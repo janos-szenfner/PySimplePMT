@@ -14,7 +14,7 @@ import tkinter as tk
 import customtkinter as ctk
 from unittest.mock import MagicMock, patch
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from tests.pixels import flat_pixels
 from gantt_app.views.toolbar import IconToolbar, Toolbar
 from gantt_app.resources.icons import (

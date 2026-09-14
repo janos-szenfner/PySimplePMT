@@ -10,7 +10,7 @@ import json
 import unittest
 from datetime import datetime
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     DEFAULT_HOURS_PER_DAY,
     EFFORT_FIXED_UNITS,
     EFFORT_FIXED_WORK,

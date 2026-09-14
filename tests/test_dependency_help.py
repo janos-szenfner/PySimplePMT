@@ -11,7 +11,7 @@ those tests skip without it; CI provides one through xvfb.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task, DEPENDENCY_TYPE_LABELS
+from gantt_app.core.models import Project, Task, DEPENDENCY_TYPE_LABELS
 from gantt_app.help.dependencyhelp import HELP_SECTIONS
 
 

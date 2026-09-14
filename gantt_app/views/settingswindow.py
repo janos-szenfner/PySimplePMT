@@ -5,9 +5,9 @@ from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.baselines import BaselineManager
-from gantt_app.models import GRID_DATA_COLUMNS, order_grid_columns
+from gantt_app.views import theme
+from gantt_app.core.baselines import BaselineManager
+from gantt_app.core.models import GRID_DATA_COLUMNS, order_grid_columns
 from gantt_app.utils.log import get_logger
 from gantt_app.views.modal import grab_when_visible
 
@@ -217,7 +217,7 @@ class SettingsWindow(ctk.CTkToplevel):
         other four: the built-ins and the reader's own customs are edited in
         place, and the grid is the whole of it. See views/presetsettings.py.
         """
-        from gantt_app.presets import default_manager
+        from gantt_app.views.presets import default_manager
         from gantt_app.views.presetsettings import StylePresetsTab
 
         StylePresetsTab(self.tabs["Presets"], default_manager()).pack(

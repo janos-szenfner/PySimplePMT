@@ -19,8 +19,8 @@ import tkinter as tk
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.presets import PresetManager
-from gantt_app.taskstyle import TaskStyle
+from gantt_app.views.presets import PresetManager
+from gantt_app.core.taskstyle import TaskStyle
 
 
 def _display_available() -> bool:

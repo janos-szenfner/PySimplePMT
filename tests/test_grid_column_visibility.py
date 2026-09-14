@@ -10,7 +10,7 @@ edits its own cells.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:
@@ -59,7 +59,7 @@ class GridColumnCase(unittest.TestCase):
     def setUp(self):
         """Build the grid the way the main window does."""
         import customtkinter as ctk
-        from gantt_app import theme
+        from gantt_app.views import theme
         from gantt_app.views.task_list import DragDropTaskList
 
         self.root = ctk.CTk()

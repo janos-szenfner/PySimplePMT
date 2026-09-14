@@ -26,7 +26,7 @@ import tkinter as tk
 import weakref
 from typing import Optional
 
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

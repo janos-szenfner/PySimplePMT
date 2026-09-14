@@ -18,7 +18,7 @@ import logging
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 BASE = datetime(2026, 8, 19)
@@ -295,8 +295,8 @@ class TestTheButtonsAndTheirKeys(unittest.TestCase):
         self.assertIn('unlink', ACTIVE_WHEN_PROJECT_OPEN)
 
     def test_the_keys_carry_this_platform_s_modifier(self):
-        """Command on a Mac, Control elsewhere; see gantt_app.shortcuts."""
-        from gantt_app.shortcuts import MODIFIER, sequences
+        """Command on a Mac, Control elsewhere; see gantt_app.utils.shortcuts."""
+        from gantt_app.utils.shortcuts import MODIFIER, sequences
 
         self.assertEqual(sequences('F2'), (f"<{MODIFIER}-F2>",))
         self.assertEqual(sequences('F2', shift=True),
@@ -304,7 +304,7 @@ class TestTheButtonsAndTheirKeys(unittest.TestCase):
 
     def test_the_captions_are_written_the_way_the_platform_writes_them(self):
         """A caption promising a key that is not bound is worse than none."""
-        from gantt_app.shortcuts import IS_MACOS, accelerator
+        from gantt_app.utils.shortcuts import IS_MACOS, accelerator
 
         if IS_MACOS:
             self.assertEqual(accelerator('F2'), '⌘F2')
@@ -315,7 +315,7 @@ class TestTheButtonsAndTheirKeys(unittest.TestCase):
 
     def test_the_tooltips_name_the_keys(self):
         """So the row says what it answers to."""
-        from gantt_app.shortcuts import accelerator
+        from gantt_app.utils.shortcuts import accelerator
         from gantt_app.views.toolbar import IconToolbar
 
         tips = {name: tip for name, tip, _a in IconToolbar.ICON_ACTIONS}
@@ -417,9 +417,9 @@ class TestLinkingRowsThatHoldWork(LinkingTestCase):
         """
         self.project.link_tasks(["001", "003"])
 
-        with self.assertLogs('gantt_app.models', level='WARNING') as caught:
+        with self.assertLogs('gantt_app.core.models', level='WARNING') as caught:
             self.project.apply_schedule()
-            logging.getLogger('gantt_app.models').warning("settled")
+            logging.getLogger('gantt_app.core.models').warning("settled")
 
         self.assertEqual([r for r in caught.output if 'did not settle' in r],
                          [])

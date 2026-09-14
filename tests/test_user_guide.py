@@ -26,9 +26,9 @@ from unittest import mock
 from datetime import date, datetime, timedelta
 
 from gantt_app.help.userguide import GUIDE_SECTIONS
-from gantt_app.models import TASK_TYPES, Project, Task
+from gantt_app.core.models import TASK_TYPES, Project, Task
 from gantt_app.utils.chart_figure import calculate_date_range
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 
 def _display_available() -> bool:
@@ -371,7 +371,7 @@ class TestReachingTheGuide(unittest.TestCase):
     def setUp(self):
         """A toolbar over an empty project."""
         import customtkinter as ctk
-        from gantt_app.models import Project
+        from gantt_app.core.models import Project
         from gantt_app.views.toolbar import Toolbar
 
         self.root = ctk.CTk()
@@ -536,7 +536,7 @@ class TestTheHelpButtonSitsUnderLog(unittest.TestCase):
     def test_the_question_mark_is_packed_to_the_right(self):
         """Rather than after the day/night control, where it used to be."""
         import customtkinter as ctk
-        from gantt_app.models import Project
+        from gantt_app.core.models import Project
         from gantt_app.views.toolbar import Toolbar
 
         root = ctk.CTk()
@@ -848,7 +848,7 @@ class TestTheCalendarStrip(unittest.TestCase):
         through current_settings and do not.
         """
         from gantt_app.utils.chart_figure import DEFAULT_SETTINGS
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         for key in DEFAULT_SETTINGS:
             if key.startswith('header_'):

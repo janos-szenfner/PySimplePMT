@@ -30,9 +30,9 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.shortcuts import accelerator
-from gantt_app.taskstyle import (
+from gantt_app.views import theme
+from gantt_app.utils.shortcuts import accelerator
+from gantt_app.core.taskstyle import (
     DEFAULT_BADGE, FILL_COLOURS, TEXT_COLOURS, ResolvedStyle,
 )
 from gantt_app.utils.log import get_logger
@@ -236,7 +236,7 @@ class StyleBar(ctk.CTkFrame):
     CAPTIONS = {
         # The modifier is the platform's, and the caption says whichever it
         # is: a hover promising Ctrl+B on a Mac names a key that does
-        # nothing. See gantt_app.shortcuts.
+        # nothing. See gantt_app.utils.shortcuts.
         'bold': f"Bold  ({accelerator('B')})",
         'italic': f"Italic  ({accelerator('I')})",
         'underline': f"Underline  ({accelerator('U')})",
@@ -415,7 +415,7 @@ class StyleBar(ctk.CTkFrame):
         """
         if not self.enabled:
             return
-        from gantt_app.presets import default_manager
+        from gantt_app.views.presets import default_manager
         from gantt_app.views.toolbar import CTkDropdownMenu
 
         button = self.buttons['style_preset']

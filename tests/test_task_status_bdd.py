@@ -31,8 +31,8 @@ from datetime import datetime, timedelta
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app import theme
-from gantt_app.models import TASK_STATUSES, Project, Task
+from gantt_app.views import theme
+from gantt_app.core.models import TASK_STATUSES, Project, Task
 from gantt_app.views.project_dashboard import dashboard_rows, kpi_metrics
 
 BASE = datetime(2026, 7, 6)

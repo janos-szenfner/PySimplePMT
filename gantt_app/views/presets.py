@@ -37,8 +37,8 @@ from pathlib import Path
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional
 
-from gantt_app import theme
-from gantt_app.taskstyle import PRESETS, TaskStyle, preset_badge
+from gantt_app.views import theme
+from gantt_app.core.taskstyle import PRESETS, TaskStyle, preset_badge
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

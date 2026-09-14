@@ -54,9 +54,9 @@ except ImportError:
     OPENPYXL_AVAILABLE = False
     Workbook = None  # type: ignore
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.log import get_logger
-from gantt_app.workdaycalendar import (
+from gantt_app.core.workdaycalendar import (
     DEFAULT_NON_WORKING_DAYS, WorkingCalendar,
 )
 
@@ -838,7 +838,7 @@ def export_project_to_xlsx(project: Project, filepath: str) -> bool:
 
     EXAMPLE:
     --------
-    >>> from gantt_app.models import Project, Task
+    >>> from gantt_app.core.models import Project, Task
     >>> from gantt_app.utils.xlsx_exporter import export_project_to_xlsx
     >>> from datetime import datetime, timedelta
     >>>

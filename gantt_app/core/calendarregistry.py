@@ -27,7 +27,7 @@ is the only answer that cannot leave a task with no calendar at all.
 
 DEVELOPMENT NOTES:
 ------------------
-There is no calendar class here. The calendars are gantt_app.workdaycalendar's
+There is no calendar class here. The calendars are gantt_app.core.workdaycalendar's
 WorkingCalendar, the same one the project has always used, and everything they
 can express - non-working weekdays, listed and recurring holidays, observed
 countries, manual date overrides and the priority between them - they express
@@ -54,7 +54,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import logging
 import re
 
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 logger = logging.getLogger(__name__)
 

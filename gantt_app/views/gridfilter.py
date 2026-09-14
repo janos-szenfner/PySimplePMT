@@ -36,10 +36,10 @@ import customtkinter as ctk
 
 import fnmatch
 
-from gantt_app import theme
-from gantt_app.calendarregistry import PROJECT_DEFAULT_LABEL
-from gantt_app.dependencysyntax import format_links
-from gantt_app.workdaycalendar import as_date
+from gantt_app.views import theme
+from gantt_app.core.calendarregistry import PROJECT_DEFAULT_LABEL
+from gantt_app.core.dependencysyntax import format_links
+from gantt_app.core.workdaycalendar import as_date
 from gantt_app.views.datepicker import DateEntry, DATE_FORMAT, parse_date
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.scrollframe import ScrollFrame
@@ -476,7 +476,7 @@ def definition_matching_ids(project, definition: Dict,
     """
     definition = definition or {}
     if definition.get('query'):
-        from gantt_app import filterlang
+        from gantt_app.views import filterlang
         try:
             return filterlang.query_matching_ids(
                 project, definition['query'], variances)
@@ -611,7 +611,7 @@ def field_name_for_query(column: str) -> str:
     The shortest alias that resolves back to it, or the column's own name
     quoted when it holds a space - "Task Name" stays readable either way.
     """
-    from gantt_app.filterlang import FIELD_ALIASES, resolve_field
+    from gantt_app.views.filterlang import FIELD_ALIASES, resolve_field
     best = None
     for alias, target in FIELD_ALIASES.items():
         if target == column and (best is None or len(alias) < len(best)):
@@ -676,7 +676,7 @@ def query_to_specs(text: str, project=None) -> Optional[Dict]:
     checklist. Anything with or, not or a bracket answers None and stays
     on the Advanced tab.
     """
-    from gantt_app import filterlang
+    from gantt_app.views import filterlang
 
     try:
         tree = filterlang.parse_query(text)
@@ -868,7 +868,7 @@ class GridFilterDialog(ctk.CTkToplevel):
 
     def _build_advanced(self, tab, query):
         """The query box, its verdict line, and the recent queries."""
-        from gantt_app import filterlang
+        from gantt_app.views import filterlang
 
         ctk.CTkLabel(
             tab,
@@ -944,7 +944,7 @@ class GridFilterDialog(ctk.CTkToplevel):
         sees what the query will do while writing it. The suggestion list
         is rebuilt on the same keystroke.
         """
-        from gantt_app import filterlang
+        from gantt_app.views import filterlang
 
         text = self._query_entry.get()
         try:
@@ -978,7 +978,7 @@ class GridFilterDialog(ctk.CTkToplevel):
         """Refresh the floating suggestion list for the cursor's spot."""
         if self._active_tab() != 'advanced':
             return
-        from gantt_app import filterlang
+        from gantt_app.views import filterlang
         text = self._query_entry.get()
         cursor = min(self._query_entry.index('insert'), len(text))
         found = filterlang.suggestions(text, cursor, self._project)

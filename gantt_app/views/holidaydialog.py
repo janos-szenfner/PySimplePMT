@@ -32,7 +32,7 @@ not have to guess which of two menu entries holds the fix.
 DEVELOPMENT NOTES:
 ------------------
 The dialog chooses country codes and date rulings. What either means, and
-every piece of arithmetic that follows, belongs to gantt_app.workdaycalendar -
+every piece of arithmetic that follows, belongs to gantt_app.core.workdaycalendar -
 see the note on WorkingCalendar about why there is one calendar rather than
 one per source of non-working day. Applying sets codes and overrides on the
 project's calendar and reschedules; nothing here knows what a holiday is, or
@@ -61,16 +61,16 @@ import customtkinter as ctk
 from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.datepicker import DateEntry
 from gantt_app.views.modal import grab_when_visible
-from gantt_app.calendarregistry import (
+from gantt_app.core.calendarregistry import (
     CalendarRegistry, NamedCalendar, PROJECT_DEFAULT_LABEL, describe_week,
 )
 from gantt_app.views import dialogs as messagebox
-from gantt_app.workdaycalendar import (
+from gantt_app.core.workdaycalendar import (
     DEFAULT_NON_WORKING_DAYS, REGION_ORDER, DateOverride, EU_COUNTRIES,
     WorkingCalendar, holidays_available, region_of, split_country,
     subdivisions, supported_countries,
 )
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

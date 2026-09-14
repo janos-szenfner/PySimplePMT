@@ -11,7 +11,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.toolbar import Toolbar
 
 

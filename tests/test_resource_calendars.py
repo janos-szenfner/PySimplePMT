@@ -9,8 +9,8 @@ import tkinter as tk
 import unittest
 from datetime import date, datetime, timedelta
 
-from gantt_app.models import Project, Task
-from gantt_app.resource_model import (
+from gantt_app.core.models import Project, Task
+from gantt_app.core.resource_model import (
     DaysOffRange, Resource, ResourceType, SchedulePattern,
 )
 

@@ -29,7 +29,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 class PageTestCase(unittest.TestCase):

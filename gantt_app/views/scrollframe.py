@@ -41,7 +41,7 @@ from tkinter import ttk
 
 import customtkinter as ctk
 
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

@@ -24,8 +24,8 @@ inspected through the tags on them rather than by looking at pixels.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
-from gantt_app.taskstyle import TaskStyle
+from gantt_app.core.models import Project, Task
+from gantt_app.core.taskstyle import TaskStyle
 
 BASE = datetime(2026, 7, 6)
 

@@ -36,8 +36,8 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple, Set
 from pathlib import Path
 
-from gantt_app.models import Project, Task, TASK_STATUSES
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.models import Project, Task, TASK_STATUSES
+from gantt_app.core.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -142,7 +142,7 @@ class GanttProjectCalendar:
         ------------------
         This class reads a .gan file's <calendars> block, which is a parsing
         job and stays here. Scheduling against a calendar is the application's
-        job and belongs to one implementation - see gantt_app.workdaycalendar -
+        job and belongs to one implementation - see gantt_app.core.workdaycalendar -
         so what the file declared is handed over rather than copied.
 
         Year-pinned holidays are held here as (year, month, day) triples and

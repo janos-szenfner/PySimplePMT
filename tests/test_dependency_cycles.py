@@ -25,7 +25,7 @@ Two faults were reported on the same plan:
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Dependency, Project, Task
+from gantt_app.core.models import Dependency, Project, Task
 
 
 BASE = datetime(2026, 9, 14)  # a Monday

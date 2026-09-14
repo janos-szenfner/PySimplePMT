@@ -10,7 +10,7 @@ display-gated like the other task-list suites.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views import dialogs as messagebox
 
 BASE = datetime(2026, 9, 10)

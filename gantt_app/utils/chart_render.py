@@ -39,14 +39,14 @@ from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFont
 
-from gantt_app.models import HARD_CONSTRAINTS, Project, Task
+from gantt_app.core.models import HARD_CONSTRAINTS, Project, Task
 
 if TYPE_CHECKING:
     # The overlay is drawn from a baseline's snapshots; named for the
     # checkers, quoted in the signatures so nothing here needs it run.
-    from gantt_app.baselines import ProjectBaseline
+    from gantt_app.core.baselines import ProjectBaseline
 from gantt_app.utils.chart_figure import _merged_settings, calculate_date_range
-from gantt_app.workdaycalendar import as_date
+from gantt_app.core.workdaycalendar import as_date
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

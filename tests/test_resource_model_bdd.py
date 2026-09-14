@@ -12,7 +12,7 @@ from pathlib import Path
 from pytest_bdd import given, parsers, scenarios, then, when
 import pytest
 
-from gantt_app.resource_model import (
+from gantt_app.core.resource_model import (
     DAYS, DaysOffRange, Resource, ResourceRepository, ResourceType,
     SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,

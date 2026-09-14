@@ -25,7 +25,7 @@ a setting of its own and the tests must not depend on which.
 import unittest
 from unittest import mock
 
-from gantt_app import theme
+from gantt_app.views import theme
 from tests.pixels import flat_pixels
 
 
@@ -644,7 +644,7 @@ class TestTheToolbarControl(unittest.TestCase):
     def setUp(self):
         """A toolbar over a controller with a known desktop."""
         import customtkinter as ctk
-        from gantt_app.models import Project
+        from gantt_app.core.models import Project
         from gantt_app.views.toolbar import Toolbar
 
         self.root = ctk.CTk()

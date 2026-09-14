@@ -25,8 +25,8 @@ Needs a display.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task
-from gantt_app.shortcuts import IS_MACOS
+from gantt_app.core.models import Project, Task
+from gantt_app.utils.shortcuts import IS_MACOS
 
 
 def _display_available() -> bool:
@@ -113,7 +113,7 @@ class TestTheShortcutReachesTheWindow(unittest.TestCase):
 
     def test_the_period_is_bound_with_both_modifiers(self):
         """The plain sequence; see shortcuts.sequences."""
-        from gantt_app.shortcuts import sequences
+        from gantt_app.utils.shortcuts import sequences
 
         expected = self.stored(*sequences('.', alt=True))
 
@@ -125,7 +125,7 @@ class TestTheShortcutReachesTheWindow(unittest.TestCase):
         For a keystroke Option has taken the letter out of. Tk matches the
         modifiers and is_key works out the key.
         """
-        from gantt_app.shortcuts import any_key_with
+        from gantt_app.utils.shortcuts import any_key_with
 
         expected = self.stored(any_key_with(alt=True))
 

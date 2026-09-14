@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.chart_render import RowPlan, _font, render_image
 from gantt_app.utils.log import get_logger
 

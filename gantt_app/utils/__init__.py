@@ -2,7 +2,7 @@
 Utilities for the Gantt Project Management Tool.
 """
 
-from gantt_app.workdaycalendar import (
+from gantt_app.core.workdaycalendar import (
     WorkingCalendar,
     CalendarTask,
     default_calendar,

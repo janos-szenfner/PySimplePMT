@@ -11,7 +11,7 @@ day before that sibling starts.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task, Dependency
+from gantt_app.core.models import Project, Task, Dependency
 
 
 def _sub(id, name, parent, start, end, dur=None, ctype='NA', deps=None):

@@ -25,8 +25,8 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
-from gantt_app.models import Project, Task, TASK_STATUSES
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.models import Project, Task, TASK_STATUSES
+from gantt_app.core.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -42,7 +42,7 @@ class MermaidImporter:
 
     #: The calendar a stated duration is counted against: Monday to Friday.
     #: An imported chart declares no holidays, and the standard week is what
-    #: the application schedules on - see gantt_app.workdaycalendar.
+    #: the application schedules on - see gantt_app.core.workdaycalendar.
     CALENDAR = WorkingCalendar()
 
     def __init__(self, group_by_section: bool = True):
@@ -84,7 +84,7 @@ class MermaidImporter:
         DEVELOPMENT NOTES:
         ------------------
         A duration is working days, as everywhere else in the application - see
-        gantt_app.workdaycalendar. A "5d" task starting on a Thursday therefore
+        gantt_app.core.workdaycalendar. A "5d" task starting on a Thursday therefore
         runs to the following Wednesday rather than to the Monday, having spent
         none of itself over the weekend.
 

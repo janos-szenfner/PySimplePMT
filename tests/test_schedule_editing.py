@@ -13,7 +13,7 @@ The grid edits the same three cells in place through the same rules.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _project():

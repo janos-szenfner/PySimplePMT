@@ -18,8 +18,8 @@ from datetime import date, datetime, timedelta
 
 from unittest import mock
 
-from gantt_app.models import Project, Task
-from gantt_app.workdaycalendar import (
+from gantt_app.core.models import Project, Task
+from gantt_app.core.workdaycalendar import (
     CalendarTask, DateOverride, EU_COUNTRIES, WorkingCalendar,
     country_holidays, default_calendar, holidays_available,
 )
@@ -684,7 +684,7 @@ class TestWithoutTheHolidaysPackage(unittest.TestCase):
         """Nothing raises, and the weekend rule still applies."""
         calendar = WorkingCalendar(countries=["HU"])
 
-        with mock.patch('gantt_app.workdaycalendar.country_holidays',
+        with mock.patch('gantt_app.core.workdaycalendar.country_holidays',
                         return_value=set()):
             self.assertTrue(calendar.is_working_day(date(2026, 3, 16)))
             self.assertFalse(calendar.is_working_day(date(2026, 3, 14)))
@@ -1169,7 +1169,7 @@ class TestTheCountryRegions(unittest.TestCase):
         one, because the failure otherwise reads as a mystery about a
         two-letter code.
         """
-        from gantt_app.workdaycalendar import COUNTRY_REGIONS, supported_countries
+        from gantt_app.core.workdaycalendar import COUNTRY_REGIONS, supported_countries
 
         countries = supported_countries()
         missing = sorted(code for code in countries
@@ -1181,7 +1181,7 @@ class TestTheCountryRegions(unittest.TestCase):
             "picker: "
             + ', '.join(f"{code} ({countries[code]})" for code in missing)
             + ". Add each to the right group in "
-              "gantt_app.workdaycalendar.COUNTRY_REGIONS."))
+              "gantt_app.core.workdaycalendar.COUNTRY_REGIONS."))
 
     def test_every_code_in_the_table_is_shaped_like_one(self):
         """
@@ -1199,21 +1199,21 @@ class TestTheCountryRegions(unittest.TestCase):
         country is no longer named, and test_every_country_is_placed is
         exactly the test that catches a country with no region.
         """
-        from gantt_app.workdaycalendar import COUNTRY_REGIONS
+        from gantt_app.core.workdaycalendar import COUNTRY_REGIONS
 
         for code in COUNTRY_REGIONS:
             self.assertRegex(code, r'^[A-Z]{2}$')
 
     def test_every_region_named_is_one_of_the_regions_listed(self):
         """The order the picker walks has to reach all of them."""
-        from gantt_app.workdaycalendar import COUNTRY_REGIONS, REGION_ORDER
+        from gantt_app.core.workdaycalendar import COUNTRY_REGIONS, REGION_ORDER
 
         self.assertEqual(set(COUNTRY_REGIONS.values()) - set(REGION_ORDER),
                          set())
 
     def test_every_region_has_somebody_in_it(self):
         """A heading that can never appear is a heading worth deleting."""
-        from gantt_app.workdaycalendar import (
+        from gantt_app.core.workdaycalendar import (
             COUNTRY_REGIONS, REGION_ORDER,
         )
 
@@ -1222,7 +1222,7 @@ class TestTheCountryRegions(unittest.TestCase):
 
     def test_a_subdivision_is_placed_by_its_country(self):
         """Bavaria is in Europe because Germany is."""
-        from gantt_app.workdaycalendar import REGION_EUROPE, region_of
+        from gantt_app.core.workdaycalendar import REGION_EUROPE, region_of
 
         self.assertEqual(region_of('DE-BY'), REGION_EUROPE)
         self.assertEqual(region_of('DE'), region_of('DE-BY'))
@@ -1234,7 +1234,7 @@ class TestTheCountryRegions(unittest.TestCase):
         One arriving in an odd group is a great deal better than one
         vanishing from a list somebody is choosing from.
         """
-        from gantt_app.workdaycalendar import REGION_OTHER, region_of
+        from gantt_app.core.workdaycalendar import REGION_OTHER, region_of
 
         self.assertEqual(region_of('ZZ'), REGION_OTHER)
         self.assertEqual(region_of(''), REGION_OTHER)
@@ -1242,13 +1242,13 @@ class TestTheCountryRegions(unittest.TestCase):
 
     def test_a_lowercase_code_is_still_found(self):
         """Codes are upper case here and not everywhere they come from."""
-        from gantt_app.workdaycalendar import region_of
+        from gantt_app.core.workdaycalendar import region_of
 
         self.assertEqual(region_of('de'), region_of('DE'))
 
     def test_the_eu_members_are_all_in_europe(self):
         """A cheap check on the largest group anyone will look at."""
-        from gantt_app.workdaycalendar import (
+        from gantt_app.core.workdaycalendar import (
             EU_COUNTRIES, REGION_EUROPE, region_of,
         )
 

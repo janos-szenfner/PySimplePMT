@@ -18,11 +18,11 @@ import uuid
 # already dotted, so the logger is exactly the same object either way.
 logger = logging.getLogger(__name__)
 
-from gantt_app.priority import DEFAULT_PRIORITY
-from gantt_app.resource_model import ResourceRepository
-from gantt_app.taskstyle import TaskStyle
-from gantt_app.calendarregistry import CalendarRegistry, default_registry
-from gantt_app.workdaycalendar import (
+from gantt_app.core.priority import DEFAULT_PRIORITY
+from gantt_app.core.resource_model import ResourceRepository
+from gantt_app.core.taskstyle import TaskStyle
+from gantt_app.core.calendarregistry import CalendarRegistry, default_registry
+from gantt_app.core.workdaycalendar import (
     IntersectingCalendar, WorkingCalendar, as_date, default_calendar,
 )
 
@@ -123,7 +123,7 @@ TASK_STATUSES = ('Active', 'Estimated', 'Inactive')
 #: duration, work or assignment units is held fixed when the others change
 #: (Task_Type_FRS §3). Named EFFORT_TYPES, not "task types", because Task
 #: already has a task_type: the row kind (Task/Subtask/Milestone/Phase). The
-#: two are unrelated and must not be conflated. See gantt_app.effort for the
+#: two are unrelated and must not be conflated. See gantt_app.core.effort for the
 #: scheduling maths this drives.
 EFFORT_FIXED_UNITS = 'Fixed Units'
 EFFORT_FIXED_WORK = 'Fixed Work'
@@ -641,7 +641,7 @@ class Task:
     #: constraints in CONSTRAINTS_WITH_DATE carry one.
     constraint_date: Optional[datetime] = None
     #: Advanced tab, Task Type (Effort Behavior): which of duration, work and
-    #: units is held fixed on an edit; see EFFORT_TYPES and gantt_app.effort.
+    #: units is held fixed on an edit; see EFFORT_TYPES and gantt_app.core.effort.
     #: Fixed Units by default, so a task behaves exactly as before until a
     #: planner chooses otherwise.
     effort_type: str = DEFAULT_EFFORT_TYPE
@@ -666,7 +666,7 @@ class Task:
     #: Estimated when Inactive is cleared.
     estimated: bool = False
     #: Which named calendar this task follows, or None to follow the plan's
-    #: own - see gantt_app.calendarregistry. An id naming a calendar that has
+    #: own - see gantt_app.core.calendarregistry. An id naming a calendar that has
     #: since been deleted falls back to the plan's own too, so removing a
     #: calendar never leaves a task without one.
     calendar_id: Optional[str] = None
@@ -677,7 +677,7 @@ class Task:
     ignores_resource_calendars: bool = False
     #: How this row is painted in the task list: its ink, its fill and its
     #: emphasis. Default for almost every row in almost every plan - see
-    #: gantt_app.taskstyle, which is also where the defaults a summary row
+    #: gantt_app.core.taskstyle, which is also where the defaults a summary row
     #: gets without asking are folded in.
     style: TaskStyle = field(default_factory=TaskStyle)
     resource_assignments: List[Dict[str, object]] = field(default_factory=list)
@@ -1107,7 +1107,7 @@ class Task:
         Working days, not calendar days: a task running Thursday to the
         following Wednesday holds five days of work, not seven, because
         nothing was worked on the Saturday or the Sunday. That is the whole
-        point of the working calendar - see gantt_app.workdaycalendar - and it
+        point of the working calendar - see gantt_app.core.workdaycalendar - and it
         is why a task crossing a weekend keeps its duration while its bar
         stretches. total_elapsed_days answers the other one.
 
@@ -1358,7 +1358,7 @@ class Project:
     plan keeps - so a task may name one of the calendars in `calendars`
     instead, and calendar_for is what every piece of scheduling asks. A task
     that names nothing, or names a calendar that has been deleted, follows the
-    plan's own; see gantt_app.calendarregistry.
+    plan's own; see gantt_app.core.calendarregistry.
     """
     name: str
     tasks: List[Task] = field(default_factory=list)
@@ -2861,7 +2861,7 @@ class Project:
         task_id : str
             The task the cell belongs to.
         text : str
-            What was typed; see gantt_app.dependencysyntax for the grammar.
+            What was typed; see gantt_app.core.dependencysyntax for the grammar.
 
         RETURNS:
         --------
@@ -2883,7 +2883,7 @@ class Project:
         taken, and checking against the stored links alone would let it
         through.
         """
-        from gantt_app.dependencysyntax import parse
+        from gantt_app.core.dependencysyntax import parse
 
         parsed, errors = parse(text)
         numbers = self.display_ids()
@@ -4660,7 +4660,7 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        Two rules, both from gantt_app.workdaycalendar:
+        Two rules, both from gantt_app.core.workdaycalendar:
 
           * A task cannot start on a non-working day, so a start landing on a
             Saturday is pushed to the Monday.

@@ -28,7 +28,7 @@ import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 BASE = datetime(2026, 8, 25)
 
@@ -546,7 +546,7 @@ class TestChoosingTheTypeInTheGrid(InlineEditingTestCase):
 
     def test_it_offers_every_type_in_the_system(self):
         """All of them, so none has to be reached another way."""
-        from gantt_app.models import TASK_TYPES
+        from gantt_app.core.models import TASK_TYPES
 
         chooser = self.open_chooser()
 
@@ -567,7 +567,7 @@ class TestChoosingTheTypeInTheGrid(InlineEditingTestCase):
         A sub-task could not change type without being moved first, so a
         row nested by mistake had no way to say what it was.
         """
-        from gantt_app.models import TASK_TYPES
+        from gantt_app.core.models import TASK_TYPES
 
         chooser = self.open_chooser('u2')
 
@@ -852,7 +852,7 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
 
     def test_the_key_is_the_platform_s(self):
         """Option on a Mac, Alt elsewhere, with the usual modifier."""
-        from gantt_app.shortcuts import (
+        from gantt_app.utils.shortcuts import (
             ALT, IS_MACOS, MODIFIER, accelerator, sequences,
         )
 
@@ -863,7 +863,7 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
 
     def test_it_does_not_collide_with_plain_period(self):
         """Plain Cmd+. is not bound, but this shortcut still requires Option."""
-        from gantt_app.shortcuts import sequences
+        from gantt_app.utils.shortcuts import sequences
 
         self.assertNotEqual(set(sequences('.')), set(sequences('.', alt=True)))
 

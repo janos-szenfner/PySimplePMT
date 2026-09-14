@@ -24,7 +24,7 @@ here needs a display.
 import unittest
 from datetime import date, datetime
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 class CriticalPathTestCase(unittest.TestCase):
@@ -967,7 +967,7 @@ class TestThePathPaintedIntoTheList(unittest.TestCase):
 
     def test_the_critical_rows_go_light_red(self):
         """Which is the whole request."""
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         self.paint()
 
@@ -978,7 +978,7 @@ class TestThePathPaintedIntoTheList(unittest.TestCase):
 
     def test_a_row_with_float_is_left_alone(self):
         """Or the highlight would say nothing about anything."""
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         self.paint()
 
@@ -994,8 +994,8 @@ class TestThePathPaintedIntoTheList(unittest.TestCase):
         For the reason the greying beats a row's ink: it says what the row
         is doing now, and the reader turned it on to see exactly that.
         """
-        from gantt_app import theme
-        from gantt_app.taskstyle import TaskStyle
+        from gantt_app.views import theme
+        from gantt_app.core.taskstyle import TaskStyle
 
         self.project.get_task_by_id("A").style = TaskStyle(
             fill_color="#ffff00")
@@ -1014,7 +1014,7 @@ class TestThePathPaintedIntoTheList(unittest.TestCase):
         vanished the next time anything was typed would not be worth
         turning on.
         """
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         self.paint()
 

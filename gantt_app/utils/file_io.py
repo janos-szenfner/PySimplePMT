@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from gantt_app.models import Project
+from gantt_app.core.models import Project
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)

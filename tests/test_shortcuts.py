@@ -25,7 +25,7 @@ Nothing here needs a display.
 import unittest
 from unittest import mock
 
-from gantt_app import shortcuts
+from gantt_app.utils import shortcuts
 
 
 class ModifierTestCase(unittest.TestCase):

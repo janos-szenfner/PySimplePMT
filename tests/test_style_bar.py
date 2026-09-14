@@ -26,8 +26,8 @@ and tests the same code a press reaches.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
-from gantt_app.taskstyle import PRESETS, TaskStyle
+from gantt_app.core.models import Project, Task
+from gantt_app.core.taskstyle import PRESETS, TaskStyle
 
 BASE = datetime(2026, 7, 6)
 
@@ -145,7 +145,7 @@ class TestTheGroupIsSetApart(StyleBarTestCase):
         Named with this platform's modifier: a hover promising Ctrl+B on a
         Mac names a key that does nothing there.
         """
-        from gantt_app.shortcuts import accelerator
+        from gantt_app.utils.shortcuts import accelerator
 
         for name, letter in (('bold', 'B'), ('italic', 'I'),
                              ('underline', 'U')):
@@ -298,7 +298,7 @@ class TestThePresetsAndTheWayBack(StyleBarTestCase):
 
         Clearing a phase's formatting must not make it look like a leaf.
         """
-        from gantt_app.taskstyle import resolve
+        from gantt_app.core.taskstyle import resolve
 
         self.project.get_task_by_id('P1').style = TaskStyle(text_color='#c0392b')
         self.select('P1')

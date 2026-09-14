@@ -10,8 +10,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.resource_model import (
+from gantt_app.views import theme
+from gantt_app.core.resource_model import (
     Resource, ResourceRepository, ResourceType, TeamPool,
 )
 from gantt_app.utils.log import get_logger

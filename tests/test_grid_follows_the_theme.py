@@ -23,8 +23,8 @@ Needs a display. Skipped where there is none, as the other widget tests are.
 import unittest
 from datetime import datetime
 
-from gantt_app import theme
-from gantt_app.models import Project, Task
+from gantt_app.views import theme
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:

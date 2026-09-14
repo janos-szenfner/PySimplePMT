@@ -36,7 +36,7 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 from gantt_app.views.tooltip import attach as attach_tooltip
 

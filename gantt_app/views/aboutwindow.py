@@ -16,7 +16,7 @@ import tkinter as tk
 import customtkinter as ctk
 
 from gantt_app import __author__, __version__
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 from gantt_app.views.modal import grab_when_visible
 
@@ -173,7 +173,7 @@ class AboutWindow(ctk.CTkToplevel):
         import threading
 
         def worker():
-            from gantt_app.update_check import check_for_update
+            from gantt_app.utils.update_check import check_for_update
 
             info = check_for_update(__version__)
             try:
@@ -189,7 +189,7 @@ class AboutWindow(ctk.CTkToplevel):
 
     def _apply_update_result(self, info):
         """Show the outcome of the update check, if the window is still up."""
-        from gantt_app import update_check as uc
+        from gantt_app.utils import update_check as uc
 
         try:
             if not self._update_label.winfo_exists():
@@ -204,7 +204,7 @@ class AboutWindow(ctk.CTkToplevel):
             return
 
         if info.status == uc.STATUS_UPDATE:
-            from gantt_app import update_download as ud
+            from gantt_app.utils import update_download as ud
 
             self._update_info = info
             self._download_url = info.download_url
@@ -238,7 +238,7 @@ class AboutWindow(ctk.CTkToplevel):
             return
         import threading
 
-        from gantt_app import update_download as ud
+        from gantt_app.utils import update_download as ud
 
         self._downloading = True
         try:
@@ -275,7 +275,7 @@ class AboutWindow(ctk.CTkToplevel):
 
     def _download_succeeded(self, path):
         """Verified: open the installer and say so."""
-        from gantt_app import update_download as ud
+        from gantt_app.utils import update_download as ud
 
         self._downloading = False
         self._set_update_text(

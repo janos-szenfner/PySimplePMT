@@ -220,7 +220,7 @@ def a_fresh_button(hover_root):
 @given("an icon toolbar over an empty plan", target_fixture="icon_toolbar")
 def an_icon_toolbar_over_an_empty_plan(hover_root):
     """The row of buttons every caption is meant to be on."""
-    from gantt_app.models import Project
+    from gantt_app.core.models import Project
     from gantt_app.views.toolbar import IconToolbar
 
     toolbar = IconToolbar(hover_root, Project(name="Demo"))

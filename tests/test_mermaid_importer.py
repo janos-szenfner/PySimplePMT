@@ -7,7 +7,7 @@ import tempfile
 import os
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.mermaid_importer import (
     MermaidImporter, MermaidExporter, 
     import_mermaid_file, export_mermaid_file

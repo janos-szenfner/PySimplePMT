@@ -16,7 +16,7 @@ import logging
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task, Dependency
+from gantt_app.core.models import Project, Task, Dependency
 
 
 BASE = datetime(2026, 9, 14)  # a Monday
@@ -47,9 +47,9 @@ class TestATaskWithChildrenSettles(unittest.TestCase):
 
     def test_it_settles_without_a_cycle_warning(self):
         p = self._plan()
-        with self.assertLogs('gantt_app.models', level='WARNING') as caught:
+        with self.assertLogs('gantt_app.core.models', level='WARNING') as caught:
             p.reschedule()
-            logging.getLogger('gantt_app.models').warning("sentinel")
+            logging.getLogger('gantt_app.core.models').warning("sentinel")
         self.assertEqual(
             [r for r in caught.output if 'did not settle' in r], [])
 

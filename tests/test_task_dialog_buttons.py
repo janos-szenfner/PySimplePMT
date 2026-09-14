@@ -11,7 +11,7 @@ import unittest
 from datetime import datetime, timedelta
 from unittest import mock
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from tests.pixels import flat_pixels
 
 
@@ -1206,7 +1206,7 @@ class TestTheWindowChromeFollowsTheTheme(DialogTestCase):
 
         import customtkinter as ctk
 
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         super().setUp()
         self.theme = theme

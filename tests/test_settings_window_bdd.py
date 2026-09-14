@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.models import Project
-from gantt_app.resource_model import ResourceRepository
+from gantt_app.core.models import Project
+from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.views.settingswindow import SettingsWindow
 
 

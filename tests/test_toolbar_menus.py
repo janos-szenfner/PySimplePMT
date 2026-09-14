@@ -173,9 +173,9 @@ class TestMenuContents(unittest.TestCase):
 
         Create leads, because everything under it acts on a row that has to
         exist already. The clipboard entries name the key they answer to, in
-        this platform's notation - see gantt_app.shortcuts.
+        this platform's notation - see gantt_app.utils.shortcuts.
         """
-        from gantt_app.shortcuts import accelerator
+        from gantt_app.utils.shortcuts import accelerator
 
         self.assertEqual(labels(find(self.tree, 'Edit')['items']),
                          ['Create',
@@ -281,14 +281,14 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
 
     def test_the_plain_keysym_is_accepted(self):
         """What a Tk that leaves the keystroke alone reports."""
-        from gantt_app.shortcuts import is_key
+        from gantt_app.utils.shortcuts import is_key
 
         self.assertTrue(is_key(self.event(keysym='period', char='.'), '.'))
         self.assertTrue(is_key(self.event(keysym='Period', char='.'), '.'))
 
     def test_the_character_is_accepted(self):
         """Where the keysym is something else but the char survives."""
-        from gantt_app.shortcuts import is_key
+        from gantt_app.utils.shortcuts import is_key
 
         self.assertTrue(is_key(self.event(keysym='Key-47', char='.'), '.'))
 
@@ -299,7 +299,7 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
         The keycode names the physical key, which is the one thing Option
         cannot change.
         """
-        from gantt_app.shortcuts import MAC_KEYCODES, is_key, IS_MACOS
+        from gantt_app.utils.shortcuts import MAC_KEYCODES, is_key, IS_MACOS
 
         if not IS_MACOS:
             self.skipTest("the keycode fallback is macOS only")
@@ -310,14 +310,14 @@ class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
 
     def test_another_key_held_with_option_is_not_it(self):
         """Or every Option shortcut would make a task."""
-        from gantt_app.shortcuts import is_key
+        from gantt_app.utils.shortcuts import is_key
 
         self.assertFalse(is_key(self.event(keysym='j', char='∆',
                                            keycode=38), '.'))
 
     def test_the_catch_all_names_the_modifiers(self):
         """Tk matches those itself; only the key is left to us."""
-        from gantt_app.shortcuts import ALT, MODIFIER, any_key_with
+        from gantt_app.utils.shortcuts import ALT, MODIFIER, any_key_with
 
         self.assertEqual(any_key_with(alt=True),
                          f"<{MODIFIER}-{ALT}-KeyPress>")
@@ -366,7 +366,7 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
         """A stand-in key event, carrying modifier bits in its state."""
         from types import SimpleNamespace
 
-        from gantt_app.shortcuts import COMMAND_BIT, OPTION_BIT
+        from gantt_app.utils.shortcuts import COMMAND_BIT, OPTION_BIT
 
         fields.setdefault('keysym', '')
         fields.setdefault('char', '')
@@ -388,7 +388,7 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
         """Run the net, with the platform branch forced on."""
         from unittest import mock
 
-        from gantt_app import shortcuts
+        from gantt_app.utils import shortcuts
         from gantt_app.views.toolbar import Toolbar
 
         with mock.patch.object(shortcuts, 'IS_MACOS', True):
@@ -396,7 +396,7 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
 
     def test_the_shortcut_is_caught(self):
         """Both modifiers and the period key, however the key is spelt."""
-        from gantt_app.shortcuts import MAC_KEYCODES
+        from gantt_app.utils.shortcuts import MAC_KEYCODES
 
         stub = self.toolbar()
 
@@ -415,7 +415,7 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
         missing. Plain Cmd+. is not bound to anything here, so the net still
         identifies the key from its keycode when the Option bit is lost.
         """
-        from gantt_app.shortcuts import COMMAND_BIT, MAC_KEYCODES
+        from gantt_app.utils.shortcuts import COMMAND_BIT, MAC_KEYCODES
 
         stub = self.toolbar()
 
@@ -428,7 +428,7 @@ class TestTheLastResortNetUnderTheShortcut(unittest.TestCase):
 
     def test_nothing_held_is_left_alone(self):
         """A bare keystroke is somebody typing."""
-        from gantt_app.shortcuts import MAC_KEYCODES
+        from gantt_app.utils.shortcuts import MAC_KEYCODES
 
         stub = self.toolbar()
 

@@ -20,7 +20,7 @@ import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 
 
 def _display_available() -> bool:

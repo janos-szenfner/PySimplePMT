@@ -13,9 +13,9 @@ a display exists, in test_grid_filter.py's dialog tests.
 import unittest
 from datetime import datetime
 
-from gantt_app import filterlang
-from gantt_app.filterlang import QueryError
-from gantt_app.models import Project, Task
+from gantt_app.views import filterlang
+from gantt_app.views.filterlang import QueryError
+from gantt_app.core.models import Project, Task
 
 
 def _plan():

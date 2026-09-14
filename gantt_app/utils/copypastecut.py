@@ -14,13 +14,13 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 import copy
 
-from gantt_app.shortcuts import bind_all
+from gantt_app.utils.shortcuts import bind_all
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from gantt_app.models import Project, Task
+    from gantt_app.core.models import Project, Task
 
 
 #: Supported entity types for clipboard operations
@@ -854,7 +854,7 @@ class ClipboardService:
     def _dict_to_task(self, task_dict: Dict[str, Any]) -> 'Task':
         """Convert a dictionary back to a Task object."""
         from datetime import datetime
-        from gantt_app.models import Task, Dependency
+        from gantt_app.core.models import Task, Dependency
         
         if 'start_date' in task_dict and task_dict['start_date']:
             task_dict['start_date'] = datetime.fromisoformat(task_dict['start_date'])
@@ -865,7 +865,7 @@ class ClipboardService:
                 task_dict[date_key] = datetime.fromisoformat(task_dict[date_key])
         
         if 'style' in task_dict:
-            from gantt_app.taskstyle import TaskStyle
+            from gantt_app.core.taskstyle import TaskStyle
             task_dict['style'] = TaskStyle.from_any(task_dict['style'])
 
         if 'dependencies' in task_dict:
@@ -987,7 +987,7 @@ def setup_keyboard_bindings(root: Any, on_copy: callable, on_cut: callable,
 
     DEVELOPMENT NOTES:
     ------------------
-    Through gantt_app.shortcuts, like every other shortcut in the
+    Through gantt_app.utils.shortcuts, like every other shortcut in the
     application, rather than with sequences written out here. What was
     written out here was wrong in three ways at once: it bound Control as
     well as Command on macOS, where Control+C is not copy and never has

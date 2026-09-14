@@ -25,11 +25,11 @@ import unittest
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.msproject_exporter import (
     MSPDI_NAMESPACE, export_project_to_msproject, generate_msproject_content,
 )
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 #: Every element in the document sits in the MSPDI namespace, so every find
 #: has to say so. Bound once rather than at each call site.

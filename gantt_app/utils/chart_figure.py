@@ -24,9 +24,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import plotly.graph_objects as go
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.log import get_logger
-from gantt_app.workdaycalendar import as_date
+from gantt_app.core.workdaycalendar import as_date
 
 logger = get_logger(__name__)
 
@@ -154,7 +154,7 @@ def _elapsed_days(task: Task) -> int:
     placed on a date axis and a weekend inside a task is calendar the bar has
     to cover. Task.duration_days is the working effort inside it, which is a
     smaller number for anything crossing a weekend - see
-    gantt_app.workdaycalendar - and using it here drew every such bar short.
+    gantt_app.core.workdaycalendar - and using it here drew every such bar short.
     """
     start = as_date(task.start_date)
     end = as_date(task.end_date or task.start_date)

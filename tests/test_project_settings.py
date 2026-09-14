@@ -24,7 +24,7 @@ The model half needs no display. The panel half does, and skips without one.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     DEFAULT_PROJECT_PRIORITY, MAX_PROJECT_PRIORITY, MIN_PROJECT_PRIORITY,
     SCHEDULE_FROM_FINISH, SCHEDULE_FROM_START, Project, Task,
 )

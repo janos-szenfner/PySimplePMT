@@ -8,9 +8,9 @@ Run with:
 from datetime import datetime, timedelta
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.models import Task
+from gantt_app.core.models import Task
 from gantt_app.utils.mermaid_importer import MermaidImporter
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 
 # Load the Gherkin scenarios

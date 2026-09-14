@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 
 import customtkinter as ctk
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.dependency_editor import DependencyEditor
 
 
@@ -218,7 +218,7 @@ class TestALoopIsRefused(ChooserTestCase):
     def setUp(self):
         """The edited task sits inside a summary the candidate waits on."""
         super().setUp()
-        from gantt_app.models import Dependency
+        from gantt_app.core.models import Dependency
 
         parent = Task(id="S", name="Summary", task_type="Phase",
                       start_date=BASE, end_date=BASE + timedelta(days=40))

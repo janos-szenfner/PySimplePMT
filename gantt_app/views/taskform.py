@@ -26,12 +26,12 @@ from typing import Optional, Callable
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.calendarregistry import describe_week
-from gantt_app.models import (
+from gantt_app.views import theme
+from gantt_app.core.calendarregistry import describe_week
+from gantt_app.core.models import (
     Task, Project, TASK_TYPES, CONTAINER_TYPES,
 )
-from gantt_app.priority import PRIORITY_LEVELS
+from gantt_app.core.priority import PRIORITY_LEVELS
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.colorpicker import ColorEntry
@@ -40,7 +40,7 @@ from gantt_app.views.formcheck import FormChecks
 from gantt_app.views.scrollframe import ScrollFrame
 from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.views.assigntask import TaskResourceTab
-from gantt_app.shortcuts import bind_all as bind_shortcut
+from gantt_app.utils.shortcuts import bind_all as bind_shortcut
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -129,7 +129,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     #: deriving it - looked exactly like the start date you are meant to
     #: type in. A shaded background and a grey caption is how every other
     #: form says a field is not yours to fill.
-    #: (light, dark) pairs, from gantt_app.theme. Written as single strings
+    #: (light, dark) pairs, from gantt_app.views.theme. Written as single strings
     #: these were used in both appearances, so the form that read perfectly
     #: in light turned into near-black labels on a near-black panel in dark.
     FIELD_BG = theme.FIELD_BG
@@ -1493,7 +1493,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.bind('<KP_Enter>', self._return_pressed, add='+')
         self.bind('<Escape>', lambda _event: self.cancel(), add='+')
 
-        # Cmd+Enter on a Mac, Ctrl+Enter elsewhere; see gantt_app.shortcuts
+        # Cmd+Enter on a Mac, Ctrl+Enter elsewhere; see gantt_app.utils.shortcuts
         bind_shortcut(self, 'Return', lambda _event: self.save())
         bind_shortcut(self, 'KP_Enter', lambda _event: self.save())
 
@@ -1857,9 +1857,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         Runs before the live task is mutated, on a probe, so a cancel leaves
         nothing half-written - the same shape as the constraint check above.
         The both-adjustable-changed conflict is the only case that prompts;
-        every single-edit case recomputes silently. See gantt_app.effort.
+        every single-edit case recomputes silently. See gantt_app.core.effort.
         """
-        from gantt_app import effort as eff
+        from gantt_app.core import effort as eff
 
         hpd = getattr(self.project, 'hours_per_day', eff.DEFAULT_HOURS_PER_DAY)
         probe = copy.copy(old_task)

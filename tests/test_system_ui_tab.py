@@ -8,8 +8,8 @@ Display-gated, like the other Settings-window tests.
 
 import unittest
 
-from gantt_app import theme
-from gantt_app.models import Project
+from gantt_app.views import theme
+from gantt_app.core.models import Project
 
 
 def _display_available() -> bool:

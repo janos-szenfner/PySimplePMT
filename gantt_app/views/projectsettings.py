@@ -38,8 +38,8 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.models import (
+from gantt_app.views import theme
+from gantt_app.core.models import (
     DEFAULT_PROJECT_PRIORITY, MAX_PROJECT_PRIORITY, MIN_PROJECT_PRIORITY,
     SCHEDULE_FROM_FINISH, SCHEDULE_FROM_START, Project,
 )

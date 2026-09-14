@@ -63,7 +63,7 @@ def ribbon_root():
 @given("a toolbar over an open plan", target_fixture="toolbar")
 def a_toolbar_over_an_open_plan(ribbon_root):
     """The whole top of the window: the ribbon, and the menus behind it."""
-    from gantt_app.models import Project
+    from gantt_app.core.models import Project
     from gantt_app.views.toolbar import Toolbar
 
     toolbar = Toolbar(ribbon_root, Project(name="Plan"))

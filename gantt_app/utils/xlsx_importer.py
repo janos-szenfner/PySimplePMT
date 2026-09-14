@@ -27,8 +27,8 @@ from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 
-from gantt_app.models import Project, Task
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.models import Project, Task
+from gantt_app.core.workdaycalendar import WorkingCalendar
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -274,7 +274,7 @@ class XLSXImporter:
     #: Public holidays are not modelled. The spreadsheets this reads use
     #: Excel's WORKDAY without a holiday list, so weekends alone reproduce
     #: them, and it is the same calendar the application schedules on - see
-    #: gantt_app.workdaycalendar.
+    #: gantt_app.core.workdaycalendar.
     CALENDAR = WorkingCalendar()
 
     def _end_date_for(self, start: datetime, duration: int,

@@ -25,8 +25,8 @@ The grammar tests need no display. The grid half does, and skips without one.
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.dependencysyntax import format_links, parse
-from gantt_app.models import Dependency, Project, Task
+from gantt_app.core.dependencysyntax import format_links, parse
+from gantt_app.core.models import Dependency, Project, Task
 
 BASE = datetime(2026, 8, 25)
 

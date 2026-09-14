@@ -1,5 +1,5 @@
 """
-Unit tests for the Task Type / Effort-Driven engine (gantt_app/effort.py).
+Unit tests for the Task Type / Effort-Driven engine (gantt_app/core/effort.py).
 
 The scenarios mirror Task_Type_FRS §9 by number, with hours_per_day = 8 so a
 day is eight hours. Pure maths, so no display is needed.
@@ -9,7 +9,7 @@ import unittest
 
 from datetime import datetime
 
-from gantt_app.effort import (
+from gantt_app.core.effort import (
     Assignment,
     EditConflict,
     EffortState,
@@ -30,7 +30,7 @@ from gantt_app.effort import (
     validate,
     write_state_to_task,
 )
-from gantt_app.models import (
+from gantt_app.core.models import (
     EFFORT_FIXED_DURATION,
     EFFORT_FIXED_UNITS,
     EFFORT_FIXED_WORK,

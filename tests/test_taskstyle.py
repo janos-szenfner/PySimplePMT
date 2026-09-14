@@ -20,7 +20,7 @@ Nothing here needs a display.
 
 import unittest
 
-from gantt_app.taskstyle import (
+from gantt_app.core.taskstyle import (
     FILL_COLOURS, PRESETS, TEXT_COLOURS, TaskStyle, normalise_colour, resolve,
 )
 
@@ -194,7 +194,7 @@ class TaskCarriesItTestCase(unittest.TestCase):
         """One task, with whatever is passed."""
         from datetime import datetime
 
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
 
         options = dict(id='1', name='X', start_date=datetime(2026, 7, 6))
         options.update(kwargs)
@@ -220,7 +220,7 @@ class TaskCarriesItTestCase(unittest.TestCase):
 
     def test_it_survives_being_saved_and_read_back(self):
         """The formatting travels with the plan, which is the point."""
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
 
         task = self.task(style=TaskStyle(text_color='#c0392b', italic=True))
 
@@ -228,7 +228,7 @@ class TaskCarriesItTestCase(unittest.TestCase):
 
     def test_a_plan_saved_before_formatting_existed_still_opens(self):
         """With plain rows rather than an exception."""
-        from gantt_app.models import Task
+        from gantt_app.core.models import Task
 
         data = self.task().to_dict()
         del data['style']
@@ -246,7 +246,7 @@ class TaskCarriesItTestCase(unittest.TestCase):
         """
         from datetime import datetime
 
-        from gantt_app.models import Project, Task
+        from gantt_app.core.models import Project, Task
         from gantt_app.utils.undoredo import (
             ProjectStateTracker, UndoRedoManager,
         )

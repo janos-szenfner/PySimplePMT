@@ -4,8 +4,8 @@ from typing import Callable, List, Optional
 
 import customtkinter as ctk
 
-from gantt_app.baselines import BaselineManager
-from gantt_app.models import Project
+from gantt_app.core.baselines import BaselineManager
+from gantt_app.core.models import Project
 from gantt_app.utils.log import get_logger
 from gantt_app.views import dialogs as messagebox
 from gantt_app.views.modal import grab_when_visible

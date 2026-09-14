@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.models import Project
-from gantt_app.startup_setting import StartupSettings, WelcomeModal
+from gantt_app.core.models import Project
+from gantt_app.views.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.utils.file_io import save_project
 
 
@@ -282,6 +282,6 @@ def the_application_starts_with_that_file_path(app, project_file_path):
 
 @then("the welcome dialog is not shown")
 def the_welcome_dialog_is_not_shown(app):
-    from gantt_app.startup_setting import WelcomeModal
+    from gantt_app.views.startup_setting import WelcomeModal
     dialogs = [child for child in app.winfo_children() if isinstance(child, WelcomeModal)]
     assert len(dialogs) == 0

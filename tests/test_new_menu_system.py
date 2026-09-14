@@ -12,7 +12,7 @@ import tkinter as tk
 import inspect
 
 from gantt_app.views.toolbar import Toolbar, CustomMenuBar, CTkDropdownMenu
-from gantt_app.models import Project
+from gantt_app.core.models import Project
 
 
 def _display_available() -> bool:
@@ -185,7 +185,7 @@ class TestMenuStructure(unittest.TestCase):
         edit_items = [item['text'] for item in edit_menu['items']]
         
         # The clipboard entries carry the key they answer to; see
-        # gantt_app.shortcuts
+        # gantt_app.utils.shortcuts
         self.assertTrue(any(label.startswith('Cut') for label in edit_items),
                         "Cut not found in Edit menu")
         self.assertTrue(any(entry.startswith('Copy')
@@ -432,7 +432,7 @@ class TestSubmenusOpen(unittest.TestCase):
     def setUp(self):
         """A toolbar with its menu bar."""
         import customtkinter as ctk
-        from gantt_app.models import Project
+        from gantt_app.core.models import Project
         from gantt_app.views.toolbar import Toolbar
 
         self.root = ctk.CTk()

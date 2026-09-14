@@ -20,7 +20,7 @@ import time
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.chart_render import layout_chart, RowPlan, MARGIN_LEFT
 from tests.pixels import flat_pixels
 
@@ -316,7 +316,7 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
     def setUp(self):
         """A window with a plan in it, given time to settle."""
         from unittest import mock
-        from gantt_app import theme
+        from gantt_app.views import theme
 
         saver = mock.patch.object(theme, 'save_mode', return_value=True)
         saver.start()

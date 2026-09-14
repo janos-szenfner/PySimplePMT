@@ -31,8 +31,8 @@ from typing import Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.models import (
+from gantt_app.views import theme
+from gantt_app.core.models import (
     CONSTRAINT_LABELS, CONSTRAINT_TYPES, CONSTRAINTS_WITH_DATE,
     EFFORT_FIXED_UNITS, EFFORT_FIXED_WORK, EFFORT_TYPES,
 )
@@ -732,7 +732,7 @@ class EffortConflictDialog(ctk.CTkToplevel):
     -----------
     master : widget
         The task editor.
-    conflict : gantt_app.effort.EditConflict
+    conflict : gantt_app.core.effort.EditConflict
         Which task type is in force and which two variables both changed.
 
     The task type fixes one of duration, work and units; changing both of the
@@ -751,7 +751,7 @@ class EffortConflictDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._cancel)
         self.bind("<Escape>", lambda _e: self._cancel())
 
-        from gantt_app.effort import var_label
+        from gantt_app.core.effort import var_label
 
         ctk.CTkLabel(
             self, text="⚠  Which value should be kept?",

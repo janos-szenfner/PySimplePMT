@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import uuid
 import copy
 
-from gantt_app.models import Task, Project, Dependency
+from gantt_app.core.models import Task, Project, Dependency
 from gantt_app.utils.undoredo import create_add_task_command
 from gantt_app.utils.copypastecut import (
     ClipboardService,
@@ -1904,7 +1904,7 @@ class TestWhatReachesTheDesktopClipboard(unittest.TestCase):
 
     def setUp(self):
         """One formatted task."""
-        from gantt_app.taskstyle import TaskStyle
+        from gantt_app.core.taskstyle import TaskStyle
 
         self.project = Project(name="Plan")
         self.service = ClipboardService(self.project)
@@ -1938,7 +1938,7 @@ class TestTheClipboardShortcuts(unittest.TestCase):
     WHY THESE EXIST:
     ================
     These three were the only shortcuts in the application written out by
-    hand instead of going through gantt_app.shortcuts. They bound Control as
+    hand instead of going through gantt_app.utils.shortcuts. They bound Control as
     well as Command on macOS, where Control+C is not copy, and they bound
     only the lower-case letter - so all three stopped working with caps lock
     on.
@@ -1974,7 +1974,7 @@ class TestTheClipboardShortcuts(unittest.TestCase):
 
     def test_it_binds_this_platform_s_modifier(self):
         """Command on a Mac, Control elsewhere."""
-        from gantt_app.shortcuts import sequences
+        from gantt_app.utils.shortcuts import sequences
 
         widget = self.bind()
 
@@ -1984,7 +1984,7 @@ class TestTheClipboardShortcuts(unittest.TestCase):
 
     def test_it_binds_both_letter_cases(self):
         """A shortcut that stops working with caps lock on is a fault."""
-        from gantt_app.shortcuts import MODIFIER
+        from gantt_app.utils.shortcuts import MODIFIER
 
         widget = self.bind()
 
@@ -1994,7 +1994,7 @@ class TestTheClipboardShortcuts(unittest.TestCase):
 
     def test_it_does_not_bind_control_on_a_mac(self):
         """Control+C is not copy on macOS and never has been."""
-        from gantt_app.shortcuts import IS_MACOS
+        from gantt_app.utils.shortcuts import IS_MACOS
 
         widget = self.bind()
 
@@ -2009,7 +2009,7 @@ class TestTheClipboardShortcuts(unittest.TestCase):
 
         A paste handled twice inserts the rows twice.
         """
-        from gantt_app.shortcuts import sequences
+        from gantt_app.utils.shortcuts import sequences
 
         widget = self.bind()
         handler = widget.bindings[sequences('v')[0]][0]
@@ -2019,7 +2019,7 @@ class TestTheClipboardShortcuts(unittest.TestCase):
 
     def test_a_text_field_keeps_its_own_clipboard(self):
         """Editing a cell means copying text, not rows."""
-        from gantt_app.shortcuts import sequences
+        from gantt_app.utils.shortcuts import sequences
 
         widget = self.bind()
 

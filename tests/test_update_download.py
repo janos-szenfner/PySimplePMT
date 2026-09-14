@@ -1,5 +1,5 @@
 """
-Tests for the assisted update download and verify (gantt_app/update_download).
+Tests for the assisted update download and verify (gantt_app/utils/update_download).
 
 The network is injected, so these are pure: they check platform installer
 selection, SHA256SUMS parsing, and that a mismatched or unverifiable download
@@ -11,8 +11,8 @@ import os
 import tempfile
 import unittest
 
-from gantt_app.update_check import UpdateInfo, STATUS_UPDATE
-from gantt_app import update_download as ud
+from gantt_app.utils.update_check import UpdateInfo, STATUS_UPDATE
+from gantt_app.utils import update_download as ud
 
 
 DMG = {"name": "pysimplepmt-1.69.0-macos-arm64.dmg",

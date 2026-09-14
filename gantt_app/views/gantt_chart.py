@@ -21,8 +21,8 @@ from tkinter import ttk
 import customtkinter as ctk
 import plotly.graph_objects as go
 
-from gantt_app import theme
-from gantt_app.models import Project
+from gantt_app.views import theme
+from gantt_app.core.models import Project
 from gantt_app.utils.chart_figure import (
     build_gantt_figure, DEFAULT_WIDTH, DEFAULT_SETTINGS,
 )

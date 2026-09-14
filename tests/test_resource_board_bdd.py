@@ -13,9 +13,9 @@ from tkinter import ttk
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app import theme
-from gantt_app.models import Project, Task
-from gantt_app.resource_model import (
+from gantt_app.views import theme
+from gantt_app.core.models import Project, Task
+from gantt_app.core.resource_model import (
     Resource, ResourceRepository, ResourceType, SchedulePattern, TeamPool,
 )
 

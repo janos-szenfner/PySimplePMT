@@ -10,7 +10,7 @@ thing, so no plan silently loses a date somebody set.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Task
+from gantt_app.core.models import Task
 
 
 BASE = datetime(2026, 1, 1)

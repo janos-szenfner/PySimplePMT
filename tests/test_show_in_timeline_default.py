@@ -11,7 +11,7 @@ without a display, by calling form_template on a light stand-in.
 import unittest
 from types import SimpleNamespace
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.taskdialogs import CreateTaskDialog
 
 

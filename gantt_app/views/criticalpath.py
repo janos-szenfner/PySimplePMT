@@ -31,10 +31,10 @@ from typing import Optional
 
 import customtkinter as ctk
 
-from gantt_app.models import Project
+from gantt_app.core.models import Project
 from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.modal import grab_when_visible
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -70,7 +70,7 @@ class CriticalPathWindow(ctk.CTkToplevel):
     )
 
     #: Row shading: the critical ones, and the ones nearly there.
-    #: (light, dark) pairs; see gantt_app.theme. Resolved when the rows are
+    #: (light, dark) pairs; see gantt_app.views.theme. Resolved when the rows are
     #: built, because a Treeview tag holds one colour and knows nothing about
     #: appearance modes - so this table stayed white on a dark desktop.
     CRITICAL_BG = theme.GRID_CRITICAL_BG

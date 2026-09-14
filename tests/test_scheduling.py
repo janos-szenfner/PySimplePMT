@@ -9,7 +9,7 @@ SF its finish - which is why constrained_dates returns a pair rather than the
 single start date the model used to work with.
 
 Scheduling runs on the project's working calendar, so the dates here are read
-against a Monday-to-Friday week - see gantt_app.workdaycalendar. Two things
+against a Monday-to-Friday week - see gantt_app.core.workdaycalendar. Two things
 follow, and both are asserted below rather than assumed: a task is never left
 starting or finishing on a weekend, and a task that moves keeps its working
 duration rather than its calendar span. The fixture runs from Thursday 1
@@ -20,7 +20,7 @@ import logging
 import unittest
 from datetime import datetime, timedelta
 
-from gantt_app.models import (
+from gantt_app.core.models import (
     Dependency, Project, Task,
     DEPENDENCY_TYPES, DEPENDENCY_TYPE_LABELS,
 )
@@ -848,10 +848,10 @@ class TestSummaryRollUp(unittest.TestCase):
         self.project.add_task(other)
         self.parent().add_dependency("Z", 'FS', 'Hard')
 
-        with self.assertLogs('gantt_app.models', level='WARNING') as caught:
+        with self.assertLogs('gantt_app.core.models', level='WARNING') as caught:
             self.project.reschedule()
             # assertLogs insists on at least one record
-            logging.getLogger('gantt_app.models').warning("settled")
+            logging.getLogger('gantt_app.core.models').warning("settled")
 
         self.assertEqual([r for r in caught.output if 'did not settle' in r],
                          [])

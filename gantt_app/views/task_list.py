@@ -29,13 +29,13 @@ from typing import Callable, Optional, List
 
 import customtkinter as ctk
 
-from gantt_app import theme
-from gantt_app.models import (
+from gantt_app.views import theme
+from gantt_app.core.models import (
     TASK_TYPES, GRID_DATA_COLUMNS, GRID_PINNED_COLUMN,
     order_grid_columns, Task, Project)
-from gantt_app.calendarregistry import PROJECT_DEFAULT_LABEL
-from gantt_app.dependencysyntax import format_links
-from gantt_app.taskstyle import resolve as resolve_style
+from gantt_app.core.calendarregistry import PROJECT_DEFAULT_LABEL
+from gantt_app.core.dependencysyntax import format_links
+from gantt_app.core.taskstyle import resolve as resolve_style
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.contextmenu import TaskContextMenu
 from gantt_app.views.taskdialogs import CreateTaskDialog
@@ -69,7 +69,7 @@ class DragDropTaskList(ctk.CTkFrame):
     and hardness that a drag cannot.
     """
 
-    #: The grid palette, as (light, dark) pairs from gantt_app.theme.
+    #: The grid palette, as (light, dark) pairs from gantt_app.views.theme.
     #:
     #: Resolved to single colours in _apply_grid_style, because ttk takes one
     #: colour per thing and knows nothing about appearance modes - which is
@@ -120,7 +120,7 @@ class DragDropTaskList(ctk.CTkFrame):
         ------------------
         ``ttk.Style().theme_use('clam')`` is no longer called here; it is
         process-global and is done once at startup by
-        :func:`gantt_app.theme.initialise_ttk_styles`. This method only
+        :func:`gantt_app.views.theme.initialise_ttk_styles`. This method only
         re-resolves the named 'Gantt.Treeview' colours when the application
         appearance changes.
         """
@@ -1346,7 +1346,7 @@ class DragDropTaskList(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        The grammar the cell takes is gantt_app.dependencysyntax's; what is
+        The grammar the cell takes is gantt_app.core.dependencysyntax's; what is
         shown is what can be typed straight back in.
         """
         task = self.project.get_task_by_id(task_id)

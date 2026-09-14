@@ -24,12 +24,12 @@ import unittest
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.gan_exporter import (
     export_project_to_gan, generate_gan_content,
 )
 from gantt_app.utils.gan_importer import import_gan_file
-from gantt_app.workdaycalendar import WorkingCalendar
+from gantt_app.core.workdaycalendar import WorkingCalendar
 
 
 def sample_project() -> Project:

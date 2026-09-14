@@ -45,7 +45,7 @@ seconds in Project.
 from pathlib import Path
 from typing import Optional
 
-from gantt_app.models import Project
+from gantt_app.core.models import Project
 from gantt_app.utils.log import get_logger
 from gantt_app.utils.msproject_importer import import_msproject_file
 

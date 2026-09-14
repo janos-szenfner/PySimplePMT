@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 import plotly.graph_objects as go
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.chart_figure import (
     build_gantt_figure, build_empty_figure, calculate_date_range
 )

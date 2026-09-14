@@ -10,7 +10,7 @@ application keep working from the in-memory clipboard, not the desktop one.
 import unittest
 from datetime import datetime
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.copypastecut import CLIPBOARD_COLUMNS, ClipboardService
 
 

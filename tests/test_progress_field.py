@@ -26,7 +26,7 @@ from datetime import datetime
 
 import customtkinter as ctk
 
-from gantt_app.models import Project, Task
+from gantt_app.core.models import Project, Task
 from gantt_app.views.taskdialogs import EditTaskDialog
 
 
@@ -145,7 +145,7 @@ class TestATaskAveragesItsSubtasks(unittest.TestCase):
 
     def rolled(self, percentages):
         """What a Task holding those sub-tasks reads."""
-        from gantt_app.models import rolled_up_progress
+        from gantt_app.core.models import rolled_up_progress
 
         parent = Task(id="T", name="t", start_date=BASE, end_date=BASE,
                       task_type="Task")
@@ -172,7 +172,7 @@ class TestATaskAveragesItsSubtasks(unittest.TestCase):
         entries like any other four; length is the Phase's business, one
         level up.
         """
-        from gantt_app.models import rolled_up_progress
+        from gantt_app.core.models import rolled_up_progress
         from datetime import timedelta
 
         short = Task(id="a", name="a", start_date=BASE,

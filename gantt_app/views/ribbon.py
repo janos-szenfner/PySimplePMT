@@ -31,7 +31,7 @@ from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
+from gantt_app.views import theme
 from gantt_app.views.tooltip import attach as attach_tooltip
 from gantt_app.views.toolbar import (
     ACCENT,
