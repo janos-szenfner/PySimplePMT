@@ -199,6 +199,10 @@ class DateEntry(ctk.CTkFrame):
         text = self.entry.get().strip()
         if not text:
             return None
+        # Dots and slashes are accepted as well as the displayed dashes -
+        # someone typing 2026.09.01 has written a date, not made a mistake.
+        for mark in ('.', '/'):
+            text = text.replace(mark, '-')
         try:
             return datetime.strptime(text, DATE_FORMAT)
         except ValueError:

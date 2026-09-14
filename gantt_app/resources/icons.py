@@ -38,7 +38,7 @@ ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'bold', 'italic', 'underline',
     'text_color', 'fill_color', 'style_preset', 'clear_style',
     'mark_on_track',
-    'critical_path', 'highlight',
+    'critical_path', 'highlight', 'filter',
     'cut', 'copy', 'paste', 'delete',
     'undo', 'redo'
 ]
@@ -212,6 +212,12 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('shape', [(0.54, 0.06), (0.88, 0.34), (0.50, 0.72), (0.30, 0.52)]),
         ('line', [(0.30, 0.52), (0.20, 0.74), (0.50, 0.72)]),
         ('fill', [(0.08, 0.82), (0.92, 0.94)]),
+    ],
+    # The grid filter: a funnel - what goes in the top is the plan, what
+    # comes out the stem is the rows the rules pass.
+    'filter': [
+        ('shape', [(0.14, 0.14), (0.86, 0.14), (0.58, 0.52), (0.58, 0.90),
+                   (0.42, 0.78), (0.42, 0.52)]),
     ],
     'cut': [
         ('line', [(0.24, 0.14), (0.72, 0.72)]),

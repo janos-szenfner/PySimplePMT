@@ -505,6 +505,13 @@ class DragDropTaskList(ctk.CTkFrame):
         #: survives the rebuild every edit causes; see show_highlighted_rows.
         self._highlighted_task_ids = set()
 
+        #: Rows the column filters leave on screen, and the subset of them
+        #: that matched in their own right (the rest are ancestors kept for
+        #: context). None rather than an empty set while nothing is
+        #: filtered - see apply_grid_filters.
+        self._filter_visible = None
+        self._filter_matches = set()
+
         #: The baseline slot being compared, if any. Set here rather than
         #: first written by set_active_baseline, because column visibility
         #: asks before that call ever runs.
@@ -3481,6 +3488,60 @@ class DragDropTaskList(ctk.CTkFrame):
             return False
         return task.id not in visible
 
+    def apply_grid_filters(self, filters: dict, variances: dict = None):
+        """
+        Show only the rows every set column filter passes.
+
+        PARAMETERS:
+        -----------
+        filters : dict
+            Column name to spec - see gantt_app.views.gridfilter for the
+            shapes. Empty, or specs that all ask nothing, puts every row
+            back.
+        variances : dict, optional
+            The baseline compare's answers, for the baseline columns.
+
+        RETURNS:
+        --------
+        Tuple[int, int]
+            How many rows matched in their own right, and how many work
+            items the plan holds.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The same shape as apply_search: the tree is rebuilt with the set in
+        force rather than rows being detached, so indentation, banding and
+        ordering come from the one populate path. A match keeps its
+        ancestors - see gridfilter.filtered_task_ids - and the chart follows
+        the tree on its own.
+        """
+        from gantt_app.views.gridfilter import (
+            filtered_task_ids, matching_task_ids)
+
+        self._filter_visible = filtered_task_ids(self.project, filters,
+                                                 variances)
+        self._filter_matches = matching_task_ids(self.project, filters,
+                                                 variances)
+        self.update_task_list()
+        return len(self._filter_matches), len(self.project.tasks)
+
+    def clear_grid_filters(self):
+        """Put every row back, whether a filter was set or not."""
+        self._filter_visible = None
+        self._filter_matches = set()
+        self.update_task_list()
+
+    def grid_filters_active(self) -> bool:
+        """Whether any column filter is ruling rows out."""
+        return getattr(self, '_filter_visible', None) is not None
+
+    def _hidden_by_filter(self, task) -> bool:
+        """Whether the column filters leave a row off the list."""
+        visible = getattr(self, '_filter_visible', None)
+        if visible is None:
+            return False
+        return task.id not in visible
+
     def update_task_list(self):
         """
         Update the task list display with all task information.
@@ -3629,7 +3690,7 @@ class DragDropTaskList(ctk.CTkFrame):
 
         # First pass: add all root tasks
         for task in self.project.get_root_tasks():
-            if self._hidden_by_search(task):
+            if self._hidden_by_search(task) or self._hidden_by_filter(task):
                 continue
             item_id = self._add_task_to_tree(task)
             tree_items[task.id] = item_id
@@ -3639,7 +3700,8 @@ class DragDropTaskList(ctk.CTkFrame):
         # deep, so keep sweeping until a pass places nothing new - a single
         # pass would silently drop anything below the second level.
         remaining = [t for t in self.project.tasks
-                     if t.parent_task_id and not self._hidden_by_search(t)]
+                     if t.parent_task_id and not self._hidden_by_search(t)
+                     and not self._hidden_by_filter(t)]
 
         while remaining:
             placed = []

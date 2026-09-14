@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.69.2 - 2026-09-15
+
+- **The View tab grew a column Filter.** A new Filter group opens a window
+  with one rule per visible grid column: a contains-box for the text
+  columns (which reads from the third letter, so "art" finds Draft
+  artwork), a from/to pair for the number and date columns with either end
+  openable, and a tick per value for the fixed-set columns - Type, Status,
+  Milestone, Alert and Task Calendar. Apply shows only the rows every set
+  rule passes, keeping a match's phase above it for context; the columns
+  combine with AND the way MS Project's AutoFilter does. A separate Clear
+  button and the window's own Clear All put every row back. The filters
+  are a view, not data - nothing is written to the plan, and opening,
+  closing or replacing the plan clears them.
+- **Date boxes accept dots and slashes.** Typing 2026.09.01 or 2026/09/01
+  into any date field now parses as the date it plainly is, alongside the
+  displayed 2026-09-01 form.
+- **Ribbon groups no longer clip their buttons.** The band is taller, so
+  large-button captions like Critical Path Analysis and New Task fit inside
+  their frames, and small buttons wrap after three to a column - Unlink no
+  longer spills past the Outline group's edge.
+- **Task-grid settings dropdowns open again.** The cell editor committed on
+  focus loss, and opening a Hidden/Viewable list moved focus into the
+  popup - firing the commit and destroying the list the instant it
+  appeared. The editor now waits for focus to settle, the way the task
+  list's own in-place editor does.
+- **Dark-mode leftovers repainted.** The black band under the Gantt chart
+  after a night-to-day switch was the chart frame's own canvas, shadowed by
+  a name collision - renamed, and given an explicit colour where its paned
+  parent hid it from the theme. The dark gaps between Resource Pool cards
+  had the same cause in the scroll frame's content, which now resamples its
+  transparent background on a theme change.
+- **Checking for updates is more forgiving.** A look at the latest release
+  now falls back to the releases list when GitHub answers "latest" with a
+  404 - which is what it does while a release is still publishing - and the
+  request gets a longer timeout.
+
 ## 1.69.1 - 2026-09-14
 
 - **The Event Log now records everything you do.** Every ribbon, backstage,

@@ -1087,6 +1087,11 @@ class Toolbar(ctk.CTkFrame):
         #: question they answer - so the gallery can tick the entry and a
         #: second pick of the same one knows to clear. See apply_highlight.
         self._active_highlight = None
+        #: The column-filter specs in force, held so reopening the filter
+        #: window shows what is set rather than a fresh form. The list's
+        #: _filter_visible is the state; this is its echo for the dialog.
+        self._grid_filters = {}
+        self._grid_filter_dialog = None
 
         # Create UI
         self._create_ui()
@@ -2173,6 +2178,70 @@ class Toolbar(ctk.CTkFrame):
         grab_when_visible(dialog)
         logger.info("Opening the highlight filter picker")
 
+    def open_grid_filter(self):
+        """
+        Open the window that sets a rule per visible column.
+
+        A second press raises the open window rather than making another.
+        The columns offered are the ones on show at the moment it opens -
+        a hidden column cannot filter what it does not draw - and the specs
+        already in force refill the controls, so the window is the state,
+        not a fresh form.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'apply_grid_filters'):
+            return
+        existing = getattr(self, '_grid_filter_dialog', None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+
+        from gantt_app.views.gridfilter import (
+            COLUMN_KIND, GridFilterDialog, choice_values)
+
+        variances = getattr(task_list, '_task_variances', None)
+        context = {'variances': variances or {}}
+        columns = ['Task Name'] + [
+            c for c in task_list._shown_columns()
+            if c in COLUMN_KIND]
+
+        logger.info("Opening the grid filter window")
+        self._grid_filter_dialog = GridFilterDialog(
+            self.winfo_toplevel(), columns,
+            current=getattr(self, '_grid_filters', None) or {},
+            values=lambda c: choice_values(self.project, c, context),
+            on_apply=self._apply_grid_filters,
+            on_clear=self.clear_grid_filter)
+
+    def _apply_grid_filters(self, specs: dict):
+        """What the filter window's Apply asks of the grid."""
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None:
+            return
+        self._grid_filters = dict(specs or {})
+        shown, total = task_list.apply_grid_filters(
+            self._grid_filters,
+            getattr(task_list, '_task_variances', None))
+        self._refresh_toggle_states()
+        logger.info("Grid filter applied: %d of %d row(s) shown",
+                    shown, total)
+        self._report(f"Grid filter: {shown} of {total} rows shown.")
+
+    def clear_grid_filter(self):
+        """Take every column filter off the grid."""
+        self._grid_filters = {}
+        task_list = getattr(self, 'task_list', None)
+        if task_list is not None and hasattr(task_list, 'clear_grid_filters'):
+            task_list.clear_grid_filters()
+        self._refresh_toggle_states()
+        logger.info("Grid filter cleared")
+        self._report("Grid filter off.")
+
     def _refresh_toggle_states(self):
         """
         Repaint the checked ribbon buttons, where they exist to repaint.
@@ -2544,14 +2613,26 @@ class Toolbar(ctk.CTkFrame):
 
         # The highlight is a question asked of the plan that was open; a new
         # plan has not answered it, and the ids it painted belong to rows
-        # that are gone. The critical path's paint goes the same way.
+        # that are gone. The critical path's paint and the column filters
+        # go the same way.
         self._active_highlight = None
+        self._grid_filters = {}
         task_list = getattr(self, 'task_list', None)
         if task_list is not None:
             if hasattr(task_list, 'clear_highlight'):
                 task_list.clear_highlight()
             if hasattr(task_list, 'clear_critical_path_rows'):
                 task_list.clear_critical_path_rows()
+            if hasattr(task_list, 'clear_grid_filters'):
+                task_list.clear_grid_filters()
+        dialog = getattr(self, '_grid_filter_dialog', None)
+        if dialog is not None:
+            try:
+                if dialog.winfo_exists():
+                    dialog.destroy()
+            except tk.TclError:
+                pass
+            self._grid_filter_dialog = None
 
     def import_gan(self):
         """Import a GanttProject (.gan) file."""

@@ -188,6 +188,13 @@ class RibbonBar(IconToolbar):
                    tip="Paint the rows a filter matches",
                    check='highlight', key='highlight'),
             )),
+            ("Filter", (
+                _L('filter', 'Filter', 'open_grid_filter',
+                   tip="Show only the rows the columns' rules pass",
+                   check='grid_filter', key='grid_filter'),
+                _S('clear_style', 'Clear', 'clear_grid_filter',
+                   tip="Clear every column filter", key='grid_filter_clear'),
+            )),
             ("Appearance", (
                 _S('moon', 'Day / Night', '_toggle_theme',
                    tip="Switch between Day and Night",
@@ -269,7 +276,7 @@ class RibbonBar(IconToolbar):
         'set_baseline', 'clear_baseline',
         'show_gantt_chart', 'show_dashboard', 'toggle_grid_view_only',
         'show_critical_path', 'show_log', 'show_about', 'show_changelog',
-        'show_help',
+        'show_help', 'open_grid_filter', 'clear_grid_filter',
     )
 
     def __init__(self, master, project, galleries: Dict = None, **kwargs):
@@ -722,6 +729,11 @@ class RibbonBar(IconToolbar):
             return bool(task_list is not None
                         and hasattr(task_list, 'highlighted_rows_shown')
                         and task_list.highlighted_rows_shown())
+        if which == 'grid_filter':
+            task_list = getattr(self, 'task_list', None)
+            return bool(task_list is not None
+                        and hasattr(task_list, 'grid_filters_active')
+                        and task_list.grid_filters_active())
         return False
 
     def _perform(self, action: str):
