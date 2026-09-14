@@ -1097,6 +1097,11 @@ class Toolbar(ctk.CTkFrame):
         #: from _grid_filters because a definition is not column specs -
         #: it has And/Or rows and tests the per-column window cannot draw.
         self._active_named_filter = None
+        #: The query text ruling the grid from the Advanced tab, and the
+        #: recent queries the window's history offers. Neither persists -
+        #: a query worth keeping is saved as a named filter.
+        self._active_query = None
+        self._query_history = []
 
         # Create UI
         self._create_ui()
@@ -2236,6 +2241,66 @@ class Toolbar(ctk.CTkFrame):
         logger.info("Opening the filter definition for %s",
                     old_name or "a new filter")
 
+    def _open_query_editor(self, definition: dict, old_name: str):
+        """
+        The Filter window's Advanced tab as a saved query filter's editor.
+
+        The query fills the box; Save writes it back under its own name -
+        a query filter's definition is its text, so there is no name to
+        re-ask for.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'apply_grid_filters'):
+            return
+        from gantt_app.views.gridfilter import (
+            COLUMN_KIND, GridFilterDialog, choice_values)
+        variances = getattr(task_list, '_task_variances', None)
+        context = {'variances': variances or {}}
+        columns = ['Task Name'] + [
+            c for c in task_list._shown_columns()
+            if c in COLUMN_KIND]
+        self._grid_filter_dialog = GridFilterDialog(
+            self.winfo_toplevel(), columns,
+            current=getattr(self, '_grid_filters', None) or {},
+            values=lambda c: choice_values(self.project, c, context),
+            on_apply=self._apply_grid_filters,
+            on_clear=self.clear_grid_filter,
+            on_save_as=lambda payload: self._save_query_edit(
+                payload, old_name),
+            project=self.project, variances=variances,
+            query=definition.get('query') or '',
+            history=getattr(self, '_query_history', None))
+        logger.info("Editing the query filter %r", old_name)
+
+    def _save_query_edit(self, payload: dict, old_name: str):
+        """
+        Write an edited saved filter back under its own name.
+
+        Which tab was live decides the shape: an Advanced save keeps the
+        filter a query; a Basic save stores the form's rules instead, so
+        a filter can change its kind in the course of an edit.
+        """
+        from gantt_app.views.gridfilter import specs_to_rules
+
+        existing = self._find_custom_filter(old_name)
+        if existing is None:
+            return
+        updated = dict(existing)
+        if (payload or {}).get('mode') == 'advanced':
+            query = (payload.get('query') or '').strip()
+            if not query:
+                return
+            updated.pop('rules', None)
+            updated['query'] = query
+        else:
+            rules = specs_to_rules(payload.get('specs'), self.project)
+            if not rules:
+                return
+            updated.pop('query', None)
+            updated['rules'] = rules
+        self._save_custom_filter(updated, old_name)
+        self._report(f"Filter '{old_name}' saved.")
+
     def new_highlight_filter(self):
         """Build a filter from scratch - MS Project's New button."""
         self._open_filter_definition()
@@ -2281,6 +2346,7 @@ class Toolbar(ctk.CTkFrame):
             task_list.apply_matching_ids(matches)
             self._grid_filters = {}
             self._active_named_filter = None
+            self._active_query = None
             self._refresh_toggle_states()
             logger.info("Filter %s applied: %d row(s)", label, len(matches))
             self._report(f"Filter: {label} - {len(matches)} row(s) shown.")
@@ -2295,10 +2361,20 @@ class Toolbar(ctk.CTkFrame):
             self.apply_highlight(f"custom:{key}")
 
     def _more_filters_edit(self, name: str):
-        """The manager's Edit: open the selected saved filter."""
+        """
+        The manager's Edit: open the selected saved filter.
+
+        A rules filter opens in the row-grid builder; a query filter opens
+        on the Filter window's Advanced tab, where its text is the thing
+        being edited - the builder has no rows to show it as.
+        """
         definition = self._find_custom_filter(name)
-        if definition is not None:
-            self._open_filter_definition(definition, old_name=name)
+        if definition is None:
+            return
+        if definition.get('query'):
+            self._open_query_editor(definition, old_name=name)
+            return
+        self._open_filter_definition(definition, old_name=name)
 
     def _more_filters_copy(self, name: str):
         """The manager's Copy: a second saved filter under a new name."""
@@ -2353,6 +2429,7 @@ class Toolbar(ctk.CTkFrame):
             variances=getattr(task_list, '_task_variances', None))
         self._active_named_filter = name
         self._grid_filters = {}
+        self._active_query = None
         self._refresh_toggle_states()
         logger.info("Named filter %r applied: %d of %d row(s) shown",
                     name, shown, total)
@@ -2397,26 +2474,54 @@ class Toolbar(ctk.CTkFrame):
             values=lambda c: choice_values(self.project, c, context),
             on_apply=self._apply_grid_filters,
             on_clear=self.clear_grid_filter,
-            on_save_as=self._save_specs_as_filter)
+            on_save_as=self._save_specs_as_filter,
+            project=self.project, variances=variances,
+            query=getattr(self, '_active_query', None) or '',
+            history=getattr(self, '_query_history', None))
 
-    def _save_specs_as_filter(self, specs: dict):
+    def _save_specs_as_filter(self, payload: dict):
         """
-        Name the column window's rules and keep them as a saved filter.
+        Name what the filter window asks and keep it as a saved filter.
 
-        MS Project's AutoFilter Save: the specs become definition rules,
-        and the named filter lists in the menus and the manager from then
+        MS Project's AutoFilter Save: the Basic tab's specs become
+        definition rules; the Advanced tab's query is saved as the query
+        itself - a definition carrying 'query' instead of 'rules'. Either
+        way the named filter lists in the menus and the manager from then
         on. A name is only asked for when there is something to save.
         """
         from tkinter import simpledialog
         from gantt_app.views.gridfilter import specs_to_rules
 
-        rules = specs_to_rules(specs, self.project)
-        if not rules:
-            messagebox.showinfo(
-                "Save Filter",
-                "There is nothing set to save - give a column a rule "
-                "first.")
-            return
+        payload = payload or {}
+        if payload.get('mode') == 'advanced':
+            from gantt_app import filterlang
+            query = (payload.get('query') or '').strip()
+            if not query:
+                messagebox.showinfo(
+                    "Save Filter", "The query box is empty - "
+                    "write a filter first.")
+                return
+            try:
+                filterlang.parse_query(query)
+            except filterlang.QueryError as error:
+                messagebox.showinfo(
+                    "Save Filter",
+                    f"The query does not parse: {error} "
+                    f"(position {error.position})")
+                return
+            definition = {'name': '', 'show_in_menu': True,
+                          'query': query}
+        else:
+            rules = specs_to_rules(payload.get('specs'), self.project)
+            if not rules:
+                messagebox.showinfo(
+                    "Save Filter",
+                    "There is nothing set to save - give a column a rule "
+                    "first.")
+                return
+            definition = {'name': '', 'show_in_menu': True,
+                          'rules': rules}
+
         name = simpledialog.askstring(
             "Save Filter", "Name for this filter:",
             parent=self._grid_filter_dialog or self.winfo_toplevel())
@@ -2429,17 +2534,22 @@ class Toolbar(ctk.CTkFrame):
                 f"A filter named '{name}' already exists - "
                 "edit it from More Filters instead.")
             return
-        self._save_custom_filter({'name': name, 'show_in_menu': True,
-                                  'rules': rules})
+        definition['name'] = name
+        self._save_custom_filter(definition)
         self._report(f"Filter '{name}' saved.")
 
-    def _apply_grid_filters(self, specs: dict):
+    def _apply_grid_filters(self, payload: dict):
         """What the filter window's Apply asks of the grid."""
         task_list = getattr(self, 'task_list', None)
         if task_list is None:
             return
-        self._grid_filters = dict(specs or {})
+        payload = payload or {}
+        if payload.get('mode') == 'advanced':
+            self._apply_query_filter(payload.get('query') or '')
+            return
+        self._grid_filters = dict(payload.get('specs') or {})
         self._active_named_filter = None
+        self._active_query = None
         shown, total = task_list.apply_grid_filters(
             self._grid_filters,
             getattr(task_list, '_task_variances', None))
@@ -2448,10 +2558,43 @@ class Toolbar(ctk.CTkFrame):
                     shown, total)
         self._report(f"Grid filter: {shown} of {total} rows shown.")
 
+    def _apply_query_filter(self, text: str):
+        """Apply the Advanced tab's query to the grid."""
+        from gantt_app import filterlang
+
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None:
+            return
+        try:
+            matches = filterlang.query_matching_ids(
+                self.project, text,
+                getattr(task_list, '_task_variances', None))
+        except filterlang.QueryError as error:
+            # The window validates live, so this is a belt over braces:
+            # an unparseable query applies nothing and says why.
+            logger.info("Grid filter query did not parse: %s", error)
+            self._report(f"Filter query error: {error}")
+            return
+        shown, total = task_list.apply_matching_ids(matches)
+        self._grid_filters = {}
+        self._active_named_filter = None
+        self._active_query = text.strip() or None
+        if self._active_query:
+            # The history the window offers, most recent first, ten deep.
+            self._query_history = [self._active_query] + [
+                q for q in self._query_history
+                if q != self._active_query]
+            del self._query_history[10:]
+        self._refresh_toggle_states()
+        logger.info("Grid filter query applied: %d of %d row(s) shown",
+                    shown, total)
+        self._report(f"Grid filter: {shown} of {total} rows shown.")
+
     def clear_grid_filter(self):
         """Take every column filter off the grid."""
         self._grid_filters = {}
         self._active_named_filter = None
+        self._active_query = None
         task_list = getattr(self, 'task_list', None)
         if task_list is not None and hasattr(task_list, 'clear_grid_filters'):
             task_list.clear_grid_filters()
@@ -2835,6 +2978,7 @@ class Toolbar(ctk.CTkFrame):
         self._active_highlight = None
         self._grid_filters = {}
         self._active_named_filter = None
+        self._active_query = None
         task_list = getattr(self, 'task_list', None)
         if task_list is not None:
             if hasattr(task_list, 'clear_highlight'):
@@ -3343,13 +3487,26 @@ class Toolbar(ctk.CTkFrame):
         self.grid_view_only_var.set(False)
 
     def toggle_grid_view_only(self, _state=None):
-        """Show only the task list, or restore the Gantt chart."""
+        """
+        Show only the task list, or restore the Gantt chart.
+
+        A press with no state - the ribbon button's kind - toggles against
+        what is on screen: grid-only is on when neither the chart nor the
+        dashboard is showing. The old menu path passed the checkbutton's
+        new value as _state, which is why the var is synced rather than
+        read: nothing else sets it, and the ribbon's pressed look reads it.
+        """
         if self.content_panes is None or self.gantt_chart is None:
             return
-        enabled = _state if _state is not None else self.grid_view_only_var.get()
+        if _state is not None:
+            enabled = bool(_state)
+        else:
+            enabled = self._showing(self.gantt_chart) or \
+                self._showing(self.dashboard_frame)
         if enabled:
             self._hide_pane(self.gantt_chart)
             self._hide_pane(self.dashboard_frame)
+            self.grid_view_only_var.set(True)
             logger.info("Grid view only enabled")
         else:
             self.show_gantt_chart()

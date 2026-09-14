@@ -3356,24 +3356,34 @@ class Project:
         The saved filters, pared to what a file can hold.
 
         A definition is already plain data - a name, a show-in-menu flag
-        and a list of rule dictionaries whose values are strings - so this
-        mostly copies. Anything that is not that shape is left out rather
-        than written, for the same reason _read_date declines to raise.
+        and either a list of rule dictionaries whose values are strings or
+        a query string from the Filter window's Advanced tab - so this
+        mostly copies. Anything that is not one of those shapes is left
+        out rather than written, for the same reason _read_date declines
+        to raise.
         """
         written = []
         for definition in self.custom_filters or []:
             if not isinstance(definition, dict):
                 continue
             name = definition.get('name')
-            rules = definition.get('rules')
-            if not isinstance(name, str) or not isinstance(rules, list):
+            if not isinstance(name, str):
                 continue
-            written.append({
-                'name': name,
-                'show_in_menu': bool(definition.get('show_in_menu')),
-                'rules': [dict(rule) for rule in rules
-                          if isinstance(rule, dict)],
-            })
+            query = definition.get('query')
+            rules = definition.get('rules')
+            if isinstance(query, str) and query.strip():
+                written.append({
+                    'name': name,
+                    'show_in_menu': bool(definition.get('show_in_menu')),
+                    'query': query,
+                })
+            elif isinstance(rules, list):
+                written.append({
+                    'name': name,
+                    'show_in_menu': bool(definition.get('show_in_menu')),
+                    'rules': [dict(rule) for rule in rules
+                              if isinstance(rule, dict)],
+                })
         return written
 
     @staticmethod
@@ -3392,20 +3402,30 @@ class Project:
             if not isinstance(definition, dict):
                 continue
             name = definition.get('name')
-            rules = definition.get('rules')
-            if (not isinstance(name, str) or not name.strip()
-                    or not isinstance(rules, list)
-                    or not all(isinstance(rule, dict) and
-                               isinstance(rule.get('field'), str)
-                               for rule in rules)):
+            if not isinstance(name, str) or not name.strip():
                 logger.warning("Ignoring unreadable saved filter %r",
                                name)
                 continue
-            read.append({
-                'name': name.strip(),
-                'show_in_menu': bool(definition.get('show_in_menu')),
-                'rules': [dict(rule) for rule in rules],
-            })
+            query = definition.get('query')
+            rules = definition.get('rules')
+            if isinstance(query, str) and query.strip():
+                read.append({
+                    'name': name.strip(),
+                    'show_in_menu': bool(definition.get('show_in_menu')),
+                    'query': query,
+                })
+            elif (isinstance(rules, list)
+                    and all(isinstance(rule, dict) and
+                            isinstance(rule.get('field'), str)
+                            for rule in rules)):
+                read.append({
+                    'name': name.strip(),
+                    'show_in_menu': bool(definition.get('show_in_menu')),
+                    'rules': [dict(rule) for rule in rules],
+                })
+            else:
+                logger.warning("Ignoring unreadable saved filter %r",
+                               name)
         return read
 
     @staticmethod

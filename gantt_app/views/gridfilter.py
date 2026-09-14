@@ -468,11 +468,21 @@ def definition_matching_ids(project, definition: Dict,
     """
     The rows a named filter matches in their own right.
 
-    An empty rule list matches nothing rather than everything: a filter
-    with no rules is unfinished, and an unfinished filter hiding the whole
-    grid is the kind of surprise that reads as a defect.
+    The definition carries either And/Or 'rules' or a 'query' - the
+    Advanced tab's text, saved under a name. An empty rule list or an
+    unparseable query matches nothing rather than everything: an
+    unfinished filter hiding the whole grid is the kind of surprise that
+    reads as a defect.
     """
-    rules = (definition or {}).get('rules') or []
+    definition = definition or {}
+    if definition.get('query'):
+        from gantt_app import filterlang
+        try:
+            return filterlang.query_matching_ids(
+                project, definition['query'], variances)
+        except filterlang.QueryError:
+            return set()
+    rules = definition.get('rules') or []
     if not rules:
         return set()
     context = {'variances': variances or {},
@@ -524,8 +534,8 @@ def definition_visible_ids(project, definition: Dict,
     caller reads it the way it reads the column filters' None: nothing is
     being filtered.
     """
-    rules = (definition or {}).get('rules') or []
-    if not rules:
+    definition = definition or {}
+    if not definition.get('rules') and not definition.get('query'):
         return None
     return _with_ancestors(
         project, definition_matching_ids(project, definition, variances))
@@ -594,6 +604,172 @@ def specs_to_rules(filters: Dict, project=None) -> list:
     return rules
 
 
+def field_name_for_query(column: str) -> str:
+    """
+    The way a column is written in a query.
+
+    The shortest alias that resolves back to it, or the column's own name
+    quoted when it holds a space - "Task Name" stays readable either way.
+    """
+    from gantt_app.filterlang import FIELD_ALIASES, resolve_field
+    best = None
+    for alias, target in FIELD_ALIASES.items():
+        if target == column and (best is None or len(alias) < len(best)):
+            best = alias
+    if best is not None:
+        return best
+    return f'"{column}"' if ' ' in column else column
+
+
+def specs_to_query(filters: Dict, project=None) -> str:
+    """
+    The Basic tab's specs as Advanced-tab text.
+
+    The inverse of query_to_specs, used when the reader switches tabs:
+    the form's rules are written out as the query that asks the same
+    thing. A spec that asks nothing contributes nothing.
+    """
+    parts = []
+    for column, spec in (filters or {}).items():
+        if spec is None or not filter_is_active(column, spec, project):
+            continue
+        kind = COLUMN_KIND.get(column)
+        name = field_name_for_query(column)
+        if kind == 'text':
+            parts.append(f'{name} ~ "{spec["text"].strip()}"')
+        elif kind == 'number':
+            lower, upper = spec.get('min'), spec.get('max')
+            if lower is not None and upper is not None:
+                parts.append(f'{name} within {lower}, {upper}')
+            elif lower is not None:
+                parts.append(f'{name} >= {lower}')
+            else:
+                parts.append(f'{name} <= {upper}')
+        elif kind == 'date':
+            lower, upper = spec.get('from'), spec.get('to')
+            stamp = lambda d: d.strftime(DATE_FORMAT)
+            if lower is not None and upper is not None:
+                parts.append(f'{name} within {stamp(lower)}, '
+                             f'{stamp(upper)}')
+            elif lower is not None:
+                parts.append(f'{name} >= {stamp(lower)}')
+            else:
+                parts.append(f'{name} <= {stamp(upper)}')
+        elif kind == 'choice':
+            allowed = sorted(str(v) for v in spec.get('allowed', ()))
+            if len(allowed) == 1:
+                parts.append(f'{name} = "{allowed[0]}"')
+            else:
+                parts.append(f"{name} in ("
+                             + ", ".join(f'"{v}"' for v in allowed) + ")")
+    return ' and '.join(parts)
+
+
+def query_to_specs(text: str, project=None) -> Optional[Dict]:
+    """
+    The Basic-tab equivalent of a query, or None where there is none.
+
+    Only a flat AND of conditions the columns can express converts -
+    the same limit Jira's Basic mode has. Contains becomes the text box,
+    a two-ended range or an equals becomes min and max, a one-ended range
+    its single end, and equals/in on a fixed-set field becomes the
+    checklist. Anything with or, not or a bracket answers None and stays
+    on the Advanced tab.
+    """
+    from gantt_app import filterlang
+
+    try:
+        tree = filterlang.parse_query(text)
+    except filterlang.QueryError:
+        return None
+    if tree is None:
+        return {}
+    conditions = [tree] if tree[0] not in ('and', 'or', 'not') else None
+    if tree[0] == 'and':
+        conditions = tree[1]
+        # A chain of ands nests left-deep: flatten it.
+        while conditions and conditions[0][0] == 'and':
+            conditions = conditions[0][1] + conditions[1:]
+    if conditions is None:
+        return None
+    if any(c[0] in ('and', 'or', 'not') for c in conditions):
+        return None
+
+    specs = {}
+    # A fixed-set value is canonicalized against what the plan carries,
+    # so "in progress" lands on "In Progress" in the checklist.
+    present = {}
+    if project is not None:
+        for field_name in FILTER_FIELDS:
+            if COLUMN_KIND.get(field_name) == 'choice':
+                present[field_name] = {
+                    str(v).lower(): v
+                    for v in choice_values(project, field_name)}
+
+    try:
+        for field, test, values, _pos in conditions:
+            kind = COLUMN_KIND.get(field)
+            if field in specs:
+                return None  # two conditions on one column - can't show
+            if kind == 'text':
+                if test != 'contains':
+                    return None
+                specs[field] = {'text': values[0]}
+            elif kind == 'number':
+                spec = {'min': None, 'max': None}
+                if test == 'equals':
+                    spec = {'min': float(values[0]),
+                            'max': float(values[0])}
+                elif test == 'within':
+                    spec = {'min': float(values[0]),
+                            'max': float(values[1])}
+                elif test == 'gte':
+                    spec['min'] = float(values[0])
+                elif test == 'lte':
+                    spec['max'] = float(values[0])
+                else:
+                    return None
+                specs[field] = spec
+            elif kind == 'date':
+                days = [parse_date(v) for v in values]
+                if any(d is None for d in days):
+                    return None
+                spec = {'from': None, 'to': None}
+                if test == 'equals':
+                    spec = {'from': days[0], 'to': days[0]}
+                elif test == 'within':
+                    spec = {'from': days[0], 'to': days[1]}
+                elif test == 'gte':
+                    spec['from'] = days[0]
+                elif test == 'lte':
+                    spec['to'] = days[0]
+                else:
+                    return None
+                specs[field] = spec
+            elif kind == 'choice':
+                canonical = [present.get(field, {}).get(
+                    str(v).strip().lower(), str(v).strip())
+                    for v in values]
+                if test == 'equals':
+                    specs[field] = {'allowed': {canonical[0]}}
+                elif test == 'in':
+                    specs[field] = {'allowed': set(canonical)}
+                elif test in ('not_equals', 'not_in') \
+                        and project is not None:
+                    # A whitelist only: "not X" is "everything but X".
+                    excluded = {canonical[0]} if test == 'not_equals' \
+                        else set(canonical)
+                    specs[field] = {
+                        'allowed': set(present.get(field, ())) - excluded}
+                else:
+                    return None
+            else:
+                return None
+    except (ValueError, IndexError):
+        return None
+    return specs
+
+
 class GridFilterDialog(ctk.CTkToplevel):
     """
     The window the View tab's Filter button opens.
@@ -627,7 +803,8 @@ class GridFilterDialog(ctk.CTkToplevel):
     """
 
     def __init__(self, master, columns, current, values, on_apply, on_clear,
-                 on_save_as=None):
+                 on_save_as=None, project=None, variances=None,
+                 query='', history=None):
         super().__init__(master)
         self.title("Filter Tasks")
         self.transient(master)
@@ -635,8 +812,13 @@ class GridFilterDialog(ctk.CTkToplevel):
         self._on_clear = on_clear
         self._on_save_as = on_save_as
         self._values = values
+        self._project = project
+        self._variances = variances
+        self._history = list(history or [])
         #: The control each section feeds back into a spec, by column.
         self._controls = {}
+        self._suggest_after = None
+        self._suggest_popup = None
 
         head = ctk.CTkFrame(self, fg_color="transparent")
         head.pack(fill="x", padx=12, pady=(12, 4))
@@ -646,11 +828,19 @@ class GridFilterDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=12),
         ).pack(anchor="w")
 
-        self._body = ScrollFrame(self, height=420)
-        self._body.pack(fill="both", expand=True, padx=12, pady=4)
+        # Basic is the per-column form; Advanced is the query box. The
+        # tabview's command carries the state across on every switch.
+        self.tabview = ctk.CTkTabview(self, command=self._tab_switched)
+        self.tabview.pack(fill="both", expand=True, padx=12, pady=4)
+        basic = self.tabview.add("Basic")
+        advanced = self.tabview.add("Advanced")
 
+        self._body = ScrollFrame(basic, height=420)
+        self._body.pack(fill="both", expand=True)
         for column in columns:
             self._build_section(column, (current or {}).get(column))
+
+        self._build_advanced(advanced, query)
 
         buttons = ctk.CTkFrame(self, fg_color="transparent")
         buttons.pack(fill="x", padx=12, pady=(4, 12))
@@ -664,8 +854,271 @@ class GridFilterDialog(ctk.CTkToplevel):
             secondary_button(buttons, "Save As...", self._save_as,
                              width=80).pack(side="left", padx=(6, 0))
 
+        if query:
+            # set() rather than _set_tab: the prefilled query is the
+            # state, not something to re-render from the Basic specs.
+            self.tabview.set("Advanced")
+
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         grab_when_visible(self)
+
+    # ------------------------------------------------------------------
+    # The Advanced tab
+    # ------------------------------------------------------------------
+
+    def _build_advanced(self, tab, query):
+        """The query box, its verdict line, and the recent queries."""
+        from gantt_app import filterlang
+
+        ctk.CTkLabel(
+            tab,
+            text='Write the filter: name ~ "art" and progress < 50, '
+                 'type in (Task, Milestone), start >= 2026-09-01.',
+            anchor="w", wraplength=520, justify="left",
+            text_color=theme.MUTED_TEXT,
+            font=ctk.CTkFont(size=12),
+        ).pack(fill="x", pady=(6, 4))
+
+        entry_row = ctk.CTkFrame(tab, fg_color="transparent")
+        entry_row.pack(fill="x")
+        self._query_entry = ctk.CTkEntry(
+            entry_row, placeholder_text='status = "In Progress" ...')
+        self._query_entry.pack(side="left", fill="x", expand=True)
+        if query:
+            self._query_entry.insert(0, query)
+        if self._history:
+            secondary_button(
+                entry_row, "Recent", self._post_history,
+                width=64).pack(side="left", padx=(6, 0))
+
+        self._query_status = ctk.CTkLabel(tab, text="", anchor="w",
+                                          font=ctk.CTkFont(size=12))
+        self._query_status.pack(fill="x", pady=(4, 0))
+
+        self._query_entry.bind('<KeyRelease>', lambda _e:
+                               self._query_changed())
+        self._query_entry.bind('<Return>', lambda _e: self._apply())
+        self._query_entry.bind('<Escape>', lambda _e:
+                               self._close_suggestions())
+        self._query_entry.bind('<Down>', lambda _e: self._open_suggestions())
+        self._query_changed()
+
+    def _post_history(self):
+        """The Recent button's menu: past queries, newest first."""
+        menu = tk.Menu(self, tearoff=0)
+        for query in self._history:
+            menu.add_command(
+                label=query,
+                command=lambda q=query: (
+                    self._query_entry.delete(0, 'end'),
+                    self._query_entry.insert(0, q),
+                    self._query_changed()))
+        button = self._query_entry
+        try:
+            menu.post(button.winfo_rootx() + button.winfo_width(),
+                      button.winfo_rooty() + button.winfo_height())
+        except tk.TclError:
+            pass
+
+    def _set_tab(self, name: str):
+        """
+        Switch the tab the way a click does.
+
+        CTkTabview.set() moves the tabs but not the command - only the
+        segmented button's own callback runs it - so a programmatic switch
+        calls the carry-over itself.
+        """
+        self.tabview.set(name)
+        self._tab_switched()
+
+    def _active_tab(self) -> str:
+        """'advanced' while the query tab is the one on show."""
+        return 'advanced' if self.tabview.get() == "Advanced" else 'basic'
+
+    def _query_changed(self):
+        """
+        Re-read the box after each keystroke.
+
+        The verdict line answers before Apply does: a parse error in red
+        with where it stopped, or the match count in green - the reader
+        sees what the query will do while writing it. The suggestion list
+        is rebuilt on the same keystroke.
+        """
+        from gantt_app import filterlang
+
+        text = self._query_entry.get()
+        try:
+            parse_query_text = filterlang.parse_query(text)
+        except filterlang.QueryError as error:
+            self._query_status.configure(
+                text=f"✗ {error} (position {error.position})",
+                text_color=('#b00020', '#ff6b6b'))
+            self._offer_suggestions()
+            return
+        try:
+            matches = filterlang.query_matching_ids(
+                self._project, text, self._variances) \
+                if self._project is not None else set()
+            note = ("everything" if filterlang.parse_query(text) is None
+                    else f"{len(matches)} row(s) match")
+            self._query_status.configure(
+                text=f"✓ {note}",
+                text_color=theme.POSITIVE_TEXT)
+        except Exception as error:
+            self._query_status.configure(
+                text=f"✓ parses; matching failed: {error}",
+                text_color=theme.MUTED_TEXT)
+        self._offer_suggestions()
+
+    # ------------------------------------------------------------------
+    # Suggestions - the dropdown that knows what may come next
+    # ------------------------------------------------------------------
+
+    def _offer_suggestions(self):
+        """Refresh the floating suggestion list for the cursor's spot."""
+        if self._active_tab() != 'advanced':
+            return
+        from gantt_app import filterlang
+        text = self._query_entry.get()
+        cursor = min(self._query_entry.index('insert'), len(text))
+        found = filterlang.suggestions(text, cursor, self._project)
+        # A word half-typed narrows the list rather than hiding it.
+        start = cursor
+        while start > 0 and (text[start - 1].isalnum()
+                             or text[start - 1] in '._-'):
+            start -= 1
+        prefix = text[start:cursor].lower()
+        if prefix:
+            found = [s for s in found if s.lower().startswith(prefix)]
+        if not found or (self._suggest_popup is not None
+                         and not self._suggest_popup.winfo_exists()):
+            self._close_suggestions()
+            if not found:
+                return
+        self._show_suggestions(found, start)
+
+    def _show_suggestions(self, items, word_start):
+        """Open or refill the popup under the entry."""
+        if self._suggest_popup is None or \
+                not self._suggest_popup.winfo_exists():
+            popup = tk.Toplevel(self)
+            popup.wm_overrideredirect(True)
+            popup.transient(self.winfo_toplevel())
+            listing = tk.Listbox(popup, height=min(8, len(items)),
+                                 activestyle='dotbox', exportselection=0)
+            listing.pack(fill="both", expand=True)
+            listing.bind('<ButtonRelease-1>', lambda _e:
+                         self._take_suggestion(word_start))
+            popup._listing = listing
+            self._suggest_popup = popup
+        listing = self._suggest_popup._listing
+        listing.delete(0, 'end')
+        for item in items:
+            listing.insert('end', item)
+        if items:
+            listing.selection_set(0)
+        try:
+            x = self._query_entry.winfo_rootx()
+            y = (self._query_entry.winfo_rooty()
+                 + self._query_entry.winfo_height() + 2)
+            self._suggest_popup.geometry(f"320x+{x}+{y}")
+        except tk.TclError:
+            pass
+        self._suggest_popup._word_start = word_start
+
+    def _open_suggestions(self):
+        """Down-arrow: pop the list and move focus into it."""
+        if self._suggest_popup is None or \
+                not self._suggest_popup.winfo_exists():
+            self._offer_suggestions()
+            return
+        self._suggest_popup._listing.focus_set()
+
+    def _take_suggestion(self, word_start=None):
+        """Write the picked suggestion over the word being typed."""
+        popup = self._suggest_popup
+        if popup is None or not popup.winfo_exists():
+            return
+        listing = popup._listing
+        picked = listing.get('active') or (
+            listing.get(0) if listing.size() else None)
+        if not picked:
+            self._close_suggestions()
+            return
+        text = self._query_entry.get()
+        cursor = self._query_entry.index('insert')
+        start = word_start if word_start is not None else cursor
+        while start > 0 and (text[start - 1].isalnum()
+                             or text[start - 1] in '._-'):
+            start -= 1
+        self._query_entry.delete(start, cursor)
+        addition = picked + (' ' if not picked.startswith('(') else '')
+        self._query_entry.insert(start, addition)
+        self._query_entry.icursor(start + len(addition))
+        self._close_suggestions()
+        self._query_entry.focus_set()
+        self._query_changed()
+
+    def _close_suggestions(self):
+        if self._suggest_popup is not None:
+            try:
+                if self._suggest_popup.winfo_exists():
+                    self._suggest_popup.destroy()
+            except tk.TclError:
+                pass
+            self._suggest_popup = None
+
+    def _tab_switched(self):
+        """
+        Carry the filter across the Basic/Advanced switch.
+
+        Basic to Advanced renders the column rules as query text - the
+        language teaches itself by showing the form's own answer. Advanced
+        to Basic fills the form back only when the query is a flat AND of
+        conditions the columns can express - anything with an or, a not or
+        a bracket stays a query, as it does in Jira.
+        """
+        if self._active_tab() == 'advanced':
+            text = specs_to_query(self.collect()['specs'], self._project)
+            if text:
+                self._query_entry.delete(0, 'end')
+                self._query_entry.insert(0, text)
+            self._query_changed()
+        else:
+            self._close_suggestions()
+            specs = query_to_specs(self._query_entry.get(), self._project)
+            if specs is not None:
+                self._fill_sections(specs)
+
+    def _fill_sections(self, specs: Dict):
+        """Refill the Basic tab's controls from a spec dict."""
+        for column, control in self._controls.items():
+            kind = control[0]
+            spec = (specs or {}).get(column)
+            if kind == 'text':
+                control[1].delete(0, 'end')
+                if spec:
+                    control[1].insert(0, spec.get('text', ''))
+            elif kind == 'number':
+                control[1].delete(0, 'end')
+                control[2].delete(0, 'end')
+                if spec:
+                    if spec.get('min') is not None:
+                        control[1].insert(0, str(spec['min']))
+                    if spec.get('max') is not None:
+                        control[2].insert(0, str(spec['max']))
+            elif kind == 'date':
+                control[1].delete(0, 'end')
+                control[2].delete(0, 'end')
+                if spec:
+                    if spec.get('from') is not None:
+                        control[1].set_date(spec['from'])
+                    if spec.get('to') is not None:
+                        control[2].set_date(spec['to'])
+            elif kind == 'choice':
+                allowed = set(spec['allowed']) if spec else None
+                for value, var in control[1]:
+                    var.set(allowed is None or value in allowed)
 
     def _build_section(self, column: str, spec):
         """One column's controls: a caption, then the kind's widgets."""
@@ -751,10 +1204,12 @@ class GridFilterDialog(ctk.CTkToplevel):
 
     def collect(self) -> Dict:
         """
-        The specs the controls currently hold, by column.
+        What the window currently asks, as one payload.
 
-        Read back rather than remembered: what is in the boxes is the
-        truth, and an Apply after edits asks for exactly what is on screen.
+        'specs' holds the Basic tab's per-column rules; 'query' holds the
+        Advanced tab's text; 'mode' says which tab is live. Read back
+        rather than remembered: what is in the boxes is the truth, and an
+        Apply after edits asks for exactly what is on screen.
         """
         specs = {}
         for column, control in self._controls.items():
@@ -770,38 +1225,30 @@ class GridFilterDialog(ctk.CTkToplevel):
             elif kind == 'choice':
                 specs[column] = {'allowed': {v for v, var in control[1]
                                              if var.get()}}
-        return specs
+        return {'mode': self._active_tab(), 'specs': specs,
+                'query': self._query_entry.get()}
 
     def _apply(self):
-        """Hand the boxes' contents to whoever opened the dialog."""
+        """Hand the live tab's contents to whoever opened the dialog."""
         if self._on_apply is not None:
             self._on_apply(self.collect())
 
     def _save_as(self):
-        """Hand the specs to whoever names and keeps filters."""
+        """Hand the live tab to whoever names and keeps filters."""
         if self._on_save_as is not None:
             self._on_save_as(self.collect())
 
     def _clear_all(self):
         """Empty every control, then apply - which puts every row back."""
-        for column, control in self._controls.items():
-            kind = control[0]
-            if kind == 'text':
-                control[1].delete(0, 'end')
-            elif kind == 'number':
-                control[1].delete(0, 'end')
-                control[2].delete(0, 'end')
-            elif kind == 'date':
-                control[1].delete(0, 'end')
-                control[2].delete(0, 'end')
-            elif kind == 'choice':
-                for _value, var in control[1]:
-                    var.set(True)
+        self._fill_sections({})
+        self._query_entry.delete(0, 'end')
+        self._query_changed()
         if self._on_clear is not None:
             self._on_clear()
 
     def destroy(self):
         """Let go cleanly - the filters themselves live in the task list."""
+        self._close_suggestions()
         try:
             super().destroy()
         except tk.TclError:

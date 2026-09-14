@@ -17,9 +17,10 @@ from datetime import datetime
 
 from gantt_app.models import Project, Task
 from gantt_app.views.gridfilter import (
-    COLUMN_KIND, TEXT_MIN, choice_values, column_value, filter_is_active,
-    definition_matching_ids, definition_visible_ids, filtered_task_ids,
-    matching_task_ids, row_matches, rule_matches, specs_to_rules)
+    COLUMN_KIND, TEXT_MIN, _with_ancestors, choice_values, column_value,
+    filter_is_active, definition_matching_ids, definition_visible_ids,
+    filtered_task_ids, matching_task_ids, row_matches, rule_matches,
+    specs_to_rules)
 
 
 def _plan():
@@ -212,6 +213,12 @@ class _FakeTaskList:
                 self.project, filters or {}, variances)
         return len(self._filter_matches), len(self.project.tasks)
 
+    def apply_matching_ids(self, matches):
+        self._filter_matches = set(matches)
+        self._filter_visible = _with_ancestors(self.project,
+                                               self._filter_matches)
+        return len(self._filter_matches), len(self.project.tasks)
+
     def clear_grid_filters(self):
         self._filter_visible = None
         self._filter_matches = set()
@@ -226,6 +233,11 @@ class _FakeTaskList:
         return self._filter_visible is not None
 
 
+def _payload(specs=None, query='', mode='basic'):
+    """What the tabbed filter window's Apply sends the toolbar."""
+    return {'mode': mode, 'specs': specs or {}, 'query': query}
+
+
 class _ToolbarShell:
     """A Toolbar without its window: the attributes the handlers read."""
 
@@ -238,6 +250,8 @@ class _ToolbarShell:
         self.icon_toolbar = None
         self._apply_grid_filters = (
             Toolbar._apply_grid_filters.__get__(self))
+        self._apply_query_filter = (
+            Toolbar._apply_query_filter.__get__(self))
         self.clear_grid_filter = Toolbar.clear_grid_filter.__get__(self)
         self.apply_named_filter = (
             Toolbar.apply_named_filter.__get__(self))
@@ -253,6 +267,8 @@ class _ToolbarShell:
         self.on_project_changed = None
         self._active_named_filter = None
         self._active_highlight = None
+        self._active_query = None
+        self._query_history = []
 
 
 class TestTheHandlers(unittest.TestCase):
@@ -263,23 +279,55 @@ class TestTheHandlers(unittest.TestCase):
         self.bar = _ToolbarShell(self.project)
 
     def test_apply_hides_the_rows_no_filter_passes(self):
-        self.bar._apply_grid_filters({'Task Name': {'text': 'chart'}})
+        self.bar._apply_grid_filters(
+            _payload({'Task Name': {'text': 'chart'}}))
         self.assertEqual(self.bar.task_list._filter_visible, {"B", "P"})
 
     def test_the_specs_are_kept_for_the_next_opening(self):
-        self.bar._apply_grid_filters({'Task Name': {'text': 'chart'}})
+        self.bar._apply_grid_filters(
+            _payload({'Task Name': {'text': 'chart'}}))
         self.assertEqual(self.bar._grid_filters,
                          {'Task Name': {'text': 'chart'}})
 
     def test_clear_puts_every_row_back(self):
-        self.bar._apply_grid_filters({'Task Name': {'text': 'chart'}})
+        self.bar._apply_grid_filters(
+            _payload({'Task Name': {'text': 'chart'}}))
         self.bar.clear_grid_filter()
         self.assertIsNone(self.bar.task_list._filter_visible)
         self.assertEqual(self.bar._grid_filters, {})
 
     def test_apply_with_nothing_set_is_everything(self):
-        self.bar._apply_grid_filters({})
+        self.bar._apply_grid_filters(_payload())
         self.assertIsNone(self.bar.task_list._filter_visible)
+
+    def test_an_advanced_payload_applies_the_query(self):
+        self.bar._apply_grid_filters(
+            _payload(query='type = Task and progress >= 50',
+                     mode='advanced'))
+        self.assertEqual(self.bar.task_list._filter_matches, {"A", "B"})
+        self.assertEqual(self.bar._active_query,
+                         'type = Task and progress >= 50')
+
+    def test_a_query_remembers_itself_in_the_history(self):
+        self.bar._apply_grid_filters(
+            _payload(query='milestone = Yes', mode='advanced'))
+        self.bar._apply_grid_filters(
+            _payload(query='progress = 100', mode='advanced'))
+        self.assertEqual(self.bar._query_history,
+                         ['progress = 100', 'milestone = Yes'])
+
+    def test_an_unparseable_query_applies_nothing(self):
+        self.bar._apply_grid_filters(
+            _payload(query='progress ~', mode='advanced'))
+        self.assertIsNone(self.bar.task_list._filter_visible)
+        self.assertIsNone(self.bar._active_query)
+
+    def test_clear_drops_the_query_too(self):
+        self.bar._apply_grid_filters(
+            _payload(query='milestone = Yes', mode='advanced'))
+        self.bar.clear_grid_filter()
+        self.assertIsNone(self.bar.task_list._filter_visible)
+        self.assertIsNone(self.bar._active_query)
 
     def test_a_named_filter_rules_the_grid(self):
         self.project.custom_filters = [{
@@ -565,6 +613,83 @@ class TestTheDateBox(unittest.TestCase):
     def test_an_unparseable_box_asks_nothing(self):
         self.assertIsNone(self._boxed('not a date'))
         self.assertIsNone(self._boxed(''))
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheFilterWindow(unittest.TestCase):
+    """The tabbed window itself: its tabs, its verdict, its payload."""
+
+    def setUp(self):
+        import customtkinter as ctk
+        from gantt_app.views.gridfilter import GridFilterDialog
+
+        self.ctk = ctk
+        self.opening_mode = str(ctk.get_appearance_mode())
+        ctk.set_appearance_mode('light')
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = _plan()
+        self.applied = []
+        # The values callback is the same source the window's checklists
+        # and the active check share - choice_values over the plan.
+        self.window = GridFilterDialog(
+            self.root, ['Task Name', 'Progress', 'Type'],
+            current={},
+            values=lambda c: choice_values(self.project, c),
+            on_apply=self.applied.append,
+            on_clear=lambda: None,
+            on_save_as=lambda _p: None,
+            project=self.project,
+            history=['milestone = Yes'])
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        try:
+            self.window.destroy()
+            self.root.destroy()
+        except Exception:
+            pass
+        try:
+            self.ctk.set_appearance_mode(self.opening_mode)
+        except Exception:
+            pass
+
+    def test_the_window_has_a_basic_and_an_advanced_tab(self):
+        self.assertEqual(self.window._active_tab(), 'basic')
+        self.window._set_tab("Advanced")
+        self.assertEqual(self.window._active_tab(), 'advanced')
+
+    def test_a_valid_query_reports_its_matches(self):
+        self.window._set_tab("Advanced")
+        self.window._query_entry.insert(0, 'progress >= 50')
+        self.window._query_changed()
+        self.assertIn('2 row', self.window._query_status.cget('text'))
+
+    def test_a_bad_query_reports_where_it_stopped(self):
+        self.window._set_tab("Advanced")
+        self.window._query_entry.insert(0, 'progress ~')
+        self.window._query_changed()
+        self.assertIn('✗', self.window._query_status.cget('text'))
+        self.assertIn('position', self.window._query_status.cget('text'))
+
+    def test_apply_sends_the_live_tab(self):
+        self.window._set_tab("Advanced")
+        self.window._query_entry.insert(0, 'milestone = Yes')
+        self.window._apply()
+        self.assertEqual(self.applied[-1]['mode'], 'advanced')
+        self.assertEqual(self.applied[-1]['query'], 'milestone = Yes')
+
+    def test_basic_apply_sends_the_specs(self):
+        self.window._apply()
+        self.assertEqual(self.applied[-1]['mode'], 'basic')
+        self.assertIn('Task Name', self.applied[-1]['specs'])
+
+    def test_basic_specs_render_as_a_query_on_the_tab_switch(self):
+        control = self.window._controls['Task Name']
+        control[1].insert(0, 'art')
+        self.window._set_tab("Advanced")
+        self.assertIn('name ~ "art"', self.window._query_entry.get())
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
