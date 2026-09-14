@@ -950,7 +950,7 @@ class TestThePanesFollowTheTheme(unittest.TestCase):
         self.app.theme_controller.set_mode(theme.MODE_DARK)
         self.app.update_idletasks()
 
-        canvas = self.app.gantt_chart._canvas
+        canvas = self.app.gantt_chart._chart_canvas
         self.assertIsNotNone(canvas)
         container = canvas.master
         self.assertEqual(str(container.cget('background')), theme.CHART_BG[1])

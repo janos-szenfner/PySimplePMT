@@ -470,7 +470,10 @@ class ResourceBoard(ctk.CTkFrame):
         theme.style_treeview('ResourceBoard.Treeview', row_height=30)
         ttk.Style().configure('ResourceBoard.Treeview', indent=20)
         background = theme.now(theme.CHART_BG)
-        self.pool_frame.canvas.configure(background=background)
+        # apply_theme rather than a bare canvas.configure: the frame inside
+        # the pool's canvas keeps the colour it sampled at construction, so
+        # it has to be asked again or the cards stay on yesterday's gaps.
+        self.pool_frame.apply_theme(background)
         self.heatmap_canvas.configure(background=background)
         self._filter_pool()
         self._update_preview()

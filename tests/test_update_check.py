@@ -88,6 +88,55 @@ class TestCheckForUpdate(unittest.TestCase):
         info = check_for_update("1.68.2", fetch=fetch)
         self.assertIn("releases", info.download_url)
 
+    def test_a_latest_404_asks_the_releases_list(self):
+        """releases/latest 404s while a release is still publishing."""
+        import urllib.error
+
+        def fetch(url, _timeout):
+            if url.endswith("/latest"):
+                raise urllib.error.HTTPError(
+                    url, 404, "Not Found", None, None)
+            return [{"tag_name": "v1.69.0",
+                     "html_url": "https://example/rel"}]
+
+        info = check_for_update("1.68.2", fetch=fetch)
+        self.assertEqual(info.status, STATUS_UPDATE)
+        self.assertEqual(info.latest, "1.69.0")
+
+    def test_a_latest_404_with_only_drafts_stays_unknown(self):
+        import urllib.error
+
+        def fetch(url, _timeout):
+            if url.endswith("/latest"):
+                raise urllib.error.HTTPError(
+                    url, 404, "Not Found", None, None)
+            return [{"tag_name": "v9.9.9", "draft": True}]
+
+        info = check_for_update("1.68.2", fetch=fetch)
+        self.assertEqual(info.status, STATUS_UNKNOWN)
+
+    def test_a_latest_404_with_no_releases_stays_unknown(self):
+        import urllib.error
+
+        def fetch(url, _timeout):
+            if url.endswith("/latest"):
+                raise urllib.error.HTTPError(
+                    url, 404, "Not Found", None, None)
+            return []
+
+        info = check_for_update("1.68.2", fetch=fetch)
+        self.assertEqual(info.status, STATUS_UNKNOWN)
+
+    def test_a_non_404_http_error_is_unknown(self):
+        import urllib.error
+
+        def fetch(url, _timeout):
+            raise urllib.error.HTTPError(url, 503, "Busy", None, None)
+
+        info = check_for_update("1.68.2", fetch=fetch)
+        self.assertEqual(info.status, STATUS_UNKNOWN)
+        self.assertIsNotNone(info.error)
+
 
 if __name__ == "__main__":
     unittest.main()

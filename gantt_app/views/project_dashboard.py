@@ -271,6 +271,9 @@ class ProjectDashboardFrame(ctk.CTkFrame):
     RING_SHARE = 0.42
 
     def __init__(self, master, project: Optional[Project] = None, **kwargs):
+        # The paned window this sits in is a ttk widget, whose colour
+        # CustomTkinter cannot detect and would fall back to black for.
+        kwargs.setdefault('bg_color', theme.pair(theme.SASH_BG))
         super().__init__(master, **kwargs)
 
         self.project = project

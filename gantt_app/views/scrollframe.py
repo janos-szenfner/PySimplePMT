@@ -105,6 +105,49 @@ class ScrollFrame(ctk.CTkFrame):
         self.bind('<Enter>', self._take_the_wheel)
         self.bind('<Leave>', self._let_go_of_the_wheel)
 
+    def apply_theme(self, background=None):
+        """
+        Repaint the canvas and the frame inside it for the new appearance.
+
+        Both hold a colour resolved once and never asked for again: the
+        canvas's background is read off the master at construction, and the
+        content frame's "transparent" is the master's colour sampled that
+        same moment. A theme change left the canvas light or dark from
+        then on - the Resource Pool's cards used to float on black gaps
+        after a switch back to day. Reconfiguring the content frame with
+        "transparent" makes it sample its master - the canvas - again.
+
+        PARAMETERS:
+        -----------
+        background : str, optional
+            What to paint the canvas with. The default, None, asks the
+            parent what it is wearing, as construction did.
+        """
+        if background is None:
+            background = self._background_of(self.master)
+        self.canvas.configure(background=background)
+        # "transparent" re-runs the master-colour detection rather than
+        # being a colour itself, so this is what makes the content frame
+        # pick up the canvas's new background.
+        self.content.configure(bg_color='transparent')
+
+    def _set_appearance_mode(self, mode_string):
+        """
+        Follow a day/night flip without waiting for the owner to repaint.
+
+        CustomTkinter calls this on every widget it tracks when the
+        appearance mode changes; the canvases and their content frame are
+        not part of that repaint, so it is asked for here. Done this way a
+        ScrollFrame keeps itself right no matter whose window it is in,
+        including windows with no apply_theme of their own.
+        """
+        super()._set_appearance_mode(mode_string)
+        try:
+            if getattr(self, 'canvas', None) is not None:
+                self.apply_theme()
+        except tk.TclError:
+            pass
+
     def _background_of(self, master) -> str:
         """
         The colour to paint the canvas, so it disappears into its parent.

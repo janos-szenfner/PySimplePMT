@@ -106,9 +106,13 @@ class RibbonBar(IconToolbar):
     right the help, appearance and search controls.
     """
 
-    #: The strip and the band's heights, in pixels.
+    #: The strip and the band's heights, in pixels. The band is tall
+    #: enough for a large button's icon and caption, its split-button
+    #: arrow, and the group's caption under them - at 92 the captions of
+    #: the Insert and Analysis groups were clipped by the frame's bottom
+    #: edge and a fourth small button dropped out of sight entirely.
     STRIP_HEIGHT = 30
-    BAND_HEIGHT = 92
+    BAND_HEIGHT = 110
 
     #: A large button's width, and its icon's size. The large button is the
     #: ribbon's unit - the two or three commands a group is for get one;
@@ -434,17 +438,23 @@ class RibbonBar(IconToolbar):
             return group
 
         column = None
+        column_count = 0
         for spec in contents:
             if spec['kind'] in ('large', 'split'):
                 column = None
+                column_count = 0
                 self._large_button(group.body, spec)
             else:
                 # The small buttons stack three to a column, like the
                 # compact half of every group in the ribbons this follows.
-                if column is None:
+                # A fourth would overflow the group - the band is not tall
+                # enough for it - so it starts a new column instead.
+                if column is None or column_count >= 3:
                     column = ctk.CTkFrame(group.body, fg_color="transparent")
                     column.pack(side="left", fill="y")
+                    column_count = 0
                 self._small_button(column, spec)
+                column_count += 1
         return group
 
     # ---- buttons ---------------------------------------------------------

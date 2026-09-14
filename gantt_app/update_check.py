@@ -19,6 +19,7 @@ deliberately not attempted here.
 """
 
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Tuple
@@ -30,8 +31,10 @@ logger = get_logger(__name__)
 #: The repository releases are published to.
 REPO = "janos-szenfner/PySimplePMT"
 
-#: GitHub's "latest release" API, and the human page the link points at.
+#: GitHub's "latest release" API, the release list it is a shortcut to,
+#: and the human page the link points at.
 LATEST_RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{REPO}/releases"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 
 #: What a check can conclude.
@@ -89,7 +92,7 @@ def is_newer(latest: str, current: str) -> bool:
 
 
 def _default_fetch(url: str, timeout: float) -> dict:
-    """Fetch and decode the latest-release JSON from GitHub."""
+    """Fetch and decode a releases JSON from GitHub."""
     request = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json",
                       "User-Agent": "PySimplePMT"})
@@ -97,9 +100,36 @@ def _default_fetch(url: str, timeout: float) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _fetch_release(fetch: Callable[[str, float], dict],
+                   timeout: float) -> dict:
+    """
+    The newest release's JSON, or {} when the project has none.
+
+    releases/latest is GitHub's shortcut to the newest *full* release: it
+    answers 404 when the newest tag is a prerelease, when a release is
+    still being published, or when none has ever been published - all of
+    which used to read as "couldn't check". The releases list is asked
+    then, and its first non-draft entry stands in.
+    """
+    try:
+        return fetch(LATEST_RELEASE_API, timeout) or {}
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+        logger.info("No full release at releases/latest; "
+                    "checking the releases list")
+    releases = fetch(f"{RELEASES_API}?per_page=10", timeout) or []
+    if not isinstance(releases, list):
+        return {}
+    for release in releases:
+        if not release.get("draft"):
+            return release
+    return {}
+
+
 def check_for_update(current: str,
                      fetch: Callable[[str, float], dict] = _default_fetch,
-                     timeout: float = 4.0) -> UpdateInfo:
+                     timeout: float = 8.0) -> UpdateInfo:
     """
     Ask GitHub for the latest release and compare it to the running version.
 
@@ -121,7 +151,7 @@ def check_for_update(current: str,
         made - offline, rate-limited, or no release published. Never raises.
     """
     try:
-        data = fetch(LATEST_RELEASE_API, timeout) or {}
+        data = _fetch_release(fetch, timeout)
     except Exception as error:  # network, JSON, HTTP - all non-fatal
         logger.info("Update check could not reach GitHub: %s", error)
         return UpdateInfo(STATUS_UNKNOWN, current, error=str(error))

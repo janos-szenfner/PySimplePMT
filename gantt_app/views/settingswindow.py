@@ -442,12 +442,59 @@ class SettingsWindow(ctk.CTkToplevel):
             self._close_grid_columns_editor()
 
         combo.bind('<<ComboboxSelected>>', commit)
-        combo.bind('<FocusOut>', commit)
+        combo.bind('<Return>', commit)
+        combo.bind('<KP_Enter>', commit)
+        # Not a plain commit-on-FocusOut: opening the list moves focus into
+        # the list's own popup window, and committing there would store the
+        # value and shut the dropdown the instant it opened - which is what
+        # made the cell look like it could not be changed.
+        combo.bind('<FocusOut>',
+                   lambda _e: self._grid_editor_focus_left(combo))
         combo.bind('<Escape>', lambda _e: self._close_grid_columns_editor())
         self._grid_columns_editor = combo
         # Open the list straight away; a second click on the box would do
         # it, but the cell already said what the click meant.
-        combo.event_generate('<Down>')
+        self.after_idle(lambda: self._open_grid_editor_list(combo))
+
+    def _grid_editor_focus_left(self, combo):
+        """
+        Close the visibility dropdown once focus has really left it.
+
+        Checked after the event settles: at the moment FocusOut fires the
+        focus may be in transit to the dropdown's popup or landing back on
+        the field. Only a focus that ended up outside both - a click on
+        another row or off the field - closes the editor without a pick.
+        """
+        def settle():
+            if self._grid_columns_editor is not combo:
+                return
+            try:
+                if not combo.winfo_exists():
+                    return
+                focused = str(combo.tk.call('focus', '-displayof', combo))
+                popdown = str(combo.tk.call(
+                    'ttk::combobox::PopdownWindow', combo))
+            except tk.TclError:
+                return
+            path = str(combo)
+            if focused and (focused == path
+                            or focused.startswith(path + '.')
+                            or (popdown and focused.startswith(popdown))):
+                return
+            self._close_grid_columns_editor()
+
+        try:
+            combo.after_idle(settle)
+        except tk.TclError:
+            pass
+
+    def _open_grid_editor_list(self, combo):
+        """Post the dropdown's list, if the editor is still there to open."""
+        try:
+            if combo.winfo_exists():
+                combo.event_generate('<Button-1>')
+        except tk.TclError:
+            pass
 
     def _close_grid_columns_editor(self):
         """Take the dropdown off the cell again."""

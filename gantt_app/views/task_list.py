@@ -427,7 +427,11 @@ class DragDropTaskList(ctk.CTkFrame):
                  project_tracker: ProjectStateTracker = None,
                  clipboard_manager=None,
                  on_status: Callable[[str], None] = None):
-        super().__init__(master)
+        # bg_color is handed over rather than detected: the master is a
+        # ttk.PanedWindow, which CustomTkinter cannot read a colour from and
+        # falls back to black for - the same reason the chart pane carries
+        # its own; see GanttChart.
+        super().__init__(master, bg_color=theme.pair(theme.SASH_BG))
         
         self.master = master
         self.project = project

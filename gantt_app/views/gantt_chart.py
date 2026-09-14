@@ -70,9 +70,14 @@ class GanttChart(ctk.CTkFrame):
     - Handling window resizing
     """
     
-    def __init__(self, master, project: Project, 
+    def __init__(self, master, project: Project,
                  width: int = 12, height: int = 8, dpi: int = 100):
-        super().__init__(master)
+        # bg_color is handed over rather than detected: the master is a
+        # ttk.PanedWindow, which CustomTkinter cannot read a colour from and
+        # falls back to black for. The sash palette is what the paned window
+        # itself wears, so the frame's edges and the gap under the zoom bar
+        # blend with what is actually behind it in both appearances.
+        super().__init__(master, bg_color=theme.pair(theme.SASH_BG))
         
         self.master = master
         self.project = project
@@ -121,7 +126,12 @@ class GanttChart(ctk.CTkFrame):
 
         self._image_label = None
         self._chart_image = None
-        self._canvas = None
+        #: The chart's scrollable canvas. Named _chart_canvas rather than
+        #: _canvas on purpose: CTkFrame's own drawing surface is already
+        #: called _canvas, and pointing the name at the chart canvas left
+        #: the frame's surface unpainted on a theme change - the dark band
+        #: that stayed under the chart after a switch back to day mode.
+        self._chart_canvas = None
         self._last_render_width = 0
         self._resize_job = None
         self._drawing = False
@@ -438,7 +448,7 @@ class GanttChart(ctk.CTkFrame):
         title and a date axis above its first row, so the same fraction of
         each is not the same row of the plan.
         """
-        if self._canvas is None or not self._drawn_rows:
+        if self._chart_canvas is None or not self._drawn_rows:
             return
 
         try:
@@ -446,7 +456,7 @@ class GanttChart(ctk.CTkFrame):
             first_row = round(fraction * len(self._drawn_rows))
             top = self._drawn_top_margin + first_row * self._drawn_row_height
             height = max(self._drawn_height, 1)
-            self._canvas.yview_moveto(max(0.0, top / height))
+            self._chart_canvas.yview_moveto(max(0.0, top / height))
         except (tk.TclError, AttributeError, ZeroDivisionError):
             logger.debug("Could not scroll the chart to match the task list")
 
@@ -708,7 +718,7 @@ class GanttChart(ctk.CTkFrame):
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
         self._image_label = None
-        self._canvas = None
+        self._chart_canvas = None
 
     def _show_image(self, image):
         """
@@ -772,7 +782,7 @@ class GanttChart(ctk.CTkFrame):
 
         self._bind_scrolling(canvas)
 
-        self._canvas = canvas
+        self._chart_canvas = canvas
         self._image_label = None
 
     def _bind_scrolling(self, canvas):
