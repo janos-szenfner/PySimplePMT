@@ -31,7 +31,8 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.models import (
-    TASK_TYPES, GRID_DATA_COLUMNS, order_grid_columns, Task, Project)
+    TASK_TYPES, GRID_DATA_COLUMNS, GRID_PINNED_COLUMN,
+    order_grid_columns, Task, Project)
 from gantt_app.calendarregistry import PROJECT_DEFAULT_LABEL
 from gantt_app.dependencysyntax import format_links
 from gantt_app.taskstyle import resolve as resolve_style
@@ -529,8 +530,8 @@ class DragDropTaskList(ctk.CTkFrame):
         # branch away. The names used to be prefixed with '|--' to stand in
         # for the indentation this column draws properly.
         self.tree = ttk.Treeview(tree_frame, columns=(
-            'Label', 'Type', 'Status', 'Duration', 'Start', 'End', 'Progress',
-            'Dependencies', 'Milestone', 'Outline',
+            'Alert', 'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
+            'Progress', 'Dependencies', 'Milestone', 'Outline',
             'Baseline Start', 'Start Variance', 'Baseline Finish',
             'Finish Variance', 'Baseline Duration', 'Duration Variance',
             'Baseline Work', 'Work Variance', 'Baseline Cost', 'Cost Variance',
@@ -546,6 +547,7 @@ class DragDropTaskList(ctk.CTkFrame):
         # was nested and looked flat, with the whole hierarchy expressed in
         # 34 pixels of empty space nobody could see.
         self.tree.heading('#0', text='Task Name', anchor=tk.W)
+        self.tree.heading('Alert', text='Alert', anchor=tk.CENTER)
         self.tree.heading('Label', text='Label', anchor=tk.W)
         self.tree.heading('Type', text='Type', anchor=tk.W)
         self.tree.heading('Status', text='Status', anchor=tk.W)
@@ -582,6 +584,10 @@ class DragDropTaskList(ctk.CTkFrame):
         # longer fits. minwidth keeps a column from being dragged shut.
         # Wide, because it now holds the names as well as the indentation
         self.tree.column('#0', width=300, minwidth=120, stretch=False)
+        # The alert flag needs a glyph's width, no more - it is the narrow
+        # Indicators column Microsoft Project puts beside the name.
+        self.tree.column('Alert', width=44, minwidth=30, stretch=False,
+                         anchor=tk.CENTER)
         self.tree.column('Label', width=140, minwidth=60, stretch=False)
         self.tree.column('Type', width=90, minwidth=60, stretch=False)
         self.tree.column('Status', width=64, minwidth=48, stretch=False)
@@ -2083,6 +2089,11 @@ class DragDropTaskList(ctk.CTkFrame):
     #: the model: the layout is part of the file, so the factory order is.
     DATA_COLUMNS = GRID_DATA_COLUMNS
 
+    #: The column pinned to the front while it is on show - the alert
+    #: flag. It is hideable but not movable, and it can never be a drop
+    #: edge either: nothing may stand before it.
+    PINNED_COLUMN = GRID_PINNED_COLUMN
+
     #: The columns that only mean anything while a baseline is being
     #: compared; they leave with it whatever the visibility setting says.
     BASELINE_COLUMNS = (
@@ -2132,7 +2143,8 @@ class DragDropTaskList(ctk.CTkFrame):
         so it is written back whole - hidden columns keep their places in
         it even though they are not in view to be dropped on.
         """
-        if name == target or name not in self.DATA_COLUMNS:
+        if (name == target or name == self.PINNED_COLUMN
+                or name not in self.DATA_COLUMNS):
             return
         order = [c for c in self.column_order() if c != name]
         try:
@@ -2140,7 +2152,8 @@ class DragDropTaskList(ctk.CTkFrame):
         except ValueError:
             index = len(order)
         order.insert(index, name)
-        self.project.grid_column_order = order
+        hidden = getattr(self.project, 'hidden_grid_columns', ()) or ()
+        self.project.grid_column_order = order_grid_columns(order, hidden)
         self._apply_column_visibility()
         self._plan_changed()
         logger.info("Moved column %r %s %r", name,
@@ -2413,11 +2426,12 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         # A press on a column title is a possible column move, never the
         # start of a row gesture. 'separator' is the resize grip between
-        # titles, and '#0' is the name - the one column that cannot move.
+        # titles, '#0' is the name - it cannot move - and neither can the
+        # Alert column pinned beside it.
         self._pressed_heading = None
         if self.tree.identify_region(event.x, event.y) == 'heading':
             name = self._column_name(event.x)
-            if name and name != '#0':
+            if name and name != '#0' and name != self.PINNED_COLUMN:
                 self._pressed_heading = name
                 self._drag_origin = (event.x, event.y)
             self._cancel_rename()
@@ -2744,10 +2758,15 @@ class DragDropTaskList(ctk.CTkFrame):
         corrected by xview to match. With no rows at all there is nothing
         scrolled yet, so the widths answer on their own.
         """
+        # Edges are computed over every shown column - the pinned one
+        # included, or everything after it would be off by its width - and
+        # it is filtered out of the answer: nothing may stand before it,
+        # so a pointer over it lands on the edge of what follows.
         shown = self._shown_columns()
         if not shown:
             return []
-        row = self.tree.identify_row(30)
+        row = self.tree.identify_row(30) or next(
+            iter(self.tree.get_children('')), None)
         if row:
             edges = []
             for name in shown:
@@ -2755,7 +2774,7 @@ class DragDropTaskList(ctk.CTkFrame):
                 if box:
                     edges.append((name, box[0], box[0] + box[2]))
             if len(edges) == len(shown):
-                return edges
+                return [e for e in edges if e[0] != self.PINNED_COLUMN]
 
         try:
             offset = self.tree.xview()[0]
@@ -2768,7 +2787,7 @@ class DragDropTaskList(ctk.CTkFrame):
         for name, width in zip(shown, widths[1:]):
             edges.append((name, x, x + width))
             x += width
-        return edges
+        return [e for e in edges if e[0] != self.PINNED_COLUMN]
 
     def _heading_drop_at(self, x):
         """
@@ -3647,10 +3666,10 @@ class DragDropTaskList(ctk.CTkFrame):
         # the row's tag by _row_tag.
         status_str = self._status_label(task.status)
         # A task at negative float - a constraint that clashes with the
-        # network, or a finish past its deadline - is flagged with a warning
-        # sign ahead of its letter; see Project.tasks_in_conflict.
-        if task.id in getattr(self, '_at_risk_ids', set()):
-            status_str = f"⚠ {status_str}".rstrip()
+        # network, or a finish past its deadline - wears a warning sign in
+        # the Alert column; see Project.tasks_in_conflict.
+        alert_str = '⚠' if task.id in getattr(self, '_at_risk_ids', set()) \
+            else ''
 
         # The name goes in column #0, which is the one that draws the
         # indentation and the expander beside it
@@ -3663,6 +3682,7 @@ class DragDropTaskList(ctk.CTkFrame):
                                      # it is drawn in the fixed "No" gutter to
                                      # the left, mirroring this row - see
                                      # _refresh_id_gutter.
+                                     alert_str,
                                      task.label or '',
                                      type_str,
                                      status_str,

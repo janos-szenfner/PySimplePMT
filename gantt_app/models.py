@@ -147,13 +147,19 @@ DEFAULT_HOURS_PER_DAY = 8.0
 #: not in it: it carries the outline's expander, so it is neither hideable
 #: nor movable. Saved on the project so the layout travels with the file.
 GRID_DATA_COLUMNS = (
-    'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
+    'Alert', 'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
     'Progress', 'Dependencies', 'Milestone', 'Outline',
     'Baseline Start', 'Start Variance', 'Baseline Finish',
     'Finish Variance', 'Baseline Duration', 'Duration Variance',
     'Baseline Work', 'Work Variance', 'Baseline Cost',
     'Cost Variance', 'Task Calendar',
 )
+
+#: The column that never leaves the front while it is on show: the alert
+#: indicator answers "is anything wrong" before anything else, which is
+#: where Microsoft Project's Indicators column stands. It can be hidden
+#: but never moved, and it always comes back to the front.
+GRID_PINNED_COLUMN = 'Alert'
 
 
 def order_grid_columns(order, hidden) -> List[str]:
@@ -163,12 +169,16 @@ def order_grid_columns(order, hidden) -> List[str]:
     A column nobody can see has no place among the ones they can, so the
     layout keeps the viewable ones first in their saved order and the
     hidden ones after in theirs. A column that comes back from Hidden
-    lands at the end rather than wherever it once stood.
+    lands at the end rather than wherever it once stood - except the
+    pinned one, which always stands first while it is on show.
     """
     hidden = set(hidden or ())
     order = list(order or ())
-    return ([c for c in order if c not in hidden]
-            + [c for c in order if c in hidden])
+    viewable = [c for c in order if c not in hidden]
+    if GRID_PINNED_COLUMN in viewable:
+        viewable.remove(GRID_PINNED_COLUMN)
+        viewable.insert(0, GRID_PINNED_COLUMN)
+    return viewable + [c for c in order if c in hidden]
 
 #: Task type display labels
 TASK_TYPE_LABELS = {
@@ -4968,7 +4978,7 @@ class Project:
             tuple(
                 (task.id, task.start_date, task.end_date, task.duration,
                  task.is_milestone, task.task_type, task.parent_task_id,
-                 task.calendar_id,
+                 task.calendar_id, task.deadline,
                  tuple((link.task_id, link.dep_type, link.hardness,
                         link.lag, link.lag_unit)
                        for link in task.dependencies))
@@ -5141,7 +5151,14 @@ class Project:
 
         def latest_finish(task_id: str) -> int:
             """The latest finish that still clears everything downstream."""
+            task = by_id.get(task_id)
             limit = finish
+            # A deadline is a limit of its own: a task's slack is measured
+            # against it rather than the plan's end, so a finish past it
+            # reads as the negative float it is (issue #39).
+            deadline = getattr(task, 'deadline', None) if task else None
+            if deadline is not None:
+                limit = min(limit, offset(deadline))
             for link in successors[task_id]:
                 other = by_id.get(link.task_id)
                 if other is None:

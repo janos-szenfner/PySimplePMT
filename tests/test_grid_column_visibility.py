@@ -243,8 +243,8 @@ class TestMovingColumns(GridColumnCase):
         self.task_list.move_column('End', 'Type')
 
         order = self.project.grid_column_order
-        self.assertEqual(order[:2], ['End', 'Type'])
-        self.assertEqual(self.shown()[:2], ['End', 'Type'])
+        self.assertEqual(order[:3], ['Alert', 'End', 'Type'])
+        self.assertEqual(self.shown()[:3], ['Alert', 'End', 'Type'])
 
     def test_a_hidden_column_keeps_its_place_in_the_tail(self):
         """Moves happen among the viewable; the hidden stay last."""
@@ -264,7 +264,7 @@ class TestMovingColumns(GridColumnCase):
         self.task_list.move_column('End', 'Type')
         self.task_list.reset_column_order()
 
-        self.assertEqual(self.shown()[0], 'Type')
+        self.assertEqual(self.shown()[:2], ['Alert', 'Type'])
 
     def test_column_positions_follow_the_shown_set(self):
         """_column_name counts displayed columns, not the full list."""
@@ -280,6 +280,90 @@ class TestMovingColumns(GridColumnCase):
         self.assertLess(order.index('Type'), order.index('Duration'))
         self.assertLess(self.shown().index('Type'),
                         self.shown().index('Duration'))
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTheAlertColumn(GridColumnCase):
+    """
+    The warning flag's own column, pinned beside the name.
+
+    Issue #39: the flag used to ride in front of the Status letter; it
+    now has a column of its own, standing where Microsoft Project puts
+    Indicators - first, immovable, hideable.
+    """
+
+    def shown(self):
+        """The column names the tree is currently drawing."""
+        return list(self.task_list.tree.cget('displaycolumns'))
+
+    def cell(self, task_id, column):
+        """What a named column says for a row."""
+        columns = list(self.task_list.tree.cget('columns'))
+        return self.task_list.tree.item(task_id, 'values')[
+            columns.index(column)]
+
+    def test_it_stands_first_by_default(self):
+        """Right of the name, before every other column."""
+        self.assertEqual(self.shown()[0], 'Alert')
+
+    def test_it_is_viewable_until_hidden(self):
+        """The default keeps it on show; the settings can hide it."""
+        self.assertNotIn('Alert', self.project.hidden_grid_columns)
+
+        self.project.hidden_grid_columns = ['Alert']
+        self.task_list.apply_column_visibility()
+
+        self.assertNotIn('Alert', self.shown())
+
+    def test_it_comes_back_first_whatever_the_layout(self):
+        """Hidden then shown again, it re-pins itself to the front."""
+        self.project.grid_column_order = [
+            'Type', 'Status', 'Alert', 'Duration', 'Start', 'End']
+        self.project.hidden_grid_columns = ['Alert']
+        self.task_list.apply_column_visibility()
+
+        self.project.hidden_grid_columns = []
+        self.task_list.apply_column_visibility()
+
+        self.assertEqual(self.shown()[0], 'Alert')
+
+    def test_it_cannot_be_dragged(self):
+        """A press on its title never becomes a move."""
+        from types import SimpleNamespace
+
+        before = list(self.project.grid_column_order)
+        x = int(self.task_list.tree.column('#0')['width']) + 10
+        self.task_list.on_press(SimpleNamespace(x=x, y=10, state=0))
+        self.task_list.on_drag(SimpleNamespace(x=x + 300, y=10))
+        self.task_list.on_release(SimpleNamespace(x=x + 300, y=10))
+
+        self.assertIsNone(self.task_list._pressed_heading)
+        self.assertEqual(list(self.project.grid_column_order), before)
+
+    def test_nothing_can_stand_before_it(self):
+        """A move asking for its place is refused at both ends."""
+        self.task_list.move_column('Type', 'Alert')
+        self.assertEqual(self.project.grid_column_order[0], 'Alert')
+
+        self.task_list.move_column('Alert', 'Type')
+        self.assertEqual(self.project.grid_column_order[0], 'Alert')
+
+    def test_a_past_deadline_task_wears_the_flag(self):
+        """The warning lives here now, not ahead of the Status letter."""
+        task = self.project.get_task_by_id('001')
+        task.deadline = task.start_date
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.cell('001', 'Alert'), '⚠')
+        self.assertNotIn('⚠', self.cell('001', 'Status'))
+
+    def test_a_task_inside_its_deadline_shows_nothing(self):
+        """The flag answers a finish past the deadline, not the deadline."""
+        task = self.project.get_task_by_id('001')
+        task.deadline = task.end_date + timedelta(days=30)
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.cell('001', 'Alert'), '')
 
 
 if __name__ == '__main__':

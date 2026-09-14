@@ -256,7 +256,84 @@ class TestWhatIsLeftOut(CriticalPathTestCase):
         self.assertEqual(Project(name="Empty").get_critical_path(), [])
 
 
-class TestItDoesNotHang(CriticalPathTestCase):
+class TestDeadlinesBoundTheFloat(CriticalPathTestCase):
+    """
+    A deadline is a limit of its own (issue #39).
+
+    Slack is measured against it rather than the plan's end, so a finish
+    past it is the negative float it is - which is also what puts the
+    warning flag on the row.
+    """
+
+    def test_a_finish_past_its_deadline_is_negative_float(self):
+        """Four days over a deadline is four days of corrective action."""
+        project = Project(name="Deadline")
+        project.add_task(Task(
+            id="A", name="A",
+            start_date=datetime(2026, 3, 2),
+            end_date=datetime(2026, 3, 6),
+            deadline=datetime(2026, 3, 4)))
+
+        self.assertLess(self.floats(project)["A"], 0)
+
+    def test_the_overrun_is_measured_in_working_days(self):
+        """Finish Friday against a Monday deadline is -4, weekends excluded."""
+        project = Project(name="Deadline")
+        project.add_task(Task(
+            id="A", name="A",
+            start_date=datetime(2026, 3, 2),
+            end_date=datetime(2026, 3, 6),       # Friday
+            deadline=datetime(2026, 3, 2)))      # Monday
+
+        self.assertEqual(self.floats(project)["A"], -4)
+
+    def test_a_deadline_not_yet_reached_leaves_ordinary_float(self):
+        """Room before it is positive slack, counted to it not the end."""
+        project = Project(name="Deadline")
+        project.add_task(Task(
+            id="A", name="A",
+            start_date=datetime(2026, 3, 2),
+            end_date=datetime(2026, 3, 6),
+            deadline=datetime(2026, 3, 13)))    # the Friday after
+        project.add_task(Task(
+            id="B", name="B",
+            start_date=datetime(2026, 3, 9),
+            end_date=datetime(2026, 3, 20)))
+
+        # 9 working days to the deadline, 4 spent - without the deadline
+        # the plan's own end would have allowed ten.
+        self.assertEqual(self.floats(project)["A"], 5)
+        self.assertNotIn("A", self.critical(project))
+
+    def test_changing_the_deadline_is_noticed(self):
+        """The cache signature covers it, or the answer would go stale."""
+        project = Project(name="Deadline")
+        task = Task(id="A", name="A",
+                    start_date=datetime(2026, 3, 2),
+                    end_date=datetime(2026, 3, 6))
+        project.add_task(task)
+        before = project.schedule_analysis()
+
+        task.deadline = datetime(2026, 3, 4)
+
+        self.assertIsNot(project.schedule_analysis(), before)
+        self.assertLess(self.floats(project)["A"], 0)
+
+    def test_a_deadline_past_the_plan_end_changes_nothing(self):
+        """A limit looser than the plan's own end never bites."""
+        project = Project(name="Deadline")
+        project.add_task(Task(
+            id="A", name="A",
+            start_date=datetime(2026, 3, 2),
+            end_date=datetime(2026, 3, 6),
+            deadline=datetime(2026, 3, 20)))
+        other = Project(name="Plain")
+        other.add_task(Task(
+            id="A", name="A",
+            start_date=datetime(2026, 3, 2),
+            end_date=datetime(2026, 3, 6)))
+
+        self.assertEqual(self.floats(project)["A"], self.floats(other)["A"])
     """A plan can contain links that do not resolve."""
 
     def test_a_dependency_cycle_returns_rather_than_looping(self):

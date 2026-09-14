@@ -25,7 +25,7 @@ class SettingsWindow(ctk.CTkToplevel):
     #: column name the tree knows it by, which is what the hidden list
     #: stores.
     GRID_COLUMN_TITLES = {
-        'Label': 'Label', 'Type': 'Type', 'Status': 'Status',
+        'Alert': 'Alert', 'Label': 'Label', 'Type': 'Type', 'Status': 'Status',
         'Duration': 'Duration (Days)', 'Start': 'Start Date',
         'End': 'End Date', 'Progress': 'Progress',
         'Dependencies': 'Dependencies', 'Milestone': 'Milestone',

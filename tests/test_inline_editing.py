@@ -899,9 +899,10 @@ class TestTheLabelColumn(InlineEditingTestCase):
         return self.task_list.tree.item(task_id, 'values')[index]
 
     def test_the_column_sits_beside_the_name(self):
-        """First of the data columns, right of the tree column."""
-        self.assertEqual(
-            list(self.task_list.tree.cget('columns'))[0], 'Label')
+        """Right of the tree column, with only the alert flag before it."""
+        columns = list(self.task_list.tree.cget('columns'))
+        self.assertEqual(columns[0], 'Alert')
+        self.assertEqual(columns[1], 'Label')
 
     def test_the_heading_says_label(self):
         """The column is called what the issue calls it."""
