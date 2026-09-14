@@ -97,6 +97,12 @@ bundle('tkinterweb_tkhtml')
 # effect. Failing the build says so while somebody can still fix it.
 bundle('holidays')
 
+# The CA bundle the update check verifies GitHub's TLS against. The frozen
+# interpreter has no system certificate store - macOS never ran its
+# "Install Certificates" step inside a bundle - so without it every check
+# answered "couldn't check" (see update_check.default_ssl_context).
+bundle('certifi')
+
 hiddenimports += [
     'plotly.graph_objects',
     'plotly.io',

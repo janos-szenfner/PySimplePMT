@@ -21,6 +21,7 @@ tkinterweb>=4.25.3,<5.0.0       # Embeds the Plotly chart inside Tkinter
 pillow>=12.3.0,<13.0.0          # Draws the PNG and PDF exports
 openpyxl>=3.1.5,<4.0.0          # XLSX import and export
 holidays>=0.83,<1.0.0           # Public holidays behind the EU holiday calendar
+certifi>=2026.7.22             # CA bundle the update check verifies TLS with - the packaged build has no system store
 
 # --- Transitive dependencies ---------------------------------------------
 # Listed explicitly so the packaged set is auditable and reproducible rather

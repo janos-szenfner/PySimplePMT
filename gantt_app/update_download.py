@@ -32,6 +32,7 @@ import tempfile
 import urllib.request
 from typing import Callable, Optional
 
+from gantt_app.update_check import default_ssl_context
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -123,7 +124,10 @@ def _default_fetch_text(url: str, timeout: float) -> str:
     """Fetch a small text asset (the checksums)."""
     request = urllib.request.Request(
         url, headers={"User-Agent": "PySimplePMT"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    # The bundled certificate store - see update_check.default_ssl_context;
+    # the download verifies TLS exactly as the check that found it did.
+    with urllib.request.urlopen(request, timeout=timeout,
+                                context=default_ssl_context()) as response:
         return response.read().decode("utf-8")
 
 
@@ -137,7 +141,8 @@ def _default_download(url: str, dest_path: str, timeout: float,
     """
     request = urllib.request.Request(
         url, headers={"User-Agent": "PySimplePMT"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout,
+                                context=default_ssl_context()) as response:
         total = int(response.headers.get("Content-Length", 0) or 0)
         received = 0
         with open(dest_path, "wb") as handle:

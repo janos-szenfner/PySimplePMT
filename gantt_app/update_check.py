@@ -19,6 +19,7 @@ deliberately not attempted here.
 """
 
 import json
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -91,12 +92,32 @@ def is_newer(latest: str, current: str) -> bool:
     return latest_tuple > current_tuple
 
 
+def default_ssl_context() -> ssl.SSLContext:
+    """
+    The certificate store the GitHub calls verify against.
+
+    A packaged build has no system store to fall back on: the frozen
+    macOS interpreter never ran "Install Certificates" and the bundle
+    carries no CAs, so every HTTPS call failed verification and the
+    About window could only say "couldn't check". certifi is a runtime
+    dependency and is bundled, so its bundle answers the path inside the
+    package as readily as one on disk. Source runs get the same context;
+    the plain default is the fallback for an environment without certifi.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
 def _default_fetch(url: str, timeout: float) -> dict:
     """Fetch and decode a releases JSON from GitHub."""
     request = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json",
                       "User-Agent": "PySimplePMT"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout,
+                                context=default_ssl_context()) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

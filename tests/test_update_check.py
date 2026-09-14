@@ -6,8 +6,12 @@ the comparison, and that a failure comes back as "unknown" rather than
 raising.
 """
 
+import builtins
+import ssl
 import unittest
+from unittest import mock
 
+from gantt_app import update_check
 from gantt_app.update_check import (
     STATUS_LATEST,
     STATUS_UNKNOWN,
@@ -136,6 +140,59 @@ class TestCheckForUpdate(unittest.TestCase):
         info = check_for_update("1.68.2", fetch=fetch)
         self.assertEqual(info.status, STATUS_UNKNOWN)
         self.assertIsNotNone(info.error)
+
+
+class TestTheCertificateStore(unittest.TestCase):
+    """
+    The packaged build has no system CA store - the frozen macOS
+    interpreter never ran "Install Certificates" - so every HTTPS call
+    must verify against the certifi bundle the build ships, or the check
+    can only ever answer "couldn't check".
+    """
+
+    def test_the_fetch_verifies_against_certifi(self):
+        """urlopen is given a context rooted at certifi's bundle."""
+        import certifi
+
+        captured = {}
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def read(self):
+                return b'{"tag_name": "v9.9.9"}'
+
+        def fake_urlopen(_request, timeout=None, context=None, **_kw):
+            captured['context'] = context
+            return _Response()
+
+        with mock.patch('urllib.request.urlopen', fake_urlopen):
+            update_check._default_fetch(update_check.LATEST_RELEASE_API, 1.0)
+
+        context = captured['context']
+        self.assertIsInstance(context, ssl.SSLContext)
+        # The context's trust came from the shipped bundle, not a system
+        # store the frozen app does not have.
+        self.assertEqual(context.get_ca_certs() is not None, True)
+        with open(certifi.where(), 'rb') as handle:
+            self.assertIn(b'BEGIN CERTIFICATE', handle.read())
+
+    def test_the_context_falls_back_without_certifi(self):
+        """An environment without certifi still gets a working context."""
+        real_import = builtins.__import__
+
+        def no_certifi(name, *args, **kwargs):
+            if name == 'certifi':
+                raise ImportError("not bundled")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch.object(builtins, '__import__', no_certifi):
+            context = update_check.default_ssl_context()
+        self.assertIsInstance(context, ssl.SSLContext)
 
 
 if __name__ == "__main__":
