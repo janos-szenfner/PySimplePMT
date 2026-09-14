@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from typing import Optional
 import tkinter as tk
+from tkinter import ttk
 
 import customtkinter as ctk
 
@@ -23,7 +24,6 @@ from gantt_app.views.resource_board import ResourceBoard
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.views.project_dashboard import ProjectDashboardFrame
-from gantt_app.utils.file_io import JSONFileIO, save_project, load_project
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
 from gantt_app.utils.copypastecut import ClipboardManager, setup_keyboard_bindings
 from gantt_app.utils.log import (
@@ -1169,15 +1169,10 @@ class GanttApp(ctk.CTk):
 
         self.toolbar.load_project_path(path)
 
-
-# Import tkinter modules
-import tkinter as tk
-from tkinter import ttk
 # Message boxes and file choosers that stay native on every desktop:
 # Tk's own are native on macOS and Windows but drawn by Tk on X11.
 # Aliased so the call sites below read exactly as they always have.
 from gantt_app.views import dialogs as messagebox
-from gantt_app.views import dialogs as filedialog
 from datetime import timedelta
 
 

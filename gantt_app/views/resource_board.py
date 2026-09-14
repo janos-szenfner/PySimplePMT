@@ -22,7 +22,7 @@ import customtkinter as ctk
 from gantt_app import theme
 from gantt_app.models import Project, Task
 from gantt_app.resource_model import (
-    FTE_WEEKLY_HOURS, Resource, ResourceRepository, ResourceType, TeamPool,
+    Resource, ResourceRepository, ResourceType, TeamPool,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.assigntask import _status_badge
@@ -497,8 +497,6 @@ class ResourceBoard(ctk.CTkFrame):
         logger.debug("Filtering task list by %r", search or "<none>")
 
         selected = self._selected_task_id
-        # Preserve expansion state while rebuilding.
-        open_items = set(self.task_tree.get_children())
 
         for child in self.task_tree.get_children():
             self.task_tree.delete(child)

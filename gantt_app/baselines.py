@@ -8,7 +8,7 @@ durations, effort and cost.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from gantt_app.models import Project, Task
 from gantt_app.resource_model import ResourceRepository

@@ -5,7 +5,6 @@ Keeps the recent-projects list on disk and provides the launcher UI that
 appears when the application starts without a file argument.
 """
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, List, Optional

@@ -113,6 +113,16 @@ class TestDownloadAndVerify(unittest.TestCase):
         with self.assertRaises(ud.UpdateError):
             ud.download_and_verify(DMG, sums, dest_dir=self.dir, download=boom)
 
+    def test_a_non_https_asset_url_is_refused(self):
+        # The URL comes from an API response; urlopen would answer file:
+        # or ftp: just as readily, so anything but https: is refused.
+        bad = {"name": DMG["name"], "url": "file:///etc/passwd", "size": 1}
+        with self.assertRaises(ud.UpdateError):
+            ud.download_and_verify(bad, f"{self.digest}  {DMG['name']}\n",
+                                   dest_dir=self.dir,
+                                   download=self._download)
+        self.assertEqual(os.listdir(self.dir), [])
+
 
 class TestFetchVerifiedInstaller(unittest.TestCase):
     def _info(self, assets):
@@ -143,6 +153,13 @@ class TestFetchVerifiedInstaller(unittest.TestCase):
     def test_no_checksums_asset_is_refused(self):
         with self.assertRaises(ud.IntegrityError):
             ud.fetch_verified_installer(self._info([DMG]), platform="darwin")
+
+    def test_a_non_https_checksums_url_is_refused(self):
+        bad_sums = {"name": "SHA256SUMS", "url": "ftp://example/sums",
+                    "size": 1}
+        with self.assertRaises(ud.UpdateError):
+            ud.fetch_verified_installer(
+                self._info([DMG, bad_sums]), platform="darwin")
 
     def test_can_assist_reports_readiness(self):
         self.assertTrue(ud.can_assist(self._info([DMG, SUMS]), "darwin"))

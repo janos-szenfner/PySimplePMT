@@ -33,7 +33,7 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.models import (
-    CONSTRAINT_LABELS, CONSTRAINT_TYPES, CONSTRAINTS_WITH_DATE, HARD_CONSTRAINTS,
+    CONSTRAINT_LABELS, CONSTRAINT_TYPES, CONSTRAINTS_WITH_DATE,
     EFFORT_FIXED_UNITS, EFFORT_FIXED_WORK, EFFORT_TYPES,
 )
 from gantt_app.utils.log import get_logger

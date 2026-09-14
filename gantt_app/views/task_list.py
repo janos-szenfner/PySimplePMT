@@ -3590,7 +3590,7 @@ class DragDropTaskList(ctk.CTkFrame):
         for task in self.project.get_root_tasks():
             if self._hidden_by_search(task):
                 continue
-            item_id = self._add_task_to_tree(task, indent_level=0)
+            item_id = self._add_task_to_tree(task)
             tree_items[task.id] = item_id
 
         # Further passes: add subtasks once their parent is in the tree.
@@ -3606,8 +3606,8 @@ class DragDropTaskList(ctk.CTkFrame):
                 parent_item = tree_items.get(task.parent_task_id)
                 if parent_item is None:
                     continue
-                item_id = self._add_task_to_tree(task, parent_item=parent_item,
-                                                 indent_level=1)
+                item_id = self._add_task_to_tree(task,
+                                                 parent_item=parent_item)
                 tree_items[task.id] = item_id
                 placed.append(task)
 
@@ -3617,12 +3617,12 @@ class DragDropTaskList(ctk.CTkFrame):
                 # filtered out has nowhere to hang, and the alternative to
                 # showing it at the top is not showing the match at all.
                 for task in remaining:
-                    tree_items[task.id] = self._add_task_to_tree(task, indent_level=0)
+                    tree_items[task.id] = self._add_task_to_tree(task)
                 break
 
             remaining = [t for t in remaining if t not in placed]
     
-    def _add_task_to_tree(self, task: Task, parent_item: str = '', indent_level: int = 0):
+    def _add_task_to_tree(self, task: Task, parent_item: str = ''):
         """
         Add a single task to the treeview.
         
@@ -3632,8 +3632,6 @@ class DragDropTaskList(ctk.CTkFrame):
             The task to add
         parent_item : str
             The parent tree item ID (for subtasks)
-        indent_level : int
-            Indentation level for visual hierarchy
         
         RETURNS:
         --------

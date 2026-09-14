@@ -34,7 +34,7 @@ same rule the preview menu already followed for the built-ins.
 import json
 import re
 from pathlib import Path
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional
 
 from gantt_app import theme

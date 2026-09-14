@@ -12,7 +12,7 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.resource_model import (
-    FTE_WEEKLY_HOURS, Resource, ResourceRepository, ResourceType, TeamPool,
+    Resource, ResourceRepository, ResourceType, TeamPool,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.resourcesettings import _schedule_short

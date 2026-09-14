@@ -5,7 +5,6 @@ Provides a dialog for customizing Gantt chart appearance settings.
 """
 
 import tkinter as tk
-from typing import Optional, Callable, Dict
 
 import customtkinter as ctk
 from gantt_app.views.modal import grab_when_visible

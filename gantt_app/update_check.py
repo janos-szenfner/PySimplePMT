@@ -92,7 +92,7 @@ def _default_fetch(url: str, timeout: float) -> dict:
     """Fetch and decode the latest-release JSON from GitHub."""
     request = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json",
-                      "User-Agent": f"PySimplePMT"})
+                      "User-Agent": "PySimplePMT"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 

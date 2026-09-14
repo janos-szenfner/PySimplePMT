@@ -192,6 +192,10 @@ def download_and_verify(
     name = installer.get("name") or "installer"
     if not url:
         raise UpdateError("The release asset has no download URL.")
+    if not url.lower().startswith("https://"):
+        # urlopen answers file: and ftp: as readily as https:; the asset URL
+        # comes from an API response, which is no place to take one on trust.
+        raise UpdateError(f"The release asset URL is not https: {url}")
 
     expected = parse_sha256sums(checksums_text, name)
     if not expected:
@@ -270,6 +274,9 @@ def fetch_verified_installer(
     if checksums is None or not checksums.get("url"):
         raise IntegrityError("This release published no SHA256SUMS to verify "
                              "the download against.")
+    if not checksums["url"].lower().startswith("https://"):
+        raise UpdateError("The checksums URL is not https: "
+                          f"{checksums['url']}")
 
     fetch_text = fetch_text or _default_fetch_text
     try:

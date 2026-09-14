@@ -4,7 +4,6 @@ from typing import Callable, List, Optional
 
 import customtkinter as ctk
 
-from gantt_app import theme
 from gantt_app.baselines import BaselineManager
 from gantt_app.models import Project
 from gantt_app.utils.log import get_logger

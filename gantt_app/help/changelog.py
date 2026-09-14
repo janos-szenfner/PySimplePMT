@@ -79,7 +79,7 @@ def parse_changelog(text: str) -> tuple:
             current = None
 
     def flush_section():
-        nonlocal heading, paragraphs
+        nonlocal paragraphs
         flush_paragraph()
         if heading is not None:
             sections.append((heading, paragraphs))

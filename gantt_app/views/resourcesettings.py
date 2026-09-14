@@ -2,7 +2,7 @@ import copy
 import tkinter as tk
 from datetime import date
 from tkinter import ttk
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 import customtkinter as ctk
 
@@ -11,7 +11,7 @@ from gantt_app.shortcuts import (
 )
 from gantt_app.resource_model import (
     DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, DaysOffRange, Resource,
-    ResourceRepository, ResourceType, SchedulePattern, TeamPool,
+    ResourceType, SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,
 )
 from gantt_app.utils.log import get_logger

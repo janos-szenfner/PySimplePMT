@@ -644,7 +644,8 @@ class RibbonBar(IconToolbar):
                 if self._backstage.winfo_exists():
                     self._backstage.close()
                     return
-            except Exception:
+            except tk.TclError:
+                # The panel is half-destroyed; forget it and open fresh.
                 pass
             self._backstage = None
 

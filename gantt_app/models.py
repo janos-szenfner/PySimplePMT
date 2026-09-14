@@ -18,7 +18,7 @@ import uuid
 # already dotted, so the logger is exactly the same object either way.
 logger = logging.getLogger(__name__)
 
-from gantt_app.priority import PRIORITY_LEVELS, DEFAULT_PRIORITY
+from gantt_app.priority import DEFAULT_PRIORITY
 from gantt_app.resource_model import ResourceRepository
 from gantt_app.taskstyle import TaskStyle
 from gantt_app.calendarregistry import CalendarRegistry, default_registry
