@@ -237,6 +237,28 @@ class TestTheSettingsTab(GridColumnCase):
              if c != 'Label'] + ['Label'])
         self.assertEqual(marked, [True])
 
+    def test_reset_visibility_restores_the_default(self):
+        """The tab's third button: Label hidden, the rest shown again."""
+        tree = self.window._grid_columns_tree
+        tree.item('Status', values=('Hidden',))
+        tree.item('Type', values=('Hidden',))
+        tree.item('Label', values=('Viewable',))
+        self.window._save_grid_columns()
+        marked = []
+        self.root.mark_dirty = lambda: marked.append(True)
+
+        self.window._reset_grid_visibility()
+
+        self.assertEqual(self.project.hidden_grid_columns, ['Label'])
+        for row in tree.get_children():
+            expected = 'Hidden' if row == 'Label' else 'Viewable'
+            self.assertEqual(tree.item(row, 'values'), (expected,))
+        self.assertIn('Status',
+                      self.task_list.tree.cget('displaycolumns'))
+        self.assertNotIn('Label',
+                         self.task_list.tree.cget('displaycolumns'))
+        self.assertEqual(marked, [True])
+
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestMovingColumns(GridColumnCase):

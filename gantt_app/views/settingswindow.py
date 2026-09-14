@@ -359,6 +359,10 @@ class SettingsWindow(ctk.CTkToplevel):
             footer, text="Reset Task List Layout", width=170,
             command=self._reset_grid_layout,
         ).pack(side=tk.RIGHT)
+        ctk.CTkButton(
+            footer, text="Reset Task List Visibility", width=185,
+            command=self._reset_grid_visibility,
+        ).pack(side=tk.RIGHT, padx=(0, 8))
         self._grid_columns_status = ctk.CTkLabel(footer, text="")
         self._grid_columns_status.pack(side=tk.LEFT, padx=(12, 0))
 
@@ -545,6 +549,40 @@ class SettingsWindow(ctk.CTkToplevel):
         self._grid_columns_status.configure(
             text="Layout reset.", text_color=theme.POSITIVE_TEXT)
         logger.info("Task-grid layout reset from Settings")
+
+    def _reset_grid_visibility(self):
+        """
+        Put the visibility choices back to the application's default.
+
+        The default is what a brand-new plan opens with: Label hidden, the
+        rest shown - the same default from_dict gives a file that predates
+        the setting. It is written straight through, the way the layout
+        reset is: the plan, the grid, the rows in this tab and the
+        unsaved-work guard all change together rather than waiting for
+        Save to be pressed.
+        """
+        default_hidden = ['Label']
+        self.project.hidden_grid_columns = list(default_hidden)
+        # Hidden columns trail the layout, so the restored default puts
+        # Label back at the end and returns anything else to the visible
+        # run in the order it stood.
+        order = list(self.project.grid_column_order or GRID_DATA_COLUMNS)
+        self.project.grid_column_order = order_grid_columns(
+            order, default_hidden)
+
+        for row in self._grid_columns_tree.get_children():
+            self._grid_columns_tree.item(
+                row, values=('Hidden' if row in default_hidden
+                             else 'Viewable',))
+
+        if self.task_list is not None:
+            self.task_list.apply_column_visibility()
+        mark_dirty = getattr(self.master, 'mark_dirty', None)
+        if mark_dirty is not None:
+            mark_dirty()
+        self._grid_columns_status.configure(
+            text="Visibility reset.", text_color=theme.POSITIVE_TEXT)
+        logger.info("Task-grid column visibility reset from Settings")
 
     def _build_system_ui_tab(self):
         """
