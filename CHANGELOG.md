@@ -1,5 +1,158 @@
 # Changelog
 
+## 1.69.0 - 2026-09-14
+
+- **The window grew a ribbon.** The two stacked rows it opened with - a text
+  menu bar over a long row of icon buttons - are now the arrangement
+  LibreOffice and Microsoft Project use: a strip of tabs along the top, and
+  under it a band of captioned groups, each holding the commands that belong
+  together. The group caption says what the buttons are for before the
+  pointer arrives. Three tabbed pages: **Task** (Clipboard, Insert, Tasks,
+  Outline, Font, Progress), **View** (Views, Analysis, Appearance, Window)
+  and **Project** (Properties, Baseline, Calendar, Resources). The File tab
+  opens a backstage panel over the whole window - New/Open/Save/Save As/
+  Close Project, the Import and Export galleries, the recent-projects list,
+  Project Settings, and User Guide / About / Changelog. Save, Save As, Undo
+  and Redo sit as quick-access icons on the strip; help, day/night and
+  search at its right edge. Every button runs exactly what the old menu
+  entry ran - it is wiring, not behaviour.
+- **The task grid's columns are the plan's to arrange.** Every data column
+  can be hidden from the new **Task Grid** tab in Project Settings - a
+  checklist styled like the grid itself - and the column headers drag into
+  whatever order suits the plan; the layout is saved with the project file.
+  The **Alert** column is pinned at the front while it is on show, where MS
+  Project keeps Indicators: it cannot be dragged and nothing may be dropped
+  before it. While a baseline compare runs, its ten columns stand as a block
+  after the reader's own columns rather than splitting the grid, and
+  switching the compare off puts back exactly the layout that was there.
+- **The warning flag got its own column, and slack now counts to the
+  deadline** (fixes #39). The flag for a finish past its deadline rode in
+  front of the Status letter, where it read as a status that never cleared;
+  it now stands alone in the pinned Alert column and the Status cell is just
+  the letter again. The backward pass honours the deadline too: a task's
+  slack is measured against its deadline rather than the plan's end, so a
+  finish past it reports the negative float it is - and counts as critical,
+  as it does in Project.
+- **Resource calendars now drive the schedule** (fixes #38). A resourced
+  task is read against the intersection of its own calendar and its
+  resources' - a member's empty weekday or booked days off are days the task
+  cannot spend, so the finish stretches rather than spending effort nobody
+  has. Several resources work in parallel (a day counts when any of them can
+  work it), and a resource that never works at all is left out rather than
+  leaving the task no working day. The Advanced tab gains **Scheduling
+  ignores resource calendars**, MS Project's escape: unticked by default,
+  enabled while the task follows a named calendar, saved with the plan and
+  carried through undo.
+- **The chart header steps down through the calendar** (fixes #48). Fitting
+  a long plan into the window left the header either drawing labels it had
+  no room for or falling back to one bare month band. The strip now picks
+  the finest unit its cells can still label - day, week, month, quarter,
+  half-year, year - with the band above naming what contains them. A band
+  too narrow for "SEPTEMBER 2026" shortens through "SEP 2026" to "SEP"
+  rather than colliding, and the coarsest header of all is a row of years,
+  so even a decade-deep fit still says where it is.
+- **The critical-path highlight paints the chart too.** The chart always
+  drew its critical tasks in an orange nobody had asked for, whether the
+  highlight was on or not. Bars, milestone diamonds and phase brackets now
+  go the red the highlight already means - on screen and in the exports -
+  and only while it is on.
+- **Mermaid export asks first.** File → Share → Export → Mermaid opens an
+  options sheet - text size and theme seeded from what the chart is drawn
+  with, destination through the native save box - and the picks are written
+  into the file's init directive so a renderer draws the chart in them. The
+  Gantt tab left the Settings hub (its editors were the chart's own, not the
+  project's), and rows created now take their type's colour: tasks the
+  button blue, phases green, milestones orange - the names the palette
+  already gives them, and what the chart's milestone marker, the Default
+  theme and every importer's fallback now agree on.
+- **Effort-Driven is honoured when the roster changes** (fixes #30). The
+  add/remove rules now run on a changed roster as well as on edited numbers:
+  with the toggle on, a removed resource's hours pass to those left and the
+  duration (or Fixed Duration's units) follows; off, the duration holds and
+  the work moves with the roster. The Resource Planning board's quick assign
+  reconciles the same way - it commits through the undo tracker and reschedules,
+  where before it ran none of it.
+- **Dependency loops through summary roll-up are caught** (fixes #47). A
+  child linking to anything that waits on one of its ancestors closed a loop
+  the link-walk alone could not see - each reschedule pass moved the child
+  past the end the summary had just rolled up until durations read in the
+  thousands. The cycle check now follows roll-up edges too, and both the
+  Dependencies column and the editor's Add refuse ancestor/descendant links.
+  A link typed into the Dependencies column is a deliberate edit, so it
+  schedules without the forward-only licence - a Start-Start or Start-Finish
+  link may now pull its task earlier instead of looking unapplied.
+- **A Label field** (fixes #52): a short free-text tag on every task - its
+  own grid column with in-place editing, a box under the title in the task
+  editor, saved with the plan, undoable, and searchable.
+- **A Task Calendar column** (fixes #37) at the end of the grid names the
+  calendar each task follows.
+- **Link Tasks chains the whole selection** (fixes #18), not just its top
+  level - a branch and the rows inside it chain in reading order, with the
+  descendant guard refusing the parent/child pairs that would contradict.
+  A successor that already waits for a listed predecessor keeps that link
+  rather than gaining a second one.
+- **Row numbers are a fixed grey "No" gutter** in the list's first column,
+  like MS Project's: read-only, flush for every row whatever its type or
+  depth, following every insert, delete, drag and indent - while the Task
+  Name keeps its fold triangles and indentation in the tree column beside it.
+- **As Late As Possible tasks are scheduled** (refs #26) instead of ignored:
+  an ALAP task is pushed as late as its summary and its successors allow, so
+  a row set that way ends level with the phase it sits in.
+- **Start, End and Duration are all editable**, in the task editor and
+  inline in the grid, with no scheduling-options mode to set first
+  (refs #23, #24, #31): a new Duration moves the End (Start held), a new End
+  moves the Start (Duration held), and a new Start sets a Start No Earlier
+  Than so auto-scheduling cannot drag it back.
+- **A collection's link-less children are driven by its predecessor**
+  (refs #25): a link on a collection reaches the work inside it, so a child
+  with no link of its own begins when the collection can. Task- and
+  Subtask-typed rows that grew children now settle instead of alternating
+  with the roll-up forever.
+- **Start/Finish No Later Than conflicts are detected wherever they come
+  from** (refs #28) - a task held past its date by its parent summary now
+  raises the conflict dialog just as a direct link does. The dialog gains a
+  **Remove Predecessors** choice: it clears the links holding the task late
+  and pulls it onto the working day on or before its date, keeping the
+  constraint.
+- **The Earliest begin field is gone**, kept as the ordinary Start No
+  Earlier Than constraint (refs #32) - one way to say the same thing, with
+  old files migrated on load.
+- **Status is two checkboxes**, Estimated and Inactive (refs #36): neither
+  ticked means Active, both ticked reads as Inactive while the Estimated
+  intent is remembered, so clearing Inactive returns the row to Estimated.
+- **System UI mode moved into Project Settings** as its own tab (refs #35),
+  beside the new Task Grid tab.
+- **Copy puts a readable table on the desktop clipboard** (refs #16): the
+  task name indented to show nesting, then Type, Start, End, Duration and
+  Status - it pastes straight into a spreadsheet or a note. The plan's own
+  paste never reads the desktop clipboard, so copying rows in another
+  program cannot land them in the plan.
+- **The About window checks for updates** (refs #41): it asks GitHub whether
+  the running release is the latest and says so. **Download & Install...**
+  fetches this platform's installer from the release, verifies it against
+  the release's published SHA256SUMS - a failed check is never opened - and
+  only then hands it to the operating system to open.
+- **Delete removes the whole selection** (refs #17): right-click Delete, the
+  ribbon's Delete and the Delete key all delete every selected row - reduced
+  to its topmost so a parent never takes an already-deleted child twice - as
+  one confirmed, undoable step.
+- **File → Close Project** (refs #21) puts the current plan down and leaves
+  a fresh blank one open, offering to save unsaved work first; closing the
+  window now asks the same rather than quitting on a stray click.
+- **Add to Timeline** (refs #34) on the right-click menu turns
+  Show-in-timeline on for every selected row as one undoable step - the
+  companion to a newly created task starting off the timeline (refs #33), so
+  the chart shows only the rows the planner puts on it.
+- Fixed the resource grids' columns sitting one place left of their headings
+  (fixes #54) - the tree column's '#0' name collided with a data column of
+  the same name.
+- Fixed scrollbars staying light in a dark window on Tk 8.5 builds, where
+  `ttk.Scrollbar` constructs a classic scrollbar that takes no style: the
+  theme now configures the widget options directly at each scrollbar's
+  construction, and a live theme flip re-colours the existing ones.
+- README updated throughout for the ribbon, the column layout and the new
+  fields; the in-app help covers the same changes.
+
 ## 1.68.2 - 2026-09-09
 
 - Restyled the task editor's **Resource** tab so the assignment table reads
