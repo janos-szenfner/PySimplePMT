@@ -286,6 +286,38 @@ class RibbonBar(IconToolbar):
         super().__init__(master, project, **kwargs)
         self.configure(height=self.STRIP_HEIGHT + self.BAND_HEIGHT)
 
+    @staticmethod
+    def _collect_action_labels() -> Dict[str, str]:
+        """
+        The captions _perform logs, for the ribbon's buttons as well as
+        the icon row's.
+
+        The ribbon's actions live in RIBBON and BACKSTAGE rather than
+        ICON_ACTIONS, so a press logged by name alone would read as
+        "close_project" in the Log window where the button said "Close
+        Project". Split-button entries name their own actions, so a
+        "Phase..." press says Phase rather than New Task.
+        """
+        labels = IconToolbar._collect_action_labels()
+        for _icon, tooltip, action in RibbonBar.QAT_ACTIONS:
+            labels[action] = tooltip
+        for _tab, groups in RibbonBar.RIBBON:
+            for _caption, contents in groups:
+                if isinstance(contents, str):
+                    continue
+                for spec in contents:
+                    if spec.get('action'):
+                        labels[spec['action']] = spec['label']
+                    for item_label, item_action in spec.get('items', ()):
+                        labels[item_action] = item_label
+        for _section, entries in RibbonBar.BACKSTAGE:
+            if isinstance(entries, str):
+                continue
+            for entry in entries:
+                if entry.get('action'):
+                    labels[entry['action']] = entry['label']
+        return labels
+
     # ---- construction ----------------------------------------------------
 
     def _create_ui(self):
@@ -338,7 +370,7 @@ class RibbonBar(IconToolbar):
                 fg_color="transparent", hover_color=WIN_MENU_HOVER,
                 text_color=WIN_MENU_TEXT, corner_radius=4,
                 font=ctk.CTkFont(size=12),
-                command=lambda n=name: self.select_tab(n))
+                command=lambda n=name: self._tab_pressed(n))
             btn.pack(side="left", padx=1)
             # The ribbon folds on a double-click of a tab, the way both
             # applications it follows fold on one.
@@ -445,7 +477,7 @@ class RibbonBar(IconToolbar):
                 text_color=WIN_MENU_TEXT, corner_radius=4,
                 font=ctk.CTkFont(size=10),
                 command=lambda s=spec, f=frame: self._open_gallery(
-                    f, self._split_items(s)))
+                    f, self._split_items(s), s['label']))
             arrow.pack(side="bottom", fill="x")
             arrow.tooltip_widget = attach_tooltip(
                 arrow, f"{spec['label']} - more")
@@ -500,9 +532,44 @@ class RibbonBar(IconToolbar):
         items = provider() if callable(provider) else provider
         anchor = self.icon_buttons.get(spec['key'])
         if anchor is not None:
-            self._open_gallery(anchor, items or [])
+            self._open_gallery(anchor, items or [], spec['label'])
 
-    def _open_gallery(self, anchor, items: List[Dict]):
+    @staticmethod
+    def _logged_items(items: List[Dict], title: Optional[str]
+                      ) -> List[Dict]:
+        """
+        The gallery's entries, each logged under its label when it runs.
+
+        Gallery commands are callables rather than action names, so they
+        never reach _perform and would otherwise leave nothing in the log:
+        a "MS Project..." pick would be invisible until the importer wrote
+        its own line. The label from the button that opened the list is
+        prepended, so the log reads "Export: PNG..." rather than a bare
+        file extension.
+        """
+        logged = []
+        for item in items:
+            item = dict(item)
+            command = item.get('command')
+            if callable(command):
+                label = item.get('label', '')
+                entry = f"{title}: {label}" if title else label
+                item['command'] = RibbonBar._logged_command(entry, command)
+            submenu = item.get('submenu')
+            if submenu:
+                item['submenu'] = RibbonBar._logged_items(submenu, title)
+            logged.append(item)
+        return logged
+
+    @staticmethod
+    def _logged_command(entry: str, command: Callable) -> Callable:
+        """A menu command that writes its own label to the log first."""
+        def run():
+            logger.info("Menu: %s", entry)
+            command()
+        return run
+
+    def _open_gallery(self, anchor, items: List[Dict], title: str = None):
         """
         Drop the item list under the widget that asked for it.
 
@@ -519,7 +586,8 @@ class RibbonBar(IconToolbar):
 
         if not items:
             return
-        menu = CTkDropdownMenu(self.winfo_toplevel(), items=items,
+        menu = CTkDropdownMenu(self.winfo_toplevel(),
+                               items=self._logged_items(items, title),
                                opener=anchor)
         x = anchor.winfo_rootx()
         y = anchor.winfo_rooty() + anchor.winfo_height() + 2
@@ -567,6 +635,11 @@ class RibbonBar(IconToolbar):
 
     # ---- tabs and folding --------------------------------------------------
 
+    def _tab_pressed(self, name: str):
+        """What a tab click runs: the log entry, then the page change."""
+        logger.info("Ribbon tab: %s", name)
+        self.select_tab(name)
+
     def select_tab(self, name: str):
         """Show one page and mark its tab; an unknown name changes nothing."""
         if name not in self._pages:
@@ -589,6 +662,8 @@ class RibbonBar(IconToolbar):
 
     def toggle_collapsed(self):
         """Fold the band away to the strip alone, or bring it back."""
+        logger.info("Ribbon %s",
+                    "expanded" if self._collapsed else "collapsed")
         self.set_collapsed(not self._collapsed)
 
     def set_collapsed(self, collapsed: bool):
@@ -642,6 +717,7 @@ class RibbonBar(IconToolbar):
         if self._backstage is not None:
             try:
                 if self._backstage.winfo_exists():
+                    logger.info("File backstage closed")
                     self._backstage.close()
                     return
             except tk.TclError:
@@ -649,6 +725,7 @@ class RibbonBar(IconToolbar):
                 pass
             self._backstage = None
 
+        logger.info("File backstage opened")
         self._backstage = BackstagePanel(self)
         self._backstage.place(relx=0, rely=0, relwidth=1, relheight=1)
         self._backstage.lift()
@@ -734,7 +811,8 @@ class BackstagePanel(ctk.CTkFrame):
                 # A provider name: the rows are built now, from the list
                 # as it stands - the recent files as they are this minute.
                 provider = self.ribbon.galleries.get(entries)
-                for item in self.ribbon._backstage_items(provider):
+                for item in self.ribbon._logged_items(
+                        self.ribbon._backstage_items(provider), section):
                     self._row(column, None, item.get('label', ''),
                               item.get('command'))
                 continue
@@ -774,7 +852,7 @@ class BackstagePanel(ctk.CTkFrame):
         """Drop the gallery's items under the row that asked."""
         provider = self.ribbon.galleries.get(entry['gallery'])
         items = provider() if callable(provider) else provider
-        self.ribbon._open_gallery(anchor, items or [])
+        self.ribbon._open_gallery(anchor, items or [], entry.get('label'))
 
     def _run(self, action: str):
         """A backstage command closes the panel, then runs."""

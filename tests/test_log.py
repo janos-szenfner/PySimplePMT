@@ -267,6 +267,83 @@ class TestLogHelpers(unittest.TestCase):
             sys.excepthook = original
 
 
+class TestUserActionLogging(unittest.TestCase):
+    """
+    Tests that the ribbon's command surfaces write to the log.
+
+    Every ribbon and backstage press reaches IconToolbar._perform, and every
+    gallery pick is wrapped by RibbonBar._logged_items. These helpers are
+    static so they can be exercised without a display.
+    """
+
+    def setUp(self):
+        """Configure logging in memory only."""
+        reset_logging()
+        setup_logging(to_file=False, to_stderr=False)
+
+    def tearDown(self):
+        """Leave logging unconfigured for the next test."""
+        reset_logging()
+
+    def test_icon_actions_have_labels(self):
+        """Every icon action logs under its tooltip, not its name."""
+        from gantt_app.views.toolbar import IconToolbar
+
+        labels = IconToolbar._collect_action_labels()
+
+        self.assertEqual(labels['save_project'], 'Save Project')
+        self.assertEqual(labels['undo'], 'Undo')
+
+    def test_ribbon_actions_have_labels(self):
+        """Ribbon, backstage and split-button actions all have captions."""
+        from gantt_app.views.ribbon import RibbonBar
+
+        labels = RibbonBar._collect_action_labels()
+
+        self.assertEqual(labels['close_project'], 'Close Project')
+        self.assertEqual(labels['show_log'], 'Event Log')
+        # A split-button entry keeps its own label rather than the parent's
+        self.assertEqual(labels['add_phase'], 'Phase...')
+        # The icon row's actions are still covered
+        self.assertEqual(labels['undo'], 'Undo')
+
+    def test_logged_command_writes_and_runs(self):
+        """A wrapped command logs its label, then runs."""
+        from gantt_app.views.ribbon import RibbonBar
+
+        ran = []
+        wrapped = RibbonBar._logged_command("Export: PNG...",
+                                            lambda: ran.append(True))
+        wrapped()
+
+        self.assertEqual(ran, [True])
+        self.assertIn("Export: PNG...", get_log_text())
+
+    def test_logged_items_wraps_commands_and_submenus(self):
+        """Gallery items log under their labels, nested ones included."""
+        from gantt_app.views.ribbon import RibbonBar
+
+        ran = []
+        items = [
+            {'label': 'PNG...', 'command': lambda: ran.append('png')},
+            {'label': 'More', 'submenu': [
+                {'label': 'Deep', 'command': lambda: ran.append('deep')},
+            ]},
+            {'label': 'Separator'},
+        ]
+
+        logged = RibbonBar._logged_items(items, 'Export')
+        logged[0]['command']()
+        logged[1]['submenu'][0]['command']()
+
+        self.assertEqual(ran, ['png', 'deep'])
+        text = get_log_text()
+        self.assertIn("Export: PNG...", text)
+        self.assertIn("Export: Deep", text)
+        # An item with no command passes through untouched
+        self.assertNotIn('command', logged[2])
+
+
 class TestLogDirectory(unittest.TestCase):
     """Tests for where the log file is placed."""
 

@@ -1536,12 +1536,20 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.taskdialogs import CreateTaskDialog
 
+        saved = []
+
+        def on_save(task):
+            saved.append(task)
+            self._save_new_task(task)
+
         dialog = CreateTaskDialog(
             self.master, self.project,
             task_type=task_type,
-            on_save=self._save_new_task
+            on_save=on_save
         )
         dialog.wait_window()
+        if not saved:
+            logger.info("New %s cancelled", task_type.lower())
 
     def add_phase(self):
         """Add a phase: the outermost grouping, bracketing its tasks."""
@@ -1783,6 +1791,7 @@ class Toolbar(ctk.CTkFrame):
     def set_baseline(self):
         """Open the Set Baseline dialog."""
         from gantt_app.views.baselinedialog import BaselineSetDialog
+        logger.info("Opening the Set Baseline dialog")
         selected = []
         if self.task_list is not None:
             selected = self.task_list.get_selected_task_ids()
@@ -1795,6 +1804,7 @@ class Toolbar(ctk.CTkFrame):
     def clear_baseline(self):
         """Open the Clear Baseline dialog."""
         from gantt_app.views.baselinedialog import BaselineClearDialog
+        logger.info("Opening the Clear Baseline dialog")
         selected = []
         if self.task_list is not None:
             selected = self.task_list.get_selected_task_ids()
@@ -1848,6 +1858,7 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.projectsettings import edit_project_settings
 
+        logger.info("Opening the project settings")
         edit_project_settings(self.winfo_toplevel(), self.project,
                               on_apply=self.on_project_changed)
     
@@ -1921,6 +1932,7 @@ class Toolbar(ctk.CTkFrame):
             if changed and self.on_project_changed:
                 self.on_project_changed()
 
+        logger.info("Opening the working week and holidays dialog")
         choose_holidays(self.master,
                         sorted(self.project.calendar.countries), apply,
                         self.project.calendar.sorted_overrides(),
@@ -1943,6 +1955,7 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.criticalpath import show_critical_path
 
+        logger.info("Opening the critical path report")
         if self.project.apply_schedule() and self.on_project_changed:
             self.on_project_changed()
 
@@ -1976,6 +1989,7 @@ class Toolbar(ctk.CTkFrame):
         if task_list.critical_path_rows_shown():
             task_list.clear_critical_path_rows()
             self._redraw_critical_chart()
+            logger.info("Critical path highlight cleared")
             self._report("Critical path highlight off.")
             return
 
@@ -1987,9 +2001,11 @@ class Toolbar(ctk.CTkFrame):
         self._redraw_critical_chart()
 
         if painted:
+            logger.info("Critical path highlight on: %d row(s)", painted)
             self._report(f"{painted} rows on the critical path "
                          f"are highlighted.")
         else:
+            logger.info("Critical path highlight on; every task has float")
             self._report("Nothing is on the critical path: "
                          "every task has float.")
 
@@ -2049,6 +2065,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("Save As cancelled")
             return
 
         self._write_project(file_path)
@@ -2081,6 +2098,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("Open project cancelled")
             return
 
         self.load_project_path(file_path)
@@ -2355,6 +2373,7 @@ class Toolbar(ctk.CTkFrame):
         )
         
         if not file_path:
+            logger.info("GAN import cancelled")
             return
         
         # Import GAN file
@@ -2403,6 +2422,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("MS Project import cancelled")
             return
 
         if is_binary_mpp(file_path):
@@ -2445,6 +2465,7 @@ class Toolbar(ctk.CTkFrame):
         )
         
         if not file_path:
+            logger.info("Mermaid import cancelled")
             return
         
         # Import Mermaid file
@@ -2476,6 +2497,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("XLSX import cancelled")
             return
 
         # Import XLSX file
@@ -2513,6 +2535,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("GAN export cancelled")
             return
 
         logger.info("Exporting the project to GAN: %s", file_path)
@@ -2545,6 +2568,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("MS Project export cancelled")
             return
 
         logger.info("Exporting the project to MS Project XML: %s", file_path)
@@ -2580,6 +2604,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("SVG export cancelled")
             return
 
         from gantt_app.utils.image_export import export_gantt_to_svg
@@ -2609,6 +2634,7 @@ class Toolbar(ctk.CTkFrame):
         )
         
         if not file_path:
+            logger.info("PNG export cancelled")
             return
         
         logger.info("Exporting the Gantt chart to PNG: %s", file_path)
@@ -2631,6 +2657,7 @@ class Toolbar(ctk.CTkFrame):
         )
         
         if not file_path:
+            logger.info("PDF export cancelled")
             return
         
         logger.info("Exporting the Gantt chart to PDF: %s", file_path)
@@ -2685,6 +2712,7 @@ class Toolbar(ctk.CTkFrame):
         )
 
         if not file_path:
+            logger.info("HTML export cancelled")
             return
 
         from gantt_app.utils.image_export import export_gantt_to_html
@@ -2714,6 +2742,7 @@ class Toolbar(ctk.CTkFrame):
         )
         
         if not file_path:
+            logger.info("XLSX export cancelled")
             return
         
         # Export project to XLSX
@@ -2905,6 +2934,7 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.help.userguide import show_user_guide
 
+        logger.info("Opening the user guide")
         show_user_guide(self.winfo_toplevel())
 
     def show_about(self):
@@ -2948,6 +2978,7 @@ class Toolbar(ctk.CTkFrame):
         """Open the resource and team settings dialog."""
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
+        logger.info("Opening the resource settings")
         ResourceSettingsWindow(
             self.winfo_toplevel(), self.project.resource_repository,
             active_project_ids=[self.project.name],
@@ -3546,6 +3577,9 @@ class IconToolbar(ctk.CTkFrame):
         self._icon_images = {}
         #: The dividers between groups, kept so they can be found again
         self.separators = []
+        #: The caption each action is logged under when it runs; see
+        #: _collect_action_labels.
+        self._action_labels = self._collect_action_labels()
         
         # Which icons are live with no project open, and which need one
         from gantt_app.resources.icons import (
@@ -3791,6 +3825,8 @@ class IconToolbar(ctk.CTkFrame):
             logger.exception("Could not apply the task search")
             return
 
+        logger.info("Task search %r: %d of %d row(s) shown",
+                    needle, shown, total)
         self.search_box.report(shown, total)
 
     def _create_help_button(self):
@@ -3829,6 +3865,7 @@ class IconToolbar(ctk.CTkFrame):
         """Open the user guide, or raise the copy already open."""
         from gantt_app.help.userguide import show_user_guide
 
+        logger.info("Opening the user guide")
         show_user_guide(self.winfo_toplevel())
 
     # ---- the day / night control ----------------------------------------
@@ -3984,6 +4021,20 @@ class IconToolbar(ctk.CTkFrame):
         divider.pack_propagate(False)
         self.separators.append(divider)
 
+    @staticmethod
+    def _collect_action_labels() -> Dict[str, str]:
+        """
+        What a press is logged under: the button's caption, not its name.
+
+        "save_project" is a handler name; "Save Project" is what the button
+        the user pressed says. RibbonBar extends this with the captions its
+        own buttons carry, which live in RIBBON and BACKSTAGE rather than
+        ICON_ACTIONS.
+        """
+        return {action: tooltip
+                for _icon, tooltip, action in IconToolbar.ICON_ACTIONS
+                if action}
+
     def _perform(self, action: str):
         """
         Run the handler Toolbar connected for an icon.
@@ -4000,6 +4051,7 @@ class IconToolbar(ctk.CTkFrame):
         A row built without a Toolbar to connect it has nothing behind its
         buttons, which is said rather than half-done.
         """
+        logger.info("Action: %s", self._action_labels.get(action, action))
         handler = getattr(self, action, None)
         if not callable(handler):
             logger.warning("The %s icon has no handler connected", action)

@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.69.1 - 2026-09-14
+
+- **The Event Log now records everything you do.** Every ribbon, backstage,
+  quick-access and split-button press is logged under the caption the
+  button carries, and every gallery pick - each import and export format,
+  baseline compares, recent projects - logs as `Menu: Export: PNG...`.
+  Silent paths got lines of their own: file-chooser cancels on every open,
+  save, import and export; critical-path report and highlight toggles with
+  the row count; Gantt zoom in/out/fit/reset; the task search with its
+  match count; ribbon tab switches, ribbon folding and the File backstage
+  opening and closing; declined delete confirmations and cancelled task
+  dialogs; link and unlink results including the already-linked and
+  nothing-to-remove cases; branch folding in the task list; and the Log
+  window's own Copy, Save As, level filter and close. Custom-preset saves
+  and resource assignments made in the task editor are logged too.
+- **The year header can no longer go blank on wide fonts.** On the
+  coarsest chart header every band carries a name - a band too narrow for
+  "2026" or "'26" falls back to the two-digit year rather than showing
+  nothing. Which face the chart text uses is the platform's business, and
+  DejaVu measures wider than Helvetica at the same size, which is how the
+  strip could empty out on Linux while looking fine elsewhere.
+
 ## 1.69.0 - 2026-09-14
 
 - **The window grew a ribbon.** The two stacked rows it opened with - a text

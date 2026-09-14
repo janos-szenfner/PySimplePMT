@@ -317,6 +317,7 @@ class PresetEditorDialog(ctk.CTkToplevel):
         colour = self.badge_colour.get() or DEFAULT_CUSTOM_BADGE[1]
         try:
             self.on_save(name, self._style(), badge, colour)
+            logger.info("Saved custom preset %r", name)
         except Exception:
             logger.exception("Could not save the custom preset")
         self.destroy()

@@ -196,18 +196,22 @@ class GanttChart(ctk.CTkFrame):
             return
 
         self.set_zoom(available / natural)
+        logger.info("Gantt chart zoomed to fit: %.0f%%", self._zoom * 100)
 
     def zoom_in(self):
         """Show a shorter span across the same width."""
         self.set_zoom(self._zoom * ZOOM_STEP)
+        logger.info("Gantt chart zoomed in to %.0f%%", self._zoom * 100)
 
     def zoom_out(self):
         """Show a longer span across the same width."""
         self.set_zoom(self._zoom / ZOOM_STEP)
+        logger.info("Gantt chart zoomed out to %.0f%%", self._zoom * 100)
 
     def zoom_reset(self):
         """Return to 100%, the width the chart draws itself at."""
         self.set_zoom(1.0)
+        logger.info("Gantt chart zoom reset to %.0f%%", self._zoom * 100)
 
     def set_zoom(self, zoom: float):
         """

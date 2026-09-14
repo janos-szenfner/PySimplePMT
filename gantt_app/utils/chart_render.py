@@ -796,11 +796,20 @@ def _build_date_header(layout: 'ChartLayout', project: Project,
             candidates = (walk.strftime('%B %Y').upper(),
                           walk.strftime('%b %Y').upper(),
                           walk.strftime('%b').upper())
+            label = _fit_label(candidates, width_px, font_size)
         else:
             candidates = (str(walk.year), f"'{walk.year % 100}")
+            # The year floor names itself or it names nothing: a month
+            # cell under a blank band still says where it is, but up here
+            # a blank band is a blank strip. A squeezed label may bleed a
+            # pixel into its neighbour; a missing one says nothing at
+            # all, and which fonts measure what width is the platform's
+            # business - DejaVu runs wider than Helvetica at the same
+            # nominal size.
+            label = (_fit_label(candidates, width_px, font_size)
+                     or f"{walk.year % 100:02d}")
         layout.month_bands.append(
-            (x_for(walk), x_for(finish),
-             _fit_label(candidates, width_px, font_size)))
+            (x_for(walk), x_for(finish), label))
         if mode == 'year':
             layout.date_ticks.append((x_for(walk), walk.strftime('%Y-%m-%d')))
         walk = finish

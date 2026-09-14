@@ -669,6 +669,10 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<<TreeviewClose>>',
                        lambda _e: self.after_idle(self._refresh_id_gutter),
                        add='+')
+        self.tree.bind('<<TreeviewOpen>>',
+                       lambda _e: self._log_fold(True), add='+')
+        self.tree.bind('<<TreeviewClose>>',
+                       lambda _e: self._log_fold(False), add='+')
 
         # Bind events
         self.tree.bind('<Double-1>', self.on_double_click)
@@ -1605,6 +1609,7 @@ class DragDropTaskList(ctk.CTkFrame):
         if not messagebox.askyesno(
             "Delete Task", prompt, icon=messagebox.WARNING,
         ):
+            logger.info("Delete of %s cancelled", ids)
             return
 
         logger.info("Deleting %d selected task(s): %s", len(ids), ids)
@@ -1769,6 +1774,16 @@ class DragDropTaskList(ctk.CTkFrame):
                 callback()
             except Exception:
                 logger.exception("A row watcher failed")
+
+    def _log_fold(self, opened: bool):
+        """Note a branch being opened or folded away in the list."""
+        try:
+            item = self.tree.focus()
+            label = self.tree.item(item, 'text') if item else ''
+        except tk.TclError:
+            item, label = '', ''
+        logger.debug("Task list: %s %s %r",
+                     "expanded" if opened else "folded", item, label)
 
     def rows_scrolled_to(self) -> float:
         """
@@ -3173,6 +3188,7 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         chosen = self._as_ids(task_ids)
         if len(chosen) < 2:
+            logger.info("Link requested with fewer than two rows selected")
             self._say("Select two or more rows to link, "
                       "in the order they run.")
             return
@@ -3195,9 +3211,12 @@ class DragDropTaskList(ctk.CTkFrame):
             apply()
 
         if not linked:
+            logger.info("Link requested on %s; already linked", chosen)
             self._say("Those rows are already linked.")
             return
 
+        logger.info("Linked %d row(s) Finish-to-Start: %s",
+                    len(chosen), chosen)
         self._say(f"Linked {self._count(chosen)} Finish-to-Start.")
         self._after_links_changed(chosen)
 
@@ -3213,6 +3232,7 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         chosen = self._as_ids(task_ids)
         if not chosen:
+            logger.info("Unlink requested with no rows selected")
             self._say("Select the rows to unlink first.")
             return
 
@@ -3232,9 +3252,11 @@ class DragDropTaskList(ctk.CTkFrame):
             apply()
 
         if not removed:
+            logger.info("Unlink requested on %s; no links to remove", chosen)
             self._say("There were no links between those rows.")
             return
 
+        logger.info("Unlinked %s: %d link(s) removed", chosen, len(removed))
         self._say(f"Removed {len(removed)} link"
                   f"{'' if len(removed) == 1 else 's'}.")
         self._after_links_changed(chosen)

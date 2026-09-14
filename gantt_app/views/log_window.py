@@ -25,6 +25,8 @@ from gantt_app.utils.log import (
     get_log_text, get_log_file_path, clear_log, save_log_to, count_records
 )
 
+logger = logging.getLogger(__name__)
+
 
 #: Filter choices offered in the window, in display order.
 LEVEL_CHOICES = [
@@ -129,6 +131,7 @@ class LogWindow(ctk.CTkToplevel):
             if name == choice:
                 self._level = level
                 break
+        logger.debug("Log window level filter set to %s", choice)
         self.refresh()
 
     def _on_auto_toggled(self):
@@ -235,6 +238,7 @@ class LogWindow(ctk.CTkToplevel):
             self.clipboard_clear()
             self.clipboard_append(get_log_text(self._level))
             self.status_label.configure(text="Log copied to clipboard")
+            logger.info("Log copied to clipboard")
         except tk.TclError as e:
             messagebox.showerror("Copy Failed", f"Could not copy the log:\n{e}",
                                  parent=self)
@@ -251,9 +255,11 @@ class LogWindow(ctk.CTkToplevel):
             title="Save Log"
         )
         if not filepath:
+            logger.info("Log export cancelled")
             return
 
         if save_log_to(filepath, self._level):
+            logger.info("Log exported to %s", filepath)
             messagebox.showinfo("Log Saved", f"Log written to:\n{filepath}",
                                 parent=self)
         else:
@@ -274,6 +280,7 @@ class LogWindow(ctk.CTkToplevel):
 
     def close(self):
         """Cancel the refresh timer and destroy the window."""
+        logger.debug("Log window closed")
         self._auto_refresh = False
         self._cancel_refresh()
 

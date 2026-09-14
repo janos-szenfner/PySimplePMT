@@ -483,9 +483,18 @@ class TaskResourceTab(ctk.CTkFrame):
             "estimated_hours": 0.0,
             "resource_split": 100.0,
         })
+        entity = self._entity_by_id(entity_id)
+        logger.debug("Assigned %r to %r in the task editor",
+                     getattr(entity, 'name', entity_id),
+                     getattr(self.task, 'name', self.task))
         self._refresh_rows()
 
     def _remove(self, index: int) -> None:
+        assignment = self._assignments[index]
+        entity = self._entity_by_id(assignment.get("resource_id", ""))
+        logger.debug("Removed %r from %r in the task editor",
+                     getattr(entity, 'name', assignment.get("resource_id")),
+                     getattr(self.task, 'name', self.task))
         del self._assignments[index]
         self._refresh_rows()
 
