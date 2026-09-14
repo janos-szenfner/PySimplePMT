@@ -1702,6 +1702,7 @@ class Toolbar(ctk.CTkFrame):
             initial_tab=initial_tab,
             on_baseline_changed=self.refresh_menus,
             theme_controller=self.theme_controller,
+            task_list=self.task_list,
         )
         return self._settings_window
 

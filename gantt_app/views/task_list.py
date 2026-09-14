@@ -476,6 +476,12 @@ class DragDropTaskList(ctk.CTkFrame):
         #: Empty means the highlight is off; see show_critical_path_rows.
         self._critical_task_ids = set()
 
+        #: The baseline slot being compared, if any. Set here rather than
+        #: first written by set_active_baseline, because column visibility
+        #: asks before that call ever runs.
+        self._baseline_manager = None
+        self._baseline_slot = None
+
         #: The box open over a cell, and the row it belongs to. Set here so
         #: everything that asks can ask plainly; see _open_cell_editor.
         self._cell_editor = None
@@ -623,6 +629,11 @@ class DragDropTaskList(ctk.CTkFrame):
 
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(1, weight=1)
+
+        # Columns the plan says not to show - Label among them until
+        # somebody asks otherwise - and the baseline columns while no
+        # baseline is being compared
+        self._apply_column_visibility()
 
         # Store reference to tree_frame for DnD
         self.tree_frame = tree_frame
@@ -2047,25 +2058,57 @@ class DragDropTaskList(ctk.CTkFrame):
         except (tk.TclError, ValueError):
             pass
 
+    #: Every data column the grid can show, in the order the tree was
+    #: built with. The name is not in it - it lives in the tree column
+    #: (#0), which the expander needs, so it is never a candidate for
+    #: hiding.
+    DATA_COLUMNS = (
+        'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
+        'Progress', 'Dependencies', 'Milestone', 'Outline',
+        'Baseline Start', 'Start Variance', 'Baseline Finish',
+        'Finish Variance', 'Baseline Duration', 'Duration Variance',
+        'Baseline Work', 'Work Variance', 'Baseline Cost',
+        'Cost Variance', 'Task Calendar',
+    )
+
+    #: The columns that only mean anything while a baseline is being
+    #: compared; they leave with it whatever the visibility setting says.
+    BASELINE_COLUMNS = (
+        'Baseline Start', 'Start Variance', 'Baseline Finish',
+        'Finish Variance', 'Baseline Duration', 'Duration Variance',
+        'Baseline Work', 'Work Variance', 'Baseline Cost',
+        'Cost Variance',
+    )
+
+    def _apply_column_visibility(self):
+        """
+        Show the columns that are both eligible and not hidden.
+
+        Baseline columns exist only while a baseline is being compared;
+        on top of that, whatever the plan's hidden_grid_columns names
+        stays out of view. The settings tab edits the latter and calls
+        apply_column_visibility to repaint.
+        """
+        if not self.tree.winfo_exists():
+            return
+        hidden = set(getattr(self.project, 'hidden_grid_columns', ()) or ())
+        self.tree['displaycolumns'] = tuple(
+            column for column in self.DATA_COLUMNS
+            if column not in hidden
+            and (self._baseline_slot is not None
+                 or column not in self.BASELINE_COLUMNS))
+
+    def apply_column_visibility(self):
+        """Re-read the plan's hidden columns and repaint the grid."""
+        self._apply_column_visibility()
+        self.update_task_list()
+
     def set_active_baseline(self, baseline_manager=None, slot_number=None):
         """Store the active baseline for the task list and refresh."""
         self._baseline_manager = baseline_manager
         self._baseline_slot = slot_number
         logger.info("Task list active baseline set to slot %s", slot_number)
-        if self.tree.winfo_exists():
-            if slot_number is None:
-                self.tree['displaycolumns'] = (
-                    'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
-                    'Progress', 'Dependencies', 'Milestone', 'Outline',
-                    'Task Calendar')
-            else:
-                self.tree['displaycolumns'] = (
-                    'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
-                    'Progress', 'Dependencies', 'Milestone', 'Outline',
-                    'Baseline Start', 'Start Variance', 'Baseline Finish',
-                    'Finish Variance', 'Baseline Duration', 'Duration Variance',
-                    'Baseline Work', 'Work Variance', 'Baseline Cost',
-                    'Cost Variance', 'Task Calendar')
+        self._apply_column_visibility()
         self.update_task_list()
 
     def _task_calendar_label(self, task) -> str:

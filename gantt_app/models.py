@@ -1346,6 +1346,12 @@ class Project:
     #: Working hours in one standard day, for converting a duration in days to
     #: the hours the effort maths works in (Task_Type_FRS §3). 8 by default.
     hours_per_day: float = DEFAULT_HOURS_PER_DAY
+    #: The task-grid columns not to show. Label starts hidden - it is the
+    #: column a plan only needs once somebody starts writing them, and a
+    #: permanent empty column reads as a defect to everyone else. The Task
+    #: Grid tab in Settings is where the list is edited.
+    hidden_grid_columns: List[str] = field(
+        default_factory=lambda: ['Label'])
     resource_repository: ResourceRepository = field(
         default_factory=ResourceRepository, compare=False)
 
@@ -3259,6 +3265,7 @@ class Project:
                             if self.status_date else None),
             'priority': self.priority,
             'hours_per_day': self.hours_per_day,
+            'hidden_grid_columns': list(self.hidden_grid_columns),
             **self.resource_repository.to_dict(),
         }
 
@@ -3342,6 +3349,10 @@ class Project:
             status_date=cls._read_date(data.get('status_date')),
             priority=data.get('priority', DEFAULT_PROJECT_PRIORITY),
             hours_per_day=cls._read_hours_per_day(data.get('hours_per_day')),
+            # Absent from plans saved before the columns could be hidden -
+            # they read the way the field defaults: Label out of view.
+            hidden_grid_columns=list(
+                data.get('hidden_grid_columns', ['Label'])),
             resource_repository=ResourceRepository.from_dict({
                 'resources': data.get('resources', []),
                 'teams': data.get('teams', []),

@@ -1,6 +1,6 @@
 """Unified, tabbed launcher for the application's settings editors."""
 import tkinter as tk
-from tkinter import colorchooser
+from tkinter import colorchooser, ttk
 from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
@@ -18,7 +18,24 @@ class SettingsWindow(ctk.CTkToplevel):
 
     GEOMETRY = "800x600"
     TABS = ("Project", "Resource", "Calendar", "Presets", "Baseline",
-            "System UI")
+            "Task Grid", "System UI")
+
+    #: The title the task grid gives each hideable column; keyed by the
+    #: column name the tree knows it by, which is what the hidden list
+    #: stores.
+    GRID_COLUMN_TITLES = {
+        'Label': 'Label', 'Type': 'Type', 'Status': 'Status',
+        'Duration': 'Duration (Days)', 'Start': 'Start Date',
+        'End': 'End Date', 'Progress': 'Progress',
+        'Dependencies': 'Dependencies', 'Milestone': 'Milestone',
+        'Outline': 'Outline Level', 'Baseline Start': 'Baseline Start',
+        'Start Variance': 'Start Var', 'Baseline Finish': 'Baseline Finish',
+        'Finish Variance': 'Finish Var',
+        'Baseline Duration': 'Base Duration',
+        'Duration Variance': 'Dur Var', 'Baseline Work': 'Base Work',
+        'Work Variance': 'Work Var', 'Baseline Cost': 'Base Cost',
+        'Cost Variance': 'Cost Var', 'Task Calendar': 'Task Calendar',
+    }
 
     def __init__(
         self,
@@ -31,6 +48,7 @@ class SettingsWindow(ctk.CTkToplevel):
         initial_tab: str = "Project",
         on_baseline_changed: Optional[Callable[[], None]] = None,
         theme_controller=None,
+        task_list=None,
         **kwargs,
     ):
         super().__init__(master, **kwargs)
@@ -38,6 +56,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.baseline_manager = baseline_manager
         self.on_baseline_changed = on_baseline_changed
         self.theme_controller = theme_controller
+        self.task_list = task_list
         self._openers: Dict[str, Callable[[], None]] = {
             "Project": open_project,
             "Resource": open_resource,
@@ -83,6 +102,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self._build_calendar_tab()
         self._build_presets_tab()
         self._build_baseline_tab()
+        self._build_task_grid_tab()
         self._build_system_ui_tab()
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -310,6 +330,146 @@ class SettingsWindow(ctk.CTkToplevel):
         self.baseline_manager.clear_baseline(number)
         self._build_baseline_tab()
         logger.info("Cleared data for baseline %d from settings", number)
+
+    def _build_task_grid_tab(self):
+        """
+        Which columns the task grid shows.
+
+        A two-column grid of its own, styled like the task list's: the
+        column's name on the left and its visibility on the right, where
+        a click opens a Viewable/Hidden dropdown over the cell - the same
+        in-place editing the task grid uses for its own cells. Task Name
+        is not in the list: it carries the outline's expander, so it can
+        never leave. Save writes the hidden set onto the project, which is
+        what makes it part of the file.
+        """
+        logger.debug("Building Task Grid settings tab")
+        tab = self.tabs["Task Grid"]
+
+        # Save sits in a fixed footer, like the baseline tab's, so it is
+        # always in view however many columns the list grows to.
+        footer = ctk.CTkFrame(tab, fg_color="transparent")
+        footer.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(4, 12))
+        ctk.CTkButton(
+            footer, text="Save", width=100,
+            command=self._save_grid_columns,
+        ).pack(side=tk.LEFT)
+        self._grid_columns_status = ctk.CTkLabel(footer, text="")
+        self._grid_columns_status.pack(side=tk.LEFT, padx=(12, 0))
+
+        ctk.CTkLabel(
+            tab,
+            text="Choose which columns the task grid shows. Click a "
+                 "visibility cell for the dropdown.",
+            anchor=tk.W, wraplength=650, text_color=theme.MUTED_TEXT,
+        ).pack(fill=tk.X, padx=20, pady=(14, 6))
+
+        grid_frame = ctk.CTkFrame(tab)
+        grid_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
+        grid_frame.grid_rowconfigure(0, weight=1)
+        grid_frame.grid_columnconfigure(0, weight=1)
+
+        # 'tree headings' like the task grid itself: the column's name
+        # sits in the tree column, the dropdown in the one beside it.
+        self._grid_columns_tree = ttk.Treeview(
+            grid_frame, columns=('visibility',), show='tree headings',
+            style='Gantt.Treeview', selectmode='browse')
+        self._grid_columns_tree.heading('#0', text='Column')
+        self._grid_columns_tree.heading('visibility', text='Visibility')
+        self._grid_columns_tree.column('#0', width=280, minwidth=140,
+                                       stretch=False, anchor=tk.W)
+        self._grid_columns_tree.column('visibility', width=140,
+                                       minwidth=90, stretch=False,
+                                       anchor=tk.W)
+
+        scrollbar = ttk.Scrollbar(grid_frame, orient=tk.VERTICAL,
+                                  command=self._grid_columns_tree.yview)
+        theme.style_scrollbar(scrollbar)
+        self._grid_columns_tree.configure(yscrollcommand=scrollbar.set)
+        self._grid_columns_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        scrollbar.grid(row=0, column=1, sticky=tk.NS)
+
+        hidden = set(self.project.hidden_grid_columns)
+        for column in self._grid_column_names():
+            self._grid_columns_tree.insert(
+                '', tk.END, iid=column,
+                text=self.GRID_COLUMN_TITLES.get(column, column),
+                values=('Hidden' if column in hidden else 'Viewable',))
+
+        self._grid_columns_tree.bind(
+            '<Button-1>', self._grid_columns_click)
+        self._grid_columns_editor = None
+
+    def _grid_column_names(self):
+        """
+        The hideable columns, in the order the task grid shows them.
+
+        Asked of the task list when there is one so the two cannot drift;
+        the settings window can also be built without one in tests, where
+        the fallback list is the same set in the same order.
+        """
+        if self.task_list is not None:
+            return list(self.task_list.DATA_COLUMNS)
+        return list(self.GRID_COLUMN_TITLES)
+
+    def _grid_columns_click(self, event):
+        """Open the Viewable/Hidden dropdown over the cell that was hit."""
+        tree = self._grid_columns_tree
+        row = tree.identify_row(event.y)
+        if not row or tree.identify_column(event.x) != '#1':
+            self._close_grid_columns_editor()
+            return
+        box = tree.bbox(row, '#1')
+        if not box:
+            return
+        x, y, width, height = box
+        self._close_grid_columns_editor()
+
+        combo = ttk.Combobox(tree, values=('Viewable', 'Hidden'),
+                             state='readonly')
+        combo.set(tree.item(row, 'values')[0])
+        combo.place(x=x, y=y, width=width, height=height)
+        combo.focus_set()
+
+        def commit(_event=None):
+            tree.item(row, values=(combo.get(),))
+            self._close_grid_columns_editor()
+
+        combo.bind('<<ComboboxSelected>>', commit)
+        combo.bind('<FocusOut>', commit)
+        combo.bind('<Escape>', lambda _e: self._close_grid_columns_editor())
+        self._grid_columns_editor = combo
+        # Open the list straight away; a second click on the box would do
+        # it, but the cell already said what the click meant.
+        combo.event_generate('<Down>')
+
+    def _close_grid_columns_editor(self):
+        """Take the dropdown off the cell again."""
+        if self._grid_columns_editor is not None:
+            self._grid_columns_editor.destroy()
+            self._grid_columns_editor = None
+
+    def _save_grid_columns(self):
+        """Write the Hidden rows onto the plan and repaint the grid."""
+        tree = self._grid_columns_tree
+        self.project.hidden_grid_columns = [
+            row for row in tree.get_children()
+            if tree.item(row, 'values')[0] == 'Hidden'
+        ]
+        self._grid_columns_status.configure(
+            text="Settings saved.", text_color=theme.POSITIVE_TEXT)
+        logger.info("Saved hidden task-grid columns: %s",
+                    self.project.hidden_grid_columns)
+
+        if self.task_list is not None:
+            self.task_list.apply_column_visibility()
+        # The choice lives in the project file, so saving it is a change
+        # the unsaved-work guard has to know about. The guard is the main
+        # window's - self is itself a toplevel, so winfo_toplevel would
+        # only find this window again.
+        mark_dirty = getattr(self.master, 'mark_dirty', None)
+        if mark_dirty is not None:
+            mark_dirty()
 
     def _build_system_ui_tab(self):
         """
