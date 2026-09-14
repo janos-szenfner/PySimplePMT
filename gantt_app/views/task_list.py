@@ -2128,12 +2128,30 @@ class DragDropTaskList(ctk.CTkFrame):
         The saved order is trusted only as far as it names real columns;
         anything missing joins at the end, so a plan saved by an older or
         newer build still shows every column it knows.
+
+        While a baseline is compared its columns trail the viewable ones
+        rather than standing where the stored order keeps them: ten
+        columns materialising in the middle of an arrangement splits it
+        in two and pushes whatever stood right of them off the screen.
+        As a block at the end the grid gains an appendix instead, and the
+        compare going off puts back exactly the layout that was there.
         """
         saved = getattr(self.project, 'grid_column_order', ()) or ()
         order = [c for c in saved if c in self.DATA_COLUMNS]
         order += [c for c in self.DATA_COLUMNS if c not in order]
         hidden = getattr(self.project, 'hidden_grid_columns', ()) or ()
-        return order_grid_columns(order, hidden)
+        ordered = order_grid_columns(order, hidden)
+        if self._baseline_slot is not None:
+            hidden_set = set(hidden)
+            baseline = [c for c in ordered
+                        if c in self.BASELINE_COLUMNS
+                        and c not in hidden_set]
+            ordered = (
+                [c for c in ordered
+                 if c not in hidden_set and c not in self.BASELINE_COLUMNS]
+                + baseline
+                + [c for c in ordered if c in hidden_set])
+        return ordered
 
     def move_column(self, name, target, after=False):
         """

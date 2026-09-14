@@ -121,6 +121,37 @@ class TestTheGridReadsIt(GridColumnCase):
 
         self.assertNotIn('Baseline Start', self.shown())
 
+    def test_the_baseline_block_trails_the_layout(self):
+        """
+        Ten columns materialising mid-grid splits the arrangement in two
+        and pushes whatever stood right of them off the screen; they stand
+        as a block at the end instead.
+        """
+        self.task_list.set_active_baseline(None, 1)
+        shown = self.shown()
+
+        baseline_start = shown.index('Baseline Start')
+        self.assertEqual(
+            shown[baseline_start:],
+            ('Baseline Start', 'Start Variance', 'Baseline Finish',
+             'Finish Variance', 'Baseline Duration', 'Duration Variance',
+             'Baseline Work', 'Work Variance', 'Baseline Cost',
+             'Cost Variance'))
+        self.assertLess(shown.index('Task Calendar'), baseline_start)
+
+    def test_the_layout_is_untouched_by_a_compare(self):
+        """
+        What was on screen before the compare is exactly what the compare
+        puts back - the reader's own columns never move.
+        """
+        before = self.shown()
+
+        self.task_list.set_active_baseline(None, 1)
+        self.assertEqual(self.shown()[:len(before)], before)
+
+        self.task_list.set_active_baseline(None, None)
+        self.assertEqual(self.shown(), before)
+
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestTheSettingsTab(GridColumnCase):
