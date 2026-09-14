@@ -38,7 +38,7 @@ ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'bold', 'italic', 'underline',
     'text_color', 'fill_color', 'style_preset', 'clear_style',
     'mark_on_track',
-    'critical_path',
+    'critical_path', 'highlight',
     'cut', 'copy', 'paste', 'delete',
     'undo', 'redo'
 ]
@@ -204,6 +204,14 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('line', [(0.10, 0.50), (0.64, 0.50)]),
         ('line', [(0.10, 0.80), (0.38, 0.80)]),
         ('line', [(0.66, 0.32), (0.88, 0.50), (0.66, 0.68)]),
+    ],
+    # The highlight: a marker pen with its nib on the stripe it lays down.
+    # fill_color is a nib too, but stands on the formatting bar for the row
+    # look; this one marks the rows a filter matched.
+    'highlight': [
+        ('shape', [(0.54, 0.06), (0.88, 0.34), (0.50, 0.72), (0.30, 0.52)]),
+        ('line', [(0.30, 0.52), (0.20, 0.74), (0.50, 0.72)]),
+        ('fill', [(0.08, 0.82), (0.92, 0.94)]),
     ],
     'cut': [
         ('line', [(0.24, 0.14), (0.72, 0.72)]),

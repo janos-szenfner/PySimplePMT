@@ -106,6 +106,12 @@ class DragDropTaskList(ctk.CTkFrame):
     #: the report and the list agree about what a critical row looks like.
     CRITICAL_ROW_BG = theme.GRID_CRITICAL_BG
 
+    #: Fill of a row one of the View tab's highlight filters matches. The
+    #: yellow MS Project's Highlight paints with - a different colour from
+    #: the critical red, so a row can be told apart when both apply; the
+    #: critical fill wins the argument, see _row_tag.
+    HIGHLIGHT_ROW_BG = theme.GRID_HIGHLIGHT_BG
+
     def _apply_grid_style(self):
         """
         Re-colour the task table's global ttk style for the current theme.
@@ -331,8 +337,12 @@ class DragDropTaskList(ctk.CTkFrame):
         if task.id in self._critical_task_ids:
             # Beats the row's own fill for the same reason the greying beats
             # its ink: it says what the row is doing now, and the reader
-            # turned it on to see exactly that
+            # turned it on to see exactly that. It also beats the highlight
+            # yellow: a row both critical and matched stays red, because
+            # "cannot slip" is the stronger thing to say about it.
             background = theme.now(self.CRITICAL_ROW_BG)
+        elif task.id in self._highlighted_task_ids:
+            background = theme.now(self.HIGHLIGHT_ROW_BG)
         else:
             background = resolved.fill_color or theme.now(
                 self.GRID_ROW_ALT if band == 'oddrow' else self.GRID_ROW_BASE)
@@ -489,6 +499,11 @@ class DragDropTaskList(ctk.CTkFrame):
         #: Rows painted as critical while the icon has the highlight on.
         #: Empty means the highlight is off; see show_critical_path_rows.
         self._critical_task_ids = set()
+
+        #: Rows painted yellow by the highlight filter the View tab last
+        #: picked. Held as ids, like the critical set, so the paint
+        #: survives the rebuild every edit causes; see show_highlighted_rows.
+        self._highlighted_task_ids = set()
 
         #: The baseline slot being compared, if any. Set here rather than
         #: first written by set_active_baseline, because column visibility
@@ -3835,6 +3850,42 @@ class DragDropTaskList(ctk.CTkFrame):
     def critical_path_rows_shown(self) -> bool:
         """Whether the highlight is on."""
         return bool(self._critical_task_ids)
+
+    def show_highlighted_rows(self, task_ids) -> int:
+        """
+        Paint the rows a highlight filter matched, and clear any before.
+
+        PARAMETERS:
+        -----------
+        task_ids : Iterable[str]
+            The tasks the filter answered. An empty one turns the paint
+            off, which is what clear_highlight does.
+
+        RETURNS:
+        --------
+        int
+            How many rows are painted now.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The same machinery as show_critical_path_rows, wearing the yellow
+        of MS Project's Highlight rather than the critical red. Held as ids
+        so the paint survives the rebuild every edit causes. A row both
+        critical and matched is drawn red - the critical fill wins, see
+        _row_tag - so the two can be on at once without one hiding the other.
+        """
+        self._highlighted_task_ids = set(task_ids)
+        self._apply_row_tag_colours()
+        self._paint_rows()
+        return len(self._highlighted_task_ids)
+
+    def clear_highlight(self):
+        """Take the highlight off, leaving every row as it was drawn."""
+        self.show_highlighted_rows(())
+
+    def highlighted_rows_shown(self) -> bool:
+        """Whether a highlight filter is painting rows."""
+        return bool(self._highlighted_task_ids)
 
     def _rows_in_display_order(self):
         """Every row in the tree, parents before their children."""

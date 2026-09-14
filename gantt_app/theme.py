@@ -166,6 +166,11 @@ SASH_DARK: Tuple[str, str] = ('#b0b0b0', '#2a2c30')
 GRID_CRITICAL_BG: Tuple[str, str] = ('#fde2e1', '#5a2b2a')
 GRID_TIGHT_BG: Tuple[str, str] = ('#fdf4d8', '#544a24')
 
+#: Rows the View tab's highlight paints: the same yellow MS Project marks
+#: a filtered row with. Paler than a selection so the banding still reads
+#: underneath it in spirit - the row is shaded, not picked out.
+GRID_HIGHLIGHT_BG: Tuple[str, str] = ('#fff3a6', '#5d5520')
+
 # ---- the chart -------------------------------------------------------------
 #
 # The on-screen chart only. What is *exported* stays light whatever the window

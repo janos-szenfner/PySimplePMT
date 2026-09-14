@@ -1081,6 +1081,12 @@ class Toolbar(ctk.CTkFrame):
         self._dashboard_factory = None
         #: Tracks View > Grid View Only; toggled from the menu.
         self.grid_view_only_var = ctk.BooleanVar(value=False)
+        #: Which highlight filter is painting rows, by its key in
+        #: HIGHLIGHT_FILTERS; None while none is on. Kept beside the paint
+        #: rather than in it - the list holds the ids, this holds which
+        #: question they answer - so the gallery can tick the entry and a
+        #: second pick of the same one knows to clear. See apply_highlight.
+        self._active_highlight = None
 
         # Create UI
         self._create_ui()
@@ -1144,6 +1150,39 @@ class Toolbar(ctk.CTkFrame):
     ICON_HANDLER_OVERRIDES = {
         'delete_selected': '_delete_selected_tasks',
     }
+
+    #: The standard highlight filters the View tab's gallery offers, in the
+    #: order the gallery lists them. Each entry is (key, menu label,
+    #: selector); the selector is asked of the whole project and answers
+    #: the ids of the rows to paint, so a filter that needs the whole plan
+    #: at once - Late asks which tasks are at risk - costs one pass rather
+    #: than one per row. Modelled on MS Project's Highlight list (issue
+    #: #51); the Critical entry that leads it there already has its own
+    #: button, so it is not repeated here, and the custom filter its menu
+    #: ends with is a later feature - the New and More entries hold its
+    #: place.
+    HIGHLIGHT_FILTERS = (
+        ('incomplete', "Incomplete Tasks",
+         lambda p: (t.id for t in p.tasks if t.progress < 100)),
+        ('unstarted', "Unstarted Tasks",
+         lambda p: (t.id for t in p.tasks if t.progress == 0)),
+        ('in_progress', "In Progress Tasks",
+         lambda p: (t.id for t in p.tasks if 0 < t.progress < 100)),
+        ('complete', "Complete Tasks",
+         lambda p: (t.id for t in p.tasks if t.progress >= 100)),
+        ('milestones', "Milestones",
+         lambda p: (t.id for t in p.tasks if t.effective_milestone)),
+        ('summary', "Summary Tasks",
+         lambda p: (t.id for t in p.tasks if t.is_container)),
+        ('deadlines', "Tasks With Deadlines",
+         lambda p: (t.id for t in p.tasks if t.deadline is not None)),
+        ('late', "Late Tasks",
+         lambda p: p.tasks_in_conflict()),
+        ('estimated', "Estimated Tasks",
+         lambda p: (t.id for t in p.tasks if t.status == 'Estimated')),
+        ('inactive', "Inactive Tasks",
+         lambda p: (t.id for t in p.tasks if t.status == 'Inactive')),
+    )
 
     def _connect_icon_toolbar(self):
         """
@@ -1218,6 +1257,7 @@ class Toolbar(ctk.CTkFrame):
             ],
             'compare': self._compare_gallery_items,
             'recent': self._recent_gallery_items,
+            'highlight': self._highlight_gallery_items,
         }
 
     def _compare_gallery_items(self):
@@ -2009,6 +2049,144 @@ class Toolbar(ctk.CTkFrame):
             self._report("Nothing is on the critical path: "
                          "every task has float.")
 
+    def _highlight_gallery_items(self):
+        """
+        What the Highlight button drops: the standard filters, then the
+        entries MS Project keeps at the bottom of the same menu.
+
+        The entry whose filter is painting rows carries a tick, the way the
+        compare gallery names its active slot; Clear Highlight is always
+        there because the paint is a state to leave, not only to enter.
+        New and More lead to the custom-filter feature issue #51 leaves for
+        a later version - they answer the click rather than sit dead.
+        """
+        items = []
+        for key, label, _selector in self.HIGHLIGHT_FILTERS:
+            active = "✓ " if self._active_highlight == key else ""
+            items.append({"label": f"{active}{label}",
+                          "command": partial(self.apply_highlight, key)})
+        items += [
+            {"type": "separator"},
+            {"label": "Clear Highlight", "command": self.clear_highlight},
+            {"label": "New Highlight Filter...",
+             "command": self.new_highlight_filter},
+            {"label": "More Highlight Filters...",
+             "command": self.more_highlight_filters},
+        ]
+        return items
+
+    def apply_highlight(self, which: str):
+        """
+        Paint the rows the named filter matches, in the highlight yellow.
+
+        A second pick of the filter already painting rows turns it off -
+        the same convention the critical-path button follows. Only one
+        filter is on at a time: a new pick replaces the old set of rows
+        rather than adding to it, because two yellows say no more than one.
+
+        The plan is settled first, as the critical path is settled: Late
+        reads finish dates, and a finish read before the links are applied
+        is a finish that changes the moment anything else touches the plan.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'show_highlighted_rows'):
+            return
+
+        if self._active_highlight == which:
+            self.clear_highlight()
+            return
+
+        entry = next((e for e in self.HIGHLIGHT_FILTERS if e[0] == which),
+                     None)
+        if entry is None:
+            return
+        _key, label, selector = entry
+
+        if self.project.apply_schedule() and self.on_project_changed:
+            self.on_project_changed()
+
+        painted = task_list.show_highlighted_rows(selector(self.project))
+        self._active_highlight = which
+        self._refresh_toggle_states()
+
+        logger.info("Highlight %s: %d row(s) painted", label, painted)
+        self._report(f"Highlight: {label} - {painted} row(s) painted.")
+
+    def clear_highlight(self):
+        """Take the highlight off, if one is on; a no-op pick otherwise."""
+        task_list = getattr(self, 'task_list', None)
+        was_on = self._active_highlight is not None
+        self._active_highlight = None
+        if task_list is not None and hasattr(task_list, 'clear_highlight'):
+            task_list.clear_highlight()
+        self._refresh_toggle_states()
+        if was_on:
+            logger.info("Highlight cleared")
+            self._report("Highlight off.")
+
+    def new_highlight_filter(self):
+        """Where the custom-filter builder will live; says so for now."""
+        messagebox.showinfo(
+            "New Highlight Filter",
+            "Custom highlight filters are planned for a future version. "
+            "The standard filters in the Highlight list cover the common "
+            "cases meanwhile.")
+        logger.info("New Highlight Filter asked for; "
+                    "custom filters are a future feature")
+
+    def more_highlight_filters(self):
+        """
+        Open the filter picker: every standard filter in one dialog.
+
+        The same list the gallery drops, as a window that stays open while
+        a filter is tried - MS Project's More Filters, over the standard
+        set the custom filters will join when they arrive (issue #51).
+        """
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Highlight Filters")
+        dialog.resizable(False, False)
+        dialog.transient(self.winfo_toplevel())
+
+        ctk.CTkLabel(
+            dialog, text="Paint the rows matching:",
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=12, pady=(12, 4))
+
+        def pick(which):
+            self.apply_highlight(which)
+            dialog.destroy()
+
+        for key, label, _selector in self.HIGHLIGHT_FILTERS:
+            active = "✓ " if self._active_highlight == key else ""
+            ctk.CTkButton(
+                dialog, text=f"{active}{label}", anchor="w",
+                fg_color="transparent", text_color=WIN_MENU_TEXT,
+                hover_color=WIN_MENU_HOVER,
+                command=partial(pick, key),
+            ).pack(fill="x", padx=12, pady=1)
+
+        ctk.CTkButton(
+            dialog, text="Clear Highlight",
+            command=lambda: (self.clear_highlight(), dialog.destroy()),
+        ).pack(fill="x", padx=12, pady=(8, 12))
+
+        grab_when_visible(dialog)
+        logger.info("Opening the highlight filter picker")
+
+    def _refresh_toggle_states(self):
+        """
+        Repaint the checked ribbon buttons, where they exist to repaint.
+
+        Gallery picks run as callables rather than through _perform, which
+        is where the ribbon otherwise refreshes its toggles - a filter
+        chosen from the Highlight list would paint rows and leave the
+        button unlit without this.
+        """
+        refresh = getattr(getattr(self, 'icon_toolbar', None),
+                          'refresh_checks', None)
+        if callable(refresh):
+            self.after_idle(refresh)
+
     def _redraw_critical_chart(self):
         """
         Redraw the chart so its bars take the highlight the list just took.
@@ -2363,6 +2541,17 @@ class Toolbar(ctk.CTkFrame):
         if self.clipboard_manager:
             self.clipboard_manager.clear()
             self.clipboard_manager.set_project(self.project)
+
+        # The highlight is a question asked of the plan that was open; a new
+        # plan has not answered it, and the ids it painted belong to rows
+        # that are gone. The critical path's paint goes the same way.
+        self._active_highlight = None
+        task_list = getattr(self, 'task_list', None)
+        if task_list is not None:
+            if hasattr(task_list, 'clear_highlight'):
+                task_list.clear_highlight()
+            if hasattr(task_list, 'clear_critical_path_rows'):
+                task_list.clear_critical_path_rows()
 
     def import_gan(self):
         """Import a GanttProject (.gan) file."""

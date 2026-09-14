@@ -183,6 +183,11 @@ class RibbonBar(IconToolbar):
                 _S('critical_path', 'Report...', 'show_critical_path',
                    tip="Critical Path...", key='critical_path_report'),
             )),
+            ("Highlight", (
+                _L('highlight', 'Highlight', '', gallery='highlight',
+                   tip="Paint the rows a filter matches",
+                   check='highlight', key='highlight'),
+            )),
             ("Appearance", (
                 _S('moon', 'Day / Night', '_toggle_theme',
                    tip="Switch between Day and Night",
@@ -712,6 +717,11 @@ class RibbonBar(IconToolbar):
             return bool(task_list is not None
                         and hasattr(task_list, 'critical_path_rows_shown')
                         and task_list.critical_path_rows_shown())
+        if which == 'highlight':
+            task_list = getattr(self, 'task_list', None)
+            return bool(task_list is not None
+                        and hasattr(task_list, 'highlighted_rows_shown')
+                        and task_list.highlighted_rows_shown())
         return False
 
     def _perform(self, action: str):
