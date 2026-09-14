@@ -817,8 +817,7 @@ class GridFilterDialog(ctk.CTkToplevel):
         self._history = list(history or [])
         #: The control each section feeds back into a spec, by column.
         self._controls = {}
-        self._suggest_after = None
-        self._suggest_popup = None
+        self._suggest_list = None
 
         head = ctk.CTkFrame(self, fg_color="transparent")
         head.pack(fill="x", padx=12, pady=(12, 4))
@@ -895,8 +894,44 @@ class GridFilterDialog(ctk.CTkToplevel):
                                           font=ctk.CTkFont(size=12))
         self._query_status.pack(fill="x", pady=(4, 0))
 
+        # The suggestion list is a child of the tab, laid over whatever
+        # sits under the box - the way Jira's dropdown is. It used to be a
+        # floating Toplevel, which lives outside the grab a modal dialog
+        # holds: its rows lit up on hover and took no clicks (views/
+        # modal.take_grab says why a grab is exclusive), and the window
+        # manager chose where it opened, which is why it wandered to a
+        # different corner of the screen each time. Inside the dialog it
+        # takes clicks, keeps its place under the box when the window is
+        # moved, and goes away with the dialog.
+        self._suggest_list = tk.Listbox(
+            tab, height=6, activestyle='dotbox', exportselection=0,
+            font=ctk.CTkFont(size=13),
+            bg=theme.now(theme.DROPDOWN_BG),
+            fg=theme.now(theme.FIELD_TEXT),
+            selectbackground=theme.now(theme.GRID_SELECT_BG),
+            selectforeground=theme.now(theme.FIELD_TEXT),
+            highlightthickness=1, relief='flat', borderwidth=0,
+            highlightbackground=theme.now(theme.SASH_BG),
+            highlightcolor=theme.now(theme.SASH_BG))
+        self._suggest_list.bind('<ButtonPress-1>', self._list_pressed)
+        self._suggest_list.bind('<ButtonRelease-1>',
+                                lambda _e: self._take_suggestion())
+        self._suggest_list.bind('<Return>',
+                                lambda _e: self._take_suggestion() or 'break')
+        self._suggest_list.bind('<Escape>', self._suggest_escape)
+        self._suggest_list.bind('<Up>', self._list_up, add='+')
+        self._suggest_list.bind('<Key>', self._list_key, add='+')
+        self._suggest_list.bind('<FocusOut>', self._suggest_focus_lost)
+
         self._query_entry.bind('<KeyRelease>', lambda _e:
                                self._query_changed())
+        # The caret can move without a keystroke; the list answers for
+        # where the click left it.
+        self._query_entry.bind('<ButtonRelease-1>', lambda _e:
+                               self.after_idle(self._offer_suggestions),
+                               add='+')
+        self._query_entry.bind('<FocusOut>', self._suggest_focus_lost)
+        self.bind('<Button-1>', self._outside_suggestion_click, add='+')
         self._query_entry.bind('<Return>', lambda _e: self._apply())
         self._query_entry.bind('<Escape>', lambda _e:
                                self._close_suggestions())
@@ -990,64 +1025,102 @@ class GridFilterDialog(ctk.CTkToplevel):
         prefix = text[start:cursor].lower()
         if prefix:
             found = [s for s in found if s.lower().startswith(prefix)]
-        if not found or (self._suggest_popup is not None
-                         and not self._suggest_popup.winfo_exists()):
+        if not found:
             self._close_suggestions()
-            if not found:
-                return
-        self._show_suggestions(found, start)
+            return
+        self._show_suggestions(found)
 
-    def _show_suggestions(self, items, word_start):
-        """Open or refill the popup under the entry."""
-        if self._suggest_popup is None or \
-                not self._suggest_popup.winfo_exists():
-            popup = tk.Toplevel(self)
-            popup.wm_overrideredirect(True)
-            popup.transient(self.winfo_toplevel())
-            listing = tk.Listbox(popup, height=min(8, len(items)),
-                                 activestyle='dotbox', exportselection=0)
-            listing.pack(fill="both", expand=True)
-            listing.bind('<ButtonRelease-1>', lambda _e:
-                         self._take_suggestion(word_start))
-            popup._listing = listing
-            self._suggest_popup = popup
-        listing = self._suggest_popup._listing
+    def _show_suggestions(self, items):
+        """Open or refill the list anchored under the entry."""
+        self.update_idletasks()
+        listing = self._suggest_list
         listing.delete(0, 'end')
         for item in items:
             listing.insert('end', item)
-        if items:
-            listing.selection_set(0)
-        try:
-            x = self._query_entry.winfo_rootx()
-            y = (self._query_entry.winfo_rooty()
-                 + self._query_entry.winfo_height() + 2)
-            self._suggest_popup.geometry(f"320x+{x}+{y}")
-        except tk.TclError:
-            pass
-        self._suggest_popup._word_start = word_start
+        listing.configure(height=min(8, len(items)))
+        listing.selection_clear(0, 'end')
+        listing.selection_set(0)
+        listing.activate(0)
+        listing.place(in_=self._query_entry, x=0,
+                      y=self._query_entry.winfo_height() + 2,
+                      relwidth=1.0)
+        listing.lift()
 
     def _open_suggestions(self):
-        """Down-arrow: pop the list and move focus into it."""
-        if self._suggest_popup is None or \
-                not self._suggest_popup.winfo_exists():
+        """Down-arrow: offer the list and move the selection into it."""
+        if not self._suggest_list.winfo_ismapped():
             self._offer_suggestions()
-            return
-        self._suggest_popup._listing.focus_set()
+        if self._suggest_list.winfo_ismapped():
+            self._suggest_list.focus_set()
+            return 'break'
 
-    def _take_suggestion(self, word_start=None):
+    def _list_pressed(self, event):
+        """A press in the list takes the focus and the row under it."""
+        listing = self._suggest_list
+        listing.focus_set()
+        index = listing.nearest(event.y)
+        if 0 <= index < listing.size():
+            listing.selection_clear(0, 'end')
+            listing.selection_set(index)
+            listing.activate(index)
+
+    def _list_up(self, _e):
+        """Up past the first row climbs back into the box."""
+        if self._suggest_list.index('active') <= 0:
+            self._query_entry.focus_set()
+            self._query_entry.icursor('end')
+            return 'break'
+
+    def _list_key(self, event):
+        """Typing in the list carries on typing in the box."""
+        if event.char and event.char.isprintable():
+            self._query_entry.focus_set()
+            self._query_entry.insert('insert', event.char)
+            self._query_changed()
+            return 'break'
+        if event.keysym == 'BackSpace':
+            pos = self._query_entry.index('insert')
+            if pos > 0:
+                self._query_entry.focus_set()
+                self._query_entry.delete(pos - 1, pos)
+                self._query_changed()
+            return 'break'
+
+    def _suggest_escape(self, _e):
+        """Escape: the list goes and the box gets the focus back."""
+        self._close_suggestions()
+        self._query_entry.focus_set()
+        return 'break'
+
+    def _outside_suggestion_click(self, event):
+        """A click that is not on the list puts the list away."""
+        if event.widget is not self._suggest_list:
+            self._close_suggestions()
+
+    def _suggest_focus_lost(self, _e):
+        # A click on the list moves the focus there to make the pick, so
+        # wait for it to land before deciding it wandered off.
+        self.after(120, self._close_unless_in_suggestions)
+
+    def _close_unless_in_suggestions(self):
+        if self.focus_get() is not self._suggest_list:
+            self._close_suggestions()
+
+    def _take_suggestion(self):
         """Write the picked suggestion over the word being typed."""
-        popup = self._suggest_popup
-        if popup is None or not popup.winfo_exists():
-            return
-        listing = popup._listing
-        picked = listing.get('active') or (
-            listing.get(0) if listing.size() else None)
-        if not picked:
+        listing = self._suggest_list
+        sel = listing.curselection()
+        if sel:
+            picked = listing.get(sel[0])
+        elif listing.size():
+            active = listing.index('active')
+            picked = listing.get(min(active, listing.size() - 1))
+        else:
             self._close_suggestions()
             return
         text = self._query_entry.get()
         cursor = self._query_entry.index('insert')
-        start = word_start if word_start is not None else cursor
+        start = cursor
         while start > 0 and (text[start - 1].isalnum()
                              or text[start - 1] in '._-'):
             start -= 1
@@ -1060,13 +1133,8 @@ class GridFilterDialog(ctk.CTkToplevel):
         self._query_changed()
 
     def _close_suggestions(self):
-        if self._suggest_popup is not None:
-            try:
-                if self._suggest_popup.winfo_exists():
-                    self._suggest_popup.destroy()
-            except tk.TclError:
-                pass
-            self._suggest_popup = None
+        if self._suggest_list is not None:
+            self._suggest_list.place_forget()
 
     def _tab_switched(self):
         """
@@ -1343,7 +1411,34 @@ class FilterDefinitionDialog(ctk.CTkToplevel):
             self._show_in_menu.set(bool(definition.get('show_in_menu', True)))
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self._fit_width()
         grab_when_visible(self)
+
+    def _fit_width(self):
+        """
+        Open - and regrow - wide enough for the widest row.
+
+        A date field with an 'is within' test draws a calendar box on each
+        side of its 'and'; a window sized for an ordinary row leaves the
+        second box and the row's delete button past the edge, inside a
+        canvas that clips what it cannot show rather than saying so. The
+        window takes the width the rows ask for once they are built and
+        again whenever a row is rebuilt wider. It only ever grows -
+        shrinking under the reader's hands would move what they are
+        looking at.
+        """
+        self.update_idletasks()
+        try:
+            needed = max((row['frame'].winfo_reqwidth()
+                          for row in self._rows), default=0)
+        except tk.TclError:
+            return
+        #: Room for the body's padding and for the scrollbar the canvas
+        #: adds when the rows grow tall enough to need one.
+        needed += 48
+        if needed > self.winfo_width():
+            self.geometry(
+                f"{needed}x{max(self.winfo_reqheight(), 300)}")
 
     # ------------------------------------------------------------------
     # Rows
@@ -1453,6 +1548,7 @@ class FilterDefinitionDialog(ctk.CTkToplevel):
             row['value2'] = value2
         # The row's own copy of the rule is spent once the boxes hold it.
         row['rule'] = None
+        self._fit_width()
 
     def _drop_row(self, row: Dict):
         """Take a row out of the grid; the last row empties instead."""

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.69.5 - 2026-09-15
+
+- **The Advanced filter's suggestions are a proper dropdown.** The list
+  was a floating window of its own, and a floating window sits outside
+  the grab a modal dialog holds - so its rows lit up on hover and took
+  no clicks, and the window manager chose where it opened, which is why
+  it wandered to a different corner of the screen each time. It is now
+  part of the window itself, anchored under the query box the way Jira's
+  is: click a row to take it, Down moves the selection into the list and
+  Up past the first row climbs back into the box, typing there carries
+  on typing the query, Enter takes the pick, Escape puts the list away,
+  and a click anywhere else does the same.
+- **Filter Definition opens wide enough for every field.** The window
+  sized itself for the name row and never saw how wide the rule grid
+  needed to be - a date field with an "is within" test draws a calendar
+  box on each side of its "and", and the second box and the row's delete
+  button sat past the edge where the scrolling canvas clips what it
+  cannot show. The window now opens wide enough for the rows and grows
+  again whenever a row is rebuilt wider. It only ever grows.
+
 ## 1.69.4 - 2026-09-15
 
 - **Filters can be named, saved and written as a query.** The Filter
