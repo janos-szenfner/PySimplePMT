@@ -151,6 +151,8 @@ class _ToolbarShell:
         self.clear_highlight = Toolbar.clear_highlight.__get__(self)
         self._highlight_gallery_items = (
             Toolbar._highlight_gallery_items.__get__(self))
+        self._custom_filters_in_menu = (
+            Toolbar._custom_filters_in_menu.__get__(self))
         self._refresh_toggle_states = (
             Toolbar._refresh_toggle_states.__get__(self))
         self.new_highlight_filter = (

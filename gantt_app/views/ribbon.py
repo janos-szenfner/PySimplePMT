@@ -190,6 +190,7 @@ class RibbonBar(IconToolbar):
             )),
             ("Filter", (
                 _L('filter', 'Filter', 'open_grid_filter',
+                   gallery='grid_filter',
                    tip="Show only the rows the columns' rules pass",
                    check='grid_filter', key='grid_filter'),
                 _S('clear_style', 'Clear', 'clear_grid_filter',

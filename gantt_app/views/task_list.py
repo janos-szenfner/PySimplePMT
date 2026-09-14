@@ -3488,18 +3488,23 @@ class DragDropTaskList(ctk.CTkFrame):
             return False
         return task.id not in visible
 
-    def apply_grid_filters(self, filters: dict, variances: dict = None):
+    def apply_grid_filters(self, filters: dict = None, variances: dict = None,
+                           definition: dict = None):
         """
         Show only the rows every set column filter passes.
 
         PARAMETERS:
         -----------
-        filters : dict
+        filters : dict, optional
             Column name to spec - see gantt_app.views.gridfilter for the
             shapes. Empty, or specs that all ask nothing, puts every row
             back.
         variances : dict, optional
             The baseline compare's answers, for the baseline columns.
+        definition : dict, optional
+            A named saved filter - the shape custom_filters carries. Given
+            instead of filters: the More Filters dialog's Apply calls with
+            one.
 
         RETURNS:
         --------
@@ -3516,12 +3521,36 @@ class DragDropTaskList(ctk.CTkFrame):
         the tree on its own.
         """
         from gantt_app.views.gridfilter import (
+            definition_matching_ids, definition_visible_ids,
             filtered_task_ids, matching_task_ids)
 
-        self._filter_visible = filtered_task_ids(self.project, filters,
-                                                 variances)
-        self._filter_matches = matching_task_ids(self.project, filters,
-                                                 variances)
+        if definition is not None:
+            self._filter_visible = definition_visible_ids(
+                self.project, definition, variances)
+            self._filter_matches = definition_matching_ids(
+                self.project, definition, variances)
+        else:
+            self._filter_visible = filtered_task_ids(
+                self.project, filters or {}, variances)
+            self._filter_matches = matching_task_ids(
+                self.project, filters or {}, variances)
+        self.update_task_list()
+        return len(self._filter_matches), len(self.project.tasks)
+
+    def apply_matching_ids(self, matches):
+        """
+        Filter the grid to a match set computed elsewhere.
+
+        The standard filters answer "which tasks" with a selector over the
+        plan rather than a column spec or a definition; this is the door
+        they come in through - the manager's Apply on one of them, where
+        the ancestors get walked the same way.
+        """
+        from gantt_app.views.gridfilter import _with_ancestors
+
+        self._filter_matches = set(matches)
+        self._filter_visible = _with_ancestors(self.project,
+                                               self._filter_matches)
         self.update_task_list()
         return len(self._filter_matches), len(self.project.tasks)
 

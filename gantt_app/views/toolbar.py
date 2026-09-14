@@ -1092,6 +1092,11 @@ class Toolbar(ctk.CTkFrame):
         #: _filter_visible is the state; this is its echo for the dialog.
         self._grid_filters = {}
         self._grid_filter_dialog = None
+        #: The named filter applied as a grid filter, by name; None while
+        #: the grid is ruled by the column specs (or nothing). Kept apart
+        #: from _grid_filters because a definition is not column specs -
+        #: it has And/Or rows and tests the per-column window cannot draw.
+        self._active_named_filter = None
 
         # Create UI
         self._create_ui()
@@ -1263,6 +1268,7 @@ class Toolbar(ctk.CTkFrame):
             'compare': self._compare_gallery_items,
             'recent': self._recent_gallery_items,
             'highlight': self._highlight_gallery_items,
+            'grid_filter': self._grid_filter_gallery_items,
         }
 
     def _compare_gallery_items(self):
@@ -2054,6 +2060,11 @@ class Toolbar(ctk.CTkFrame):
             self._report("Nothing is on the critical path: "
                          "every task has float.")
 
+    def _custom_filters_in_menu(self):
+        """The saved filters marked Show in menu, in file order."""
+        return [d for d in getattr(self.project, 'custom_filters', [])
+                if d.get('show_in_menu')]
+
     def _highlight_gallery_items(self):
         """
         What the Highlight button drops: the standard filters, then the
@@ -2062,13 +2073,18 @@ class Toolbar(ctk.CTkFrame):
         The entry whose filter is painting rows carries a tick, the way the
         compare gallery names its active slot; Clear Highlight is always
         there because the paint is a state to leave, not only to enter.
-        New and More lead to the custom-filter feature issue #51 leaves for
-        a later version - they answer the click rather than sit dead.
+        Custom filters marked Show in menu list after the standard set, and
+        New/More open the definition builder and the filter manager.
         """
         items = []
         for key, label, _selector in self.HIGHLIGHT_FILTERS:
             active = "✓ " if self._active_highlight == key else ""
             items.append({"label": f"{active}{label}",
+                          "command": partial(self.apply_highlight, key)})
+        for definition in self._custom_filters_in_menu():
+            key = f"custom:{definition['name']}"
+            active = "✓ " if self._active_highlight == key else ""
+            items.append({"label": f"{active}{definition['name']}",
                           "command": partial(self.apply_highlight, key)})
         items += [
             {"type": "separator"},
@@ -2076,6 +2092,31 @@ class Toolbar(ctk.CTkFrame):
             {"label": "New Highlight Filter...",
              "command": self.new_highlight_filter},
             {"label": "More Highlight Filters...",
+             "command": self.more_highlight_filters},
+        ]
+        return items
+
+    def _grid_filter_gallery_items(self):
+        """
+        What the Filter button drops: the saved filters marked Show in
+        menu, applied as grid filters rather than paint.
+
+        The list is MS Project's filter dropdown: the named entries apply
+        on a click and tick while they are ruling rows, and the window the
+        main button opens sits at the bottom for the per-column rules.
+        """
+        items = []
+        for definition in self._custom_filters_in_menu():
+            name = definition['name']
+            active = "✓ " if self._active_named_filter == name else ""
+            items.append({"label": f"{active}{name}",
+                          "command": partial(self.apply_named_filter, name)})
+        if items:
+            items.append({"type": "separator"})
+        items += [
+            {"label": "Filter by Columns...",
+             "command": self.open_grid_filter},
+            {"label": "More Filters...",
              "command": self.more_highlight_filters},
         ]
         return items
@@ -2101,16 +2142,34 @@ class Toolbar(ctk.CTkFrame):
             self.clear_highlight()
             return
 
-        entry = next((e for e in self.HIGHLIGHT_FILTERS if e[0] == which),
-                     None)
-        if entry is None:
-            return
-        _key, label, selector = entry
+        if which.startswith('custom:'):
+            # A saved filter paints the rows it matches - the More Filters
+            # dialog's Highlight button asks for the same thing.
+            name = which[len('custom:'):]
+            definition = self._find_custom_filter(name)
+            if definition is None:
+                return
+            label = name
 
-        if self.project.apply_schedule() and self.on_project_changed:
-            self.on_project_changed()
+            if self.project.apply_schedule() and self.on_project_changed:
+                self.on_project_changed()
 
-        painted = task_list.show_highlighted_rows(selector(self.project))
+            from gantt_app.views.gridfilter import definition_matching_ids
+            ids = definition_matching_ids(
+                self.project, definition,
+                getattr(task_list, '_task_variances', None))
+            painted = task_list.show_highlighted_rows(iter(ids))
+        else:
+            entry = next((e for e in self.HIGHLIGHT_FILTERS
+                          if e[0] == which), None)
+            if entry is None:
+                return
+            _key, label, selector = entry
+
+            if self.project.apply_schedule() and self.on_project_changed:
+                self.on_project_changed()
+
+            painted = task_list.show_highlighted_rows(selector(self.project))
         self._active_highlight = which
         self._refresh_toggle_states()
 
@@ -2129,54 +2188,175 @@ class Toolbar(ctk.CTkFrame):
             logger.info("Highlight cleared")
             self._report("Highlight off.")
 
+    def _find_custom_filter(self, name: str):
+        """The saved filter of a name, or None where the plan has none."""
+        return next((d for d in getattr(self.project, 'custom_filters', [])
+                     if d.get('name') == name), None)
+
+    def _save_custom_filter(self, definition: dict, old_name: str = None):
+        """
+        Put a definition into the plan's saved filters.
+
+        An old_name means the definition is an edit of that filter and
+        replaces it in place rather than joining at the end. Saving marks
+        the plan changed - the filters live in the file.
+        """
+        filters = getattr(self.project, 'custom_filters', None)
+        if filters is None:
+            self.project.custom_filters = filters = []
+        if old_name is not None:
+            for index, existing in enumerate(filters):
+                if existing.get('name') == old_name:
+                    filters[index] = definition
+                    break
+            else:
+                filters.append(definition)
+        else:
+            filters.append(definition)
+        if self.on_project_changed:
+            self.on_project_changed()
+        logger.info("Saved filter %r (%d rule(s))",
+                    definition.get('name'),
+                    len(definition.get('rules') or ()))
+
+    def _open_filter_definition(self, definition: dict = None,
+                                old_name: str = None):
+        """The builder window, empty for New or filled for Edit."""
+        from gantt_app.views.gridfilter import (
+            FilterDefinitionDialog, choice_values)
+
+        task_list = getattr(self, 'task_list', None)
+        context = {'variances': getattr(task_list, '_task_variances', None)
+                   or {}}
+        FilterDefinitionDialog(
+            self.winfo_toplevel(),
+            values_for=lambda c: choice_values(self.project, c, context),
+            definition=definition,
+            on_save=lambda d: self._save_custom_filter(d, old_name))
+        logger.info("Opening the filter definition for %s",
+                    old_name or "a new filter")
+
     def new_highlight_filter(self):
-        """Where the custom-filter builder will live; says so for now."""
-        messagebox.showinfo(
-            "New Highlight Filter",
-            "Custom highlight filters are planned for a future version. "
-            "The standard filters in the Highlight list cover the common "
-            "cases meanwhile.")
-        logger.info("New Highlight Filter asked for; "
-                    "custom filters are a future feature")
+        """Build a filter from scratch - MS Project's New button."""
+        self._open_filter_definition()
 
     def more_highlight_filters(self):
         """
-        Open the filter picker: every standard filter in one dialog.
+        Open the filter manager: standard and saved filters in one list.
 
-        The same list the gallery drops, as a window that stays open while
-        a filter is tried - MS Project's More Filters, over the standard
-        set the custom filters will join when they arrive (issue #51).
+        MS Project's More Filters dialog: Apply filters the grid to the
+        matches, Highlight paints them instead, and New/Edit/Copy/Delete
+        manage the saved set. The dialog stays open so a filter can be
+        tried and swapped without reopening.
         """
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Highlight Filters")
-        dialog.resizable(False, False)
-        dialog.transient(self.winfo_toplevel())
+        from gantt_app.views.gridfilter import MoreFiltersDialog
 
-        ctk.CTkLabel(
-            dialog, text="Paint the rows matching:",
-            font=ctk.CTkFont(size=12),
-        ).pack(anchor="w", padx=12, pady=(12, 4))
+        entries = [(key, label, 'standard')
+                   for key, label, _s in self.HIGHLIGHT_FILTERS]
+        entries += [(d['name'], d['name'], 'custom')
+                    for d in getattr(self.project, 'custom_filters', [])]
 
-        def pick(which):
-            self.apply_highlight(which)
-            dialog.destroy()
+        MoreFiltersDialog(
+            self.winfo_toplevel(), entries,
+            callbacks={
+                'apply': self._more_filters_apply,
+                'highlight': self._more_filters_highlight,
+                'new': self.new_highlight_filter,
+                'edit': self._more_filters_edit,
+                'copy': self._more_filters_copy,
+                'delete': self._more_filters_delete,
+            })
+        logger.info("Opening the filter manager (%d entries)",
+                    len(entries))
 
-        for key, label, _selector in self.HIGHLIGHT_FILTERS:
-            active = "✓ " if self._active_highlight == key else ""
-            ctk.CTkButton(
-                dialog, text=f"{active}{label}", anchor="w",
-                fg_color="transparent", text_color=WIN_MENU_TEXT,
-                hover_color=WIN_MENU_HOVER,
-                command=partial(pick, key),
-            ).pack(fill="x", padx=12, pady=1)
+    def _more_filters_apply(self, key: str):
+        """The manager's Apply: filter the grid to the selected rows."""
+        if any(e[0] == key for e in self.HIGHLIGHT_FILTERS):
+            entry = next(e for e in self.HIGHLIGHT_FILTERS if e[0] == key)
+            _k, label, selector = entry
+            task_list = getattr(self, 'task_list', None)
+            if task_list is None:
+                return
+            matches = set(selector(self.project))
+            task_list.apply_matching_ids(matches)
+            self._grid_filters = {}
+            self._active_named_filter = None
+            self._refresh_toggle_states()
+            logger.info("Filter %s applied: %d row(s)", label, len(matches))
+            self._report(f"Filter: {label} - {len(matches)} row(s) shown.")
+            return
+        self.apply_named_filter(key)
 
-        ctk.CTkButton(
-            dialog, text="Clear Highlight",
-            command=lambda: (self.clear_highlight(), dialog.destroy()),
-        ).pack(fill="x", padx=12, pady=(8, 12))
+    def _more_filters_highlight(self, key: str):
+        """The manager's Highlight: paint the selected filter's rows."""
+        if any(e[0] == key for e in self.HIGHLIGHT_FILTERS):
+            self.apply_highlight(key)
+        else:
+            self.apply_highlight(f"custom:{key}")
 
-        grab_when_visible(dialog)
-        logger.info("Opening the highlight filter picker")
+    def _more_filters_edit(self, name: str):
+        """The manager's Edit: open the selected saved filter."""
+        definition = self._find_custom_filter(name)
+        if definition is not None:
+            self._open_filter_definition(definition, old_name=name)
+
+    def _more_filters_copy(self, name: str):
+        """The manager's Copy: a second saved filter under a new name."""
+        import copy as _copy
+        definition = self._find_custom_filter(name)
+        if definition is None:
+            return
+        clone = _copy.deepcopy(definition)
+        clone['name'] = f"{name} copy"
+        self._save_custom_filter(clone)
+
+    def _more_filters_delete(self, name: str):
+        """The manager's Delete: take the selected saved filter out."""
+        filters = getattr(self.project, 'custom_filters', [])
+        remaining = [d for d in filters if d.get('name') != name]
+        if len(remaining) == len(filters):
+            return
+        self.project.custom_filters = remaining
+        if self._active_named_filter == name:
+            self._active_named_filter = None
+            task_list = getattr(self, 'task_list', None)
+            if task_list is not None:
+                task_list.clear_grid_filters()
+        if self._active_highlight == f"custom:{name}":
+            self.clear_highlight()
+        if self.on_project_changed:
+            self.on_project_changed()
+        self._refresh_toggle_states()
+        logger.info("Deleted filter %r", name)
+        self._report(f"Filter '{name}' deleted.")
+
+    def apply_named_filter(self, name: str):
+        """
+        Filter the grid to a saved filter's rows.
+
+        The gallery's pick for a custom filter - the same rule as the
+        highlight picks: re-picking the one in force turns it off.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'apply_grid_filters'):
+            return
+        if self._active_named_filter == name:
+            self.clear_grid_filter()
+            return
+        definition = self._find_custom_filter(name)
+        if definition is None:
+            return
+        if self.project.apply_schedule() and self.on_project_changed:
+            self.on_project_changed()
+        shown, total = task_list.apply_grid_filters(
+            definition=definition,
+            variances=getattr(task_list, '_task_variances', None))
+        self._active_named_filter = name
+        self._grid_filters = {}
+        self._refresh_toggle_states()
+        logger.info("Named filter %r applied: %d of %d row(s) shown",
+                    name, shown, total)
+        self._report(f"Filter: {name} - {shown} of {total} rows shown.")
 
     def open_grid_filter(self):
         """
@@ -2216,7 +2396,42 @@ class Toolbar(ctk.CTkFrame):
             current=getattr(self, '_grid_filters', None) or {},
             values=lambda c: choice_values(self.project, c, context),
             on_apply=self._apply_grid_filters,
-            on_clear=self.clear_grid_filter)
+            on_clear=self.clear_grid_filter,
+            on_save_as=self._save_specs_as_filter)
+
+    def _save_specs_as_filter(self, specs: dict):
+        """
+        Name the column window's rules and keep them as a saved filter.
+
+        MS Project's AutoFilter Save: the specs become definition rules,
+        and the named filter lists in the menus and the manager from then
+        on. A name is only asked for when there is something to save.
+        """
+        from tkinter import simpledialog
+        from gantt_app.views.gridfilter import specs_to_rules
+
+        rules = specs_to_rules(specs, self.project)
+        if not rules:
+            messagebox.showinfo(
+                "Save Filter",
+                "There is nothing set to save - give a column a rule "
+                "first.")
+            return
+        name = simpledialog.askstring(
+            "Save Filter", "Name for this filter:",
+            parent=self._grid_filter_dialog or self.winfo_toplevel())
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        if self._find_custom_filter(name) is not None:
+            messagebox.showinfo(
+                "Save Filter",
+                f"A filter named '{name}' already exists - "
+                "edit it from More Filters instead.")
+            return
+        self._save_custom_filter({'name': name, 'show_in_menu': True,
+                                  'rules': rules})
+        self._report(f"Filter '{name}' saved.")
 
     def _apply_grid_filters(self, specs: dict):
         """What the filter window's Apply asks of the grid."""
@@ -2224,6 +2439,7 @@ class Toolbar(ctk.CTkFrame):
         if task_list is None:
             return
         self._grid_filters = dict(specs or {})
+        self._active_named_filter = None
         shown, total = task_list.apply_grid_filters(
             self._grid_filters,
             getattr(task_list, '_task_variances', None))
@@ -2235,6 +2451,7 @@ class Toolbar(ctk.CTkFrame):
     def clear_grid_filter(self):
         """Take every column filter off the grid."""
         self._grid_filters = {}
+        self._active_named_filter = None
         task_list = getattr(self, 'task_list', None)
         if task_list is not None and hasattr(task_list, 'clear_grid_filters'):
             task_list.clear_grid_filters()
@@ -2617,6 +2834,7 @@ class Toolbar(ctk.CTkFrame):
         # go the same way.
         self._active_highlight = None
         self._grid_filters = {}
+        self._active_named_filter = None
         task_list = getattr(self, 'task_list', None)
         if task_list is not None:
             if hasattr(task_list, 'clear_highlight'):

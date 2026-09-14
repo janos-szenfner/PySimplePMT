@@ -105,6 +105,25 @@ def _draw_calendar(size: int):
     return image.resize((size, size), Image.LANCZOS)
 
 
+def parse_date(text) -> Optional[datetime]:
+    """
+    The date a box's text means, or None when it is not one.
+
+    Dots and slashes are taken as well as the displayed dashes - someone
+    typing 2026.09.01 has written a date, not made a mistake. The filter
+    definitions ask this too, which is why it stands alone from the widget.
+    """
+    text = str(text or '').strip()
+    if not text:
+        return None
+    for mark in ('.', '/'):
+        text = text.replace(mark, '-')
+    try:
+        return datetime.strptime(text, DATE_FORMAT)
+    except ValueError:
+        return None
+
+
 def calendar_icon(size: int = 16):
     """
     The calendar glyph for the button that opens the month view.
@@ -196,17 +215,7 @@ class DateEntry(ctk.CTkFrame):
 
     def get_date(self) -> Optional[datetime]:
         """The date in the box, or None when it is empty or unparseable."""
-        text = self.entry.get().strip()
-        if not text:
-            return None
-        # Dots and slashes are accepted as well as the displayed dashes -
-        # someone typing 2026.09.01 has written a date, not made a mistake.
-        for mark in ('.', '/'):
-            text = text.replace(mark, '-')
-        try:
-            return datetime.strptime(text, DATE_FORMAT)
-        except ValueError:
-            return None
+        return parse_date(self.entry.get())
 
     def set_date(self, date: datetime):
         """Put a date in the box, replacing whatever was there."""

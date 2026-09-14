@@ -1399,6 +1399,11 @@ class Project:
             GRID_DATA_COLUMNS, ('Label',)))
     resource_repository: ResourceRepository = field(
         default_factory=ResourceRepository, compare=False)
+    #: The named filters saved in the plan - see gantt_app.views.gridfilter
+    #: for what a definition holds. Saved with the file because a filter is
+    #: part of how the plan is read, the way MS Project keeps custom
+    #: filters in the .mpp.
+    custom_filters: List[dict] = field(default_factory=list)
 
     def calendar_for(self, task: Task) -> WorkingCalendar:
         """
@@ -3312,6 +3317,7 @@ class Project:
             'hours_per_day': self.hours_per_day,
             'hidden_grid_columns': list(self.hidden_grid_columns),
             'grid_column_order': list(self.grid_column_order),
+            'custom_filters': self._write_custom_filters(),
             **self.resource_repository.to_dict(),
         }
 
@@ -3344,6 +3350,63 @@ class Project:
         order = [c for c in saved if c in GRID_DATA_COLUMNS]
         order += [c for c in GRID_DATA_COLUMNS if c not in order]
         return order
+
+    def _write_custom_filters(self) -> List[dict]:
+        """
+        The saved filters, pared to what a file can hold.
+
+        A definition is already plain data - a name, a show-in-menu flag
+        and a list of rule dictionaries whose values are strings - so this
+        mostly copies. Anything that is not that shape is left out rather
+        than written, for the same reason _read_date declines to raise.
+        """
+        written = []
+        for definition in self.custom_filters or []:
+            if not isinstance(definition, dict):
+                continue
+            name = definition.get('name')
+            rules = definition.get('rules')
+            if not isinstance(name, str) or not isinstance(rules, list):
+                continue
+            written.append({
+                'name': name,
+                'show_in_menu': bool(definition.get('show_in_menu')),
+                'rules': [dict(rule) for rule in rules
+                          if isinstance(rule, dict)],
+            })
+        return written
+
+    @staticmethod
+    def _read_custom_filters(value) -> List[dict]:
+        """
+        The saved filters a file carries.
+
+        Shape is checked, meaning is not: whether a field name or a test is
+        one this build knows is a question for the matching code when the
+        filter is applied, and a filter naming a column that no longer
+        exists simply matches nothing until it is edited. What is dropped
+        here is only what could never have been a filter.
+        """
+        read = []
+        for definition in value if isinstance(value, list) else []:
+            if not isinstance(definition, dict):
+                continue
+            name = definition.get('name')
+            rules = definition.get('rules')
+            if (not isinstance(name, str) or not name.strip()
+                    or not isinstance(rules, list)
+                    or not all(isinstance(rule, dict) and
+                               isinstance(rule.get('field'), str)
+                               for rule in rules)):
+                logger.warning("Ignoring unreadable saved filter %r",
+                               name)
+                continue
+            read.append({
+                'name': name.strip(),
+                'show_in_menu': bool(definition.get('show_in_menu')),
+                'rules': [dict(rule) for rule in rules],
+            })
+        return read
 
     @staticmethod
     def _read_date(value) -> Optional[datetime]:
@@ -3425,6 +3488,10 @@ class Project:
                 'resources': data.get('resources', []),
                 'teams': data.get('teams', []),
             }),
+            # Absent from every plan saved before filters could be named;
+            # an empty list is what those plans meant.
+            custom_filters=cls._read_custom_filters(
+                data.get('custom_filters')),
         )
         
         # Add tasks manually
