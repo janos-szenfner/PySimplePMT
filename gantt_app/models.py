@@ -142,6 +142,34 @@ DEFAULT_EFFORT_DRIVEN = True
 #: setting; 8 unless the plan says otherwise.
 DEFAULT_HOURS_PER_DAY = 8.0
 
+#: The task grid's data columns in their factory order - what a plan that
+#: has never been rearranged shows. The tree column ('#0', Task Name) is
+#: not in it: it carries the outline's expander, so it is neither hideable
+#: nor movable. Saved on the project so the layout travels with the file.
+GRID_DATA_COLUMNS = (
+    'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
+    'Progress', 'Dependencies', 'Milestone', 'Outline',
+    'Baseline Start', 'Start Variance', 'Baseline Finish',
+    'Finish Variance', 'Baseline Duration', 'Duration Variance',
+    'Baseline Work', 'Work Variance', 'Baseline Cost',
+    'Cost Variance', 'Task Calendar',
+)
+
+
+def order_grid_columns(order, hidden) -> List[str]:
+    """
+    The column order with the hidden ones gathered at the end.
+
+    A column nobody can see has no place among the ones they can, so the
+    layout keeps the viewable ones first in their saved order and the
+    hidden ones after in theirs. A column that comes back from Hidden
+    lands at the end rather than wherever it once stood.
+    """
+    hidden = set(hidden or ())
+    order = list(order or ())
+    return ([c for c in order if c not in hidden]
+            + [c for c in order if c in hidden])
+
 #: Task type display labels
 TASK_TYPE_LABELS = {
     'Phase': 'Phase',
@@ -1352,6 +1380,13 @@ class Project:
     #: Grid tab in Settings is where the list is edited.
     hidden_grid_columns: List[str] = field(
         default_factory=lambda: ['Label'])
+    #: The order the grid's data columns stand in. Dragging a column's
+    #: heading rearranges it; the Task Grid tab's reset button puts it
+    #: back to GRID_DATA_COLUMNS. Hidden columns always trail it, so the
+    #: default already has Label - hidden by default - at the end.
+    grid_column_order: List[str] = field(
+        default_factory=lambda: order_grid_columns(
+            GRID_DATA_COLUMNS, ('Label',)))
     resource_repository: ResourceRepository = field(
         default_factory=ResourceRepository, compare=False)
 
@@ -3266,6 +3301,7 @@ class Project:
             'priority': self.priority,
             'hours_per_day': self.hours_per_day,
             'hidden_grid_columns': list(self.hidden_grid_columns),
+            'grid_column_order': list(self.grid_column_order),
             **self.resource_repository.to_dict(),
         }
 
@@ -3283,6 +3319,21 @@ class Project:
         except (TypeError, ValueError):
             return DEFAULT_HOURS_PER_DAY
         return hours if hours > 0 else DEFAULT_HOURS_PER_DAY
+
+    @staticmethod
+    def _read_grid_column_order(value) -> List[str]:
+        """
+        A full column order from a saved plan.
+
+        The saved list is a suggestion, not the truth: names this build no
+        longer has are dropped, names it has gained are appended at the
+        end, and anything that is not a list at all reads as the default.
+        The grid can then treat the result as complete.
+        """
+        saved = list(value) if isinstance(value, (list, tuple)) else []
+        order = [c for c in saved if c in GRID_DATA_COLUMNS]
+        order += [c for c in GRID_DATA_COLUMNS if c not in order]
+        return order
 
     @staticmethod
     def _read_date(value) -> Optional[datetime]:
@@ -3352,6 +3403,13 @@ class Project:
             # Absent from plans saved before the columns could be hidden -
             # they read the way the field defaults: Label out of view.
             hidden_grid_columns=list(
+                data.get('hidden_grid_columns', ['Label'])),
+            # A saved order can name columns the build no longer has, or
+            # miss ones added since - keep the known ones in their saved
+            # order and put the rest at the end, rather than trusting it.
+            # Then the standing rule: whatever is hidden trails the rest.
+            grid_column_order=order_grid_columns(
+                cls._read_grid_column_order(data.get('grid_column_order')),
                 data.get('hidden_grid_columns', ['Label'])),
             resource_repository=ResourceRepository.from_dict({
                 'resources': data.get('resources', []),

@@ -106,7 +106,9 @@ class InlineEditingTestCase(unittest.TestCase):
         if column == '#0':
             reference = '#0'
         else:
-            columns = list(self.task_list.tree.cget('columns'))
+            # Tk counts the columns on show, not the full set: with one
+            # hidden, '#4' means the fourth *displayed* column.
+            columns = self.task_list._shown_columns()
             reference = f"#{columns.index(column) + 1}"
 
         self.task_list.tree.identify_row = lambda _y: task_id
@@ -879,6 +881,12 @@ class TestTheLabelColumn(InlineEditingTestCase):
     scheduling, which is what makes it editable on every row, containers
     included.
     """
+
+    def setUp(self):
+        """Show the column under test - the grid hides it by default now."""
+        super().setUp()
+        self.project.hidden_grid_columns = []
+        self.task_list.apply_column_visibility()
 
     def label_of(self, task_id='u1') -> str:
         """What the plan says the row is tagged with."""

@@ -30,7 +30,8 @@ from typing import Callable, Optional, List
 import customtkinter as ctk
 
 from gantt_app import theme
-from gantt_app.models import TASK_TYPES, Task, Project
+from gantt_app.models import (
+    TASK_TYPES, GRID_DATA_COLUMNS, order_grid_columns, Task, Project)
 from gantt_app.calendarregistry import PROJECT_DEFAULT_LABEL
 from gantt_app.dependencysyntax import format_links
 from gantt_app.taskstyle import resolve as resolve_style
@@ -458,6 +459,14 @@ class DragDropTaskList(ctk.CTkFrame):
         self._drop_parent_tags = ()
         self._drop_line_widget = None
 
+        # The heading-press half of the same gesture: a press on a column
+        # title is a possible column move, tracked apart from a row drag.
+        # _heading_drop is the (name, after) edge the line last stood on.
+        self._pressed_heading = None
+        self._dragging_heading = False
+        self._heading_drop = None
+        self._heading_line_widget = None
+
         #: Called when the rows on show change or scroll; see on_rows_changed
         self._row_watchers = []
 
@@ -828,8 +837,18 @@ class DragDropTaskList(ctk.CTkFrame):
         except ValueError:
             return None
 
-        columns = self.tree.cget('columns')
+        # identify_column counts the columns on show, not the full set:
+        # with Label hidden, '#1' is the first *displayed* column, and a
+        # rearranged layout shifts every position after the moved one.
+        columns = self._shown_columns()
         return columns[index] if 0 <= index < len(columns) else None
+
+    def _shown_columns(self):
+        """The data columns currently on show, in their display order."""
+        shown = self.tree.cget('displaycolumns')
+        if shown in ('#all', '', ()):
+            shown = self.tree.cget('columns')
+        return [shown] if isinstance(shown, str) else list(shown)
 
     def _open_cell_editor(self, task_id: str, column: str, current: str,
                           commit):
@@ -2058,18 +2077,11 @@ class DragDropTaskList(ctk.CTkFrame):
         except (tk.TclError, ValueError):
             pass
 
-    #: Every data column the grid can show, in the order the tree was
-    #: built with. The name is not in it - it lives in the tree column
-    #: (#0), which the expander needs, so it is never a candidate for
-    #: hiding.
-    DATA_COLUMNS = (
-        'Label', 'Type', 'Status', 'Duration', 'Start', 'End',
-        'Progress', 'Dependencies', 'Milestone', 'Outline',
-        'Baseline Start', 'Start Variance', 'Baseline Finish',
-        'Finish Variance', 'Baseline Duration', 'Duration Variance',
-        'Baseline Work', 'Work Variance', 'Baseline Cost',
-        'Cost Variance', 'Task Calendar',
-    )
+    #: Every data column the grid can show, in factory order. The name is
+    #: not in it - it lives in the tree column (#0), which the expander
+    #: needs, so it is never a candidate for hiding or moving. Defined on
+    #: the model: the layout is part of the file, so the factory order is.
+    DATA_COLUMNS = GRID_DATA_COLUMNS
 
     #: The columns that only mean anything while a baseline is being
     #: compared; they leave with it whatever the visibility setting says.
@@ -2093,10 +2105,61 @@ class DragDropTaskList(ctk.CTkFrame):
             return
         hidden = set(getattr(self.project, 'hidden_grid_columns', ()) or ())
         self.tree['displaycolumns'] = tuple(
-            column for column in self.DATA_COLUMNS
+            column for column in self.column_order()
             if column not in hidden
             and (self._baseline_slot is not None
                  or column not in self.BASELINE_COLUMNS))
+
+    def column_order(self):
+        """
+        The data columns in the order the plan lays them out.
+
+        The saved order is trusted only as far as it names real columns;
+        anything missing joins at the end, so a plan saved by an older or
+        newer build still shows every column it knows.
+        """
+        saved = getattr(self.project, 'grid_column_order', ()) or ()
+        order = [c for c in saved if c in self.DATA_COLUMNS]
+        order += [c for c in self.DATA_COLUMNS if c not in order]
+        hidden = getattr(self.project, 'hidden_grid_columns', ()) or ()
+        return order_grid_columns(order, hidden)
+
+    def move_column(self, name, target, after=False):
+        """
+        Put a column before (or after) another and remember the layout.
+
+        What a heading drag does on release. The order lives on the plan,
+        so it is written back whole - hidden columns keep their places in
+        it even though they are not in view to be dropped on.
+        """
+        if name == target or name not in self.DATA_COLUMNS:
+            return
+        order = [c for c in self.column_order() if c != name]
+        try:
+            index = order.index(target) + (1 if after else 0)
+        except ValueError:
+            index = len(order)
+        order.insert(index, name)
+        self.project.grid_column_order = order
+        self._apply_column_visibility()
+        self._plan_changed()
+        logger.info("Moved column %r %s %r", name,
+                    'after' if after else 'before', target)
+
+    def reset_column_order(self):
+        """Put the columns back in factory order and repaint the grid."""
+        hidden = getattr(self.project, 'hidden_grid_columns', ()) or ()
+        self.project.grid_column_order = order_grid_columns(
+            list(self.DATA_COLUMNS), hidden)
+        self._apply_column_visibility()
+        self._plan_changed()
+        logger.info("Reset task-grid column order")
+
+    def _plan_changed(self):
+        """Tell the window the layout changed, so the file is not lost."""
+        mark_dirty = getattr(self.winfo_toplevel(), 'mark_dirty', None)
+        if mark_dirty is not None:
+            mark_dirty()
 
     def apply_column_visibility(self):
         """Re-read the plan's hidden columns and repaint the grid."""
@@ -2348,9 +2411,22 @@ class DragDropTaskList(ctk.CTkFrame):
         click to select, and the double-click that opens the edit dialog, are
         not mistaken for very small drags.
         """
+        # A press on a column title is a possible column move, never the
+        # start of a row gesture. 'separator' is the resize grip between
+        # titles, and '#0' is the name - the one column that cannot move.
+        self._pressed_heading = None
+        if self.tree.identify_region(event.x, event.y) == 'heading':
+            name = self._column_name(event.x)
+            if name and name != '#0':
+                self._pressed_heading = name
+                self._drag_origin = (event.x, event.y)
+            self._cancel_rename()
+            self._pressed_selected = False
+            return
+
         item = self.tree.identify_row(event.y)
         if not item:
-            # The heading, or empty space below the last row
+            # Empty space below the last row
             self._cancel_rename()
             self._pressed_selected = False
             return
@@ -2394,6 +2470,10 @@ class DragDropTaskList(ctk.CTkFrame):
         Rows that are not valid drops are deliberately left unmarked, so the
         line only appears where releasing would actually do something.
         """
+        if self._pressed_heading is not None:
+            self._drag_heading(event)
+            return
+
         if self.dragged_task_id is None or self._drag_origin is None:
             return
 
@@ -2588,6 +2668,10 @@ class DragDropTaskList(ctk.CTkFrame):
         second click arriving quickly cancels it and opens the editor window
         instead; see on_double_click.
         """
+        if self._pressed_heading is not None:
+            self._release_heading(event)
+            return
+
         if self.dragged_task_id is None:
             return
 
@@ -2617,6 +2701,143 @@ class DragDropTaskList(ctk.CTkFrame):
             self.reparent_task(source_id, target_id)
         elif target_id:
             self.move_task_to_line(source_id, target_id, drop_above)
+
+    def _drag_heading(self, event):
+        """
+        Follow a column-title drag with a line where the drop would land.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The same threshold rule as a row drag: until the pointer has
+        travelled, the press is just a click on the title. Past it, the
+        vertical line marks the edge the column will move to - the heading
+        row's own indicator, drawn with the same place() trick as the
+        row-drop line so it rides inside the scrolling viewport.
+        """
+        if not self._dragging_heading:
+            if abs(event.x - self._drag_origin[0]) < self.DRAG_THRESHOLD_PX:
+                return
+            self._dragging_heading = True
+            try:
+                self.tree.configure(cursor=self.DRAG_CURSOR)
+            except tk.TclError:
+                pass
+
+        self._scroll_for_heading_drag(event.x)
+        self._heading_drop = self._heading_drop_at(event.x)
+        self._show_heading_drop_line()
+
+    def _scroll_for_heading_drag(self, x):
+        """Keep the grid chasing a drag pressed against either edge."""
+        width = self.tree.winfo_width()
+        if x < 24:
+            self.tree.xview_scroll(-1, 'units')
+        elif x > width - 24:
+            self.tree.xview_scroll(1, 'units')
+
+    def _heading_edges(self):
+        """
+        (name, x0, x1) for each displayed column, in widget coordinates.
+
+        Asked of a visible row's cells when there is one - bbox answers
+        already scrolled, which the summed column widths would have to be
+        corrected by xview to match. With no rows at all there is nothing
+        scrolled yet, so the widths answer on their own.
+        """
+        shown = self._shown_columns()
+        if not shown:
+            return []
+        row = self.tree.identify_row(30)
+        if row:
+            edges = []
+            for name in shown:
+                box = self.tree.bbox(row, name)
+                if box:
+                    edges.append((name, box[0], box[0] + box[2]))
+            if len(edges) == len(shown):
+                return edges
+
+        try:
+            offset = self.tree.xview()[0]
+        except tk.TclError:
+            offset = 0.0
+        widths = [int(self.tree.column('#0')['width'])] + [
+            int(self.tree.column(c)['width']) for c in shown]
+        x = widths[0] - offset * sum(widths)
+        edges = []
+        for name, width in zip(shown, widths[1:]):
+            edges.append((name, x, x + width))
+            x += width
+        return edges
+
+    def _heading_drop_at(self, x):
+        """
+        The edge under the pointer, as (column name, after).
+
+        Over a heading's right half the drop lands after it, over the
+        left half before it; past the last heading it lands at the end.
+        The tree column is not a target - nothing may stand before the
+        name, which carries the outline's expander.
+        """
+        edges = self._heading_edges()
+        for name, x0, x1 in edges:
+            if x <= x1:
+                return (name, x > (x0 + x1) / 2)
+        return (edges[-1][0], True) if edges else None
+
+    def _heading_drop_line(self):
+        """The vertical insertion line, created on first use."""
+        if self._heading_line_widget is None:
+            self._heading_line_widget = tk.Frame(
+                self.tree, width=self.DROP_LINE_THICKNESS,
+                background=self.DROP_LINE_COLOR,
+                borderwidth=0, highlightthickness=0,
+            )
+        return self._heading_line_widget
+
+    def _show_heading_drop_line(self):
+        """Put the line on the edge the dragged column would land against."""
+        drop = self._heading_drop
+        if drop is None or drop[0] == self._pressed_heading:
+            # A drop back onto itself moves nothing; the line says nothing
+            self._hide_heading_drop_line()
+            return
+        edges = {name: (x0, x1) for name, x0, x1 in self._heading_edges()}
+        x0, x1 = edges.get(drop[0], (None, None))
+        if x0 is None:
+            self._hide_heading_drop_line()
+            return
+        edge = x1 if drop[1] else x0
+        line = self._heading_drop_line()
+        line.place(x=max(0, edge - self.DROP_LINE_THICKNESS // 2), y=0,
+                   width=self.DROP_LINE_THICKNESS,
+                   height=self.tree.winfo_height())
+        line.lift()
+
+    def _hide_heading_drop_line(self):
+        """Take the insertion line off screen."""
+        if self._heading_line_widget is not None:
+            self._heading_line_widget.place_forget()
+
+    def _release_heading(self, event):
+        """Drop the dragged column where the insertion line last stood."""
+        name = self._pressed_heading
+        dragging = self._dragging_heading
+        drop = self._heading_drop
+        self._end_heading_drag()
+        if dragging and drop is not None:
+            self.move_column(name, drop[0], after=drop[1])
+
+    def _end_heading_drag(self):
+        """Clear every trace of a column drag, whether it moved or not."""
+        self._pressed_heading = None
+        self._dragging_heading = False
+        self._heading_drop = None
+        self._hide_heading_drop_line()
+        try:
+            self.tree.configure(cursor='')
+        except tk.TclError:
+            pass
 
     def move_task(self, task_ids, where: str):
         """

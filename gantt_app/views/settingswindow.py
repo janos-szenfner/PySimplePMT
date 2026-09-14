@@ -7,6 +7,7 @@ import customtkinter as ctk
 
 from gantt_app import theme
 from gantt_app.baselines import BaselineManager
+from gantt_app.models import GRID_DATA_COLUMNS, order_grid_columns
 from gantt_app.utils.log import get_logger
 from gantt_app.views.modal import grab_when_visible
 
@@ -354,6 +355,10 @@ class SettingsWindow(ctk.CTkToplevel):
             footer, text="Save", width=100,
             command=self._save_grid_columns,
         ).pack(side=tk.LEFT)
+        ctk.CTkButton(
+            footer, text="Reset Task List Layout", width=170,
+            command=self._reset_grid_layout,
+        ).pack(side=tk.RIGHT)
         self._grid_columns_status = ctk.CTkLabel(footer, text="")
         self._grid_columns_status.pack(side=tk.LEFT, padx=(12, 0))
 
@@ -404,13 +409,14 @@ class SettingsWindow(ctk.CTkToplevel):
         """
         The hideable columns, in the order the task grid shows them.
 
-        Asked of the task list when there is one so the two cannot drift;
+        Asked of the task list when there is one so the two cannot drift -
+        and so a rearranged layout lists its columns where they stand;
         the settings window can also be built without one in tests, where
-        the fallback list is the same set in the same order.
+        the fallback list is the same set in the factory order.
         """
         if self.task_list is not None:
-            return list(self.task_list.DATA_COLUMNS)
-        return list(self.GRID_COLUMN_TITLES)
+            return self.task_list.column_order()
+        return list(GRID_DATA_COLUMNS)
 
     def _grid_columns_click(self, event):
         """Open the Viewable/Hidden dropdown over the cell that was hit."""
@@ -452,10 +458,17 @@ class SettingsWindow(ctk.CTkToplevel):
     def _save_grid_columns(self):
         """Write the Hidden rows onto the plan and repaint the grid."""
         tree = self._grid_columns_tree
-        self.project.hidden_grid_columns = [
+        hidden = [
             row for row in tree.get_children()
             if tree.item(row, 'values')[0] == 'Hidden'
         ]
+        self.project.hidden_grid_columns = hidden
+        # Hidden columns always trail the layout: one nobody can see has
+        # no place among the ones they can, and one that comes back lands
+        # at the end rather than wherever it once stood. The stored order
+        # is rewritten - it already has the old hidden set at the tail.
+        order = list(self.project.grid_column_order or GRID_DATA_COLUMNS)
+        self.project.grid_column_order = order_grid_columns(order, hidden)
         self._grid_columns_status.configure(
             text="Settings saved.", text_color=theme.POSITIVE_TEXT)
         logger.info("Saved hidden task-grid columns: %s",
@@ -470,6 +483,21 @@ class SettingsWindow(ctk.CTkToplevel):
         mark_dirty = getattr(self.master, 'mark_dirty', None)
         if mark_dirty is not None:
             mark_dirty()
+
+    def _reset_grid_layout(self):
+        """Put the grid's columns back in their factory order."""
+        if self.task_list is not None:
+            # reset_column_order writes the plan, repaints and marks it
+            self.task_list.reset_column_order()
+        else:
+            self.project.grid_column_order = order_grid_columns(
+                list(GRID_DATA_COLUMNS), self.project.hidden_grid_columns)
+            mark_dirty = getattr(self.master, 'mark_dirty', None)
+            if mark_dirty is not None:
+                mark_dirty()
+        self._grid_columns_status.configure(
+            text="Layout reset.", text_color=theme.POSITIVE_TEXT)
+        logger.info("Task-grid layout reset from Settings")
 
     def _build_system_ui_tab(self):
         """

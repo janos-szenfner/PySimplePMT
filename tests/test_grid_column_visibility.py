@@ -148,7 +148,11 @@ class TestTheSettingsTab(GridColumnCase):
         """One row per hideable column, Task Name excepted."""
         rows = self.window._grid_columns_tree.get_children()
 
-        self.assertEqual(list(rows), list(self.task_list.DATA_COLUMNS))
+        # The tab lists the columns where they stand: viewable first in
+        # layout order, then the hidden ones trailing - Label among them.
+        expected = [c for c in self.task_list.DATA_COLUMNS
+                    if c != 'Label'] + ['Label']
+        self.assertEqual(list(rows), expected)
         self.assertNotIn('Task Name', rows)
 
     def test_label_row_starts_hidden(self):
@@ -176,6 +180,106 @@ class TestTheSettingsTab(GridColumnCase):
         self.window._save_grid_columns()
 
         self.assertEqual(marked, [True])
+
+    def test_hiding_a_column_sends_it_to_the_back(self):
+        """A hidden column trails the layout, not the spot it vacated."""
+        tree = self.window._grid_columns_tree
+        tree.item('Type', values=('Hidden',))
+
+        self.window._save_grid_columns()
+
+        # Label already trailed the layout; Type joins it ahead of it.
+        self.assertEqual(self.project.grid_column_order[-2:],
+                         ['Type', 'Label'])
+
+    def test_reset_puts_the_factory_layout_back(self):
+        """The tab's other button: the order the grid was built with."""
+        self.task_list.move_column('End', 'Type')
+        marked = []
+        self.root.mark_dirty = lambda: marked.append(True)
+
+        self.window._reset_grid_layout()
+
+        self.assertEqual(
+            self.project.grid_column_order,
+            [c for c in self.task_list.DATA_COLUMNS
+             if c != 'Label'] + ['Label'])
+        self.assertEqual(marked, [True])
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestMovingColumns(GridColumnCase):
+    """Dragging a column's heading to where it should stand."""
+
+    def shown(self):
+        """The column names the tree is currently drawing."""
+        return list(self.task_list.tree.cget('displaycolumns'))
+
+    def _heading_x(self, name, fraction=0.5):
+        """A widget x inside the named column's heading."""
+        edges = {n: (a, b) for n, a, b in self.task_list._heading_edges()}
+        x0, x1 = edges[name]
+        return int(x0 + (x1 - x0) * fraction)
+
+    def _drag_heading(self, source, target, fraction=0.4):
+        """
+        Press a column's title, carry it over another's, release.
+
+        The handlers are driven directly rather than through
+        event_generate: a synthetic event at an unmapped widget is what
+        segfaults Tk 8.5. The gesture logic is what is under test, and it
+        identifies regions and columns from these same coordinates.
+        """
+        from types import SimpleNamespace
+
+        start_x = self._heading_x(source)
+        target_x = self._heading_x(target, fraction)
+        self.task_list.on_press(SimpleNamespace(x=start_x, y=10, state=0))
+        self.task_list.on_drag(SimpleNamespace(x=target_x, y=10))
+        self.task_list.on_release(SimpleNamespace(x=target_x, y=10))
+
+    def test_the_move_is_written_to_the_plan(self):
+        """move_column is what a released heading drag calls."""
+        self.task_list.move_column('End', 'Type')
+
+        order = self.project.grid_column_order
+        self.assertEqual(order[:2], ['End', 'Type'])
+        self.assertEqual(self.shown()[:2], ['End', 'Type'])
+
+    def test_a_hidden_column_keeps_its_place_in_the_tail(self):
+        """Moves happen among the viewable; the hidden stay last."""
+        self.task_list.move_column('Start', 'Type')
+
+        self.assertEqual(self.project.grid_column_order[-1], 'Label')
+
+    def test_an_unhidden_column_comes_back_at_the_end(self):
+        """Hidden columns trail the order, so Label returns at the back."""
+        self.project.hidden_grid_columns = []
+        self.task_list.apply_column_visibility()
+
+        self.assertEqual(self.shown()[-1], 'Label')
+
+    def test_reset_restores_the_factory_layout(self):
+        """The settings tab's reset, at the grid end of it."""
+        self.task_list.move_column('End', 'Type')
+        self.task_list.reset_column_order()
+
+        self.assertEqual(self.shown()[0], 'Type')
+
+    def test_column_positions_follow_the_shown_set(self):
+        """_column_name counts displayed columns, not the full list."""
+        x = self._heading_x('Type')
+
+        self.assertEqual(self.task_list._column_name(x), 'Type')
+
+    def test_a_heading_drag_reorders_the_grid(self):
+        """The gesture itself: press a title, carry it, let go."""
+        self._drag_heading('Type', 'Duration')
+
+        order = self.project.grid_column_order
+        self.assertLess(order.index('Type'), order.index('Duration'))
+        self.assertLess(self.shown().index('Type'),
+                        self.shown().index('Duration'))
 
 
 if __name__ == '__main__':
