@@ -68,14 +68,20 @@ DEPENDENCY_TYPES = {'0': 'FF', '1': 'FS', '2': 'SF', '3': 'SS'}
 #: MSPDI counts every span in tenths of a minute, over an eight-hour day.
 TENTHS_PER_DAY = 4800
 
-#: Project scores priority out of 1000; these are the five this application
-#: has, at the scores the exporter writes. Anything else takes the nearest.
+#: Project scores priority out of 1000; these are the ten steps of the
+#: scale at the anchors the exporter writes. Anything else takes the
+#: nearest.
 PRIORITY_SCORES = {
-    100: 'Lowest',
-    300: 'Low',
-    500: 'Normal',
-    700: 'High',
-    900: 'Highest',
+    0: 'Minimal',
+    125: 'Very Low',
+    250: 'Low',
+    375: 'Medium-Low',
+    500: 'Medium',
+    625: 'Medium-High',
+    750: 'High',
+    875: 'Very High',
+    950: 'Urgent',
+    1000: 'Critical',
 }
 
 #: Start No Earlier Than, the only constraint that maps onto anything here.
@@ -352,7 +358,7 @@ def _parse_priority(text: Optional[str]) -> str:
     try:
         score = int(float(text))
     except (TypeError, ValueError):
-        return 'Normal'
+        return 'Medium'
     return PRIORITY_SCORES[min(PRIORITY_SCORES, key=lambda k: abs(k - score))]
 
 

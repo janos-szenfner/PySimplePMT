@@ -115,13 +115,20 @@ CONSTRAINT_START_NO_EARLIER_THAN = '4'
 #: PredecessorLink type codes.
 DEPENDENCY_TYPE_CODES = {'FF': '0', 'FS': '1', 'SF': '2', 'SS': '3'}
 
-#: Project scores priority out of 1000 rather than by name, 500 being normal.
+#: Project scores priority out of 1000 rather than by name, 500 being its
+#: normal. The ten steps land on round anchors of that range, Medium
+#: taking 500 so an old plan's 'Normal' round-trips unchanged.
 PRIORITY_SCORES = {
-    'Lowest': '100',
-    'Low': '300',
-    'Normal': '500',
-    'High': '700',
-    'Highest': '900',
+    'Minimal': '0',
+    'Very Low': '125',
+    'Low': '250',
+    'Medium-Low': '375',
+    'Medium': '500',
+    'Medium-High': '625',
+    'High': '750',
+    'Very High': '875',
+    'Urgent': '950',
+    'Critical': '1000',
 }
 
 #: Weekday codes: Sunday is 1 and Saturday is 7, where date.weekday() has

@@ -3562,6 +3562,69 @@ class Toolbar(ctk.CTkFrame):
         logger.info("Resource usage grid %s",
                     "enabled" if grid else "disabled")
 
+    def preview_leveling(self):
+        """
+        Open the levelling preview: what a run would move, before it does.
+
+        The window runs the engine on a scratch copy of the plan; its
+        Apply hands back here so the same run lands on the real plan
+        inside one undoable command.
+        """
+        from gantt_app.views.leveling import show_leveling_preview
+        window = show_leveling_preview(
+            self.winfo_toplevel(), self.project,
+            apply_callback=lambda _plan: self._apply_leveling())
+        if window is None:
+            self._report("Could not open the levelling preview")
+        else:
+            logger.info("Levelling preview opened")
+
+    def level_all(self):
+        """Level the whole plan now - the preview's Apply, no window."""
+        self._apply_leveling()
+
+    def _apply_leveling(self):
+        """
+        Run the levelling engine on the live plan, as one undoable step.
+
+        The whole run - every delay it makes and every successor the
+        reschedule drags - sits inside a single snapshot command, so Undo
+        takes the run back at once rather than a task at a time. Without
+        a tracker (a toolbar built on its own, as the tests do) the same
+        engine still runs; it just is not recorded.
+        """
+        from gantt_app.core.leveling import level_resources
+
+        done = {}
+        def run():
+            plan = level_resources(self.project)
+            done['plan'] = plan
+            return bool(plan.moves)
+
+        tracker = getattr(getattr(self, 'task_list', None),
+                          'project_tracker', None)
+        if tracker is not None:
+            tracker.run_as_command(run, "Level Resources")
+        else:
+            run()
+
+        plan = done.get('plan')
+        if plan is None:
+            return
+        if plan.moves and self.on_project_changed:
+            self.on_project_changed()
+        self.update_undo_redo_buttons()
+        if not plan.overallocations_found:
+            self._report("No resource is overallocated - nothing to level")
+        else:
+            self._report(
+                f"Levelling moved {len(plan.moves)} task(s)"
+                + (f"; {len(plan.unresolved)} day(s) still over"
+                   if plan.unresolved else "")
+                + ("; the finish slipped" if plan.finish_slipped else ""))
+        logger.info("Levelling applied: %s move(s), %s unresolved",
+                    len(plan.moves), len(plan.unresolved))
+
     def set_undo_redo_manager(self, manager: UndoRedoManager):
         """Set the undo/redo manager."""
         self.undo_redo_manager = manager

@@ -67,6 +67,7 @@ This is a complete implementation of a project management tool with:
 - **Native Dialogs**: Message boxes and file choosers use the platform's own on macOS and Windows. On Linux, where Tk draws its own, message boxes are rebuilt to match the window and file choosers hand off to zenity or kdialog when present
 - **Rows that line up**: the chart draws the rows the task list is showing, in its order and at its row height, so a bar sits on the line of the task it belongs to. Fold a branch away and its bars go with it; scroll the list and the chart follows
 - **Critical Path**: Automatic calculation and visualization of the critical path. **View → Analysis → Critical** paints every critical row light red in the task list *and* its bar, milestone diamond or phase bracket on the chart — press it again to clear — and **Report...** beside it opens the full float table
+- **Resource levelling**: the ribbon's **Project → Leveling** group resolves the overallocations the heatmap turns red. **Level...** opens a preview first — run on a scratch copy of the plan, it lists every task that would move with was/becomes dates and its delay in working days, plus the days that would stay over with advice (usually to reassign); **Apply** replays the run on the real plan as one undoable step, **Level All** applies without the window. A task moves only inside its *free float* — no successor's dates move and the project finish cannot slip — lower-priority work goes first on the ten-step Minimal…Critical scale, Must Start/Finish On tasks are skipped and deadlines cap the slide
 - **Dependency Types**: Finish-Start, Start-Start, Finish-Finish and Start-Finish, each with lead/lag in **working** days and Hard/Rubber link hardness. A start link and a finish link on the same task state a span - Start-Start onto the first task and Finish-Finish onto the last makes a row cover the stretch between them, and its duration follows from the two dates rather than being carried over. A hard link pins a date but still has to clear any rubber floor set by another link
 - **Scheduling Constraints**: the nine MS Project constraints on the Advanced tab, from As Soon As Possible to Must Start On. Start No Earlier Than floors when a task's work can begin, applied alongside the links and the working calendar
 - **Checked as you type**: The task editor outlines a date it cannot use and says why beneath the form, rather than waiting for Save. A name is not required — a row may be left unnamed, or share a name with another — so the name box is never marked
@@ -111,6 +112,7 @@ gantt_app/
 │   ├── taskstyle.py           # A row's ink, fill and emphasis, and the honest-chip presets
 │   ├── baselines.py           # Up to ten schedule baselines: capture, compare, persist
 │   ├── effort.py              # The Task Type / Effort-Driven reconciliation engine
+│   ├── leveling.py            # Resource levelling: delay tasks inside their float
 │   ├── resource_model.py      # Resources, teams, schedules, leave and capacity
 │   ├── workdaycalendar.py     # Working days, weekends, holidays, overrides
 │   ├── calendarregistry.py    # Named calendars, and which one a task follows
@@ -151,6 +153,7 @@ gantt_app/
 │   ├── holidaydialog.py   # Working week, public holidays, date overrides
 │   ├── searchbox.py       # Finding a row by anything written on it
 │   ├── criticalpath.py    # The critical path analysis, task by task
+│   ├── leveling.py        # The levelling preview: what the run would move, before it does
 │   ├── gantt_chart.py     # The Gantt chart pane, drawn beside the task list
 │   ├── ganttsettingsw.py  # Gantt chart appearance settings dialog
 │   ├── tooltip.py         # The hover text shared across the toolbar and chart
@@ -2301,7 +2304,7 @@ The application starts with a complete sample project with tasks and subtasks:
 - `task_type`: One of 'Phase', 'Task', 'Subtask', 'Milestone'
 - `parent_task_id`: ID of the parent row, None at the top level
 - `duration`: Length in working days when one has been set; None leaves it derived
-- `priority`: One of the levels in `priority.py`; 'Normal' by default
+- `priority`: One of the ten levels in `priority.py` ('Minimal' up to 'Critical'); 'Medium' by default
 - `status`: 'Active', 'Estimated' or 'Inactive'
 - `estimated`: The Estimated checkbox, remembered independently of Inactive
 - `shape`: How the bar is drawn - 'Default', 'Rectangle' or 'Rounded'

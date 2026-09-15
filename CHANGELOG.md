@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.71.4 - 2026-09-15
+
+- **Resource levelling, with a preview.** The Project tab gained a
+  Leveling group: **Level...** opens a window that runs the leveller on
+  a scratch copy and shows what would change - each task's was/becomes
+  dates and delay in working days, the days that would stay
+  overallocated with advice, and whether the finish slips. Apply replays
+  the run as a single undoable step; **Level All** skips the window.
+  Tasks move only inside free float, so no successor is dragged and the
+  project finish cannot slip; Must Start/Finish On tasks are skipped,
+  deadlines cap the slide, and lower priorities move first.
+
+- **Task priority is a ten-step scale.** Minimal, Very Low, Low,
+  Medium-Low, Medium, Medium-High, High, Very High, Urgent, Critical -
+  the finer ladder the leveller ranks by. Plans saved with the old five
+  names land on their rungs ('Normal' reads 'Medium', 'Highest' reads
+  'Critical'), and both exporters map the scale onto their own codes.
+
+- **Tasks know their free float.** The schedule analysis now reports
+  how far each task can slip before any successor's dates move, beside
+  the total float it always had - the measure levelling spends.
+
 ## 1.71.3 - 2026-09-15
 
 - **Resource Planning gained a Usage Grid.** A context-sensitive View

@@ -27,8 +27,8 @@ Three things do not survive, and are logged rather than written wrong:
   * A named calendar per task. The format has one calendar, per above.
   * A day the plan works that its week says it should not - a Saturday
     make-up day. <date> entries only take days off.
-  * Priorities finer than GanttProject's own five, which happen to be the
-    same five - so this one does survive, through PRIORITY_CODES.
+  * Priorities finer than GanttProject's own five - the ten-step scale
+    folds onto the nearest of its codes, through PRIORITY_CODES.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from gantt_app.core.models import Project
+from gantt_app.core.priority import DEFAULT_PRIORITY
 from gantt_app.utils.log import get_logger
 from gantt_app.utils.plan_export import (
     HOLIDAY_HORIZON_DAYS, PlanRow, calendar_exceptions,
@@ -83,13 +84,20 @@ HARDNESS_CODES = {'Hard': 'Strong', 'Rubber': 'Rubber'}
 
 #: GanttProject's priority numbers. Low, Normal and High were numbered first
 #: and Highest and Lowest were added afterwards, which is why the sequence
-#: does not run in order of priority.
+#: does not run in order of priority. The format only has the five, so the
+#: ten-step scale folds onto them - the fine rungs land on the nearest of
+#: GanttProject's own.
 PRIORITY_CODES = {
+    'Minimal': '4',
+    'Very Low': '4',
     'Low': '0',
-    'Normal': '1',
+    'Medium-Low': '0',
+    'Medium': '1',
+    'Medium-High': '1',
     'High': '2',
-    'Highest': '3',
-    'Lowest': '4',
+    'Very High': '3',
+    'Urgent': '3',
+    'Critical': '3',
 }
 
 #: The task columns GanttProject shows, declared the way it declares them. It
@@ -217,7 +225,7 @@ def _task_attributes(row: PlanRow, calendar: WorkingCalendar) -> Dict[str, str]:
     }
 
     priority = PRIORITY_CODES.get(task.priority)
-    if priority is not None and task.priority != 'Normal':
+    if priority is not None and task.priority != DEFAULT_PRIORITY:
         attributes['priority'] = priority
 
     # Only a status that is not the default is written, so a plan of

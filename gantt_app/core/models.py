@@ -18,7 +18,7 @@ import uuid
 # already dotted, so the logger is exactly the same object either way.
 logger = logging.getLogger(__name__)
 
-from gantt_app.core.priority import DEFAULT_PRIORITY
+from gantt_app.core.priority import DEFAULT_PRIORITY, normalize_priority
 from gantt_app.core.deliverable import (
     Deliverable, rolled_up_deliverable_progress, status_for_progress)
 from gantt_app.core.resource_model import ResourceRepository
@@ -563,6 +563,10 @@ class TaskFloat:
     total_float : int
         Working days of slack: how long it could slip before it starts
         pushing the finish out. Zero means it cannot slip at all.
+    free_float : int
+        Working days it could slip before it starts pushing any
+        *successor* out - the tighter of the two measures, and the one
+        levelling spends first because consuming it moves nothing else.
     is_critical : bool
         Whether it has no float, and so sits on the critical path.
 
@@ -584,7 +588,8 @@ class TaskFloat:
     late_start: int
     late_finish: int
     total_float: int
-    is_critical: bool
+    free_float: int = 0
+    is_critical: bool = False
 
 
 @dataclass
@@ -709,6 +714,10 @@ class Task:
         # thing it does; see RETIRED_TASK_TYPES
         self.task_type = RETIRED_TASK_TYPES.get(self.task_type,
                                                 self.task_type)
+
+        # Priority names from the retired five-step scale map onto the
+        # ten-step one; see core/priority.LEGACY_PRIORITIES.
+        self.priority = normalize_priority(self.priority)
         
         # Synchronize is_milestone with task_type for backward compatibility
         if self.task_type == "Milestone":
@@ -5859,6 +5868,37 @@ class Project:
         for task in tasks:
             late_finish.setdefault(task.id, finish)
 
+        # Free float: how far the task can slip before the *early* dates
+        # of whatever follows it have to move. Each link type pins a
+        # different end, so the allowance is read the way the backward
+        # pass reads it - an FS successor needs this task finished, an SS
+        # one only needs it started. A task with nothing after it can
+        # slip as far as the plan's finish allows, which is its total
+        # float.
+        def free_slack(task: Task) -> int:
+            if not successors[task.id]:
+                return late_finish[task.id] - early_finish[task.id]
+            room = None
+            for link in successors[task.id]:
+                other = by_id.get(link.task_id)
+                if other is None:
+                    continue
+                lag = self.lag_days(link)
+                if link.dep_type == 'FS':
+                    allow = (early_start[other.id] - 1 - lag
+                             - early_finish[task.id])
+                elif link.dep_type == 'SS':
+                    allow = (early_start[other.id] - lag
+                             - early_start[task.id])
+                elif link.dep_type == 'FF':
+                    allow = (early_finish[other.id] - lag
+                             - early_finish[task.id])
+                else:                                   # SF
+                    allow = (early_finish[other.id] - lag
+                             - early_start[task.id])
+                room = allow if room is None else min(room, allow)
+            return room if room is not None else 0
+
         analysis: Dict[str, TaskFloat] = {}
         for task in tasks:
             late = late_finish[task.id]
@@ -5870,6 +5910,7 @@ class Project:
                 late_start=late - span[task.id],
                 late_finish=late,
                 total_float=total_float,
+                free_float=free_slack(task),
                 is_critical=total_float <= 0,
             )
 

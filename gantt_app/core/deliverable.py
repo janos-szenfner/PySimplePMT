@@ -36,7 +36,8 @@ import uuid
 # same reason models.py does: this is the bottom layer, and utils imports it.
 logger = logging.getLogger(__name__)
 
-from gantt_app.core.priority import DEFAULT_PRIORITY, PRIORITY_LEVELS
+from gantt_app.core.priority import (
+    DEFAULT_PRIORITY, PRIORITY_LEVELS, normalize_priority)
 
 
 #: What a deliverable may be. To Do is the default and the first value, so a
@@ -187,8 +188,9 @@ class Deliverable:
         if self.weight < 0:
             self.weight = 0.0
 
-        if self.priority not in PRIORITY_LEVELS:
-            self.priority = DEFAULT_PRIORITY
+        # Retired five-step names land on their rung of the ten-step
+        # scale rather than the default; see LEGACY_PRIORITIES.
+        self.priority = normalize_priority(self.priority)
 
         self.tags = [str(tag) for tag in (self.tags or []) if str(tag)]
         self.details = str(self.details or '')

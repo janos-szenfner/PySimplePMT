@@ -1441,6 +1441,40 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Resource levelling",
+        [
+            "When a resource is booked past its capacity - the red days in "
+            "the Resource Planning heatmap - levelling clears it by delaying "
+            "tasks inside their float, the way Microsoft Project does it. "
+            "The Leveling group sits on the ribbon's Project tab.",
+
+            "Level... opens a preview window before anything changes: it "
+            "runs the leveller on a scratch copy of the plan and lists "
+            "every task it would move - was and becomes dates, the delay in "
+            "working days - together with the days that would stay "
+            "overallocated and the advice for each (usually to reassign). "
+            "Apply replays the run on the real plan as a single undoable "
+            "change; Cancel throws the preview away. Level All applies "
+            "immediately without the window.",
+
+            "A task moves only inside its free float - the slack it can "
+            "spend without pushing any successor - so levelling cannot "
+            "delay the project's finish and never drags a linked task. "
+            "Tasks locked by a Must Start On or Must Finish On constraint "
+            "are skipped, and a deadline caps how far a task may slide; "
+            "both are named in the preview rather than silently ignored.",
+
+            "Where tasks compete for the same overallocated day, the "
+            "lower-priority task moves first. Priorities run on a ten-step "
+            "scale - Minimal up to Critical - set per task in the task "
+            "editor.",
+
+            "Every levelling run is one undo step: a single Undo returns "
+            "all of it, and the status bar reports what moved and what "
+            "stayed over.",
+        ],
+    ),
+    (
         "Where the log is",
         [
             "The Log button on the menu row opens what the application has "

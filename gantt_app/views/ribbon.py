@@ -238,6 +238,15 @@ class RibbonBar(IconToolbar):
                 _L('resource', 'Resources', 'open_resource_settings',
                    tip="Resource Settings..."),
             )),
+            ("Leveling", (
+                _L('level', 'Level...', 'preview_leveling',
+                   tip="Preview resource levelling - what would move "
+                       "before anything does",
+                   key='leveling_preview'),
+                _S('level', 'Level All', 'level_all',
+                   tip="Level every overallocated resource now",
+                   key='leveling_all'),
+            )),
         )),
     )
 
@@ -287,7 +296,7 @@ class RibbonBar(IconToolbar):
         'show_gantt_chart', 'show_dashboard', 'toggle_grid_view_only',
         'show_critical_path', 'show_log', 'show_about', 'show_changelog',
         'show_help', 'open_grid_filter', 'clear_grid_filter',
-        'toggle_resource_grid',
+        'toggle_resource_grid', 'preview_leveling', 'level_all',
     )
 
     #: Groups that belong to one footer-tab view and stay hidden while any
