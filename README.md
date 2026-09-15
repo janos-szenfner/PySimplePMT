@@ -40,9 +40,9 @@ This is a complete implementation of a project management tool with:
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from the ribbon's **Font** group. The preset menu shows each one as it will look — a coloured badge, its name, and a live sample drawn in the preset's own colours and emphasis — and a **Default (no style)** entry at the top of the same menu clears the formatting in one click. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
-- **Resource Settings**: **Project → Resources** manages Named people, Generic role placeholders and Team pools in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity, hourly rates, days off and team splits; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘.` on a Mac (`Ctrl+Alt+.` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
+- **Resource Settings**: **Project → Resources** manages Named people, Generic role placeholders, Team pools and Materials in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity (shown as Max Units percent), standard and overtime rates, cost per use, accrual, days off and team splits; the Material tab holds consumables with a unit label and per-unit rate instead of any calendar; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘.` on a Mac (`Ctrl+Alt+.` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
 - **Resource Planning view (4-panel)**: A second viewport, reached from the **Resource Planning** tab in the footer, laid out as four draggable panels — **1. Task List** with its own search, **2. Task Inspector** with Assign / De-assign buttons, **3. Resource Pool** filtered by Named / Generic / Team, and **4. Live Stacking & Heatmap**, a day-by-day capacity grid that greens, ambers and reds each resource as load approaches and passes its daily hours. Assign a task by selecting it and a resource, or by dragging a row from the list onto a resource. The four panels resize like the task-list/Gantt split and open at a fixed default; the heatmap opens left-aligned. The bar along the bottom switches between Task Planning and Resource Planning (a Deliverables tab is reserved but not yet active)
-- **Resource assignment on a task**: the task editor's **Resource** tab assigns one or more resources to a task with a split percentage each; assignments travel with the task and feed the heatmap and the resource pool's load figures
+- **Resource assignment on a task**: the task editor's **Resource** tab assigns one or more resources, teams or materials to a task — work assignments take an effort-hours figure, an overtime-hours figure and a split percentage, and materials take a Units entry (`20` fixed, `5/d` per working day) with cost computed as quantity × Std. Rate; assignments travel with the task and feed the heatmap, the resource pool's load figures and the task's cost
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
 - **Retype in the grid**: Double-click the **Type** cell for a dropdown of every type. Picking one stores it — one undo step, and the editor shows it. Choosing `Milestone` sets the milestone flag with it, so the editor opens with the switch on; choosing anything else clears it again
 - **New task from the keyboard**: `⌥⌘.` on a Mac, `Ctrl+Alt+.` elsewhere, creates a task beside the row the cursor is on and opens its editor. With no cursor it goes at the end of the plan
@@ -127,7 +127,7 @@ gantt_app/
 │   ├── formcheck.py       # Checks the task form as it is filled in
 │   ├── advanced_tab.py    # The editor's Advanced tab: deadline and constraint
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
-│   ├── assigntask.py      # The editor's Resource tab: assign resources, split %
+│   ├── assigntask.py      # The editor's Resource tab: work, overtime, split and material units
 │   ├── resource_board.py  # The 4-panel Resource Planning view (list, inspector, pool, heatmap)
 │   ├── resourcesettings.py # Resource grids and resource/team editor modals
 │   ├── ribbon.py          # The ribbon: tabbed captioned groups, File backstage
@@ -228,11 +228,15 @@ piece of work.
 #### Resource and team data
 
 - **Named resources** represent known people, carrying a name, role or skill,
-  schedule, daily capacity, hourly rate, team memberships and days off.
+  schedule, daily capacity (read as Max Units percent), Std. Rate, Ovt. Rate,
+  Cost per Use, Accrue At, team memberships and days off.
 - **Generic resources** reserve a role before a person is known. An unnamed
   Generic resource receives a role-based name such as `DevOps Placeholder #1`.
 - **Team pools** aggregate Named and Generic members through independent split
   percentages, or use a fixed manual capacity override.
+- **Material resources** are consumables — measured in a Material Label unit
+  (bags, tons, gallons), costed per unit, with Accrue At, Group, Initials and
+  Code and no capacity, overtime or calendar.
 - **Project persistence** writes resources and teams into the same JSON object as
   the tasks. Copying or sharing a project file therefore carries its resource
   pool, schedules, leave and team allocations with it. Files saved before
@@ -240,10 +244,12 @@ piece of work.
 
 #### Grid-first Resource Settings window
 
-The **Resources** and **Teams** tabs are full-width, scrollable data grids rather
-than permanent forms. Resource rows show type, name, role, schedule, capacity,
-teams and days off. Team rows show schedule, calculation mode, total capacity,
-member count and a daily summary. Search narrows either table, and the Resources
+The **Resources**, **Teams** and **Material** tabs are full-width, scrollable
+data grids rather than permanent forms. Resource rows show type, name, role,
+schedule, capacity, both rates, teams and days off. Team rows show schedule,
+calculation mode, total capacity, member count and a daily summary. Material
+rows show the unit label, initials, group, Std. Rate, Accrue At and code.
+Search narrows either table, and the Resources
 tab can also filter Named or Generic entries.
 
 Clicking a row highlights it and enables **Edit Selected**, **Copy Selected**
@@ -265,7 +271,8 @@ will write the same state as well.
 The Resource Editor has four tabs:
 
 1. **General Settings** — name, Named or Generic type, role, schedule, capacity
-   unit and value, seven daily capacity boxes, and hourly rate.
+   unit and value, seven daily capacity boxes (with the Max Units percentage in
+   the summary), Std. Rate, Ovt. Rate, Cost per Use and Accrue At.
 2. **Days Off** — any number of leave or downtime ranges, with the same calendar
    date picker used by the task editor and an optional reason.
 3. **Assigned Teams** — every available team with an assignment checkbox and an
@@ -2798,5 +2805,5 @@ Copyright (c) 2026 Janos Szenfner.
 ---
 
 **Project Status**: Active Development
-**Version**: 1.69.5
+**Version**: 1.69.6
 **Last Updated**: 2026-09-15

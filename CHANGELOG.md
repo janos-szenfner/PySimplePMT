@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.69.6 - 2026-09-15
+
+- **Material resources join the pool - and the tasks.** Resource
+  Settings gains a Material tab beside Teams for the consumables:
+  things used up or installed rather than worked, with a Material
+  Label for the unit they are counted in, a Std. Rate per unit,
+  Accrue At, Group, Initials and Code - and none of the capacity,
+  overtime or calendar machinery, because materials are measured,
+  not clocked. Materials can be assigned to tasks from the same
+  Resource tab that takes people and teams: a bare Units figure like
+  20 is a fixed quantity whatever the duration, while a rate like
+  5/d (or /h, /w) consumes that many units per working day, so a
+  longer task consumes - and costs - more. The row shows the consumed
+  quantity and cost live, and the cost a task reports now includes
+  quantity x Standard Rate.
+- **Work resources carry the sheet's cost fields.** A named or
+  generic resource now holds an Overtime Rate for hours booked as
+  overtime, a Cost per Use charged once per assignment, and an
+  Accrue At choice, with the capacity summary reading Max Units as
+  a percentage the way MS Project does. Both rates appear in the
+  resource sheet, and the task assignment grid gains an OT (hrs)
+  column: standard hours pay the standard rate, overtime hours pay
+  the overtime rate, and the use fee lands once per assignment -
+  (Work - Overtime) x Std. Rate + Overtime x Ovt. Rate + Cost per
+  Use, which is also what baselines and cost variance now see.
+- **The Advanced filter's suggestion list actually takes the click.**
+  The dropdown anchored correctly but a modal dialog's grab still
+  redirected the press to the dialog, so the outside-click handler
+  closed the list before the release could pick a row - it lit up
+  on hover and ignored the click. The handler now reads where the
+  pointer actually is and picks the row under it, whichever widget
+  the press was delivered to.
+- **The guide covers the new filtering and highlighting.** The in-app
+  user guide documents the Filter and Highlight ribbons, the Basic
+  and Advanced tabs, saved filters, and the Material tab.
+
 ## 1.69.5 - 2026-09-15
 
 - **The Advanced filter's suggestions are a proper dropdown.** The list
