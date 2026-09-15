@@ -295,15 +295,13 @@ def the_user_switches_the_application_to_day_mode(app):
 
 @when("the user turns on resource planning")
 def the_user_turns_on_resource_planning(app):
-    app._resource_switch_var.set("on")
-    app._on_resource_view_toggled()
+    app._show_view("Resource Planning")
     app.update_idletasks()
 
 
 @when("the user turns off resource planning")
 def the_user_turns_off_resource_planning(app):
-    app._resource_switch_var.set("off")
-    app._on_resource_view_toggled()
+    app._show_view("Task Planning")
     app.update_idletasks()
 
 
@@ -449,24 +447,24 @@ def the_close_button_is_to_the_right_of_the_switch(app, container):
 
 @then("the resource planning switch is off")
 def the_resource_planning_switch_is_off(app):
-    assert app._resource_switch_var.get() == "off"
+    assert app._active_view == "Task Planning"
 
 
 @then("the resource planning switch is on")
 def the_resource_planning_switch_is_on(app):
-    assert app._resource_switch_var.get() == "on"
+    assert app._active_view == "Resource Planning"
 
 
 @then("the Task Planning view is on top")
 def the_task_planning_view_is_on_top(app):
-    assert app._resource_switch_var.get() == "off"
+    assert app._active_view == "Task Planning"
     assert app.content_panes.winfo_exists()
     assert app.resource_board.winfo_exists()
 
 
 @then("the Resource Planning view is on top")
 def the_resource_planning_view_is_on_top(app):
-    assert app._resource_switch_var.get() == "on"
+    assert app._active_view == "Resource Planning"
     assert app.content_panes.winfo_exists()
     assert app.resource_board.winfo_exists()
 
@@ -477,16 +475,20 @@ def the_tab_is_active(app, name):
         f"expected {name!r} to be the selected tab, got {app._view_tabs.get()!r}")
 
 
-@then(parsers.parse('the "{name}" tab is disabled'))
-def the_tab_is_disabled(app, name):
-    # No per-segment disable in a segmented control, so "disabled" means the
-    # tab cannot be selected: a click on it leaves the active tab unchanged.
+@then(parsers.parse('the "{name}" tab is enabled'))
+def the_tab_is_enabled(app, name):
+    # Selecting it moves the tab bar and brings its view to the front; the
+    # previous view is restored so the check leaves the window as found.
     before = app._view_tabs.get()
     app._on_tab_selected(name)
     app.update_idletasks()
-    assert app._view_tabs.get() == before != name, (
-        f"expected {name!r} to be non-interactive, but the tab bar moved to "
-        f"{app._view_tabs.get()!r}")
+    try:
+        assert app._view_tabs.get() == name == app._active_view, (
+            f"expected {name!r} to be selectable, but the tab bar is on "
+            f"{app._view_tabs.get()!r}")
+    finally:
+        app._on_tab_selected(before)
+        app.update_idletasks()
 
 
 @then(parsers.parse('the task list contains "{name}" with status "{status}"'))

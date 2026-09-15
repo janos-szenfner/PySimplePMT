@@ -21,6 +21,7 @@ from gantt_app.views.task_list import DragDropTaskList
 from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
 from gantt_app.views.resource_board import ResourceBoard
+from gantt_app.views.deliverables_board import DeliverablesBoard
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.views.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.views.project_dashboard import ProjectDashboardFrame
@@ -458,7 +459,7 @@ class GanttApp(ctk.CTk):
         theme.restyle_grids()
 
         for name in ('task_list', 'gantt_chart', 'dashboard_frame',
-                     'resource_board'):
+                     'resource_board', 'deliverables_board'):
             pane = getattr(self, name, None)
             if pane is None:
                 continue
@@ -556,6 +557,24 @@ class GanttApp(ctk.CTk):
         self.resource_board.grid(
             row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
 
+        # The Deliverables view, third widget in the same cell - the footer
+        # tab bar lifts whichever of the three is active. See _show_view.
+        self.deliverables_board = DeliverablesBoard(
+            content_frame, self.project, on_status=self._show_status,
+            on_project_changed=self.update_all,
+            project_tracker=self.project_tracker)
+        self.deliverables_board.grid(
+            row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+
+        # What each footer tab lifts. Task Planning is the paned task view;
+        # the other two are the boards overlaid on it.
+        self._view_widgets = {
+            "Task Planning": self.content_panes,
+            "Resource Planning": self.resource_board,
+            "Deliverables": self.deliverables_board,
+        }
+        self._active_view = "Task Planning"
+
         # Footer with status bar, view tab bar and close button
         self.footer_frame = ctk.CTkFrame(self)
         self.footer_frame.grid(row=2, column=0, sticky=tk.EW, padx=10, pady=(0, 10))
@@ -570,9 +589,7 @@ class GanttApp(ctk.CTk):
         self.status_bar.grid(row=0, column=0, sticky=tk.W)
 
         # View-mode tab bar, centred in the footer.  The first tab is the
-        # default; the "Deliverables" tab is visible but not interactive yet.
-        # Close stays on the far right.
-        self._resource_switch_var = tk.StringVar(value="off")
+        # default.  Close stays on the far right.
         self._tab_names = ["Task Planning", "Resource Planning", "Deliverables"]
         self.resource_switch_frame = ctk.CTkFrame(
             self.footer_frame, fg_color="transparent")
@@ -580,9 +597,7 @@ class GanttApp(ctk.CTk):
                                         padx=(5, 5))
 
         # A segmented control, the same style the Settings window's tabs use,
-        # rather than a row of separate buttons. Deliverables is shown but not
-        # wired up yet; _on_tab_selected snaps the selection back off it.
-        self._disabled_view_tabs = {"Deliverables"}
+        # rather than a row of separate buttons.
         self._view_tabs = ctk.CTkSegmentedButton(
             self.resource_switch_frame,
             values=self._tab_names,
@@ -694,44 +709,44 @@ class GanttApp(ctk.CTk):
         """Whether there is a task list for a shortcut to act on."""
         return bool(getattr(self, 'task_list', None))
 
-    def _on_resource_view_toggled(self):
-        """Swap between task planning and resource planning viewports."""
+    def _show_view(self, name: str):
+        """
+        Bring the widget a footer tab names to the top of the content cell.
+
+        Every view shares one grid cell and lift() picks the front one.
+        A board gets refreshed before it is shown - a plan edited on the
+        task view while the board was underneath would otherwise show one
+        change behind - and on_shown settles whatever needs a real width.
+        """
         try:
-            active = self._resource_switch_var.get() == "on"
-            self._set_active_tab(
-                "Resource Planning" if active else "Task Planning")
-            if active:
-                self.resource_board.refresh()
-                self.resource_board.lift()
-                # Settle the default panel split and left-align the heatmap
-                # now that the board has a width, once it is on top.
-                self.resource_board.after_idle(self.resource_board.on_shown)
-                logger.info("Switched to Resource Planning view")
-            else:
-                self.content_panes.lift()
-                logger.info("Switched to Task Planning view")
+            widget = self._view_widgets.get(name)
+            if widget is None:
+                return
+            self._active_view = name
+            self._set_active_tab(name)
+            refresh = getattr(widget, 'refresh', None)
+            if callable(refresh):
+                refresh()
+            widget.lift()
+            on_shown = getattr(widget, 'on_shown', None)
+            if callable(on_shown):
+                widget.after_idle(on_shown)
+            logger.info("Switched to %s view", name)
         except tk.TclError:
             logger.debug("View widgets are being destroyed; nothing to lift")
 
     def _current_view_tab(self) -> str:
         """Which view is on top now, as the tab bar names it."""
-        return ("Resource Planning"
-                if self._resource_switch_var.get() == "on"
-                else "Task Planning")
+        return self._active_view
 
     def _on_tab_selected(self, name: str):
         """Handle a selection in the footer view-tab bar."""
         tabs = getattr(self, '_view_tabs', None)
         if tabs is None:
             return
-        if name in getattr(self, '_disabled_view_tabs', set()):
-            # Present but not interactive yet; snap the selection back so the
-            # control never rests on it. set() does not fire this command.
-            tabs.set(self._current_view_tab())
+        if name == self._active_view:
             return
-        self._resource_switch_var.set(
-            "on" if name == "Resource Planning" else "off")
-        self._on_resource_view_toggled()
+        self._show_view(name)
 
     def _set_active_tab(self, name: str):
         """Reflect the active view in the footer tab bar."""
@@ -902,6 +917,16 @@ class GanttApp(ctk.CTk):
 
         self.task_list.update_task_list()
         self.gantt_chart.update_chart()
+
+        # The Deliverables tab reads the same plan; an edit on the task side
+        # reaching it late would leave it showing a list that has changed.
+        deliverables_board = getattr(self, 'deliverables_board', None)
+        if deliverables_board is not None:
+            try:
+                deliverables_board.refresh()
+            except tk.TclError:
+                logger.debug("The deliverables board has gone; "
+                             "not refreshing it")
 
         # Only when it has been built. It reads the same plan the other two
         # do, so a change that reaches them and not it leaves the summary
@@ -1129,6 +1154,7 @@ class GanttApp(ctk.CTk):
         """Load the built-in sample project."""
         logger.info("Loading built-in sample project")
         self.project.tasks = []
+        self.project.deliverables = []
         self.project.start_date = None
         self.project.end_date = None
         self.project.resource_repository = ResourceRepository()

@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.70.0 - 2026-09-15
+
+- **The Deliverables tab is live.** The footer's third tab - reserved
+  since the tab bar was added - now opens a spreadsheet-style checklist
+  of what the plan owes: deliverables and the sub-deliverables nested
+  under them, kept apart from the task list so a deliverable never lands
+  on the chart or in the scheduler. Rows indent and outdent with
+  Tab/Shift+Tab (or the platform's bracket shortcuts), drag onto a row's
+  middle to re-parent or onto its edge to reorder, and fold with the
+  outline arrows - the same gestures the task list already taught.
+- **Progress rolls itself up.** A leaf is Done at 100% and To Do at 0%,
+  takes any percentage typed into its Progress cell, and derives its
+  status from the number; a parent's progress is the average of its
+  children, weighted by each row's Weight column when the default of 1
+  will not do - Σ(progress x weight) / Σweights - and it recalculates
+  the moment a child changes.
+- **Mark boxes drive the bulk actions.** Every row has a mark box in the
+  number gutter; ticking a parent ticks its whole branch, a part-marked
+  parent shows [~], and the right-click menu's Set Status, Set Priority,
+  Move, Duplicate, Delete and Export act on the marks - or on the
+  selection when nothing is marked. Double-click edits cells in place
+  with pick lists for status, priority and assignee, column headings
+  sort within each group, the filter box and status dropdown narrow the
+  list while keeping the parents of a match on screen, overdue rows go
+  red and Done rows green, and the whole list or the marked rows export
+  to CSV or JSON. Every change lands as a single undoable step.
+- **Deliverables travel with the file.** The list is saved inside the
+  project JSON alongside the tasks - old files simply open with none
+  owed - and loading, importing, creating or closing a plan brings the
+  matching deliverables (or none) with it.
+
 ## 1.69.7 - 2026-09-15
 
 - **Picking a filter suggestion no longer crashes on an empty query

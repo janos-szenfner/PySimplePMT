@@ -2723,6 +2723,7 @@ class Toolbar(ctk.CTkFrame):
             self.project.name = project.name
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
+            self.project.deliverables = project.deliverables
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             self.project.resource_repository = project.resource_repository
@@ -2790,6 +2791,7 @@ class Toolbar(ctk.CTkFrame):
             # Clear current project
             self.project.name = new_name
             self.project.tasks = []
+            self.project.deliverables = []
             self.project.start_date = None
             self.project.end_date = None
             self.project.resource_repository = ResourceRepository()
@@ -2835,6 +2837,7 @@ class Toolbar(ctk.CTkFrame):
         self.current_file_path = None
         self.project.name = "New Project"
         self.project.tasks = []
+        self.project.deliverables = []
         self.project.start_date = None
         self.project.end_date = None
         self.project.resource_repository = ResourceRepository()
@@ -3016,14 +3019,15 @@ class Toolbar(ctk.CTkFrame):
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
+            self.project.deliverables = project.deliverables
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
-            
+
             self._forget_the_previous_plan()
-            
+
             if self.on_project_changed:
                 self.on_project_changed()
-            
+
             messagebox.showinfo("Success", f"Imported {len(project.tasks)} tasks from GAN file")
         else:
             messagebox.showerror("Error", "Failed to import GAN file")
@@ -3069,14 +3073,15 @@ class Toolbar(ctk.CTkFrame):
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
+            self.project.deliverables = project.deliverables
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
-            
+
             self._forget_the_previous_plan()
-            
+
             if self.on_project_changed:
                 self.on_project_changed()
-            
+
             messagebox.showinfo(
                 "Success",
                 f"Imported {len(project.tasks)} tasks from the MS Project file"
@@ -3108,14 +3113,15 @@ class Toolbar(ctk.CTkFrame):
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
+            self.project.deliverables = project.deliverables
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
-            
+
             self._forget_the_previous_plan()
-            
+
             if self.on_project_changed:
                 self.on_project_changed()
-            
+
             messagebox.showinfo("Success", f"Imported {len(project.tasks)} tasks from Mermaid file")
         else:
             messagebox.showerror("Error", "Failed to import Mermaid file")
@@ -3140,6 +3146,7 @@ class Toolbar(ctk.CTkFrame):
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
             self.project.tasks = project.tasks
+            self.project.deliverables = project.deliverables
             self.project.start_date = project.start_date
             self.project.end_date = project.end_date
             self.project.resource_repository = project.resource_repository

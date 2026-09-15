@@ -9,7 +9,7 @@ Feature: 4-Panel Resource Planning Matrix
     Then the footer contains the "Task Planning" tab
     And the footer contains the "Resource Planning" tab
     And the footer contains the "Deliverables" tab
-    And the "Deliverables" tab is disabled
+    And the "Deliverables" tab is enabled
     And the footer contains a "Close" button
     And the "Close" button is to the right of the tab bar
 

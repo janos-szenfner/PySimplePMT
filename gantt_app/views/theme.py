@@ -524,6 +524,7 @@ def restyle_grids() -> None:
     style_treeview('DataGrid.Treeview', row_height=26,
                    heading_font=('Arial', 10, 'bold'))
     style_treeview('Gantt.Treeview', row_height=26)
+    style_treeview('Deliverables.Treeview', row_height=26)
 
 
 def resolve(colour: Tuple[str, str], appearance: str) -> str:

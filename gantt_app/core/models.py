@@ -19,6 +19,8 @@ import uuid
 logger = logging.getLogger(__name__)
 
 from gantt_app.core.priority import DEFAULT_PRIORITY
+from gantt_app.core.deliverable import (
+    Deliverable, rolled_up_deliverable_progress, status_for_progress)
 from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.core.taskstyle import TaskStyle
 from gantt_app.core.calendarregistry import CalendarRegistry, default_registry
@@ -1404,6 +1406,10 @@ class Project:
     #: part of how the plan is read, the way MS Project keeps custom
     #: filters in the .mpp.
     custom_filters: List[dict] = field(default_factory=list)
+    #: What the plan owes, tracked apart from the work that produces it.
+    #: A flat list linked by Deliverable.parent_id, the same shape tasks
+    #: holds; see gantt_app.core.deliverable for why these are not tasks.
+    deliverables: List[Deliverable] = field(default_factory=list)
 
     def calendar_for(self, task: Task) -> WorkingCalendar:
         """
@@ -3299,7 +3305,475 @@ class Project:
             List of tasks that are not subtasks (parent_task_id is None)
         """
         return [task for task in self.tasks if task.parent_task_id is None]
-    
+
+    # ------------------------------------------------------------------
+    # Deliverables
+    #
+    # The same flat-list-plus-parent shape the tasks keep, so each method
+    # below is the deliverable reading of the task method named beside it.
+    # None of them touches the schedule: a deliverable has no dates the
+    # engine works out, only a due date it is read against.
+    # ------------------------------------------------------------------
+
+    def get_deliverable_by_id(self, deliverable_id: str) -> Optional[Deliverable]:
+        """Get a deliverable by its ID, or None."""
+        for deliverable in self.deliverables:
+            if deliverable.id == deliverable_id:
+                return deliverable
+        return None
+
+    def add_deliverable(self, deliverable: Deliverable):
+        """Add a deliverable to the project."""
+        self.deliverables.append(deliverable)
+
+    def get_root_deliverables(self) -> List[Deliverable]:
+        """Every deliverable at the top level, in list order."""
+        return [d for d in self.deliverables if d.parent_id is None]
+
+    def get_sub_deliverables(self, deliverable_id: str) -> List[Deliverable]:
+        """The direct children of a deliverable, in list order."""
+        return [d for d in self.deliverables
+                if d.parent_id == deliverable_id]
+
+    def _deliverable_children_by_parent(self) -> Dict[Optional[str],
+                                                    List[Deliverable]]:
+        """Group deliverables by their parent, each group in list order."""
+        children: Dict[Optional[str], List[Deliverable]] = {}
+        for deliverable in self.deliverables:
+            children.setdefault(deliverable.parent_id, []).append(deliverable)
+        return children
+
+    def _deliverable_flatten(self, children) -> List[Deliverable]:
+        """
+        Rebuild the deliverable list from a parent-to-children mapping.
+
+        The same walk _flatten does for tasks: every row followed by its
+        descendants, with anything the walk could not reach - an orphan, a
+        cycle - appended rather than dropped.
+        """
+        ordered: List[Deliverable] = []
+        emitted: Set[str] = set()
+
+        def walk(parent_id: Optional[str]):
+            """Emit a parent's children, each followed by its own."""
+            for child in children.get(parent_id, []):
+                if child.id in emitted:
+                    continue
+                emitted.add(child.id)
+                ordered.append(child)
+                walk(child.id)
+
+        walk(None)
+
+        for deliverable in self.deliverables:
+            if deliverable.id not in emitted:
+                emitted.add(deliverable.id)
+                ordered.append(deliverable)
+
+        return ordered
+
+    def deliverable_display_order(self) -> List[Deliverable]:
+        """Every deliverable in the order the grid shows them."""
+        return self._deliverable_flatten(self._deliverable_children_by_parent())
+
+    def deliverable_display_ids(self) -> Dict[str, int]:
+        """The number each deliverable shows, counted down the display order."""
+        return {d.id: number for number, d in
+                enumerate(self.deliverable_display_order(), start=1)}
+
+    def next_deliverable_id(self) -> str:
+        """The next free sequential deliverable ID, as '001' and so on."""
+        existing = {d.id for d in self.deliverables}
+
+        highest = 0
+        for deliverable_id in existing:
+            try:
+                highest = max(highest, int(str(deliverable_id).strip()))
+            except (TypeError, ValueError):
+                continue
+
+        candidate_number = highest + 1
+        candidate = str(candidate_number).zfill(self.ID_WIDTH)
+        while candidate in existing:
+            candidate_number += 1
+            candidate = str(candidate_number).zfill(self.ID_WIDTH)
+        return candidate
+
+    def deliverable_outline_level(self, deliverable_id: str) -> int:
+        """How deep a deliverable sits, counting from one."""
+        level = 1
+        seen = {deliverable_id}
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+
+        while deliverable is not None and deliverable.parent_id:
+            if (deliverable.parent_id in seen
+                    or level > self.MAX_OUTLINE_DEPTH):
+                break
+            seen.add(deliverable.parent_id)
+            deliverable = self.get_deliverable_by_id(deliverable.parent_id)
+            if deliverable is None:
+                break
+            level += 1
+
+        return level
+
+    def _deliverable_ancestor_ids(self, deliverable_id: str) -> Set[str]:
+        """Every deliverable this one sits under, walking up to the root."""
+        found: Set[str] = set()
+        current = self.get_deliverable_by_id(deliverable_id)
+        while current is not None and current.parent_id:
+            if current.parent_id in found:
+                break                       # a parent cycle in a bad file
+            found.add(current.parent_id)
+            current = self.get_deliverable_by_id(current.parent_id)
+        return found
+
+    def deliverable_is_descendant(self, deliverable_id: str,
+                                  ancestor_id: str) -> bool:
+        """Whether a deliverable sits at or below another in the hierarchy."""
+        if deliverable_id == ancestor_id:
+            return True
+        return ancestor_id in self._deliverable_ancestor_ids(deliverable_id)
+
+    def _deliverable_descendant_ids(self, deliverable_id: str) -> Set[str]:
+        """Every deliverable beneath this one, however deeply nested."""
+        children = self._deliverable_children_by_parent()
+        found: Set[str] = set()
+        stack = [deliverable_id]
+        while stack:
+            current = stack.pop()
+            for child in children.get(current, []):
+                if child.id not in found:
+                    found.add(child.id)
+                    stack.append(child.id)
+        return found
+
+    def topmost_deliverables_of(self, deliverable_ids) -> List[str]:
+        """
+        The named deliverables with any that sit under another left out.
+
+        The topmost_of rule: a branch moves and deletes as a whole, so a
+        selection holding a row and its child acts on the branch once.
+        """
+        named = {deliverable_id for deliverable_id in deliverable_ids or []
+                 if self.get_deliverable_by_id(deliverable_id) is not None}
+
+        def has_named_ancestor(deliverable: Deliverable) -> bool:
+            seen = {deliverable.id}
+            parent_id = deliverable.parent_id
+            while parent_id and parent_id not in seen:
+                if parent_id in named:
+                    return True
+                seen.add(parent_id)
+                parent = self.get_deliverable_by_id(parent_id)
+                if parent is None:
+                    break
+                parent_id = parent.parent_id
+            return False
+
+        return [d.id for d in self.deliverable_display_order()
+                if d.id in named and not has_named_ancestor(d)]
+
+    def remove_deliverable(self, deliverable_id: str) -> bool:
+        """Remove a deliverable and the whole branch beneath it."""
+        branch = {deliverable_id} | self._deliverable_descendant_ids(
+            deliverable_id)
+        before = len(self.deliverables)
+        self.deliverables = [d for d in self.deliverables
+                             if d.id not in branch]
+        return len(self.deliverables) < before
+
+    def can_reparent_deliverable(self, deliverable_id: str,
+                                 new_parent_id: Optional[str]) -> bool:
+        """Whether a deliverable branch may move under a new parent."""
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        if deliverable is None:
+            return False
+        if new_parent_id is None:
+            return deliverable.parent_id is not None
+
+        new_parent = self.get_deliverable_by_id(new_parent_id)
+        if new_parent is None:
+            return False
+        if deliverable.parent_id == new_parent_id:
+            return False
+        return not self.deliverable_is_descendant(new_parent_id,
+                                                  deliverable_id)
+
+    def reparent_deliverable(self, deliverable_id: str,
+                             new_parent_id: Optional[str]) -> bool:
+        """Move a deliverable and its branch under a different parent."""
+        if not self.can_reparent_deliverable(deliverable_id, new_parent_id):
+            return False
+
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        children = self._deliverable_children_by_parent()
+        old_siblings = children.get(deliverable.parent_id, [])
+        if deliverable in old_siblings:
+            old_siblings.remove(deliverable)
+
+        deliverable.parent_id = new_parent_id
+        children.setdefault(new_parent_id, []).append(deliverable)
+        self.deliverables = self._deliverable_flatten(children)
+        self.roll_up_deliverables()
+        return True
+
+    def deliverable_indent_target(self,
+                                  deliverable_id: str) -> Optional[Deliverable]:
+        """The sibling directly above, which indenting would go under."""
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        if deliverable is None:
+            return None
+
+        siblings = [d for d in self.deliverables
+                    if d.parent_id == deliverable.parent_id]
+        index = next((i for i, d in enumerate(siblings)
+                      if d.id == deliverable_id), None)
+        if index is None or index == 0:
+            return None
+        return siblings[index - 1]
+
+    def can_indent_deliverable(self, deliverable_id: str) -> bool:
+        """Whether the deliverable can be moved a level deeper."""
+        return self.deliverable_indent_target(deliverable_id) is not None
+
+    def can_outdent_deliverable(self, deliverable_id: str) -> bool:
+        """Whether the deliverable can be moved a level shallower."""
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        if deliverable is None or not deliverable.parent_id:
+            return False
+        return self.get_deliverable_by_id(deliverable.parent_id) is not None
+
+    def indent_deliverable(self, deliverable_id: str) -> bool:
+        """
+        Make a deliverable a sub-deliverable of the sibling above it.
+
+        The indent_task shape: the row keeps its own children, which follow
+        it down a level because they point at it rather than at its parent.
+        """
+        new_parent = self.deliverable_indent_target(deliverable_id)
+        if new_parent is None:
+            return False
+
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        deliverable.parent_id = new_parent.id
+
+        self.deliverables = self._deliverable_flatten(
+            self._deliverable_children_by_parent())
+        self.roll_up_deliverables()
+        return True
+
+    def outdent_deliverable(self, deliverable_id: str) -> bool:
+        """Move a deliverable out to sit beside its parent."""
+        if not self.can_outdent_deliverable(deliverable_id):
+            return False
+
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        parent = self.get_deliverable_by_id(deliverable.parent_id)
+        deliverable.parent_id = parent.parent_id
+
+        self.deliverables = self._deliverable_flatten(
+            self._deliverable_children_by_parent())
+        self.roll_up_deliverables()
+        return True
+
+    def indent_deliverables(self, deliverable_ids) -> bool:
+        """Indent several deliverables under the row above the topmost."""
+        moved = False
+        for deliverable_id in self.topmost_deliverables_of(deliverable_ids):
+            if self.indent_deliverable(deliverable_id):
+                moved = True
+        return moved
+
+    def outdent_deliverables(self, deliverable_ids) -> bool:
+        """Outdent several deliverables, bottom first so they keep order."""
+        moved = False
+        for deliverable_id in reversed(
+                self.topmost_deliverables_of(deliverable_ids)):
+            if self.outdent_deliverable(deliverable_id):
+                moved = True
+        return moved
+
+    def move_deliverable_to_line(self, deliverable_id: str,
+                                 target_id: str, above: bool) -> bool:
+        """Move one deliverable branch to the line above or below a target."""
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        target = self.get_deliverable_by_id(target_id)
+        if (deliverable is None or target is None
+                or deliverable_id == target_id):
+            return False
+        if self.deliverable_is_descendant(target_id, deliverable_id):
+            return False
+
+        children = self._deliverable_children_by_parent()
+        target_children = children.get(target_id, [])
+        if not above and target_children:
+            new_parent_id = target_id
+            insert_at = 0
+        else:
+            new_parent_id = target.parent_id
+            target_siblings = children.get(new_parent_id, [])
+            insert_at = (target_siblings.index(target)
+                         + (0 if above else 1))
+
+        if (new_parent_id is not None
+                and self.deliverable_is_descendant(new_parent_id,
+                                                   deliverable_id)):
+            return False
+
+        old_parent_id = deliverable.parent_id
+        old_siblings = children.get(old_parent_id, [])
+        if deliverable in old_siblings:
+            old_index = old_siblings.index(deliverable)
+            old_siblings.remove(deliverable)
+            if old_parent_id == new_parent_id and old_index < insert_at:
+                insert_at -= 1
+
+        new_siblings = children.setdefault(new_parent_id, [])
+        insert_at = max(0, min(insert_at, len(new_siblings)))
+        deliverable.parent_id = new_parent_id
+        new_siblings.insert(insert_at, deliverable)
+        self.deliverables = self._deliverable_flatten(children)
+        self.roll_up_deliverables()
+        return True
+
+    def move_deliverable_after(self, deliverable_id: str,
+                               anchor_id: str) -> bool:
+        """
+        Move a deliverable to sit right after another's whole branch.
+
+        Unlike move_deliverable_to_line, 'below' here means below the
+        subtree, not below the row: a new sibling of the anchor, placed
+        after the anchor's last descendant. Creating a row beside another
+        and duplicating a branch after itself both want exactly that.
+        """
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        anchor = self.get_deliverable_by_id(anchor_id)
+        if (deliverable is None or anchor is None
+                or deliverable_id == anchor_id):
+            return False
+        if self.deliverable_is_descendant(anchor_id, deliverable_id):
+            return False
+
+        children = self._deliverable_children_by_parent()
+        old_siblings = children.get(deliverable.parent_id, [])
+        if deliverable in old_siblings:
+            old_siblings.remove(deliverable)
+
+        deliverable.parent_id = anchor.parent_id
+        siblings = children.setdefault(anchor.parent_id, [])
+        siblings.insert(siblings.index(anchor) + 1, deliverable)
+        self.deliverables = self._deliverable_flatten(children)
+        return True
+
+    def move_deliverables(self, deliverable_ids, where: str) -> bool:
+        """Move every chosen deliverable branch within its siblings."""
+        if where not in ('top', 'up', 'down', 'bottom'):
+            raise ValueError(f"Unknown move target: {where!r}")
+
+        selected = set(self.topmost_deliverables_of(deliverable_ids))
+        if not selected:
+            return False
+
+        children = self._deliverable_children_by_parent()
+        moved = False
+        for siblings in children.values():
+            if not any(d.id in selected for d in siblings):
+                continue
+            before = [d.id for d in siblings]
+
+            if where == 'top':
+                siblings[:] = (
+                    [d for d in siblings if d.id in selected]
+                    + [d for d in siblings if d.id not in selected]
+                )
+            elif where == 'bottom':
+                siblings[:] = (
+                    [d for d in siblings if d.id not in selected]
+                    + [d for d in siblings if d.id in selected]
+                )
+            elif where == 'up':
+                for index in range(1, len(siblings)):
+                    if (siblings[index].id in selected
+                            and siblings[index - 1].id not in selected):
+                        siblings[index - 1], siblings[index] = (
+                            siblings[index], siblings[index - 1])
+            else:
+                for index in range(len(siblings) - 2, -1, -1):
+                    if (siblings[index].id in selected
+                            and siblings[index + 1].id not in selected):
+                        siblings[index], siblings[index + 1] = (
+                            siblings[index + 1], siblings[index])
+
+            moved = moved or before != [d.id for d in siblings]
+
+        if moved:
+            self.deliverables = self._deliverable_flatten(children)
+        return moved
+
+    def sort_deliverables(self, key, reverse: bool = False) -> bool:
+        """
+        Sort each group of siblings by the given key, keeping the hierarchy.
+
+        Sorting is a real reorder of the flat list - what the grid shows is
+        the order the plan holds - so it is undoable like any other move.
+        """
+        children = self._deliverable_children_by_parent()
+        for siblings in children.values():
+            siblings.sort(key=key, reverse=reverse)
+        new_order = self._deliverable_flatten(children)
+        changed = [d.id for d in new_order] != [d.id for d in self.deliverables]
+        if changed:
+            self.deliverables = new_order
+        return changed
+
+    def roll_up_deliverables(self) -> bool:
+        """
+        Make every deliverable with children take its progress from them.
+
+        RETURNS:
+        --------
+        bool
+            True when any deliverable's progress or status changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The roll_up_summaries shape, progress only - a deliverable has no
+        dates to span. Children are walked deepest first so a parent totals
+        children that have already settled, and the status follows the
+        progress the roll-up lands on.
+        """
+        children = self._deliverable_children_by_parent()
+
+        def depth(deliverable: Deliverable) -> int:
+            """How far below the root a deliverable sits."""
+            seen = {deliverable.id}
+            level = 0
+            current = deliverable
+            while current.parent_id:
+                parent = self.get_deliverable_by_id(current.parent_id)
+                if parent is None or parent.id in seen:
+                    break
+                seen.add(parent.id)
+                current = parent
+                level += 1
+            return level
+
+        changed = False
+        for deliverable in sorted(self.deliverables, key=depth,
+                                  reverse=True):
+            brood = children.get(deliverable.id)
+            if not brood:
+                continue
+            new_progress = rolled_up_deliverable_progress(brood)
+            new_status = status_for_progress(new_progress)
+            if (deliverable.progress != new_progress
+                    or deliverable.status != new_status):
+                deliverable.progress = new_progress
+                deliverable.status = new_status
+                changed = True
+        return changed
+
     def to_dict(self) -> dict:
         """Convert project to dictionary for serialization."""
         return {
@@ -3318,6 +3792,7 @@ class Project:
             'hidden_grid_columns': list(self.hidden_grid_columns),
             'grid_column_order': list(self.grid_column_order),
             'custom_filters': self._write_custom_filters(),
+            'deliverables': [d.to_dict() for d in self.deliverables],
             **self.resource_repository.to_dict(),
         }
 
@@ -3513,6 +3988,11 @@ class Project:
             # an empty list is what those plans meant.
             custom_filters=cls._read_custom_filters(
                 data.get('custom_filters')),
+            # Absent from every plan saved before the Deliverables tab -
+            # nothing is owed in one, which is what the file says.
+            deliverables=[Deliverable.from_dict(d)
+                          for d in data.get('deliverables', [])
+                          if isinstance(d, dict)],
         )
         
         # Add tasks manually

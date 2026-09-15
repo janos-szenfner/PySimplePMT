@@ -557,6 +557,86 @@ class SnapshotCommand(Command):
 
 
 @dataclass
+class DeliverableSnapshotCommand(Command):
+    """
+    Command that records whatever one action did to the deliverables list.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project the action changes.
+    apply : Callable[[], bool]
+        The action. Returns False when it changed nothing.
+    label : str
+        What to call the change in the undo history.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The SnapshotCommand idea pointed at the other collection. A deliverable
+    edit - a paste, a re-parent, a bulk status change - has no simpler
+    honest description than the list before and the list after, so the same
+    record-the-state approach applies.
+
+    Every field a deliverable carries is captured, not a picked set:
+    deliverables take no part in scheduling, so nothing outside the action
+    rewrites one - but capture is cheap and a field left out is a field
+    undo cannot put back.
+    """
+
+    #: What an action recorded this way can change about a deliverable, and
+    #: so what has to be put back. The whole row, less the identity.
+    FIELDS = ('name', 'parent_id', 'status', 'progress', 'weight',
+              'assignee', 'due_date', 'priority', 'tags', 'details')
+
+    project: Project
+    apply: Callable[[], bool]
+    label: str = "Change Deliverables"
+    name: str = field(default="", init=False)
+    _before: Optional[list] = field(default=None, init=False, repr=False)
+    _after: Optional[list] = field(default=None, init=False, repr=False)
+
+    def __post_init__(self):
+        self.name = self.label
+
+    def execute(self) -> bool:
+        """Run the action the first time; put its result back on a redo."""
+        if self._after is not None:
+            self._restore(self._after)
+            return True
+
+        before = self._snapshot()
+        if not self.apply():
+            return False
+
+        self._before = before
+        self._after = self._snapshot()
+        return True
+
+    def undo(self) -> bool:
+        """Put the deliverables back as they were before the action."""
+        if self._before is None:
+            return False
+        self._restore(self._before)
+        return True
+
+    def _snapshot(self) -> list:
+        """Every deliverable, and the parts of it an action rewrites."""
+        return [
+            (deliverable,
+             {name: copy.copy(getattr(deliverable, name))
+              for name in self.FIELDS})
+            for deliverable in self.project.deliverables
+        ]
+
+    def _restore(self, snapshot: list) -> None:
+        """Put back a snapshot taken by _snapshot."""
+        self.project.deliverables = [row[0] for row in snapshot]
+        for deliverable, fields in snapshot:
+            for name, value in fields.items():
+                setattr(deliverable, name, copy.copy(value))
+
+
+@dataclass
 class CompoundCommand(Command):
     """
     A command that combines multiple commands into one.
@@ -992,6 +1072,18 @@ def create_snapshot_command(project: Project, apply: Callable[[], bool],
     return SnapshotCommand(project, apply, label)
 
 
+def create_deliverable_snapshot_command(
+        project: Project, apply: Callable[[], bool],
+        label: str = "Change Deliverables") -> DeliverableSnapshotCommand:
+    """
+    Create a command that records whatever an action did to deliverables.
+
+    The deliverable reading of create_snapshot_command - see it for the
+    shape.
+    """
+    return DeliverableSnapshotCommand(project, apply, label)
+
+
 def create_compound_command(commands: List[Command], name: str = "Compound Command") -> CompoundCommand:
     """
     Create a compound command from multiple commands.
@@ -1261,6 +1353,27 @@ class ProjectStateTracker:
         """
         return self.manager.execute(
             create_snapshot_command(self.project, apply, label))
+
+    def run_deliverable_as_command(self, apply: Callable[[], bool],
+                                   label: str = "Change Deliverables") -> bool:
+        """
+        Run an action that rewrites the deliverables list, as one undoable step.
+
+        PARAMETERS:
+        -----------
+        apply : Callable[[], bool]
+            The action. Returns False when it changed nothing, in which case
+            nothing is added to the history.
+        label : str
+            What to call the change in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            What apply returned: True when the action did something.
+        """
+        return self.manager.execute(
+            create_deliverable_snapshot_command(self.project, apply, label))
 
     def restructure_tasks(self, old_snapshot, new_snapshot,
                           label: str = "Restructure Tasks") -> bool:

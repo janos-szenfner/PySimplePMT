@@ -1071,7 +1071,8 @@ GUIDE_SECTIONS = (
             "The footer at the bottom of the window has three tabs: Task "
             "Planning, Resource Planning and Deliverables. Task Planning is "
             "the default. Resource Planning opens the four-panel resource "
-            "matrix, and Deliverables is currently disabled.",
+            "matrix, and Deliverables opens the checklist of what the plan "
+            "owes.",
 
             "The left half of the matrix lists every project task. Click a "
             "task to see its details in the inspector panel on the right, "
@@ -1100,6 +1101,51 @@ GUIDE_SECTIONS = (
 
             "The view follows the active day/night theme. Switching the "
             "theme repaints every panel at once.",
+        ],
+    ),
+    (
+        "Deliverables view",
+        [
+            "The Deliverables tab lists what the plan owes - deliverables "
+            "and the sub-deliverables under them - as an indented grid a "
+            "spreadsheet user already knows. It is its own list, not the "
+            "task list: a deliverable has no schedule dates and never "
+            "appears on the chart.",
+
+            "Each row has a mark box in the number gutter. Ticking a row "
+            "ticks its whole branch, and a parent with only part of its "
+            "branch ticked shows [~]. Bulk actions - the right-click "
+            "menu's Set Status, Set Priority, Move, Duplicate, Delete and "
+            "Export - act on the marked rows, or on the selected rows "
+            "when nothing is marked.",
+
+            "Progress works the way the checkboxes suggest: marking a "
+            "sub-deliverable Done makes it 100%, To Do makes it 0%, and "
+            "typing a percentage into the Progress cell sets it directly. "
+            "A deliverable's own progress is the average of what is under "
+            "it - weighted by each row's Weight when the defaults of 1 "
+            "will not do - and is recalculated the moment a child changes.",
+
+            "Indentation is the hierarchy: Tab makes a row a "
+            "sub-deliverable of the row above it, Shift-Tab moves it back "
+            "out, and dragging a row onto the middle of another makes it "
+            "a child there. Dragging to a row's edge drops it beside "
+            "that row instead. Right and Left arrow keys expand and "
+            "collapse a branch.",
+
+            "Double-click a cell to edit it - names, tags, due dates, "
+            "weights and progress take typing, while status, priority "
+            "and assignee offer pick lists. Click a column heading to "
+            "sort by it within each group; click again to reverse. The "
+            "filter box and the status dropdown narrow the rows, keeping "
+            "the parents of whatever matched so context is never lost.",
+
+            "A due date in the past colours the row red until it is "
+            "done; a Done row is green. Right-click for Details to open "
+            "the description and acceptance criteria, and for Export to "
+            "write the marked rows - or the whole list - to CSV or JSON. "
+            "Everything the grid changes is undoable with the same "
+            "Edit > Undo the task list uses.",
         ],
     ),
     (
