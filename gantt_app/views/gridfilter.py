@@ -1159,7 +1159,10 @@ class GridFilterDialog(ctk.CTkToplevel):
             return
         text = self._query_entry.get()
         cursor = self._query_entry.index('insert')
-        start = cursor
+        # CTkEntry draws its placeholder as real text in the widget while
+        # get() reports "", so the caret can index past the text's end -
+        # an empty box released on the list would read text[-1] and up.
+        start = min(cursor, len(text))
         while start > 0 and (text[start - 1].isalnum()
                              or text[start - 1] in '._-'):
             start -= 1

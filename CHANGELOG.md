@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.69.7 - 2026-09-15
+
+- **Picking a filter suggestion no longer crashes on an empty query
+  box.** The suggestion list's pick handler read the caret position and
+  scanned back for the word being typed - but the entry box draws its
+  grey placeholder as real text inside the widget while reporting an
+  empty string, so with the box untouched the caret could sit far past
+  the end of the reported text, and every release on the list logged an
+  IndexError instead of taking the pick. The scan now clamps the caret
+  to the text's length, the same guard the suggestion offer already
+  had.
+
 ## 1.69.6 - 2026-09-15
 
 - **Material resources join the pool - and the tasks.** Resource
