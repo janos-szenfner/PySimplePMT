@@ -25,6 +25,7 @@ from gantt_app.views.deliverables_board import DeliverablesBoard
 from gantt_app.views.toolbar import Toolbar
 from gantt_app.views.startup_setting import StartupSettings, WelcomeModal
 from gantt_app.views.project_dashboard import ProjectDashboardFrame
+from gantt_app.views.statusline import task_status_line
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
 from gantt_app.utils.copypastecut import ClipboardManager, setup_keyboard_bindings
 from gantt_app.utils.log import (
@@ -513,7 +514,7 @@ class GanttApp(ctk.CTk):
             on_project_changed=self.update_all,
             project_tracker=self.project_tracker,
             clipboard_manager=self.clipboard_manager,
-            on_status=self._show_status,
+            on_status=lambda m: self._show_status_for("Task Planning", m),
         )
         self.content_panes.add(self.task_list, weight=2)
         
@@ -551,7 +552,9 @@ class GanttApp(ctk.CTk):
         # 4-Panel Resource Planning view, overlaid with the paned task view.
         # Lifting one or the other swaps the main viewport.
         self.resource_board = ResourceBoard(
-            content_frame, self.project, on_status=self._show_status,
+            content_frame, self.project,
+            on_status=lambda m: self._show_status_for(
+                "Resource Planning", m),
             on_project_changed=self.update_all,
             project_tracker=self.project_tracker)
         self.toolbar.set_resource_board(self.resource_board)
@@ -561,7 +564,8 @@ class GanttApp(ctk.CTk):
         # The Deliverables view, third widget in the same cell - the footer
         # tab bar lifts whichever of the three is active. See _show_view.
         self.deliverables_board = DeliverablesBoard(
-            content_frame, self.project, on_status=self._show_status,
+            content_frame, self.project,
+            on_status=lambda m: self._show_status_for("Deliverables", m),
             on_project_changed=self.update_all,
             project_tracker=self.project_tracker)
         self.deliverables_board.grid(
@@ -573,6 +577,13 @@ class GanttApp(ctk.CTk):
             "Task Planning": self.content_panes,
             "Resource Planning": self.resource_board,
             "Deliverables": self.deliverables_board,
+        }
+        #: What each view says to the status bar when it comes to the top -
+        #: the line its current selection writes.
+        self._view_status = {
+            "Task Planning": self._task_selection_status,
+            "Resource Planning": self.resource_board.selection_status,
+            "Deliverables": self.deliverables_board.selection_status,
         }
         self._active_view = "Task Planning"
 
@@ -738,9 +749,19 @@ class GanttApp(ctk.CTk):
             on_shown = getattr(widget, 'on_shown', None)
             if callable(on_shown):
                 widget.after_idle(on_shown)
+            # The status bar belongs to the view on top: it shows that
+            # view's selection, not the pick the previous view left behind.
+            describe = self._view_status.get(name)
+            text = describe() if describe else None
+            self._show_status(text or "Ready")
             logger.info("Switched to %s view", name)
         except tk.TclError:
             logger.debug("View widgets are being destroyed; nothing to lift")
+        except Exception:
+            # A selection asked for mid-rebuild may fail for reasons other
+            # than teardown; a view switch should never die on the line
+            # under the window.
+            logger.debug("Could not describe the %s selection", name)
 
     def _current_view_tab(self) -> str:
         """Which view is on top now, as the tab bar names it."""
@@ -771,6 +792,24 @@ class GanttApp(ctk.CTk):
         except (AttributeError, tk.TclError):
             logger.debug("No status bar to show %r on", message)
 
+    def _show_status_for(self, view_name: str, message: str):
+        """
+        Show a view's line only while that view is on top.
+
+        Every view owns the same status bar; a board rebuilt or reselected
+        while it sits under another view must not overwrite the line the
+        reader is looking at.
+        """
+        if getattr(self, '_active_view', "Task Planning") == view_name:
+            self._show_status(message)
+
+    def _task_selection_status(self):
+        """The status line for the task list's selection, or None."""
+        task_list = getattr(self, 'task_list', None)
+        ids = task_list.get_selected_task_ids() if task_list else []
+        task = self.project.get_task_by_id(ids[0]) if ids else None
+        return task_status_line(task) if task is not None else None
+
     def _set_initial_sash(self):
         """Put the divider at a sensible starting position."""
         try:
@@ -785,22 +824,11 @@ class GanttApp(ctk.CTk):
 
     def on_task_select(self, task: Task):
         """Handle task selection in the task list."""
-        # Update status bar
-        if task.is_milestone:
-            self.status_bar.configure(
-                text=f"Milestone: {task.name} ({task.start_date.strftime('%Y-%m-%d')}) | "
-                     f"Dependencies: {len(task.dependencies)}"
-            )
-        else:
-            # duration_days is a property, not a method
-            duration = task.duration_days or 0
-            self.status_bar.configure(
-                text=f"Task: {task.name} | {task.start_date.strftime('%Y-%m-%d')} - "
-                     f"{task.end_date.strftime('%Y-%m-%d') if task.end_date else 'N/A'} "
-                     f"({duration} days) | Progress: {task.progress}% | "
-                     f"Dependencies: {len(task.dependencies)}"
-            )
-        
+        # Update status bar - but only while the task view is on top: a
+        # programmatic reselection during a rebuild must not overwrite the
+        # line another view is showing.
+        self._show_status_for("Task Planning", task_status_line(task))
+
         # Highlight task in Gantt chart (could be implemented)
         self.gantt_chart.update_chart()
     
@@ -954,8 +982,18 @@ class GanttApp(ctk.CTk):
         # Refresh the title to reflect the current project and dirty state
         self._update_title()
         
-        # Update status bar
-        if self.project.tasks:
+        # Update status bar: the front view's selection leads; the project
+        # summary is what the bar says while nothing is selected.
+        describe = getattr(self, '_view_status', {}).get(
+            getattr(self, '_active_view', ''))
+        try:
+            selected = describe() if describe else None
+        except (tk.TclError, AttributeError):
+            # A tree mid-rebuild answers nothing; the summary stands in.
+            selected = None
+        if selected is not None:
+            self.status_bar.configure(text=selected)
+        elif self.project.tasks:
             milestone_count = sum(1 for t in self.project.tasks if t.is_milestone)
             task_count = len(self.project.tasks) - milestone_count
             self.status_bar.configure(

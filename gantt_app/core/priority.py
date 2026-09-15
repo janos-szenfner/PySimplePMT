@@ -30,6 +30,11 @@ PRIORITY_LEVELS = (
     'Critical',
 )
 
+#: The same scale as pickers present it - highest first, like MS
+#: Project's own priority dropdown. The ladder itself stays ascending:
+#: priority_rank reads its position, so menus must not order the data.
+PRIORITY_MENU_ORDER = PRIORITY_LEVELS[::-1]
+
 #: Default priority level
 DEFAULT_PRIORITY = 'Medium'
 

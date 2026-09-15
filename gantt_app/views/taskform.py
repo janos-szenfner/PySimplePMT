@@ -31,7 +31,7 @@ from gantt_app.core.calendarregistry import describe_week
 from gantt_app.core.models import (
     Task, Project, TASK_TYPES, CONTAINER_TYPES,
 )
-from gantt_app.core.priority import PRIORITY_LEVELS
+from gantt_app.core.priority import PRIORITY_MENU_ORDER
 from gantt_app.utils.undoredo import ProjectStateTracker
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views.colorpicker import ColorEntry
@@ -1242,7 +1242,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.priority_var = ctk.StringVar(value=self.template.priority)
         self.priority_menu = ctk.CTkOptionMenu(
             frame, variable=self.priority_var,
-            values=PRIORITY_LEVELS
+            values=PRIORITY_MENU_ORDER
         )
         self._field(frame, "Priority:", self.priority_menu,
                     where=self.RIGHT)

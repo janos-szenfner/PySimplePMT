@@ -77,6 +77,11 @@ class LevelingPreviewWindow(ctk.CTkToplevel):
 
     STYLE_NAME = 'LevelingPreview.Treeview'
 
+    #: The one preview open at a time; a second Level... press raises it
+    #: and re-runs the engine rather than stacking another window that a
+    #: forgotten Apply could later fire from.
+    _open_window = None
+
     def __init__(self, master, project: Project,
                  apply_callback: Optional[Callable[[LevelingPlan],
                                                  None]] = None,
@@ -243,6 +248,12 @@ class LevelingPreviewWindow(ctk.CTkToplevel):
         self._apply_callback(self._plan)
         self.destroy()
 
+    def destroy(self) -> None:
+        """Close the window and forget it as the open preview."""
+        if type(self)._open_window is self:
+            type(self)._open_window = None
+        super().destroy()
+
 
 def show_leveling_preview(master, project: Project,
                           apply_callback: Optional[Callable] = None,
@@ -258,10 +269,31 @@ def show_leveling_preview(master, project: Project,
         fails to open should not take the toolbar that opened it down
         with it.
     """
+    existing = LevelingPreviewWindow._open_window
+    if existing is not None:
+        try:
+            if existing.winfo_exists():
+                # Rebind before re-running: the plan or the callback may
+                # have changed since the window last looked - a project
+                # loaded while it sat open must not be levelled by a
+                # stale Apply.
+                existing.project = project
+                existing._apply_callback = apply_callback
+                if options is not None:
+                    existing._options = options
+                existing.refresh()
+                existing.deiconify()
+                existing.lift()
+                existing.focus_set()
+                return existing
+        except tk.TclError:
+            LevelingPreviewWindow._open_window = None
     try:
-        return LevelingPreviewWindow(master, project,
-                                     apply_callback=apply_callback,
-                                     options=options)
+        window = LevelingPreviewWindow(master, project,
+                                       apply_callback=apply_callback,
+                                       options=options)
+        LevelingPreviewWindow._open_window = window
+        return window
     except Exception:
         logger.exception("Could not open the levelling preview")
         return None

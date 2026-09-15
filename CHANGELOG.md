@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.71.5 - 2026-09-15
+
+- **The status bar follows whatever is selected.** The line at the foot
+  of the window now answers for the view on top: a task in the task
+  list reads the same dates-progress-dependencies line it always did,
+  a resource picked on the Resource Planning board names its kind,
+  capacity and task count (a member seen under its team says so), a
+  deliverable shows status, progress, due date and task count, and a
+  task row under either board describes the task. Switching views
+  restores the incoming view's own selection, a view sitting underneath
+  can no longer overwrite the bar, and the project summary shows only
+  while nothing is selected.
+
+- **No more black flash between ribbon tabs.** The pages were packed
+  and unpacked on every switch, which left the band's dark canvas
+  showing for a frame; they are stacked once now and the active one is
+  raised, so a switch never unmaps a widget.
+
+- **Priority pickers run highest to lowest.** The task editor's
+  dropdown and the deliverables' Set Priority menus now list Critical
+  down to Minimal, the way MS Project presents its own. The ladder
+  itself still runs ascending - the leveller's rank reads it - so only
+  the presentation changed.
+
+- **One levelling preview at a time.** A second Level... press now
+  raises and re-runs the window already open instead of stacking
+  another - one that could still apply against a stale plan. Reopening
+  rebinds the project and options first, so a plan reloaded while the
+  preview sat open is previewed as it now stands.
+
 ## 1.71.4 - 2026-09-15
 
 - **Resource levelling, with a preview.** The Project tab gained a

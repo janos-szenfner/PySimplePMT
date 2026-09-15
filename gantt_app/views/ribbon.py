@@ -443,7 +443,15 @@ class RibbonBar(IconToolbar):
         self._mount_point = None
 
     def _create_band(self):
-        """One page of captioned groups per tab; only the active one packs."""
+        """
+        One page of captioned groups per tab, stacked and raised, not
+        packed and unpacked.
+
+        Every page is place()d over the whole band and the active one is
+        lifted above the rest: a switch never unmaps a widget, so the
+        band's dark canvas never shows through for the beat a pack/unpack
+        pair would leave it bare.
+        """
         self._band = ctk.CTkFrame(self, fg_color=WIN_MENU_BG, corner_radius=0,
                                   height=self.BAND_HEIGHT)
         self._band.pack(side="top", fill="x")
@@ -452,6 +460,7 @@ class RibbonBar(IconToolbar):
         self._groups.clear()
         for tab_name, groups in self.RIBBON:
             page = ctk.CTkFrame(self._band, fg_color="transparent")
+            page.place(relx=0, rely=0, relwidth=1, relheight=1)
             for caption, contents in groups:
                 group = self._build_group(page, caption, contents)
                 self._groups[(tab_name, caption)] = group
@@ -694,15 +703,11 @@ class RibbonBar(IconToolbar):
         self.select_tab(name)
 
     def select_tab(self, name: str):
-        """Show one page and mark its tab; an unknown name changes nothing."""
+        """Raise one page and mark its tab; an unknown name changes nothing."""
         if name not in self._pages:
             return
         self._active_tab = name
-        for tab_name, page in self._pages.items():
-            if tab_name == name and not self._collapsed:
-                page.pack(side="top", fill="both", expand=True)
-            else:
-                page.pack_forget()
+        self._pages[name].tkraise()
         self._restyle_tabs()
 
     def set_view_context(self, view_name: str) -> None:
@@ -767,8 +772,6 @@ class RibbonBar(IconToolbar):
         """Fold the band away, or show the active page again."""
         self._collapsed = bool(collapsed)
         if self._collapsed:
-            for page in self._pages.values():
-                page.pack_forget()
             self._band.pack_forget()
             self._collapse_button.configure(text="⌄")
         else:

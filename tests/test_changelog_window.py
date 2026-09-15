@@ -67,7 +67,7 @@ class TestLoadedSections(unittest.TestCase):
     def test_the_real_changelog_loads_with_the_latest_first(self):
         self.assertTrue(CHANGELOG_SECTIONS)
         # The newest entry heads the file, so it heads the sections.
-        self.assertTrue(CHANGELOG_SECTIONS[0][0].startswith("1.71.4"))
+        self.assertTrue(CHANGELOG_SECTIONS[0][0].startswith("1.71.5"))
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")

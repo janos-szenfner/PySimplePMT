@@ -52,6 +52,7 @@ from gantt_app.core.resource_model import (
     Resource, ResourceType, TeamPool, MaterialResource, CostResource,
     material_quantity)
 from gantt_app.core import effort as eff
+from gantt_app.views.statusline import entity_status_line, task_status_line
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -212,6 +213,9 @@ class ResourceUsageGrid(ctk.CTkFrame):
         hsb.grid(row=1, column=1, sticky=tk.EW)
 
         self.tree.bind('<Double-1>', self._on_double_click)
+        self.tree.bind('<<TreeviewSelect>>',
+                       lambda _e: self._push_selection_status(),
+                       add='+')
         self.tree.bind('<<TreeviewOpen>>',
                        lambda _e: self.after_idle(self._refresh_gutter),
                        add='+')
@@ -1513,3 +1517,37 @@ class ResourceUsageGrid(ctk.CTkFrame):
         """Send a line to the footer's status bar, if there is one."""
         if self.on_status:
             self.on_status(message)
+
+    # ------------------------------------------------------------------
+    # What the status bar shows
+    # ------------------------------------------------------------------
+    def selection_status(self) -> Optional[str]:
+        """
+        The status-bar line for the row under the cursor, or None.
+
+        A task row describes the task; an alias row describes the member,
+        naming the team it is seen through; anything else describes the
+        pool entity the row stands for.
+        """
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        item = selection[0]
+        if self._is_task_row(item):
+            _tag, _parent, task_id, _index = item.rsplit(':', 3)
+            task = self.project.get_task_by_id(task_id)
+            return task_status_line(task) if task is not None else None
+        entity = self._entity_for_row(item)
+        if entity is None:
+            return None
+        via_team = None
+        if self._is_alias_row(item):
+            parent = self.tree.parent(item)
+            team = self._entity_by_id(self._canonical_id(parent))
+            via_team = getattr(team, 'name', None)
+        return entity_status_line(entity, self.project, via_team=via_team)
+
+    def _push_selection_status(self) -> None:
+        """Tell the status bar what is selected now, if it is listening."""
+        if self.on_status:
+            self.on_status(self.selection_status() or "Ready")

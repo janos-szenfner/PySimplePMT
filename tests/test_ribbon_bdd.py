@@ -81,10 +81,10 @@ def ribbon_offers_tabs(toolbar, tabs):
 
 @then(parsers.parse('the "{name}" tab is showing'))
 def tab_is_showing(toolbar, name):
-    """Its page is packed into the band and its tab is the marked one."""
+    """Its page tops the band's stack and its tab is the marked one."""
     ribbon = toolbar.icon_toolbar
     assert ribbon._active_tab == name
-    assert ribbon._pages[name].winfo_manager() == 'pack'
+    assert ribbon._band.winfo_children()[-1] is ribbon._pages[name]
 
 
 @when(parsers.parse('the user picks the "{name}" tab'))
@@ -94,7 +94,10 @@ def user_picks_tab(toolbar, name):
 
 @then(parsers.parse("the \"{name}\" tab's page is not shown"))
 def tab_page_not_shown(toolbar, name):
-    assert toolbar.icon_toolbar._pages[name].winfo_manager() == ''
+    """Another page tops the stack; a stacked page never unmaps."""
+    ribbon = toolbar.icon_toolbar
+    assert ribbon._pages[name].winfo_manager() == 'place'
+    assert ribbon._band.winfo_children()[-1] is not ribbon._pages[name]
 
 
 # ---- the groups -------------------------------------------------------------

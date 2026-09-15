@@ -47,8 +47,10 @@ from gantt_app.core.models import Project
 from gantt_app.core.deliverable import (
     Deliverable, DELIVERABLE_STATUSES,
     status_for_progress, progress_for_status)
-from gantt_app.core.priority import PRIORITY_LEVELS
+from gantt_app.core.priority import PRIORITY_LEVELS, PRIORITY_MENU_ORDER
 from gantt_app.views.datepicker import parse_date, DATE_FORMAT
+from gantt_app.views.statusline import (
+    deliverable_status_line, task_status_line)
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -246,6 +248,9 @@ class DeliverablesBoard(ctk.CTkFrame):
         self.tree.bind('<ButtonPress-1>', self._on_press)
         self.tree.bind('<ButtonRelease-1>', self._on_release)
         self.tree.bind('<B1-Motion>', self._on_drag)
+        self.tree.bind('<<TreeviewSelect>>',
+                       lambda _e: self._push_selection_status(),
+                       add='+')
         self.tree.bind('<<TreeviewOpen>>',
                        lambda _e: self.after_idle(self._refresh_gutter),
                        add='+')
@@ -905,7 +910,7 @@ class DeliverablesBoard(ctk.CTkFrame):
     def _open_priority_menu(self, item: str) -> None:
         """Offer the priority levels at the cell that was clicked."""
         self._open_choice_menu(
-            item, 'Priority', PRIORITY_LEVELS,
+            item, 'Priority', PRIORITY_MENU_ORDER,
             lambda value: self._write(item, {'priority': value},
                                       'Set Priority'))
 
@@ -1613,7 +1618,7 @@ class DeliverablesBoard(ctk.CTkFrame):
                          state=(tk.NORMAL if chosen else tk.DISABLED))
 
         priority_menu = tk.Menu(menu, tearoff=0)
-        for priority in PRIORITY_LEVELS:
+        for priority in PRIORITY_MENU_ORDER:
             priority_menu.add_command(
                 label=priority,
                 command=lambda p=priority: self._bulk_write(
@@ -2191,3 +2196,33 @@ class DeliverablesBoard(ctk.CTkFrame):
                 self.on_status(message)
             except Exception:
                 logger.debug("Could not show status %r", message)
+
+    # ------------------------------------------------------------------
+    # What the status bar shows
+    # ------------------------------------------------------------------
+    def selection_status(self) -> Optional[str]:
+        """
+        The status-bar line for the row under the cursor, or None.
+
+        A deliverable row describes the deliverable; a task row describes
+        the task it stands for, the same line the task list would write.
+        """
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        item = selection[0]
+        if self._is_task_row(item):
+            task = self.project.get_task_by_id(item.rsplit(':', 1)[-1])
+            return task_status_line(task) if task is not None else None
+        deliverable = self.project.get_deliverable_by_id(item)
+        if deliverable is None:
+            return None
+        return deliverable_status_line(deliverable)
+
+    def _push_selection_status(self) -> None:
+        """Tell the status bar what is selected now, if it is listening."""
+        if self.on_status:
+            try:
+                self.on_status(self.selection_status() or "Ready")
+            except Exception:
+                logger.debug("Could not show the selection status")

@@ -28,6 +28,7 @@ from gantt_app.utils.log import get_logger
 from gantt_app.views.assigntask import _status_badge
 from gantt_app.views.scrollframe import ScrollFrame
 from gantt_app.views.resource_usage import ResourceUsageGrid
+from gantt_app.views.statusline import entity_status_line, task_status_line
 
 logger = get_logger(__name__)
 
@@ -158,6 +159,9 @@ class ResourceBoard(ctk.CTkFrame):
 
         self._selected_task_id: Optional[str] = None
         self._selected_resource_id: Optional[str] = None
+        #: ('task', id) or ('entity', id) - whichever was clicked last, so
+        #: the status bar describes the latest pick, not an older one.
+        self._status_subject: Optional[Tuple[str, str]] = None
         self._expanded_task_ids: Set[str] = set()
         self._drag_task_id: Optional[str] = None
         self._drag_origin: Optional[Tuple[int, int]] = None
@@ -271,6 +275,7 @@ class ResourceBoard(ctk.CTkFrame):
         logger.info("Resource Planning switched to %s",
                     'the usage grid' if mode == 'grid'
                     else 'the allocation matrix')
+        self._push_selection_status()
 
     def on_shown(self) -> None:
         """
@@ -735,7 +740,9 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _select_task(self, task_id: str) -> None:
         self._selected_task_id = task_id
+        self._status_subject = ('task', task_id)
         self._show_task(task_id)
+        self._push_selection_status()
         logger.debug("Resource board selected task %s", task_id)
 
     def _show_task(self, task_id: str) -> None:
@@ -860,8 +867,10 @@ class ResourceBoard(ctk.CTkFrame):
 
     def _select_resource(self, entity_id: str) -> None:
         self._selected_resource_id = entity_id
+        self._status_subject = ('entity', entity_id)
         self._filter_pool()
         self._update_preview()
+        self._push_selection_status()
         logger.debug("Resource board selected resource %s", entity_id)
 
     # ------------------------------------------------------------------
@@ -1132,3 +1141,32 @@ class ResourceBoard(ctk.CTkFrame):
         logger.info(message)
         if self.on_status:
             self.on_status(message)
+
+    # ------------------------------------------------------------------
+    # What the status bar shows
+    # ------------------------------------------------------------------
+    def selection_status(self) -> Optional[str]:
+        """
+        The status-bar line for whatever was picked last, or None.
+
+        In grid mode the usage grid answers for its own cursor row; on
+        the matrix the latest pick wins between the task list's task and
+        the pool's resource.
+        """
+        if self._mode == 'grid':
+            return self._usage_grid.selection_status()
+        kind, ident = self._status_subject or ('', '')
+        if kind == 'entity':
+            entity = _entity_by_id(self.project.resource_repository, ident)
+            if entity is not None:
+                return entity_status_line(entity, self.project)
+        if kind == 'task':
+            task = self.project.get_task_by_id(ident)
+            if task is not None:
+                return task_status_line(task)
+        return None
+
+    def _push_selection_status(self) -> None:
+        """Tell the status bar what is selected now, if it is listening."""
+        if self.on_status:
+            self.on_status(self.selection_status() or "Ready")
