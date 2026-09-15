@@ -818,6 +818,7 @@ class GridFilterDialog(ctk.CTkToplevel):
         #: The control each section feeds back into a spec, by column.
         self._controls = {}
         self._suggest_list = None
+        self._press_serial = -1
 
         head = ctk.CTkFrame(self, fg_color="transparent")
         head.pack(fill="x", padx=12, pady=(12, 4))
@@ -1056,6 +1057,7 @@ class GridFilterDialog(ctk.CTkToplevel):
 
     def _list_pressed(self, event):
         """A press in the list takes the focus and the row under it."""
+        self._press_serial = event.serial
         listing = self._suggest_list
         listing.focus_set()
         index = listing.nearest(event.y)
@@ -1093,9 +1095,38 @@ class GridFilterDialog(ctk.CTkToplevel):
         return 'break'
 
     def _outside_suggestion_click(self, event):
-        """A click that is not on the list puts the list away."""
-        if event.widget is not self._suggest_list:
+        """
+        A press outside the list puts the list away.
+
+        On macOS a press meant for the list can be reported to the
+        dialog instead - the same grab quirk take_grab exists for: the
+        rows highlight on hover (motion is delivered by where the
+        pointer is) but the press arrives with this window as its
+        widget. Check the pointer's place on screen rather than the
+        reported widget: a press that lands inside the list's frame
+        picks that row wherever Tk chose to deliver it.
+        """
+        listing = self._suggest_list
+        if listing is None or not listing.winfo_ismapped():
+            return
+        if event.widget is listing:
+            return                      # the list's own bindings pick
+        left = listing.winfo_rootx()
+        top = listing.winfo_rooty()
+        inside = (left <= event.x_root <= left + listing.winfo_width()
+                  and top <= event.y_root <= top + listing.winfo_height())
+        if not inside:
             self._close_suggestions()
+            return
+        if event.serial == self._press_serial:
+            return                      # the list saw this press too
+        self._press_serial = event.serial
+        index = listing.nearest(event.y_root - top)
+        if 0 <= index < listing.size():
+            listing.selection_clear(0, 'end')
+            listing.selection_set(index)
+            listing.activate(index)
+            self._take_suggestion()
 
     def _suggest_focus_lost(self, _e):
         # A click on the list moves the focus there to make the pick, so
@@ -1103,8 +1134,16 @@ class GridFilterDialog(ctk.CTkToplevel):
         self.after(120, self._close_unless_in_suggestions)
 
     def _close_unless_in_suggestions(self):
-        if self.focus_get() is not self._suggest_list:
-            self._close_suggestions()
+        # The list stays while the focus is in the box or on the list -
+        # after a pick the box takes it back and the next suggestions
+        # would otherwise be closed by this late answer.
+        focus = self.focus_get()
+        if focus is None:
+            return
+        if focus is self._suggest_list or str(focus).startswith(
+                str(self._query_entry)):
+            return
+        self._close_suggestions()
 
     def _take_suggestion(self):
         """Write the picked suggestion over the word being typed."""
