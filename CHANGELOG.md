@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.71.1 - 2026-09-15
+
+- **The Assign Tasks dialog is a grid now.** The deliverable's task
+  picker grew from a flat list of checkboxes into a small copy of the
+  Deliverables grid itself: the task list's own indent and expanders, a
+  [ ] / [x] mark column like the board's gutter, No / Type / Progress
+  columns, and the same row styling. Clicking anywhere on a row toggles
+  its mark, Space and Return do the same for the focused row, the filter
+  keeps a match's ancestors on screen, and All / None buttons tick or
+  clear the whole list at once.
+
 ## 1.71.0 - 2026-09-15
 
 - **Tasks now feed deliverables.** Any task, subtask or milestone can be

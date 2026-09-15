@@ -48,7 +48,6 @@ from gantt_app.core.deliverable import (
     status_for_progress, progress_for_status)
 from gantt_app.core.priority import PRIORITY_LEVELS
 from gantt_app.views.datepicker import parse_date, DATE_FORMAT
-from gantt_app.views.scrollframe import ScrollFrame
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -1594,11 +1593,12 @@ class DeliverablesBoard(ctk.CTkFrame):
         Open the task checklist for the row - or the marked rows - it was
         asked for.
 
-        The whole task list in its own outline order, each with a box;
-        tasks every edited row already holds arrive ticked. Apply makes the
-        ticked set each row's membership - the same write whether one row
-        or a marked set was picked, so a bulk assign reads exactly like a
-        single one.
+        Drawn as a small copy of the grid itself: the same Treeview style,
+        the task list's own indent and expanders, and a [ ] / [x] mark
+        column like the gutter's. Tasks every edited row already holds
+        arrive ticked; Assign makes the ticked set each row's membership -
+        the same write whether one row or a marked set was picked, so a
+        bulk assign reads exactly like a single one.
         """
         rows = [d for d in
                 (self.project.get_deliverable_by_id(i)
@@ -1616,59 +1616,137 @@ class DeliverablesBoard(ctk.CTkFrame):
         ticked = set(rows[0].task_ids)
         for row in rows[1:]:
             ticked &= set(row.task_ids)
+        checked: Set[str] = set(ticked)
 
         window = ctk.CTkToplevel(self.winfo_toplevel())
         title = 'Assign Tasks' if len(rows) == 1 \
             else f'Assign Tasks to {len(rows)} Deliverables'
         window.title(title)
-        window.geometry('440x420')
+        window.geometry('640x420')
         window.transient(self.winfo_toplevel())
 
         search = ctk.CTkEntry(window, placeholder_text='Filter tasks…')
         search.pack(fill=tk.X, padx=12, pady=(12, 6))
 
-        scroller = ScrollFrame(window)
-        scroller.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
+        tree_frame = ctk.CTkFrame(window, fg_color='transparent')
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 6))
+
+        tree = ttk.Treeview(
+            tree_frame, columns=('Sel', 'No', 'Type', 'Progress'),
+            show='tree headings', selectmode='browse')
+        theme.style_treeview('Deliverables.Treeview',
+                             rowheight=self.GRID_ROW_HEIGHT)
+        ttk.Style().configure('Deliverables.Treeview', indent=24)
+        tree.configure(style='Deliverables.Treeview')
+        tree.heading('#0', text='Task', anchor=tk.W)
+        tree.heading('Sel', text='', anchor=tk.CENTER)
+        tree.heading('No', text='No', anchor=tk.W)
+        tree.heading('Type', text='Type', anchor=tk.W)
+        tree.heading('Progress', text='Progress', anchor=tk.W)
+        tree.column('#0', width=280, minwidth=120)
+        tree.column('Sel', width=40, minwidth=40, stretch=False,
+                    anchor=tk.CENTER)
+        tree.column('No', width=50, minwidth=40, stretch=False)
+        tree.column('Type', width=80, minwidth=60, stretch=False)
+        tree.column('Progress', width=80, minwidth=60, stretch=False)
 
         numbers = self.project.display_ids()
-        variables: Dict[str, tk.BooleanVar] = {}
+        task_by_id = {task.id: task for task in tasks}
+        known = set(task_by_id)
+
+        def mark(task_id: str) -> str:
+            return MARK_SET if task_id in checked else MARK_NONE
 
         def draw(filter_text: str = '') -> None:
-            for child in scroller.content.winfo_children():
-                child.destroy()
+            tree.delete(*tree.get_children())
             wanted = filter_text.strip().lower()
-            shown = 0
-            for task in tasks:
-                label = f"{numbers.get(task.id, '')}  " \
-                        f"{task.name or '(unnamed)'}"
-                if wanted and wanted not in label.lower():
-                    continue
-                var = variables.setdefault(
-                    task.id, tk.BooleanVar(value=task.id in ticked))
-                depth = max(0, self.project.outline_level(task.id) - 1)
-                ctk.CTkCheckBox(
-                    scroller.content, text=label, variable=var,
-                ).pack(fill=tk.X,
-                       padx=(8 + depth * 18, 4), pady=1)
-                shown += 1
-            if not shown:
-                ctk.CTkLabel(
-                    scroller.content, text='No matching tasks.',
-                    anchor=tk.W).pack(fill=tk.X, padx=8, pady=8)
 
-        search.bind('<KeyRelease>',
-                    lambda _e: draw(search.get()))
+            # A match keeps its ancestors on screen - the same rule the
+            # grid's own filter keeps, so the outline never orphans a row.
+            if wanted:
+                shown_ids = set()
+                for task in tasks:
+                    haystack = f"{numbers.get(task.id, '')} " \
+                               f"{task.name or ''} {task.task_type}"
+                    if wanted in haystack.lower():
+                        current = task
+                        while current is not None \
+                                and current.id not in shown_ids:
+                            shown_ids.add(current.id)
+                            current = task_by_id.get(
+                                current.parent_task_id)
+            else:
+                shown_ids = known
+
+            for task in tasks:
+                if task.id not in shown_ids:
+                    continue
+                parent = task.parent_task_id \
+                    if task.parent_task_id in shown_ids else ''
+                tree.insert(
+                    parent, tk.END, iid=task.id, open=True,
+                    text=task.name or '(unnamed)',
+                    values=(
+                        mark(task.id),
+                        str(numbers.get(task.id, '')),
+                        task.task_type,
+                        f'{task.progress}%',
+                    ))
+
+        def toggle(task_id: str) -> None:
+            if task_id in checked:
+                checked.discard(task_id)
+            else:
+                checked.add(task_id)
+            if tree.exists(task_id):
+                values = list(tree.item(task_id, 'values'))
+                values[0] = mark(task_id)
+                tree.item(task_id, values=values)
+
+        def on_click(event) -> Optional[str]:
+            if tree.identify_region(event.x, event.y) \
+                    not in ('cell', 'tree'):
+                return None
+            if tree.identify_element(event.x, event.y) \
+                    == 'Treeitem.indicator':
+                return None     # the expander still folds the branch
+            item = tree.identify_row(event.y)
+            if not item:
+                return None
+            # The [ ]/[x] cell is the mark gesture, like the grid's gutter;
+            # a click on any other cell of the row means the same here.
+            toggle(item)
+            return 'break'
+
+        tree.bind('<Button-1>', on_click)
+        tree.bind('<space>',
+                  lambda _e: toggle(tree.focus()) if tree.focus() else None)
+        tree.bind('<Return>',
+                  lambda _e: toggle(tree.focus()) if tree.focus() else None)
+        search.bind('<KeyRelease>', lambda _e: draw(search.get()))
         draw()
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
+                                  command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
         buttons = ctk.CTkFrame(window, fg_color='transparent')
         buttons.pack(fill=tk.X, padx=12, pady=(0, 12))
 
         def apply() -> None:
-            chosen = {task_id for task_id, var in variables.items()
-                      if var.get()}
             window.destroy()
-            self._assign_tasks([d.id for d in rows], chosen)
+            self._assign_tasks([d.id for d in rows], set(checked))
 
+        ctk.CTkButton(buttons, text='All', width=64,
+                      command=lambda: (checked.update(
+                          t.id for t in tasks), draw(search.get()))
+                      ).pack(side=tk.LEFT)
+        ctk.CTkButton(buttons, text='None', width=64,
+                      command=lambda: (checked.clear(),
+                                       draw(search.get()))
+                      ).pack(side=tk.LEFT, padx=(6, 0))
         ctk.CTkButton(buttons, text='Assign', width=90,
                       command=apply).pack(side=tk.RIGHT, padx=(6, 0))
         ctk.CTkButton(buttons, text='Cancel', width=90,
