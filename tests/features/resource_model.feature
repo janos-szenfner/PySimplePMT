@@ -258,3 +258,31 @@ Feature: Resource model functionality
     Given a task carrying a material assignment
     When the task is saved to a dict and read back
     Then the restored assignment should still be a material with its units
+
+  @resource_model
+  Scenario: A work resource carries the sheet's cost fields
+    Given a named resource with overtime cost per use and accrual
+    When the resource is serialized and read back
+    Then the overtime rate cost per use and accrual should be preserved
+
+  @resource_model
+  Scenario: A resource file without the cost fields takes the defaults
+    When a legacy resource dict without cost fields is loaded
+    Then the resource should default to no overtime no use fee and prorated
+
+  @resource_model
+  Scenario: A resource rejects a negative overtime rate
+    When a resource with a negative overtime rate is built
+    Then a ValueError was raised for the resource
+
+  @resource_model
+  Scenario: Max units is the capacity read as a percentage
+    Given a half-time named resource
+    Then the max units should be 50.0
+
+  @resource_model
+  Scenario: Assignment cost splits overtime and charges the use fee
+    Given a resource at fifty an hour seventy-five overtime and twenty-five per use
+    And a ten-hour assignment with two overtime hours
+    When the task cost is computed for it
+    Then the rated cost should be 575.0

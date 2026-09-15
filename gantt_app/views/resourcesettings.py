@@ -359,7 +359,15 @@ class ResourceEditorModal(BaseEditorModal):
         self.capacity_summary = ctk.CTkLabel(tab, text="", anchor=tk.W)
         self.capacity_summary.grid(row=6, column=1, padx=(0, 12), sticky="w")
         self.rate_entry = ctk.CTkEntry(tab)
-        _field(tab, "Hourly Rate ($)", self.rate_entry, 7)
+        _field(tab, "Std. Rate ($/hr)", self.rate_entry, 7)
+        self.overtime_entry = ctk.CTkEntry(tab)
+        _field(tab, "Ovt. Rate ($/hr)", self.overtime_entry, 8)
+        self.use_cost_entry = ctk.CTkEntry(tab)
+        _field(tab, "Cost per Use ($)", self.use_cost_entry, 9)
+        self.accrue_menu = ctk.CTkOptionMenu(
+            tab, values=[accrue.value for accrue in AccrueAt])
+        self.accrue_menu.set(AccrueAt.PRORATED.value)
+        _field(tab, "Accrue At", self.accrue_menu, 10)
 
     def _daily_values(self):
         values = {}
@@ -376,8 +384,10 @@ class ResourceEditorModal(BaseEditorModal):
             _set_entry(entry, f"{values[day]:g}")
         self._updating_capacity = False
         weekly = sum(values.values())
+        fte = weekly / FTE_WEEKLY_HOURS
         self.capacity_summary.configure(
-            text=f"{weekly:g} hours/week | {weekly / FTE_WEEKLY_HOURS:.2f} FTE")
+            text=(f"{weekly:g} hours/week | {fte:.2f} FTE | "
+                  f"Max Units {fte * 100:g}%"))
 
     def _apply_pattern(self, value):
         values = default_daily_capacity(SchedulePattern.read(value))
@@ -661,6 +671,9 @@ class ResourceEditorModal(BaseEditorModal):
         self._set_daily(self.resource.daily_capacity_hours)
         self._set_capacity_value(self.resource.weekly_capacity_hours)
         _set_entry(self.rate_entry, f"{self.resource.cost_per_hour:g}")
+        _set_entry(self.overtime_entry, f"{self.resource.overtime_rate:g}")
+        _set_entry(self.use_cost_entry, f"{self.resource.cost_per_use:g}")
+        self.accrue_menu.set(self.resource.accrue_at.value)
 
     def save_and_apply(self):
         kind = TYPE_VALUES[self.type_menu.get()]
@@ -673,7 +686,10 @@ class ResourceEditorModal(BaseEditorModal):
             return
         try:
             daily = self._daily_values()
-            rate = _number(self.rate_entry, "Hourly rate")
+            rate = _number(self.rate_entry, "Std. rate")
+            overtime_rate = _number(self.overtime_entry, "Ovt. rate")
+            cost_per_use = _number(self.use_cost_entry, "Cost per use")
+            accrue_at = AccrueAt.read(self.accrue_menu.get())
             allocations = {}
             for team_id, (assigned, split) in self.team_controls.items():
                 if assigned.get():
@@ -692,6 +708,9 @@ class ResourceEditorModal(BaseEditorModal):
             resource.schedule_pattern = SchedulePattern.read(self.schedule_menu.get())
             resource.set_daily_capacity(daily, preserve_pattern=True)
             resource.cost_per_hour = rate
+            resource.overtime_rate = overtime_rate
+            resource.cost_per_use = cost_per_use
+            resource.accrue_at = accrue_at
             resource.days_off = list(self.days_off)
             resource.team_memberships = allocations
             logger.info("Updated resource %r (%s)", resource.name, resource.id)
@@ -700,7 +719,9 @@ class ResourceEditorModal(BaseEditorModal):
                 id=self.repo.new_id("res"), name=name, resource_type=kind,
                 role_type=role, schedule_pattern=SchedulePattern.read(
                     self.schedule_menu.get()), daily_capacity_hours=daily,
-                cost_per_hour=rate, team_memberships=allocations,
+                cost_per_hour=rate, overtime_rate=overtime_rate,
+                cost_per_use=cost_per_use, accrue_at=accrue_at,
+                team_memberships=allocations,
                 days_off=list(self.days_off))
             self.repo.add_resource(resource)
         if self.on_apply:
@@ -1129,6 +1150,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         ("Role / Skill", 120, 2, tk.W),
         ("Schedule", 110, 2, tk.W),
         ("Capacity", 90, 1, tk.W),
+        ("Std. Rate", 80, 1, tk.W),
+        ("Ovt. Rate", 80, 1, tk.W),
         ("Total Allocation", 110, 1, tk.W),
         ("Assigned Teams", 150, 2, tk.W),
         ("Days Off Active", 130, 2, tk.W),
@@ -1357,6 +1380,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                  resource.role_type,
                  _schedule_short(resource.schedule_pattern),
                  f"{resource.fte:.2f} FTE",
+                 f"${resource.cost_per_hour:g}/hr",
+                 f"${resource.overtime_rate:g}/hr",
                  total_text,
                  teams,
                  self._resource_days_off(resource)),

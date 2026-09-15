@@ -122,6 +122,24 @@ class DaysOffRange:
         return cls(**data)
 
 
+class AccrueAt(Enum):
+    """When an assignment's cost lands on the task's budget."""
+    START = "Start"
+    PRORATED = "Prorated"
+    END = "End"
+
+    @classmethod
+    def read(cls, value):
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value))
+        except ValueError:
+            # Prorated is MS Project's default and the safe reading of a
+            # value this build does not know.
+            return cls.PRORATED
+
+
 @dataclass
 class Resource:
     id: str
@@ -130,6 +148,9 @@ class Resource:
     role_type: str
     weekly_capacity_hours: float = 40.0
     cost_per_hour: float = 0.0
+    overtime_rate: float = 0.0
+    cost_per_use: float = 0.0
+    accrue_at: AccrueAt = AccrueAt.PRORATED
     team_memberships: Dict[str, float] = field(default_factory=dict)
     assigned_project_ids: List[str] = field(default_factory=list)
     schedule_pattern: SchedulePattern = SchedulePattern.STANDARD
@@ -140,11 +161,13 @@ class Resource:
         if not isinstance(self.resource_type, ResourceType):
             self.resource_type = ResourceType(self.resource_type)
         self.schedule_pattern = SchedulePattern.read(self.schedule_pattern)
+        self.accrue_at = AccrueAt.read(self.accrue_at)
         if self.resource_type == ResourceType.TEAM:
             raise ValueError("Team resources must be represented by TeamPool")
         if not self.id.strip() or not self.name.strip():
             raise ValueError("Resource ID and name are required")
-        if self.weekly_capacity_hours < 0 or self.cost_per_hour < 0:
+        if (self.weekly_capacity_hours < 0 or self.cost_per_hour < 0
+                or self.overtime_rate < 0 or self.cost_per_use < 0):
             raise ValueError("Capacity and cost cannot be negative")
         if any(ratio < 0 for ratio in self.team_memberships.values()):
             raise ValueError("Team allocation ratios cannot be negative")
@@ -159,6 +182,14 @@ class Resource:
     @property
     def fte(self) -> float:
         return self.weekly_capacity_hours / FTE_WEEKLY_HOURS
+
+    @property
+    def max_units(self) -> float:
+        """
+        The resource's Max Units as a percentage, MS Project style:
+        100% is one full-time week, 50% a half-time week.
+        """
+        return self.fte * 100.0
 
     @property
     def average_active_day_hours(self) -> float:
@@ -234,6 +265,9 @@ class Resource:
             "role_type": self.role_type,
             "weekly_capacity_hours": self.weekly_capacity_hours,
             "cost_per_hour": self.cost_per_hour,
+            "overtime_rate": self.overtime_rate,
+            "cost_per_use": self.cost_per_use,
+            "accrue_at": self.accrue_at.value,
             "team_memberships": self.team_memberships,
             "assigned_project_ids": self.assigned_project_ids,
             "schedule_pattern": self.schedule_pattern.value,
@@ -247,6 +281,8 @@ class Resource:
         values["resource_type"] = ResourceType(values["resource_type"])
         values["schedule_pattern"] = SchedulePattern.read(
             values.get("schedule_pattern", SchedulePattern.STANDARD.value))
+        values["accrue_at"] = AccrueAt.read(
+            values.get("accrue_at", AccrueAt.PRORATED.value))
         return cls(**values)
 
 
@@ -321,24 +357,6 @@ class TeamPool:
             "schedule_pattern": self.schedule_pattern.value,
             "fixed_daily_hours": self.fixed_daily_hours,
         }
-
-
-class AccrueAt(Enum):
-    """When an assigned material's cost lands on the task's budget."""
-    START = "Start"
-    PRORATED = "Prorated"
-    END = "End"
-
-    @classmethod
-    def read(cls, value):
-        if isinstance(value, cls):
-            return value
-        try:
-            return cls(str(value))
-        except ValueError:
-            # Prorated is MS Project's default and the safe reading of a
-            # value this build does not know.
-            return cls.PRORATED
 
 
 @dataclass

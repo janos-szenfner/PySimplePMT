@@ -472,12 +472,17 @@ GUIDE_SECTIONS = (
 
             "Each assignment shows: Entity (resource or team with type "
             "badge), Schedule pattern, Workload (the projected load once "
-            "this assignment's effort is added), Effort in hours, Split "
-            "percentage, and a Clear button to remove the assignment.",
+            "this assignment's effort is added), Effort in hours, OT in "
+            "hours, Split percentage, and a Clear button to remove the "
+            "assignment.",
 
             "Effort (hrs) - the total hours this assignment is expected to "
             "take. Changing it updates the projected workload immediately "
             "so you can see the impact before saving.",
+
+            "OT (hrs) - the hours within that effort worked as overtime. "
+            "They pay the resource's Ovt. Rate instead of the Std. Rate, "
+            "and the assignment's Cost per Use is charged once on top.",
 
             "Split (%) - the share of daily capacity the resource should "
             "allocate to this task. 100% means the resource works on this "
@@ -937,6 +942,15 @@ GUIDE_SECTIONS = (
             "resource pool in memory; Save Changes writes it into the same "
             "project JSON as the tasks. Close leaves the in-memory changes in "
             "the plan, so the ordinary File > Save also writes them.",
+
+            "A named resource's editor carries the cost fields a work "
+            "resource has in MS Project: the Std. Rate it is paid per "
+            "hour, an Ovt. Rate for hours booked as overtime, a Cost per "
+            "Use charged once per assignment however long the task runs, "
+            "and an Accrue At choice - Start, End, or the usual Prorated - "
+            "for when the cost lands. Capacity doubles as Max Units: a "
+            "40-hour week reads as 100%, a half-time week as 50%, and the "
+            "summary under the day boxes says so.",
 
             "The Material tab beside them holds the consumables: things "
             "used up, installed or depleted rather than worked. A material "

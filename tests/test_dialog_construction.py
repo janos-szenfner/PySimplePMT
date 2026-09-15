@@ -115,7 +115,7 @@ class TestDialogConstruction(unittest.TestCase):
         self.assertEqual([float(entry.get())
                           for entry in dialog.daily_entries.values()], [24] * 7)
         self.assertEqual(dialog.capacity_summary.cget("text"),
-                         "168 hours/week | 4.20 FTE")
+                         "168 hours/week | 4.20 FTE | Max Units 420%")
 
     def test_resource_editor_has_all_four_workflow_tabs(self):
         from gantt_app.core.resource_model import ResourceRepository

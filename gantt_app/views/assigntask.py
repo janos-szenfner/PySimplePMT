@@ -214,7 +214,7 @@ class TaskResourceTab(ctk.CTkFrame):
     """
 
     #: Fixed widths for the assignment table columns.
-    _COLS = (240, 160, 240, 70, 60, 70)
+    _COLS = (240, 150, 230, 65, 50, 55, 65)
 
     def __init__(self, parent: ctk.CTkFrame, project, task) -> None:
         self.project = project
@@ -308,11 +308,12 @@ class TaskResourceTab(ctk.CTkFrame):
                 width, column)
 
         heading("Entity Name & Type", 240, 0)
-        heading("Schedule", 160, 1)
-        heading("Workload", 240, 2)
-        heading("Effort (hrs)", 70, 3)
-        heading("Split (%)", 60, 4)
-        heading("Action", 70, 5, anchor=tk.CENTER)
+        heading("Schedule", 150, 1)
+        heading("Workload", 230, 2)
+        heading("Effort (hrs)", 65, 3)
+        heading("OT (hrs)", 50, 4)
+        heading("Split (%)", 55, 5)
+        heading("Action", 65, 6, anchor=tk.CENTER)
 
         # A hairline under the heading, then the scrolling body of rows.
         ttk.Separator(table, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=1)
@@ -402,10 +403,10 @@ class TaskResourceTab(ctk.CTkFrame):
         schedule = _schedule_short(entity.schedule_pattern)
         cells.append(self._cell(
             row,
-            lambda c: ctk.CTkLabel(c, text=schedule, width=160,
+            lambda c: ctk.CTkLabel(c, text=schedule, width=150,
                                    anchor=tk.W,
                                    text_color=theme.now(theme.GRID_TEXT)),
-            160, 1))
+            150, 1))
 
         resources = list(self.repo.resources.values())
         effort = float(assignment.get('estimated_hours', 0.0))
@@ -415,44 +416,48 @@ class TaskResourceTab(ctk.CTkFrame):
 
         def make_workload(cell):
             workload_label[0] = ctk.CTkLabel(
-                cell, text=workload, width=240, text_color=colour,
+                cell, text=workload, width=230, text_color=colour,
                 anchor=tk.W)
             return workload_label[0]
 
-        cells.append(self._cell(row, make_workload, 240, 2))
+        cells.append(self._cell(row, make_workload, 230, 2))
         self._workload_labels[index] = workload_label[0]
 
-        effort_entry = [None]
+        def make_hours(key, width):
+            """A numeric entry factory bound to one assignment field."""
+            entry_box = [None]
 
-        def make_effort(cell):
-            effort_entry[0] = ctk.CTkEntry(cell, width=70)
-            effort_entry[0].insert(
-                0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
-            return effort_entry[0]
+            def make(cell):
+                entry_box[0] = ctk.CTkEntry(cell, width=width)
+                entry_box[0].insert(
+                    0, f"{float(assignment.get(key, 0.0)):g}")
+                return entry_box[0]
 
-        cells.append(self._cell(row, make_effort, 70, 3))
+            return make, entry_box
+
+        effort_make, effort_entry = make_hours("estimated_hours", 65)
+        cells.append(self._cell(row, effort_make, 65, 3))
         effort_entry[0]._entry.bind(
             "<KeyRelease>", self._make_updater(
                 index, "estimated_hours", effort_entry[0]))
 
-        split_entry = [None]
+        overtime_make, overtime_entry = make_hours("overtime_hours", 50)
+        cells.append(self._cell(row, overtime_make, 50, 4))
+        overtime_entry[0]._entry.bind(
+            "<KeyRelease>", self._make_updater(
+                index, "overtime_hours", overtime_entry[0]))
 
-        def make_split(cell):
-            split_entry[0] = ctk.CTkEntry(cell, width=60)
-            split_entry[0].insert(
-                0, f"{float(assignment.get('resource_split', 0.0)):g}")
-            return split_entry[0]
-
-        cells.append(self._cell(row, make_split, 60, 4))
+        split_make, split_entry = make_hours("resource_split", 55)
+        cells.append(self._cell(row, split_make, 55, 5))
         split_entry[0]._entry.bind(
             "<KeyRelease>", self._make_updater(
                 index, "resource_split", split_entry[0]))
 
         cells.append(self._cell(
             row,
-            lambda c: ctk.CTkButton(c, text="Clear", width=70,
+            lambda c: ctk.CTkButton(c, text="Clear", width=65,
                                     command=lambda i=index: self._remove(i)),
-            70, 5))
+            65, 6))
 
         self._row_cells.append(cells)
 
@@ -479,44 +484,45 @@ class TaskResourceTab(ctk.CTkFrame):
         cells.append(self._cell(
             row,
             lambda c: ctk.CTkLabel(
-                c, text=entity.material_label or "units", width=160,
+                c, text=entity.material_label or "units", width=150,
                 anchor=tk.W, text_color=theme.now(theme.GRID_TEXT)),
-            160, 1))
+            150, 1))
 
         cost_label = [None]
 
         def make_cost(cell):
             cost_label[0] = ctk.CTkLabel(
-                cell, text=self._material_cost_text(index), width=240,
+                cell, text=self._material_cost_text(index), width=230,
                 anchor=tk.W, text_color=theme.now(theme.GRID_TEXT))
             return cost_label[0]
 
-        cells.append(self._cell(row, make_cost, 240, 2))
+        cells.append(self._cell(row, make_cost, 230, 2))
         self._workload_labels[index] = cost_label[0]
 
         units_entry = [None]
 
         def make_units(cell):
-            units_entry[0] = ctk.CTkEntry(cell, width=70,
+            units_entry[0] = ctk.CTkEntry(cell, width=65,
                                           placeholder_text="e.g. 20, 5/d")
             units_entry[0].insert(0, str(assignment.get("units", "1")))
             return units_entry[0]
 
-        cells.append(self._cell(row, make_units, 70, 3))
+        cells.append(self._cell(row, make_units, 65, 3))
         units_entry[0]._entry.bind(
             "<KeyRelease>", self._make_units_updater(index, units_entry[0]))
 
-        cells.append(self._cell(
-            row,
-            lambda c: ctk.CTkLabel(c, text="—", width=60, anchor=tk.W,
-                                   text_color=theme.now(theme.GRID_TEXT)),
-            60, 4))
+        for column in (4, 5):
+            cells.append(self._cell(
+                row,
+                lambda c: ctk.CTkLabel(c, text="—", width=55, anchor=tk.W,
+                                       text_color=theme.now(theme.GRID_TEXT)),
+                55, column))
 
         cells.append(self._cell(
             row,
-            lambda c: ctk.CTkButton(c, text="Clear", width=70,
+            lambda c: ctk.CTkButton(c, text="Clear", width=65,
                                     command=lambda i=index: self._remove(i)),
-            70, 5))
+            65, 6))
 
         self._row_cells.append(cells)
 

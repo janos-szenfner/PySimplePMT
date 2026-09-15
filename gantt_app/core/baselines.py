@@ -59,7 +59,16 @@ def _task_cost(task: Task, repository: ResourceRepository) -> float:
         if entity is None:
             continue
         rate = getattr(entity, "cost_per_hour", 0.0) or 0.0
-        total += allocated * rate
+        # Total = Standard Cost + Overtime Cost + Cost per Use: the
+        # assignment's overtime hours pay the overtime rate, the rest the
+        # standard rate, and the use fee lands once per assignment.
+        overtime = min(
+            max(float(assignment.get("overtime_hours", 0.0) or 0.0)
+                * (split / 100.0), 0.0),
+            allocated)
+        total += (allocated - overtime) * rate
+        total += overtime * (getattr(entity, "overtime_rate", 0.0) or 0.0)
+        total += getattr(entity, "cost_per_use", 0.0) or 0.0
     return total
 
 

@@ -1150,3 +1150,114 @@ def check_restored_assignment(restored_task):
     assert assignment["resource_id"] == "mat_s"
     assert assignment["kind"] == "material"
     assert assignment["units"] == "20"
+
+
+# SCENARIO: a work resource carries the sheet's cost fields
+@given("a named resource with overtime cost per use and accrual",
+       target_fixture="costed_resource")
+def costed_resource():
+    return Resource(
+        id="res_cost", name="Senior Dev",
+        resource_type=ResourceType.NAMED, role_type="Developer",
+        cost_per_hour=50.0, overtime_rate=75.0, cost_per_use=25.0,
+        accrue_at=AccrueAt.START)
+
+
+@when("the resource is serialized and read back",
+      target_fixture="restored_resource")
+def save_read_resource(costed_resource):
+    return Resource.from_dict(costed_resource.to_dict())
+
+
+@then("the overtime rate cost per use and accrual should be preserved")
+def check_cost_fields(restored_resource):
+    assert restored_resource.overtime_rate == 75.0
+    assert restored_resource.cost_per_use == 25.0
+    assert restored_resource.accrue_at == AccrueAt.START
+
+
+# SCENARIO: a resource file without the cost fields takes the defaults
+@when("a legacy resource dict without cost fields is loaded",
+      target_fixture="legacy_resource")
+def load_legacy_resource():
+    data = Resource(
+        id="res_old", name="Old", resource_type=ResourceType.NAMED,
+        role_type="x", cost_per_hour=50.0, overtime_rate=75.0,
+        cost_per_use=25.0, accrue_at=AccrueAt.START).to_dict()
+    for key in ("overtime_rate", "cost_per_use", "accrue_at"):
+        del data[key]
+    return Resource.from_dict(data)
+
+
+@then("the resource should default to no overtime no use fee and prorated")
+def check_cost_defaults(legacy_resource):
+    assert legacy_resource.overtime_rate == 0.0
+    assert legacy_resource.cost_per_use == 0.0
+    assert legacy_resource.accrue_at == AccrueAt.PRORATED
+
+
+# SCENARIO: a resource rejects a negative overtime rate
+@when("a resource with a negative overtime rate is built",
+      target_fixture="resource_error")
+def build_bad_resource():
+    try:
+        Resource(id="res_bad", name="Bad",
+                 resource_type=ResourceType.NAMED, role_type="x",
+                 overtime_rate=-5.0)
+        return None
+    except ValueError as error:
+        return error
+
+
+@then("a ValueError was raised for the resource")
+def check_resource_error(resource_error):
+    assert resource_error is not None
+
+
+# SCENARIO: max units is the capacity read as a percentage
+@given("a half-time named resource", target_fixture="halftime_resource")
+def halftime_resource():
+    return Resource(id="res_half", name="Half",
+                    resource_type=ResourceType.NAMED, role_type="x",
+                    weekly_capacity_hours=20.0)
+
+
+@then(parsers.parse("the max units should be {percent:f}"))
+def check_max_units(halftime_resource, percent):
+    assert halftime_resource.max_units == percent
+
+
+# SCENARIO: assignment cost splits overtime and charges the use fee
+@given("a resource at fifty an hour seventy-five overtime and "
+       "twenty-five per use", target_fixture="rated_repo")
+def rated_repo():
+    repository = ResourceRepository()
+    repository.add_resource(Resource(
+        id="res_r", name="Rated", resource_type=ResourceType.NAMED,
+        role_type="x", cost_per_hour=50.0, overtime_rate=75.0,
+        cost_per_use=25.0))
+    return repository
+
+
+@given("a ten-hour assignment with two overtime hours",
+       target_fixture="rated_task")
+def rated_task(rated_repo):
+    from gantt_app.core.models import Task
+    task = Task(id="t_r", name="Rated task",
+                start_date=datetime(2026, 1, 5), duration=2)
+    task.resource_assignments = [
+        {"resource_id": "res_r", "estimated_hours": 10.0,
+         "resource_split": 100.0, "overtime_hours": 2.0}]
+    return task
+
+
+@when("the task cost is computed for it", target_fixture="rated_cost")
+def compute_rated_cost(rated_repo, rated_task):
+    from gantt_app.core.baselines import _task_cost
+    return _task_cost(rated_task, rated_repo)
+
+
+@then(parsers.parse("the rated cost should be {cost:f}"))
+def check_rated_cost(rated_cost, cost):
+    # (10 - 2) x 50 + 2 x 75 + 25 = 575
+    assert rated_cost == cost
