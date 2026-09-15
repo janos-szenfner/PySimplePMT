@@ -33,6 +33,7 @@ import json
 import sys
 import uuid
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime
 from tkinter import ttk
 from typing import Callable, Dict, List, Optional, Set
@@ -1635,7 +1636,7 @@ class DeliverablesBoard(ctk.CTkFrame):
             tree_frame, columns=('Sel', 'No', 'Type', 'Progress'),
             show='tree headings', selectmode='browse')
         theme.style_treeview('Deliverables.Treeview',
-                             rowheight=self.GRID_ROW_HEIGHT)
+                             row_height=self.GRID_ROW_HEIGHT)
         ttk.Style().configure('Deliverables.Treeview', indent=24)
         tree.configure(style='Deliverables.Treeview')
         tree.heading('#0', text='Task', anchor=tk.W)
@@ -1650,9 +1651,25 @@ class DeliverablesBoard(ctk.CTkFrame):
         tree.column('Type', width=80, minwidth=60, stretch=False)
         tree.column('Progress', width=80, minwidth=60, stretch=False)
 
+        # The grid's look, taken whole: the banded rows, and a parent drawn
+        # bold the way the task list draws one. The two tags never fight -
+        # the band sets the fill and 'parent' only the font.
+        tree.tag_configure('evenrow',
+                           background=theme.now(theme.GRID_ROW_BG))
+        tree.tag_configure('oddrow',
+                           background=theme.now(theme.GRID_ROW_ALT))
+        try:
+            base = tkfont.nametofont('TkDefaultFont')
+            tree.tag_configure(
+                'parent',
+                font=(base.cget('family'), base.cget('size'), 'bold'))
+        except tk.TclError:
+            pass        # no display font to derive from; parents stay plain
+
         numbers = self.project.display_ids()
         task_by_id = {task.id: task for task in tasks}
         known = set(task_by_id)
+        parents = {t.parent_task_id for t in tasks if t.parent_task_id}
 
         def mark(task_id: str) -> str:
             return MARK_SET if task_id in checked else MARK_NONE
@@ -1678,20 +1695,25 @@ class DeliverablesBoard(ctk.CTkFrame):
             else:
                 shown_ids = known
 
+            drawn = 0
             for task in tasks:
                 if task.id not in shown_ids:
                     continue
                 parent = task.parent_task_id \
                     if task.parent_task_id in shown_ids else ''
+                tags = ['evenrow' if drawn % 2 == 0 else 'oddrow']
+                if task.id in parents:
+                    tags.append('parent')
                 tree.insert(
                     parent, tk.END, iid=task.id, open=True,
-                    text=task.name or '(unnamed)',
+                    text=task.name or '(unnamed)', tags=tuple(tags),
                     values=(
                         mark(task.id),
                         str(numbers.get(task.id, '')),
                         task.task_type,
                         f'{task.progress}%',
                     ))
+                drawn += 1
 
         def toggle(task_id: str) -> None:
             if task_id in checked:

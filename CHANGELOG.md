@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.71.2 - 2026-09-15
+
+- **The Assign Tasks dialog opens with its list now.** A misspelled
+  argument to the grid's styling helper raised before a single row was
+  drawn, leaving an empty window under the filter box - the picker opens
+  populated again, and now wears the grid's full look: banded rows and
+  parents drawn bold, the way the task list shows them.
+
 ## 1.71.1 - 2026-09-15
 
 - **The Assign Tasks dialog is a grid now.** The deliverable's task
