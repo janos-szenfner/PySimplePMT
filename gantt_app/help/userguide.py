@@ -1126,6 +1126,19 @@ GUIDE_SECTIONS = (
             "it - weighted by each row's Weight when the defaults of 1 "
             "will not do - and is recalculated the moment a child changes.",
 
+            "Tasks, subtasks and milestones can be assigned to a "
+            "deliverable, and one task can feed several. Two ways to do "
+            "it: the task editor has a Deliverables tab that ticks the "
+            "deliverables the task belongs to, and the grid's right-click "
+            "menu has a Tasks submenu - Assign Tasks opens a checklist of "
+            "the whole task list, while the ticked entries below it "
+            "remove a task with one click. The Tasks column shows what "
+            "each row holds, and double-clicking it opens the same "
+            "checklist. An assigned task's progress counts toward the "
+            "deliverable's, one share each beside the weighted children, "
+            "so a row with tasks derives its progress like a parent does "
+            "and hands it back when the last assignment is removed.",
+
             "Indentation is the hierarchy: Tab makes a row a "
             "sub-deliverable of the row above it, Shift-Tab moves it back "
             "out, and dragging a row onto the middle of another makes it "

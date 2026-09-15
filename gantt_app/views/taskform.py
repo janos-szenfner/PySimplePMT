@@ -40,6 +40,7 @@ from gantt_app.views.formcheck import FormChecks
 from gantt_app.views.scrollframe import ScrollFrame
 from gantt_app.views.dependency_editor import DependencyEditor
 from gantt_app.views.assigntask import TaskResourceTab
+from gantt_app.views.deliverables_tab import TaskDeliverablesTab
 from gantt_app.utils.shortcuts import bind_all as bind_shortcut
 from gantt_app.utils.log import get_logger
 
@@ -535,6 +536,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.tabs.add("Notes")
         self.tabs.add("Dependency")
         self.tabs.add("Resource")
+        self.tabs.add("Deliverables")
 
         # The notes have a tab to themselves.
         #
@@ -568,6 +570,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_dependency_tab()
         self._build_resource_tab(self.tabs.tab("Resource"))
         self.resource_tab.set_values(self.template)
+        self._build_deliverables_tab(self.tabs.tab("Deliverables"))
         self._build_buttons()
 
         # Packed once the form inside it is finished; see below
@@ -1399,6 +1402,17 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """Build the Resource assignment tab."""
         self.resource_tab = TaskResourceTab(tab, self.project, self.template)
         self.resource_tab.pack(fill=tk.BOTH, expand=True)
+
+    def _build_deliverables_tab(self, tab):
+        """Build the Deliverables tab: which deliverables this task feeds."""
+        # The edit dialog's subject is self.task; the create dialog has none
+        # yet, and its '__new__' template id is a member of nothing, which is
+        # the same answer the tab wants.
+        subject = getattr(self, 'task', None)
+        task_id = subject.id if subject is not None else self.template.id
+        self.deliverables_tab = TaskDeliverablesTab(tab, self.project,
+                                                  task_id)
+        self.deliverables_tab.pack(fill=tk.BOTH, expand=True)
 
     def _on_tab_changed(self):
         """Fill the Dependency tab in the first time it is opened."""

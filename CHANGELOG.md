@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.71.0 - 2026-09-15
+
+- **Tasks now feed deliverables.** Any task, subtask or milestone can be
+  assigned to a deliverable or sub-deliverable - many-to-many, so one
+  task can count toward several rows and a row can collect several
+  tasks. The task editor gained a Deliverables tab that ticks the rows
+  the task belongs to, and the Deliverables grid gained a Tasks submenu:
+  Assign Tasks opens a searchable checklist of the whole task list that
+  works on one row or every marked row at once, while the ticked entries
+  beneath it remove a task with a single click.
+- **Assigned work counts toward the total.** A deliverable's progress is
+  the weighted average of its inputs - each sub-deliverable at its own
+  Weight, each assigned task at one share - so a row with work attached
+  derives its percentage and status like a parent does, marks it with a
+  Σ, and hands the cell back to typing when the last assignment is
+  removed. Editing a task's progress re-rolls every deliverable it feeds
+  in the same pass, and undoing brings the derived number back with it.
+- **The link survives the file and the delete key.** Memberships save
+  inside the project JSON, ids naming tasks that are not in the plan are
+  dropped on load, and removing a task prunes it out of every row that
+  held it - all of it undoable, with a task deletion restoring the
+  memberships it took away. A new Tasks column lists what each row
+  holds, and the same list appears in the Details window with one-click
+  removal and in CSV exports.
+
 ## 1.70.0 - 2026-09-15
 
 - **The Deliverables tab is live.** The footer's third tab - reserved

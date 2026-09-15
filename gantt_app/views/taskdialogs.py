@@ -25,7 +25,9 @@ import copy
 import customtkinter as ctk
 
 from gantt_app.core.models import Task, Project, TASK_TYPES, child_type_for
-from gantt_app.utils.undoredo import ProjectStateTracker
+from gantt_app.utils.undoredo import (
+    ProjectStateTracker, create_update_task_command,
+    create_deliverable_snapshot_command, create_compound_command)
 from gantt_app.views.taskform import TaskFormDialog
 from gantt_app.utils.log import get_logger
 
@@ -256,39 +258,26 @@ class EditTaskDialog(TaskFormDialog):
 
             if self.project_tracker:
                 new_task = copy.copy(self.task)
-                if self.project_tracker.update_task(
-                    old_task.id,
-                    old_task=old_task,
-                    name=new_task.name,
-                    label=new_task.label,
-                    task_type=new_task.task_type,
-                    start_date=new_task.start_date,
-                    end_date=new_task.end_date,
-                    progress=new_task.progress,
-                    dependencies=new_task.dependencies,
-                    color=new_task.color,
-                    is_milestone=new_task.is_milestone,
-                    parent_task_id=new_task.parent_task_id,
-                    duration=new_task.duration,
-                    priority=new_task.priority,
-                    status=new_task.status,
-                    estimated=new_task.estimated,
-                    shape=new_task.shape,
-                    show_in_timeline=new_task.show_in_timeline,
-                    deadline=new_task.deadline,
-                    constraint_type=new_task.constraint_type,
-                    constraint_date=new_task.constraint_date,
-                    effort_type=new_task.effort_type,
-                    effort_driven=new_task.effort_driven,
-                    ignores_resource_calendars=\
-                        new_task.ignores_resource_calendars,
-                    calendar_id=new_task.calendar_id,
-                    details=new_task.details,
-                    resource_assignments=list(new_task.resource_assignments),
-                ):
+                # The task write and the Deliverables tab's membership write
+                # are one Save, so they land as one undo entry: the update
+                # command and, when the ticks changed, a deliverable snapshot
+                # of the membership change, compounded.
+                command = create_update_task_command(
+                    self.project, old_task.id, old_task, new_task)
+                membership_command = \
+                    self._deliverable_membership_command(old_task.id)
+                if membership_command is not None:
+                    command = create_compound_command(
+                        [command, membership_command], name=command.name)
+                if self.project_tracker.manager.execute(command):
                     logger.info("Edited task %s %r with %d resource assignment(s)",
                                 new_task.id, new_task.name,
                                 len(new_task.resource_assignments))
+                    if membership_command is not None:
+                        logger.info(
+                            "Task %s now feeds deliverables %s",
+                            new_task.id,
+                            sorted(self.deliverables_tab.selected_ids()))
                     logger.debug(
                         "Recorded status change for task '%s': %s -> %s",
                         old_task.id, old_task.status, new_task.status
@@ -297,6 +286,15 @@ class EditTaskDialog(TaskFormDialog):
                         self.on_save(new_task)
                     self._show_effort_warnings()
                     return True
+
+            # No undo tracker: the membership write still has to happen.
+            chosen = self.deliverables_tab.selected_ids()
+            if chosen != {d.id for d in
+                          self.project.deliverables_for_task(self.task.id)}:
+                self.project.set_task_deliverables(
+                    self.task.id, sorted(chosen))
+                logger.info("Task %s now feeds deliverables %s",
+                            self.task.id, sorted(chosen))
 
             logger.info("Edited task %s %r with %d resource assignment(s)",
                         self.task.id, self.task.name,
@@ -309,6 +307,28 @@ class EditTaskDialog(TaskFormDialog):
         except ValueError as error:
             self._report_invalid(error)
             return False
+
+    def _deliverable_membership_command(self, task_id: str):
+        """
+        The undoable command the Deliverables tab's ticks become, or None.
+
+        None when the ticks match the membership the task already has - a
+        snapshot command that changes nothing would otherwise land on the
+        undo history as an entry that undoes nothing, and inside a compound
+        would mark the whole save as failed.
+        """
+        tab = getattr(self, 'deliverables_tab', None)
+        if tab is None:
+            return None
+        chosen = tab.selected_ids()
+        current = {d.id for d in self.project.deliverables_for_task(task_id)}
+        if chosen == current:
+            return None
+        return create_deliverable_snapshot_command(
+            self.project,
+            lambda: self.project.set_task_deliverables(
+                task_id, sorted(chosen)),
+            'Assign Deliverables')
 
     def _start_another(self):
         """
@@ -548,6 +568,21 @@ class CreateTaskDialog(TaskFormDialog):
 
             if self.on_save:
                 self.on_save(task)
+
+            # The Deliverables tab's ticks, applied once the task exists:
+            # on_save is what adds it to the plan, so membership follows it.
+            chosen = self.deliverables_tab.selected_ids()
+            if chosen:
+                if self.project_tracker:
+                    self.project_tracker.run_deliverable_as_command(
+                        lambda: self.project.set_task_deliverables(
+                            task.id, sorted(chosen)),
+                        'Assign Deliverables')
+                else:
+                    self.project.set_task_deliverables(task.id,
+                                                       sorted(chosen))
+                logger.info("New task %s assigned to deliverables %s",
+                            task.id, sorted(chosen))
             return True
 
         except ValueError as error:

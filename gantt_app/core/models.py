@@ -2395,10 +2395,27 @@ class Project:
         
         if len(self.tasks) < initial_count:
             self._id_to_task = None
+            # Deliverables hold the tasks assigned to them by id, so a
+            # removed task has to come out of every membership list before
+            # the roll-up would be counting a row that no longer exists.
+            removed_ids = {task_id} | set(subtask_ids)
+            pruned_from = []
+            for deliverable in self.deliverables:
+                if deliverable.task_ids:
+                    kept = [t for t in deliverable.task_ids
+                            if t not in removed_ids]
+                    if len(kept) != len(deliverable.task_ids):
+                        pruned_from.append(deliverable.id)
+                        deliverable.task_ids = kept
+            if pruned_from:
+                logger.debug(
+                    "Pruned removed task(s) %s from deliverables %s",
+                    sorted(removed_ids), pruned_from)
+            self.roll_up_deliverables()
             self._update_dates()
             return True
         return False
-    
+
     def _rebuild_id_index(self):
         """Build the task ID lookup dict from self.tasks."""
         self._id_to_task = {task.id: task for task in self.tasks}
@@ -3727,9 +3744,56 @@ class Project:
             self.deliverables = new_order
         return changed
 
+    def deliverables_for_task(self, task_id: str) -> List[Deliverable]:
+        """Every deliverable a task is assigned to, in display order."""
+        return [d for d in self.deliverable_display_order()
+                if task_id in d.task_ids]
+
+    def tasks_for_deliverable(self, deliverable_id: str) -> List[Task]:
+        """The tasks assigned to a deliverable, in the task list's order."""
+        deliverable = self.get_deliverable_by_id(deliverable_id)
+        if deliverable is None or not deliverable.task_ids:
+            return []
+        wanted = set(deliverable.task_ids)
+        return [t for t in self.display_order() if t.id in wanted]
+
+    def set_task_deliverables(self, task_id: str,
+                              deliverable_ids) -> bool:
+        """
+        Make a task's deliverable membership exactly the given set.
+
+        Adds the task's id to each named deliverable and removes it from
+        every other - the two halves of one change, so a caller never has
+        to diff the membership itself. Returns False when nothing moved.
+        """
+        wanted = set(deliverable_ids or [])
+        joined, left = [], []
+        for deliverable in self.deliverables:
+            member = task_id in deliverable.task_ids
+            if member == (deliverable.id in wanted):
+                continue
+            if deliverable.id in wanted:
+                deliverable.task_ids.append(task_id)
+                joined.append(deliverable.id)
+            else:
+                deliverable.task_ids.remove(task_id)
+                left.append(deliverable.id)
+        if joined or left:
+            logger.debug(
+                "Task %s joined deliverables %s, left %s",
+                task_id, joined, left)
+            self.roll_up_deliverables()
+            return True
+        return False
+
     def roll_up_deliverables(self) -> bool:
         """
-        Make every deliverable with children take its progress from them.
+        Make every deliverable take its progress from what feeds it.
+
+        A deliverable's inputs are its sub-deliverables and the tasks
+        assigned to it, counted together; a row with neither keeps whatever
+        progress was typed onto it. See rolled_up_deliverable_progress for
+        the weighting.
 
         RETURNS:
         --------
@@ -3742,8 +3806,14 @@ class Project:
         dates to span. Children are walked deepest first so a parent totals
         children that have already settled, and the status follows the
         progress the roll-up lands on.
+
+        Called from update_all after apply_schedule, so an edited task's
+        new percentage lands on the deliverables it was assigned to the
+        same pass - and undoing that edit recomputes back the same way,
+        without any undo command needing to store the derived number.
         """
         children = self._deliverable_children_by_parent()
+        task_by_id = {task.id: task for task in self.tasks}
 
         def depth(deliverable: Deliverable) -> int:
             """How far below the root a deliverable sits."""
@@ -3762,10 +3832,13 @@ class Project:
         changed = False
         for deliverable in sorted(self.deliverables, key=depth,
                                   reverse=True):
-            brood = children.get(deliverable.id)
-            if not brood:
+            brood = children.get(deliverable.id, [])
+            assigned = [task_by_id[task_id]
+                        for task_id in deliverable.task_ids
+                        if task_id in task_by_id]
+            if not brood and not assigned:
                 continue
-            new_progress = rolled_up_deliverable_progress(brood)
+            new_progress = rolled_up_deliverable_progress(brood, assigned)
             new_status = status_for_progress(new_progress)
             if (deliverable.progress != new_progress
                     or deliverable.status != new_status):
@@ -3997,6 +4070,23 @@ class Project:
         
         # Add tasks manually
         project.tasks = [Task.from_dict(task_data) for task_data in data.get('tasks', [])]
+
+        # A deliverable points at its tasks by id; a file can name one that
+        # is not in the plan, and a dangling id would count a missing row
+        # into the roll-up, so unknown ids are dropped here.
+        known_task_ids = {task.id for task in project.tasks}
+        for deliverable in project.deliverables:
+            if deliverable.task_ids:
+                kept = [t for t in deliverable.task_ids
+                        if t in known_task_ids]
+                dropped = [t for t in deliverable.task_ids
+                           if t not in known_task_ids]
+                if dropped:
+                    logger.warning(
+                        "Deliverable %s named task(s) %s, which are not in "
+                        "the plan; the link is dropped",
+                        deliverable.id, dropped)
+                    deliverable.task_ids = kept
 
         # If tasks exist, update project dates based on tasks
         if project.tasks:

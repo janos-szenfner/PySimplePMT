@@ -915,6 +915,13 @@ class GanttApp(ctk.CTk):
         if self.project.apply_schedule():
             logger.debug("Rescheduled %r after a change", self.project.name)
 
+        # Deliverable progress is derived from its sub-deliverables and its
+        # assigned tasks, so a task edit recomputes it here rather than the
+        # board keeping a number that can drift. Undo works the same way -
+        # the recomputed value follows the restored inputs.
+        if self.project.roll_up_deliverables():
+            logger.debug("Deliverable progress re-rolled after a change")
+
         self.task_list.update_task_list()
         self.gantt_chart.update_chart()
 

@@ -214,6 +214,10 @@ class RemoveTaskCommand(Command):
     place on tasks that survive the removal - those Task objects are the same
     ones the restored list holds, so the list alone does not carry them.
 
+    The deliverables are snapshotted for the same reason: removing a task
+    prunes its id out of every deliverable's task_ids and re-rolls their
+    progress, and the undo has to put both back.
+
     The snapshot is taken in execute rather than at construction so redo goes
     through exactly the same path as the original removal.
     """
@@ -226,6 +230,8 @@ class RemoveTaskCommand(Command):
                                                   repr=False)
     _previous_dependencies: Optional[Dict[str, list]] = field(
         default=None, init=False, repr=False)
+    _previous_deliverables: Optional[Dict[str, dict]] = field(
+        default=None, init=False, repr=False)
 
     def __post_init__(self):
         self.name = f"Remove Task: {self.task.name}"
@@ -236,6 +242,13 @@ class RemoveTaskCommand(Command):
         self._previous_dependencies = {
             task.id: [copy.copy(link) for link in task.dependencies]
             for task in self.project.tasks
+        }
+        self._previous_deliverables = {
+            deliverable.id: {
+                name: copy.copy(getattr(deliverable, name))
+                for name in DeliverableSnapshotCommand.FIELDS
+            }
+            for deliverable in self.project.deliverables
         }
         return self.project.remove_task(self.task_id)
 
@@ -253,6 +266,13 @@ class RemoveTaskCommand(Command):
             links = self._previous_dependencies.get(task.id)
             if links is not None:
                 task.dependencies = [copy.copy(link) for link in links]
+
+        if self._previous_deliverables is not None:
+            for deliverable in self.project.deliverables:
+                fields = self._previous_deliverables.get(deliverable.id)
+                if fields is not None:
+                    for name, value in fields.items():
+                        setattr(deliverable, name, copy.copy(value))
 
         self.project._update_dates()
         return True
@@ -494,6 +514,11 @@ class SnapshotCommand(Command):
     The dates are in there because linking reschedules. Without them, undoing
     a link took the link out and left the row sitting where the link had
     pushed it - a plan half reverted, which is worse than either end of it.
+
+    The deliverables are in there too: a task action can reach them - a
+    delete prunes the removed id out of every deliverable's task_ids and
+    re-rolls their progress - so the other collection is restored with the
+    same before/after pair rather than left as the action had it.
     """
 
     #: What an action recorded this way can change about a row, and so what
@@ -537,22 +562,34 @@ class SnapshotCommand(Command):
         self._restore(self._before)
         return True
 
-    def _snapshot(self) -> list:
+    def _snapshot(self) -> tuple:
         """Every row, and the parts of it this kind of action rewrites."""
-        return [
+        tasks = [
             (task,
              {name: getattr(task, name) for name in self.FIELDS},
              [copy.copy(link) for link in task.dependencies])
             for task in self.project.tasks
         ]
+        deliverables = [
+            (deliverable,
+             {name: copy.copy(getattr(deliverable, name))
+              for name in DeliverableSnapshotCommand.FIELDS})
+            for deliverable in self.project.deliverables
+        ]
+        return tasks, deliverables
 
-    def _restore(self, snapshot: list) -> None:
+    def _restore(self, snapshot: tuple) -> None:
         """Put back a snapshot taken by _snapshot."""
-        self.project.tasks = [row[0] for row in snapshot]
-        for task, fields, links in snapshot:
+        tasks, deliverables = snapshot
+        self.project.tasks = [row[0] for row in tasks]
+        for task, fields, links in tasks:
             for name, value in fields.items():
                 setattr(task, name, value)
             task.dependencies = [copy.copy(link) for link in links]
+        self.project.deliverables = [row[0] for row in deliverables]
+        for deliverable, fields in deliverables:
+            for name, value in fields.items():
+                setattr(deliverable, name, copy.copy(value))
         self.project._update_dates()
 
 
@@ -586,7 +623,8 @@ class DeliverableSnapshotCommand(Command):
     #: What an action recorded this way can change about a deliverable, and
     #: so what has to be put back. The whole row, less the identity.
     FIELDS = ('name', 'parent_id', 'status', 'progress', 'weight',
-              'assignee', 'due_date', 'priority', 'tags', 'details')
+              'assignee', 'due_date', 'priority', 'tags', 'details',
+              'task_ids')
 
     project: Project
     apply: Callable[[], bool]

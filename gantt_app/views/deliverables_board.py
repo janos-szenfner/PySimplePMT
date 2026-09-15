@@ -48,6 +48,7 @@ from gantt_app.core.deliverable import (
     status_for_progress, progress_for_status)
 from gantt_app.core.priority import PRIORITY_LEVELS
 from gantt_app.views.datepicker import parse_date, DATE_FORMAT
+from gantt_app.views.scrollframe import ScrollFrame
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -109,12 +110,13 @@ class DeliverablesBoard(ctk.CTkFrame):
 
     #: The data columns, in display order. The name is the tree column (#0),
     #: which is what draws the indentation and the expander.
-    COLUMNS = ('Status', 'Assignee', 'Due Date', 'Priority',
+    COLUMNS = ('Status', 'Assignee', 'Tasks', 'Due Date', 'Priority',
                'Tags', 'Weight', 'Progress')
 
     COLUMN_WIDTHS = {
-        '#0': 320, 'Status': 100, 'Assignee': 120, 'Due Date': 100,
-        'Priority': 90, 'Tags': 150, 'Weight': 70, 'Progress': 120,
+        '#0': 300, 'Status': 100, 'Assignee': 110, 'Tasks': 170,
+        'Due Date': 100, 'Priority': 90, 'Tags': 140, 'Weight': 70,
+        'Progress': 120,
     }
 
     def __init__(self, parent, project: Project,
@@ -369,15 +371,16 @@ class DeliverablesBoard(ctk.CTkFrame):
         """The data cells of one row, in COLUMNS order."""
         due = (deliverable.due_date.strftime(DATE_FORMAT)
                if deliverable.due_date else '')
-        has_children = bool(
-            self.project.get_sub_deliverables(deliverable.id))
+        has_inputs = self._has_inputs(deliverable)
         progress = self._progress_text(deliverable.progress)
-        if has_children:
-            # A parent's progress is the roll-up's answer, not the row's own
+        if has_inputs:
+            # A derived progress is the roll-up's answer, not the row's own
             progress = 'Σ ' + progress
+        tasks = self.project.tasks_for_deliverable(deliverable.id)
         return (
             deliverable.status,
             deliverable.assignee,
+            ', '.join(t.name for t in tasks),
             due,
             deliverable.priority,
             ', '.join(deliverable.tags),
@@ -398,6 +401,17 @@ class DeliverablesBoard(ctk.CTkFrame):
         if deliverable.due_date is None or deliverable.is_done:
             return False
         return deliverable.due_date.date() < datetime.now().date()
+
+    def _has_inputs(self, deliverable: Deliverable) -> bool:
+        """
+        Whether a row's progress is derived rather than typed.
+
+        Children or assigned tasks both count - either one is an input the
+        roll-up reads, and a row with inputs takes its number from them.
+        """
+        if self.project.get_sub_deliverables(deliverable.id):
+            return True
+        return bool(deliverable.task_ids)
 
     def _paint_rows(self) -> None:
         """
@@ -637,6 +651,8 @@ class DeliverablesBoard(ctk.CTkFrame):
             self._open_priority_menu(item)
         elif column == 'Assignee':
             self._open_assignee_menu(item)
+        elif column == 'Tasks':
+            self._open_task_picker([item])
         return 'break'
 
     def _column_name(self, x: int) -> Optional[str]:
@@ -679,9 +695,9 @@ class DeliverablesBoard(ctk.CTkFrame):
         if deliverable is None:
             return
 
-        if column == 'Progress' and self.project.get_sub_deliverables(item):
-            self._say("A deliverable's progress comes from the items "
-                      "under it.")
+        if column == 'Progress' and self._has_inputs(deliverable):
+            self._say("This deliverable's progress comes from its "
+                      "children and assigned tasks.")
             return
 
         current = {
@@ -794,6 +810,10 @@ class DeliverablesBoard(ctk.CTkFrame):
 
     def _open_status_menu(self, item: str) -> None:
         """Offer the three statuses at the cell that was clicked."""
+        deliverable = self.project.get_deliverable_by_id(item)
+        if deliverable is not None and self._has_inputs(deliverable):
+            self._say("Status follows the row's children and tasks.")
+            return
         self._open_choice_menu(
             item, 'Status', DELIVERABLE_STATUSES,
             lambda value: self._set_status(item, value))
@@ -904,9 +924,9 @@ class DeliverablesBoard(ctk.CTkFrame):
             deliverable = self.project.get_deliverable_by_id(deliverable_id)
             if deliverable is None:
                 return False
-            if self.project.get_sub_deliverables(deliverable_id):
-                # A parent's status is its children's, read back - it
-                # cannot be set directly.
+            if self._has_inputs(deliverable):
+                # A row with children or tasks reads its status back from
+                # the roll-up - it cannot be set directly.
                 return False
             progress = progress_for_status(status, deliverable.progress)
             if (deliverable.status == status
@@ -1452,6 +1472,22 @@ class DeliverablesBoard(ctk.CTkFrame):
         menu.add_cascade(label='Set Priority', menu=priority_menu,
                          state=(tk.NORMAL if chosen else tk.DISABLED))
 
+        tasks_menu = tk.Menu(menu, tearoff=0)
+        tasks_menu.add_command(
+            label='Assign Tasks…',
+            state=(tk.NORMAL if chosen else tk.DISABLED),
+            command=lambda: self._open_task_picker(chosen))
+        if deliverable is not None and deliverable.task_ids:
+            # The clicked row's assignments, ticked - picking one removes it.
+            tasks_menu.add_separator()
+            for task in self.project.tasks_for_deliverable(deliverable.id):
+                tasks_menu.add_command(
+                    label=f"☑ {task.id} {task.name or ''}".rstrip(),
+                    command=lambda t=task: self._unassign_task(
+                        deliverable.id, t.id))
+        menu.add_cascade(label='Tasks', menu=tasks_menu,
+                         state=(tk.NORMAL if chosen else tk.DISABLED))
+
         menu.add_separator()
         if deliverable is not None:
             marked = item in self._marked
@@ -1503,8 +1539,8 @@ class DeliverablesBoard(ctk.CTkFrame):
                     deliverable_id)
                 if deliverable is None:
                     continue
-                if self.project.get_sub_deliverables(deliverable_id):
-                    continue        # a parent's status is its children's
+                if self._has_inputs(deliverable):
+                    continue        # a row with inputs derives its status
                 progress = progress_for_status(status,
                                                deliverable.progress)
                 if (deliverable.status != status
@@ -1549,6 +1585,153 @@ class DeliverablesBoard(ctk.CTkFrame):
         if self.on_project_changed:
             self.on_project_changed()
 
+    # ------------------------------------------------------------------
+    # Assigning tasks
+    # ------------------------------------------------------------------
+
+    def _open_task_picker(self, deliverable_ids) -> None:
+        """
+        Open the task checklist for the row - or the marked rows - it was
+        asked for.
+
+        The whole task list in its own outline order, each with a box;
+        tasks every edited row already holds arrive ticked. Apply makes the
+        ticked set each row's membership - the same write whether one row
+        or a marked set was picked, so a bulk assign reads exactly like a
+        single one.
+        """
+        rows = [d for d in
+                (self.project.get_deliverable_by_id(i)
+                 for i in self._as_ids(deliverable_ids))
+                if d is not None]
+        if not rows:
+            return
+        tasks = self.project.display_order()
+        if not tasks:
+            self._say('There are no tasks to assign yet.')
+            return
+
+        # A task counts as "already assigned" only when every edited row
+        # holds it - anything else arrives unticked and is applied to all.
+        ticked = set(rows[0].task_ids)
+        for row in rows[1:]:
+            ticked &= set(row.task_ids)
+
+        window = ctk.CTkToplevel(self.winfo_toplevel())
+        title = 'Assign Tasks' if len(rows) == 1 \
+            else f'Assign Tasks to {len(rows)} Deliverables'
+        window.title(title)
+        window.geometry('440x420')
+        window.transient(self.winfo_toplevel())
+
+        search = ctk.CTkEntry(window, placeholder_text='Filter tasks…')
+        search.pack(fill=tk.X, padx=12, pady=(12, 6))
+
+        scroller = ScrollFrame(window)
+        scroller.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
+
+        numbers = self.project.display_ids()
+        variables: Dict[str, tk.BooleanVar] = {}
+
+        def draw(filter_text: str = '') -> None:
+            for child in scroller.content.winfo_children():
+                child.destroy()
+            wanted = filter_text.strip().lower()
+            shown = 0
+            for task in tasks:
+                label = f"{numbers.get(task.id, '')}  " \
+                        f"{task.name or '(unnamed)'}"
+                if wanted and wanted not in label.lower():
+                    continue
+                var = variables.setdefault(
+                    task.id, tk.BooleanVar(value=task.id in ticked))
+                depth = max(0, self.project.outline_level(task.id) - 1)
+                ctk.CTkCheckBox(
+                    scroller.content, text=label, variable=var,
+                ).pack(fill=tk.X,
+                       padx=(8 + depth * 18, 4), pady=1)
+                shown += 1
+            if not shown:
+                ctk.CTkLabel(
+                    scroller.content, text='No matching tasks.',
+                    anchor=tk.W).pack(fill=tk.X, padx=8, pady=8)
+
+        search.bind('<KeyRelease>',
+                    lambda _e: draw(search.get()))
+        draw()
+
+        buttons = ctk.CTkFrame(window, fg_color='transparent')
+        buttons.pack(fill=tk.X, padx=12, pady=(0, 12))
+
+        def apply() -> None:
+            chosen = {task_id for task_id, var in variables.items()
+                      if var.get()}
+            window.destroy()
+            self._assign_tasks([d.id for d in rows], chosen)
+
+        ctk.CTkButton(buttons, text='Assign', width=90,
+                      command=apply).pack(side=tk.RIGHT, padx=(6, 0))
+        ctk.CTkButton(buttons, text='Cancel', width=90,
+                      command=window.destroy).pack(side=tk.RIGHT)
+
+        grab_when_visible(window)
+
+    def _assign_tasks(self, deliverable_ids, task_ids: Set[str]) -> None:
+        """
+        Make each given row's membership exactly the chosen task set, as one
+        undoable step - the roll-up inside is what re-derives the progress
+        the new membership implies.
+        """
+        wanted = sorted(task_ids)
+
+        def apply() -> bool:
+            changed = False
+            for deliverable_id in self._as_ids(deliverable_ids):
+                deliverable = self.project.get_deliverable_by_id(
+                    deliverable_id)
+                if deliverable is None:
+                    continue
+                if deliverable.task_ids != wanted:
+                    deliverable.task_ids = list(wanted)
+                    changed = True
+            if changed:
+                self.project.roll_up_deliverables()
+            return changed
+
+        if self.project_tracker:
+            changed = self.project_tracker.run_deliverable_as_command(
+                apply, 'Assign Tasks')
+        else:
+            changed = apply()
+        if changed:
+            logger.info("Set task membership on %d deliverable(s): %s",
+                        len(self._as_ids(deliverable_ids)), wanted)
+        self.refresh()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    def _unassign_task(self, deliverable_id: str, task_id: str) -> None:
+        """Take one task off one row - the submenu's one-click remove."""
+        def apply() -> bool:
+            deliverable = self.project.get_deliverable_by_id(deliverable_id)
+            if deliverable is None or task_id not in deliverable.task_ids:
+                return False
+            deliverable.task_ids.remove(task_id)
+            self.project.roll_up_deliverables()
+            return True
+
+        if self.project_tracker:
+            changed = self.project_tracker.run_deliverable_as_command(
+                apply, 'Unassign Task')
+        else:
+            changed = apply()
+        if changed:
+            logger.info("Removed task %s from deliverable %s",
+                        task_id, deliverable_id)
+        self.refresh()
+        if self.on_project_changed:
+            self.on_project_changed()
+
     def _undo(self) -> None:
         manager = getattr(self.project_tracker, 'manager', None)
         if manager and manager.can_undo() and manager.undo():
@@ -1578,8 +1761,29 @@ class DeliverablesBoard(ctk.CTkFrame):
 
         window = ctk.CTkToplevel(self.winfo_toplevel())
         window.title(f"Deliverable - {deliverable.name or 'untitled'}")
-        window.geometry('420x320')
+        window.geometry('420x400')
         window.transient(self.winfo_toplevel())
+
+        tasks = self.project.tasks_for_deliverable(deliverable.id)
+        if tasks:
+            ctk.CTkLabel(
+                window, text='Assigned tasks',
+                anchor=tk.W).pack(fill=tk.X, padx=12, pady=(12, 2))
+            numbers = self.project.display_ids()
+            for task in tasks:
+                line = ctk.CTkFrame(window, fg_color='transparent')
+                line.pack(fill=tk.X, padx=12)
+                ctk.CTkLabel(
+                    line,
+                    text=f"{numbers.get(task.id, '')}  "
+                         f"{task.name or '(unnamed)'}",
+                    anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
+                ctk.CTkButton(
+                    line, text='Remove', width=64,
+                    command=lambda t=task: (
+                        self._unassign_task(deliverable.id, t.id),
+                        window.destroy())
+                ).pack(side=tk.RIGHT)
 
         ctk.CTkLabel(
             window, text='Description / acceptance criteria',
@@ -1668,8 +1872,8 @@ class DeliverablesBoard(ctk.CTkFrame):
                     writer = csv.writer(handle)
                     writer.writerow(
                         ['No', 'Level', 'Name', 'Status', 'Progress',
-                         'Weight', 'Assignee', 'Due Date', 'Priority',
-                         'Tags', 'Details'])
+                         'Weight', 'Assignee', 'Tasks', 'Due Date',
+                         'Priority', 'Tags', 'Details'])
                     for deliverable in rows:
                         level = self.project.deliverable_outline_level(
                             deliverable.id)
@@ -1681,6 +1885,10 @@ class DeliverablesBoard(ctk.CTkFrame):
                             deliverable.progress,
                             deliverable.weight,
                             deliverable.assignee,
+                            ', '.join(
+                                task.name for task in
+                                self.project.tasks_for_deliverable(
+                                    deliverable.id)),
                             (deliverable.due_date.strftime(DATE_FORMAT)
                              if deliverable.due_date else ''),
                             deliverable.priority,

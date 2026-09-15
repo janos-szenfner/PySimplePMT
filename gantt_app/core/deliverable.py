@@ -78,7 +78,7 @@ def progress_for_status(status: str, current: int = 0) -> int:
     return current if 0 < current < 100 else 1
 
 
-def rolled_up_deliverable_progress(children) -> int:
+def rolled_up_deliverable_progress(children, tasks=()) -> int:
     """
     The completion a deliverable takes from the items under it.
 
@@ -88,29 +88,41 @@ def rolled_up_deliverable_progress(children) -> int:
         Its direct children. Deeper levels have already settled by the time
         this is asked - the caller walks deepest first, the way
         Project.roll_up_summaries does for tasks.
+    tasks : list, optional
+        The tasks assigned to it - the work the deliverable wraps. Each
+        counts weight 1 beside the children: a task is a fact about the
+        deliverable, not a measure of it, so it gets no weight of its own.
+        (Duration-weighting was considered and rejected: a milestone's
+        zero length would count a finished go-live as nothing.)
 
     RETURNS:
     --------
     int
-        A percentage from 0 to 100. An empty deliverable is 0.
+        A percentage from 0 to 100. A deliverable with neither is 0.
 
     WHAT THE RULE IS:
     -----------------
     A weighted average: each child counts for its weight, which defaults to
-    1. A plan that never sets a weight gets the plain average the formula
-    reduces to - (sum of progresses) / (number of children) - which is also
-    the answer when every weight is 0, since a row that counts for nothing
-    cannot all count for nothing.
+    1, and each assigned task counts for one share. A plan that never sets
+    a weight gets the plain average the formula reduces to - (sum of
+    progresses) / (number of inputs) - which is also the answer when every
+    weight is 0, since a row that counts for nothing cannot all count for
+    nothing.
     """
-    if not children:
-        return 0
-
-    percentages = [max(0, min(100, child.progress)) for child in children]
+    percentages = [max(0, min(100, int(child.progress or 0)))
+                   for child in children]
     try:
         weights = [max(0.0, float(getattr(child, 'weight', 1.0) or 0.0))
                    for child in children]
     except (TypeError, ValueError):
         weights = [1.0] * len(children)
+
+    for task in tasks or ():
+        percentages.append(max(0, min(100, int(task.progress or 0))))
+        weights.append(1.0)
+
+    if not percentages:
+        return 0
 
     total_weight = sum(weights)
     if total_weight <= 0:
@@ -139,6 +151,8 @@ class Deliverable:
         priority: One of PRIORITY_LEVELS
         tags: Free-text tags, shown comma-joined
         details: Notes - description, acceptance criteria
+        task_ids: The tasks, subtasks and milestones assigned to it -
+            their progress counts into the roll-up as weight-1 inputs
     """
     id: str
     name: str = ""
@@ -151,6 +165,7 @@ class Deliverable:
     priority: str = DEFAULT_PRIORITY
     tags: List[str] = field(default_factory=list)
     details: str = ""
+    task_ids: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         """Coerce whatever arrived into the values the field means."""
@@ -178,6 +193,16 @@ class Deliverable:
         self.details = str(self.details or '')
         self.assignee = str(self.assignee or '')
         self.name = str(self.name or '')
+
+        # Task ids are kept once each, in the order they were assigned.
+        seen = set()
+        kept = []
+        for task_id in self.task_ids or []:
+            task_id = str(task_id)
+            if task_id and task_id not in seen:
+                seen.add(task_id)
+                kept.append(task_id)
+        self.task_ids = kept
 
     @property
     def is_done(self) -> bool:
@@ -215,6 +240,7 @@ class Deliverable:
             'priority': self.priority,
             'tags': list(self.tags),
             'details': self.details,
+            'task_ids': list(self.task_ids),
         }
 
     @classmethod
@@ -251,4 +277,5 @@ class Deliverable:
             priority=data.get('priority', DEFAULT_PRIORITY),
             tags=list(data.get('tags') or []),
             details=str(data.get('details') or ''),
+            task_ids=list(data.get('task_ids') or []),
         )

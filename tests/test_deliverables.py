@@ -27,8 +27,17 @@ from gantt_app.core.deliverable import (
     Deliverable, DELIVERABLE_STATUSES,
     progress_for_status, rolled_up_deliverable_progress,
     status_for_progress)
-from gantt_app.core.models import Project
+from gantt_app.core.models import Project, Task
 from gantt_app.utils.undoredo import UndoRedoManager, ProjectStateTracker
+
+
+def a_task(task_id: str, progress: int = 0,
+           parent_task_id=None, task_type: str = 'Task') -> Task:
+    """A task worth only an id and a percentage to these tests."""
+    today = datetime(2026, 1, 1)
+    return Task(id=task_id, name=f'Task {task_id}', start_date=today,
+                end_date=today, progress=progress,
+                parent_task_id=parent_task_id, task_type=task_type)
 
 
 class DeliverablePlanTestCase(unittest.TestCase):
@@ -307,6 +316,220 @@ class TestUndo(DeliverablePlanTestCase):
         before = self.manager.can_undo()
         self.tracker.run_deliverable_as_command(lambda: False, 'Nothing')
         self.assertEqual(self.manager.can_undo(), before)
+
+
+class TestTaskAssignment(DeliverablePlanTestCase):
+    """
+    The many-to-many link: tasks assigned to deliverables, and the
+    progress they lend them.
+    """
+
+    def plan_with_tasks(self, *rows) -> Project:
+        """A deliverable plan plus two half-done tasks."""
+        project = self.plan(*rows)
+        project.tasks = [a_task('t1', progress=40),
+                         a_task('t2', progress=80)]
+        return project
+
+    def test_a_task_can_sit_under_several_deliverables(self):
+        project = self.plan_with_tasks(('a', None), ('b', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1']
+        project.get_deliverable_by_id('b').task_ids = ['t1']
+
+        self.assertEqual(
+            [d.id for d in project.deliverables_for_task('t1')],
+            ['a', 'b'])
+
+    def test_a_deliverable_can_hold_several_tasks(self):
+        project = self.plan_with_tasks(('a', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1', 't2']
+
+        self.assertEqual(
+            [t.id for t in project.tasks_for_deliverable('a')],
+            ['t1', 't2'])
+
+    def test_assigned_tasks_count_into_the_progress(self):
+        project = self.plan_with_tasks(('a', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1', 't2']
+
+        project.roll_up_deliverables()
+
+        self.assertEqual(
+            project.get_deliverable_by_id('a').progress, 60)
+        self.assertEqual(
+            project.get_deliverable_by_id('a').status, 'In Progress')
+
+    def test_children_and_tasks_count_together(self):
+        """A parent's inputs are its children AND its own assigned tasks."""
+        project = self.plan_with_tasks(('p', None), ('c', 'p'))
+        project.get_deliverable_by_id('c').progress = 100
+        project.get_deliverable_by_id('p').task_ids = ['t1']
+
+        project.roll_up_deliverables()
+
+        # (child 100 x weight 1 + task 40 x weight 1) / 2
+        self.assertEqual(
+            project.get_deliverable_by_id('p').progress, 70)
+
+    def test_tasks_and_subtasks_and_milestones_all_count(self):
+        project = self.plan(('a', None))
+        project.tasks = [
+            a_task('t1', progress=100),
+            a_task('t2', progress=50, parent_task_id='t1',
+                   task_type='Subtask'),
+            a_task('t3', progress=0, task_type='Milestone'),
+        ]
+        project.get_deliverable_by_id('a').task_ids = ['t1', 't2', 't3']
+
+        project.roll_up_deliverables()
+
+        self.assertEqual(
+            project.get_deliverable_by_id('a').progress, 50)
+
+    def test_the_same_task_counts_under_each_row_it_feeds(self):
+        project = self.plan_with_tasks(('a', None), ('b', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1']
+        project.get_deliverable_by_id('b').task_ids = ['t1']
+
+        project.roll_up_deliverables()
+
+        self.assertEqual(project.get_deliverable_by_id('a').progress, 40)
+        self.assertEqual(project.get_deliverable_by_id('b').progress, 40)
+
+    def test_set_task_deliverables_writes_both_sides(self):
+        project = self.plan_with_tasks(('a', None), ('b', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1']
+
+        project.set_task_deliverables('t1', ['b'])
+
+        self.assertEqual(project.get_deliverable_by_id('a').task_ids, [])
+        self.assertEqual(project.get_deliverable_by_id('b').task_ids,
+                         ['t1'])
+
+    def test_set_task_deliverables_that_changes_nothing_is_a_noop(self):
+        project = self.plan_with_tasks(('a', None))
+        self.assertFalse(project.set_task_deliverables('t1', []))
+        project.set_task_deliverables('t1', ['a'])
+        self.assertFalse(project.set_task_deliverables('t1', ['a']))
+
+    def test_removing_the_last_task_hands_progress_back(self):
+        """With no inputs left, the roll-up leaves the row alone."""
+        project = self.plan_with_tasks(('a', None))
+        deliverable = project.get_deliverable_by_id('a')
+        deliverable.task_ids = ['t1']
+        project.roll_up_deliverables()
+        self.assertEqual(deliverable.progress, 40)
+
+        deliverable.task_ids = []
+        deliverable.progress = 90
+        project.roll_up_deliverables()
+
+        self.assertEqual(deliverable.progress, 90)
+
+    def test_removing_a_task_prunes_it_from_membership(self):
+        project = self.plan_with_tasks(('a', None), ('b', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1', 't2']
+        project.get_deliverable_by_id('b').task_ids = ['t1']
+
+        project.remove_task('t1')
+
+        self.assertEqual(project.get_deliverable_by_id('a').task_ids,
+                         ['t2'])
+        self.assertEqual(project.get_deliverable_by_id('b').task_ids, [])
+
+    def test_removing_a_task_re_rolls_the_progress(self):
+        project = self.plan_with_tasks(('a', None))
+        project.get_deliverable_by_id('a').task_ids = ['t1', 't2']
+        project.roll_up_deliverables()
+        self.assertEqual(project.get_deliverable_by_id('a').progress, 60)
+
+        project.remove_task('t1')
+
+        self.assertEqual(project.get_deliverable_by_id('a').progress, 80)
+
+    def test_membership_survives_a_round_trip(self):
+        project = self.plan_with_tasks(('a', None))
+        project.get_deliverable_by_id('a').task_ids = ['t2', 't1']
+
+        loaded = Project.from_dict(project.to_dict())
+
+        self.assertEqual(
+            loaded.get_deliverable_by_id('a').task_ids, ['t2', 't1'])
+
+    def test_ids_of_tasks_that_do_not_exist_are_pruned_on_load(self):
+        project = self.plan_with_tasks(('a', None))
+        data = project.to_dict()
+        data['deliverables'][0]['task_ids'] = ['t1', 'ghost']
+
+        loaded = Project.from_dict(data)
+
+        self.assertEqual(
+            loaded.get_deliverable_by_id('a').task_ids, ['t1'])
+
+    def test_a_file_without_the_key_loads_empty(self):
+        data = Deliverable.create(name='x', deliverable_id='a').to_dict()
+        del data['task_ids']
+        self.assertEqual(Deliverable.from_dict(data).task_ids, [])
+
+    def test_duplicate_ids_are_kept_once(self):
+        deliverable = Deliverable.create(task_ids=['t1', 't1', 't2'])
+        self.assertEqual(deliverable.task_ids, ['t1', 't2'])
+
+
+class TestAssignmentUndo(DeliverablePlanTestCase):
+    """Assigning and removing tasks is one undoable step either way."""
+
+    def setUp(self):
+        self.project = self.plan(('a', None), ('b', None))
+        self.project.tasks = [a_task('t1', progress=50)]
+        self.manager = UndoRedoManager()
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+
+    def test_an_assign_undoes_and_redoes(self):
+        self.tracker.run_deliverable_as_command(
+            lambda: self.project.set_task_deliverables('t1', ['a']),
+            'Assign')
+
+        self.assertEqual(
+            self.project.get_deliverable_by_id('a').task_ids, ['t1'])
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(
+            self.project.get_deliverable_by_id('a').task_ids, [])
+
+        self.assertTrue(self.manager.redo())
+        self.assertEqual(
+            self.project.get_deliverable_by_id('a').task_ids, ['t1'])
+
+    def test_the_progress_the_assign_derived_undoes_with_it(self):
+        self.tracker.run_deliverable_as_command(
+            lambda: self.project.set_task_deliverables('t1', ['a']),
+            'Assign')
+        self.assertEqual(
+            self.project.get_deliverable_by_id('a').progress, 50)
+
+        self.manager.undo()
+        deliverable = self.project.get_deliverable_by_id('a')
+        self.assertEqual(deliverable.task_ids, [])
+        # The derived number goes back with the membership that made it.
+        self.assertEqual(deliverable.progress, 0)
+
+    def test_undoing_a_task_delete_restores_the_membership(self):
+        deliverable = self.project.get_deliverable_by_id('a')
+        deliverable.task_ids = ['t1']
+        self.project.roll_up_deliverables()
+        self.assertEqual(deliverable.progress, 50)
+
+        from gantt_app.utils.undoredo import RemoveTaskCommand
+        self.manager.execute(RemoveTaskCommand(
+            self.project, 't1',
+            self.project.get_task_by_id('t1'), 0))
+
+        self.assertEqual(deliverable.task_ids, [])
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(
+            self.project.get_deliverable_by_id('a').task_ids, ['t1'])
 
 
 def self_plan() -> Project:
