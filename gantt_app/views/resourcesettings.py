@@ -10,9 +10,9 @@ from gantt_app.utils.shortcuts import (
     IS_MACOS, any_key_with, bind_all, is_key, modifiers_held,
 )
 from gantt_app.core.resource_model import (
-    DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, AccrueAt, DaysOffRange,
-    MaterialResource, Resource, ResourceType, SchedulePattern, TeamPool,
-    capacity_from_entry, default_daily_capacity,
+    DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, AccrueAt, CostResource,
+    DaysOffRange, MaterialResource, Resource, ResourceType,
+    SchedulePattern, TeamPool, capacity_from_entry, default_daily_capacity,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views import dialogs as messagebox
@@ -321,16 +321,26 @@ class ResourceEditorModal(BaseEditorModal):
         tab.grid_columnconfigure(1, weight=1)
         self.name_entry = ctk.CTkEntry(tab)
         _field(tab, "Resource Name", self.name_entry, 0)
-        self.type_menu = ctk.CTkOptionMenu(tab, values=list(TYPE_VALUES))
+        # A named person's short form, gridded by hand so the row can be
+        # hidden when the type is Generic - initials belong to a name.
+        self.initials_label = ctk.CTkLabel(
+            tab, text="Initials", anchor=tk.W, font=("Arial", 11, "bold"))
+        self.initials_label.grid(row=1, column=0, padx=(12, 8), pady=6,
+                                 sticky="w")
+        self.initials_entry = ctk.CTkEntry(tab, placeholder_text="e.g. JD")
+        self.initials_entry.grid(row=1, column=1, padx=(0, 12), pady=6,
+                                 sticky="ew")
+        self.type_menu = ctk.CTkOptionMenu(
+            tab, values=list(TYPE_VALUES), command=self._type_changed)
         self.type_menu.set(TYPE_LABELS[ResourceType.NAMED])
-        _field(tab, "Resource Type", self.type_menu, 1)
+        _field(tab, "Resource Type", self.type_menu, 2)
         self.role_entry = ctk.CTkEntry(tab)
-        _field(tab, "Role / Skill Tag", self.role_entry, 2)
+        _field(tab, "Role / Skill Tag", self.role_entry, 3)
         self.schedule_menu = ctk.CTkOptionMenu(
             tab, values=[pattern.value for pattern in SchedulePattern],
             command=self._apply_pattern)
         self.schedule_menu.set(SchedulePattern.STANDARD.value)
-        _field(tab, "Work Schedule Pattern", self.schedule_menu, 3)
+        _field(tab, "Work Schedule Pattern", self.schedule_menu, 4)
 
         capacity = ctk.CTkFrame(tab, fg_color="transparent")
         self.capacity_unit = ctk.CTkSegmentedButton(
@@ -341,7 +351,7 @@ class ResourceEditorModal(BaseEditorModal):
         self.capacity_entry.pack(side=tk.RIGHT, padx=(8, 0))
         self.capacity_entry.bind("<FocusOut>", self._capacity_changed)
         self.capacity_entry.bind("<Return>", self._capacity_changed)
-        _field(tab, "Capacity Unit & Value", capacity, 4)
+        _field(tab, "Capacity Unit & Value", capacity, 5)
 
         day_frame = ctk.CTkFrame(tab, fg_color="transparent")
         self.daily_entries = {}
@@ -355,19 +365,25 @@ class ResourceEditorModal(BaseEditorModal):
             entry.bind("<FocusOut>", self._daily_changed)
             entry.bind("<Return>", self._daily_changed)
             self.daily_entries[day] = entry
-        _field(tab, "Day-by-Day Capacity", day_frame, 5)
+        _field(tab, "Day-by-Day Capacity", day_frame, 6)
         self.capacity_summary = ctk.CTkLabel(tab, text="", anchor=tk.W)
-        self.capacity_summary.grid(row=6, column=1, padx=(0, 12), sticky="w")
+        self.capacity_summary.grid(row=7, column=1, padx=(0, 12), sticky="w")
         self.rate_entry = ctk.CTkEntry(tab)
-        _field(tab, "Std. Rate ($/hr)", self.rate_entry, 7)
+        _field(tab, "Std. Rate ($/hr)", self.rate_entry, 8)
         self.overtime_entry = ctk.CTkEntry(tab)
-        _field(tab, "Ovt. Rate ($/hr)", self.overtime_entry, 8)
+        _field(tab, "Ovt. Rate ($/hr)", self.overtime_entry, 9)
         self.use_cost_entry = ctk.CTkEntry(tab)
-        _field(tab, "Cost per Use ($)", self.use_cost_entry, 9)
+        _field(tab, "Cost per Use ($)", self.use_cost_entry, 10)
         self.accrue_menu = ctk.CTkOptionMenu(
             tab, values=[accrue.value for accrue in AccrueAt])
         self.accrue_menu.set(AccrueAt.PRORATED.value)
-        _field(tab, "Accrue At", self.accrue_menu, 10)
+        _field(tab, "Accrue At", self.accrue_menu, 11)
+
+    def _type_changed(self, _label=None):
+        """Initials belong to a named person; a generic role has none."""
+        named = TYPE_VALUES[self.type_menu.get()] == ResourceType.NAMED
+        for widget in (self.initials_label, self.initials_entry):
+            widget.grid() if named else widget.grid_remove()
 
     def _daily_values(self):
         values = {}
@@ -666,6 +682,8 @@ class ResourceEditorModal(BaseEditorModal):
     def _load_resource(self):
         _set_entry(self.name_entry, self.resource.name)
         self.type_menu.set(TYPE_LABELS[self.resource.resource_type])
+        _set_entry(self.initials_entry, self.resource.initials)
+        self._type_changed()
         _set_entry(self.role_entry, self.resource.role_type)
         self.schedule_menu.set(self.resource.schedule_pattern.value)
         self._set_daily(self.resource.daily_capacity_hours)
@@ -705,6 +723,7 @@ class ResourceEditorModal(BaseEditorModal):
             resource.name = name
             resource.resource_type = kind
             resource.role_type = role
+            resource.initials = self.initials_entry.get().strip()
             resource.schedule_pattern = SchedulePattern.read(self.schedule_menu.get())
             resource.set_daily_capacity(daily, preserve_pattern=True)
             resource.cost_per_hour = rate
@@ -717,7 +736,9 @@ class ResourceEditorModal(BaseEditorModal):
         else:
             resource = Resource(
                 id=self.repo.new_id("res"), name=name, resource_type=kind,
-                role_type=role, schedule_pattern=SchedulePattern.read(
+                role_type=role,
+                initials=self.initials_entry.get().strip(),
+                schedule_pattern=SchedulePattern.read(
                     self.schedule_menu.get()), daily_capacity_hours=daily,
                 cost_per_hour=rate, overtime_rate=overtime_rate,
                 cost_per_use=cost_per_use, accrue_at=accrue_at,
@@ -1141,6 +1162,91 @@ class MaterialEditorModal(BaseEditorModal):
         self.destroy()
 
 
+class CostEditorModal(BaseEditorModal):
+    """
+    The cost resource editor: a name and bookkeeping, and no rate at all.
+
+    A cost resource is a fixed expense whose amount is entered on each
+    assignment - the same "Flight" is $300 on one task and $800 on the
+    next - so the sheet row has no Standard Rate, Units or calendar to
+    offer. What is left is MS Project's identity fields plus Accrue At,
+    which says when the assignment's amount lands on the task's budget.
+    """
+
+    GEOMETRY = "620x480"
+
+    def __init__(self, master, repo, cost=None, on_apply=None):
+        self.repo = repo
+        self.cost = cost
+        title = (f"Cost Resource Editor: {cost.name}" if cost
+                 else "Create Cost Resource")
+        super().__init__(master, title, ("General",), on_apply)
+        self._build_general()
+        if cost:
+            self._load_cost()
+
+    def _build_general(self):
+        tab = self.tabs["General"]
+        tab.grid_columnconfigure(1, weight=1)
+        self.name_entry = ctk.CTkEntry(tab)
+        _field(tab, "Resource Name", self.name_entry, 0)
+        type_box = ctk.CTkOptionMenu(tab, values=["Cost"], state="disabled")
+        type_box.set("Cost")
+        _field(tab, "Type", type_box, 1)
+        self.initials_entry = ctk.CTkEntry(
+            tab, placeholder_text="e.g. FLT")
+        _field(tab, "Initials", self.initials_entry, 2)
+        self.group_entry = ctk.CTkEntry(
+            tab, placeholder_text="e.g. Travel, Fees")
+        _field(tab, "Group", self.group_entry, 3)
+        self.accrue_menu = ctk.CTkOptionMenu(
+            tab, values=[mode.value for mode in AccrueAt])
+        self.accrue_menu.set(AccrueAt.PRORATED.value)
+        _field(tab, "Accrue At", self.accrue_menu, 4)
+        self.code_entry = ctk.CTkEntry(
+            tab, placeholder_text="Accounting code")
+        _field(tab, "Code", self.code_entry, 5)
+        ctk.CTkLabel(
+            tab, justify=tk.LEFT, anchor=tk.W, wraplength=380,
+            text_color=theme.now(theme.MUTED_TEXT),
+            text=("Cost resources are fixed expenditures: the amount is "
+                  "entered on each task assignment, so there is no rate, "
+                  "units or capacity to set here.")).grid(
+                      row=6, column=0, columnspan=2, padx=12,
+                      pady=(12, 6), sticky="w")
+
+    def _load_cost(self):
+        _set_entry(self.name_entry, self.cost.name)
+        _set_entry(self.initials_entry, self.cost.initials)
+        _set_entry(self.group_entry, self.cost.group)
+        self.accrue_menu.set(self.cost.accrue_at.value)
+        _set_entry(self.code_entry, self.cost.code)
+
+    def save_and_apply(self):
+        name = self.name_entry.get().strip()
+        if not name:
+            self.fail("Resource Name is required.")
+            return
+        fields = dict(
+            name=name,
+            initials=self.initials_entry.get(),
+            group=self.group_entry.get(),
+            accrue_at=AccrueAt.read(self.accrue_menu.get()),
+            code=self.code_entry.get())
+        if self.cost:
+            cost = self.cost
+            for key, value in fields.items():
+                setattr(cost, key, value)
+            cost.__post_init__()
+            logger.info("Updated cost resource %r (%s)", cost.name, cost.id)
+        else:
+            cost = CostResource(id=self.repo.new_id("cost"), **fields)
+            self.repo.add_cost(cost)
+        if self.on_apply:
+            self.on_apply(cost.id)
+        self.destroy()
+
+
 class ResourceSettingsWindow(ctk.CTkToplevel):
     GEOMETRY = "1250x760"
     RESOURCE_COLUMNS = (
@@ -1175,6 +1281,14 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         ("Accrue At", 95, 1, tk.W),
         ("Code", 110, 1, tk.W),
     )
+    COST_COLUMNS = (
+        ("#", 45, 0, tk.CENTER),
+        ("Cost Resource Name", 220, 3, tk.W),
+        ("Initials", 70, 0, tk.W),
+        ("Group", 170, 2, tk.W),
+        ("Accrue At", 95, 1, tk.W),
+        ("Code", 110, 1, tk.W),
+    )
 
 
     def __init__(self, master, repo, active_project_ids=None,
@@ -1188,11 +1302,13 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.selected_resource_id = None
         self.selected_team_id = None
         self.selected_material_id = None
+        self.selected_cost_id = None
         self.resource_rows = []
         self.team_rows = []
         self.material_rows = []
+        self.cost_rows = []
         self.clipboard = None
-        self.title("Resource Settings - Manage Resources, Teams & Materials")
+        self.title("Resource Settings - Manage Resources, Teams, Materials & Costs")
         self.geometry(self.GEOMETRY)
         self.minsize(1050, 620)
         self.transient(master.winfo_toplevel())
@@ -1203,15 +1319,19 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.tab_resources = self.tabview.add("Resources")
         self.tab_teams = self.tabview.add("Teams")
         self.tab_materials = self.tabview.add("Material")
+        self.tab_costs = self.tabview.add("Cost")
         self._build_resources_tab()
         self._build_teams_tab()
         self._build_materials_tab()
+        self._build_costs_tab()
         self._refresh_resources()
         self._refresh_teams()
         self._refresh_materials()
-        logger.info("Opened Resource Settings with %d resources, %d teams "
-                    "and %d materials",
-                    len(repo.resources), len(repo.teams), len(repo.materials))
+        self._refresh_costs()
+        logger.info("Opened Resource Settings with %d resources, %d teams, "
+                    "%d materials and %d cost resources",
+                    len(repo.resources), len(repo.teams), len(repo.materials),
+                    len(repo.costs))
 
         # Follow theme changes. The DataGrid's field background comes from the
         # global ttk style, which the application re-colours; its row banding
@@ -1227,7 +1347,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         """Re-tag the grids so their rows follow a theme change."""
         for grid in (getattr(self, 'resource_grid', None),
                      getattr(self, 'team_grid', None),
-                     getattr(self, 'material_grid', None)):
+                     getattr(self, 'material_grid', None),
+                     getattr(self, 'cost_grid', None)):
             if grid is None:
                 continue
             try:
@@ -1300,6 +1421,27 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             on_double_click=self._edit_material, border_width=1)
         self.material_grid.pack(fill=tk.BOTH, expand=True, padx=6,
                                 pady=(0, 6))
+
+    def _build_costs_tab(self):
+        footer = self._footer(
+            self.tab_costs, "Create New Cost Resource", self._create_cost,
+            self._edit_cost, self._delete_cost, "cost")
+        self.cost_footer = footer
+        filters = ctk.CTkFrame(self.tab_costs, fg_color="transparent")
+        filters.pack(fill=tk.X, padx=6, pady=(6, 4))
+        ctk.CTkLabel(filters, text="SEARCH & FILTER:").pack(side=tk.LEFT)
+        self.cost_search = ctk.StringVar(value="")
+        ctk.CTkEntry(
+            filters, textvariable=self.cost_search,
+            placeholder_text="Search cost resource name or group...").pack(
+                side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+        self.cost_search.trace_add(
+            "write", lambda *_args: self._refresh_costs())
+        self.cost_grid = DataGrid(
+            self.tab_costs, self.COST_COLUMNS, self._select_cost,
+            on_double_click=self._edit_cost, border_width=1)
+        self.cost_grid.pack(fill=tk.BOTH, expand=True, padx=6,
+                            pady=(0, 6))
 
     def _footer(self, tab, create_text, create, edit, delete, prefix):
         footer = ctk.CTkFrame(tab)
@@ -1433,6 +1575,22 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self._select_material(
             select_id if select_id in self.material_rows else None)
 
+    def _refresh_costs(self, select_id=None):
+        self.cost_grid.clear()
+        query = self.cost_search.get().strip().lower()
+        costs = [
+            cost for cost in self.repo.costs.values()
+            if not query or query in cost.name.lower()
+            or query in cost.group.lower()]
+        self.cost_rows = [item.id for item in costs]
+        for index, cost in enumerate(costs, start=1):
+            self.cost_grid.add_row(
+                cost.id,
+                (str(index), cost.name, cost.initials, cost.group,
+                 cost.accrue_at.value, cost.code))
+        self._select_cost(
+            select_id if select_id in self.cost_rows else None)
+
     def _select_resource(self, resource_id):
         self.selected_resource_id = resource_id
         state = "normal" if resource_id else "disabled"
@@ -1458,6 +1616,15 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.material_delete_button.configure(state=state)
         if material_id and self.material_grid.selected_id != material_id:
             self.material_grid.select(material_id, notify=False)
+        self._refresh_button_states()
+
+    def _select_cost(self, cost_id):
+        self.selected_cost_id = cost_id
+        state = "normal" if cost_id else "disabled"
+        self.cost_edit_button.configure(state=state)
+        self.cost_delete_button.configure(state=state)
+        if cost_id and self.cost_grid.selected_id != cost_id:
+            self.cost_grid.select(cost_id, notify=False)
         self._refresh_button_states()
 
     def _create_resource(self):
@@ -1538,6 +1705,32 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.repo.remove_material(material.id)
             self._refresh_materials()
 
+    def _create_cost(self):
+        self.cost_editor = CostEditorModal(
+            self, self.repo, on_apply=self._cost_applied)
+
+    def _edit_cost(self, cost_id=None):
+        if cost_id:
+            self._select_cost(cost_id)
+        if self.selected_cost_id:
+            self.cost_editor = CostEditorModal(
+                self, self.repo,
+                self.repo.costs[self.selected_cost_id],
+                self._cost_applied)
+
+    def _cost_applied(self, cost_id):
+        self._refresh_costs(cost_id)
+
+    def _delete_cost(self):
+        if not self.selected_cost_id:
+            return
+        cost = self.repo.costs[self.selected_cost_id]
+        if messagebox.askyesno(
+                "Delete Cost Resource",
+                f"Delete {cost.name} from the resource pool?"):
+            self.repo.remove_cost(cost.id)
+            self._refresh_costs()
+
     def _bind_shortcuts(self):
         bind_all(self, 'c', self._hotkey_copy)
         bind_all(self, 'v', self._hotkey_paste)
@@ -1584,6 +1777,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self._create_resource()
         elif tab == "Material":
             self._create_material()
+        elif tab == "Cost":
+            self._create_cost()
         else:
             self._create_team()
         return 'break'
@@ -1598,6 +1793,10 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
     def _unique_material_name(self, name):
         names = {material.name for material in self.repo.materials.values()}
+        return self._unique_name(name, names)
+
+    def _unique_cost_name(self, name):
+        names = {cost.name for cost in self.repo.costs.values()}
         return self._unique_name(name, names)
 
     @staticmethod
@@ -1627,6 +1826,8 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self._copy_resource(self.selected_resource_id)
         elif tab == "Material":
             self._copy_material(self.selected_material_id)
+        elif tab == "Cost":
+            self._copy_cost(self.selected_cost_id)
         else:
             self._copy_team(self.selected_team_id)
 
@@ -1663,12 +1864,25 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         logger.info("Copied material %r (%s)", material.name, material_id)
         self._refresh_button_states()
 
+    def _copy_cost(self, cost_id):
+        if not cost_id or cost_id not in self.repo.costs:
+            return
+        cost = self.repo.costs[cost_id]
+        self.clipboard = {
+            "kind": "cost",
+            "data": cost.to_dict(),
+        }
+        logger.info("Copied cost resource %r (%s)", cost.name, cost_id)
+        self._refresh_button_states()
+
     def _paste(self):
         tab = self.tabview.get()
         if tab == "Resources":
             self._paste_resource()
         elif tab == "Material":
             self._paste_material()
+        elif tab == "Cost":
+            self._paste_cost()
         else:
             self._paste_team()
 
@@ -1706,6 +1920,17 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         logger.info("Pasted material as %r (%s)", material.name, material.id)
         self._refresh_materials(material.id)
 
+    def _paste_cost(self):
+        if not self.clipboard or self.clipboard.get("kind") != "cost":
+            return
+        data = copy.deepcopy(self.clipboard["data"])
+        data["id"] = self.repo.new_id("cost")
+        data["name"] = self._unique_cost_name(data["name"])
+        cost = CostResource.from_dict(data)
+        self.repo.add_cost(cost)
+        logger.info("Pasted cost resource as %r (%s)", cost.name, cost.id)
+        self._refresh_costs(cost.id)
+
     def _refresh_button_states(self):
         if self.selected_resource_id:
             self.resource_copy_button.configure(state="normal")
@@ -1719,6 +1944,10 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.material_copy_button.configure(state="normal")
         else:
             self.material_copy_button.configure(state="disabled")
+        if self.selected_cost_id:
+            self.cost_copy_button.configure(state="normal")
+        else:
+            self.cost_copy_button.configure(state="disabled")
         paste_kind = self.clipboard.get("kind") if self.clipboard else None
         self.resource_paste_button.configure(
             state="normal" if paste_kind == "resource" else "disabled")
@@ -1726,3 +1955,5 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             state="normal" if paste_kind == "team" else "disabled")
         self.material_paste_button.configure(
             state="normal" if paste_kind == "material" else "disabled")
+        self.cost_paste_button.configure(
+            state="normal" if paste_kind == "cost" else "disabled")

@@ -1081,6 +1081,13 @@ class Toolbar(ctk.CTkFrame):
         self._dashboard_factory = None
         #: Tracks View > Grid View Only; toggled from the menu.
         self.grid_view_only_var = ctk.BooleanVar(value=False)
+        #: Tracks the Resources group's Usage Grid toggle, on the View
+        #: page while the Resource Planning tab is on top.
+        self.resource_grid_var = ctk.BooleanVar(value=False)
+        #: The Resource Planning board, once the window hands it over;
+        #: toggle_resource_grid asks it to swap faces. See
+        #: set_resource_board.
+        self.resource_board = None
         #: Which highlight filter is painting rows, by its key in
         #: HIGHLIGHT_FILTERS; None while none is on. Kept beside the paint
         #: rather than in it - the list holds the ids, this holds which
@@ -1160,6 +1167,7 @@ class Toolbar(ctk.CTkFrame):
         #: The Grid Only button reads its pressed look off the same
         #: variable the View menu ticks.
         self.icon_toolbar.grid_view_only_var = self.grid_view_only_var
+        self.icon_toolbar.resource_grid_var = self.resource_grid_var
     
     #: Icon actions whose handler is not a method of this class by that name.
     ICON_HANDLER_OVERRIDES = {
@@ -3518,6 +3526,41 @@ class Toolbar(ctk.CTkFrame):
         else:
             self.show_gantt_chart()
             logger.info("Grid view only disabled")
+
+    def set_resource_board(self, board) -> None:
+        """The Resource Planning view the Usage Grid toggle switches."""
+        self.resource_board = board
+
+    def set_view_context(self, view_name: str) -> None:
+        """
+        Tell the ribbon which footer-tab view is on top.
+
+        The Resources group on the View page is only offered while
+        Resource Planning is showing; the other tabs leave it hidden.
+        """
+        context = getattr(self.icon_toolbar, 'set_view_context', None)
+        if callable(context):
+            context(view_name)
+
+    def toggle_resource_grid(self, _state=None):
+        """
+        Swap the Resource Planning tab between the matrix and the grid.
+
+        A press with no state - the ribbon button's kind - toggles
+        against what the board is showing; the var is what the button's
+        pressed look reads, so it is synced rather than read.
+        """
+        board = getattr(self, 'resource_board', None)
+        if board is None:
+            return
+        if _state is not None:
+            grid = bool(_state)
+        else:
+            grid = getattr(board, '_mode', 'matrix') != 'grid'
+        board.set_mode('grid' if grid else 'matrix')
+        self.resource_grid_var.set(grid)
+        logger.info("Resource usage grid %s",
+                    "enabled" if grid else "disabled")
 
     def set_undo_redo_manager(self, manager: UndoRedoManager):
         """Set the undo/redo manager."""

@@ -40,10 +40,11 @@ This is a complete implementation of a project management tool with:
 - **Progress in one press**: 0/25/50/75/100% buttons set the completion of a whole selection at once, and **Mark on Track** works it out from the dates instead — finished work to 100%, unstarted work to 0%, and everything in between to the share of its *working* days that have elapsed. The arrow beside it applies the same to the entire project
 - **Row Formatting**: Mark rows up where the work happens — text colour, background fill, bold/italic/underline, and four one-press presets (Financial Milestone, Work Complete, Phase Gate, Summary Phase) from the ribbon's **Font** group. The preset menu shows each one as it will look — a coloured badge, its name, and a live sample drawn in the preset's own colours and emphasis — and a **Default (no style)** entry at the top of the same menu clears the formatting in one click. Applies to a whole selection at once, undoes in one step, and is saved with the plan
 - **Project Settings**: One panel for what the whole plan is built from — title, start date, finish date, which end it is scheduled from, calendar, status date and priority. Changing the start date moves the entire plan, keeping every duration and every gap
-- **Resource Settings**: **Project → Resources** manages Named people, Generic role placeholders, Team pools and Materials in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity (shown as Max Units percent), standard and overtime rates, cost per use, accrual, days off and team splits; the Material tab holds consumables with a unit label and per-unit rate instead of any calendar; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘.` on a Mac (`Ctrl+Alt+.` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
+- **Resource Settings**: **Project → Resources** manages Named people, Generic role placeholders, Team pools, Materials and Cost resources in selectable spreadsheet-style grids. Resource and Team editor modals define schedules, FTE/daily/weekly capacity (shown as Max Units percent), standard and overtime rates, cost per use, accrual, days off and team splits; the Material tab holds consumables with a unit label and per-unit rate instead of any calendar; the Cost tab holds fixed expenditures whose amounts are entered per task assignment; everything is stored inside the project JSON. Copy and paste work on each tab, and `⌥⌘.` on a Mac (`Ctrl+Alt+.` elsewhere) opens the matching editor. Team totals recalculate by day, and split rows distinguish Free, Optimal, Full capacity and Over capacitated allocations
 - **Resource Planning view (4-panel)**: A second viewport, reached from the **Resource Planning** tab in the footer, laid out as four draggable panels — **1. Task List** with its own search, **2. Task Inspector** with Assign / De-assign buttons, **3. Resource Pool** filtered by Named / Generic / Team, and **4. Live Stacking & Heatmap**, a day-by-day capacity grid that greens, ambers and reds each resource as load approaches and passes its daily hours. Assign a task by selecting it and a resource, or by dragging a row from the list onto a resource. The four panels resize like the task-list/Gantt split and open at a fixed default; the heatmap opens left-aligned. The bar along the bottom switches between Task Planning, Resource Planning and Deliverables
+- **Resource Usage grid**: While the Resource Planning tab is on top, the ribbon's **View** page offers a **Resources** group with the **Usage Grid** toggle — the matrix swaps for a resource-as-tree grid in the spirit of MS Project's Resource Usage view: teams first, then generic placeholders, named people, materials and cost resources, each expanding to read-only rows for its assigned tasks (with the task's own number, type and live progress bar). Team members appear under their team in *italic* as well as in their own section. **+ New** creates a resource, team, material or cost resource through the Resource Settings editors, double-click edits the row, right-click assigns tasks through a checklist or removes them — and every change, pool edits included, is one Undo step
 - **Deliverables view**: A third viewport, reached from the **Deliverables** tab in the footer — an indented, spreadsheet-like checklist of what the plan owes, kept apart from the task list so a deliverable never lands on the chart. Sub-deliverables nest under their deliverable; a leaf is Done at 100%, To Do at 0%, and takes any percentage typed into its Progress cell, while a parent's progress is the average of its children, weighted by each row's Weight when the default of 1 will not do. `Tab`/`Shift+Tab` indent and outdent, dragging a row onto another's middle re-parents it and onto its edge reorders it, and Right/Left arrows expand and collapse a branch. A mark box in the number gutter ticks a whole branch for bulk actions — Set Status, Set Priority, Move, Duplicate, Delete and Export — with a `[~]` for a parent only part-marked. Tasks, subtasks and milestones assign to a deliverable many-to-many — ticked from the new Deliverables tab in the task editor, or from the grid's right-click Tasks submenu and its picker dialog — and their progress counts into the deliverable's roll-up beside its children's weighted shares, so a row with work attached derives its percentage until the last assignment is removed. Cells edit in place, headings sort within each group, the filter box and status dropdown narrow the list, overdue rows colour red and Done rows green, and every change is one undoable step
-- **Resource assignment on a task**: the task editor's **Resource** tab assigns one or more resources, teams or materials to a task — work assignments take an effort-hours figure, an overtime-hours figure and a split percentage, and materials take a Units entry (`20` fixed, `5/d` per working day) with cost computed as quantity × Std. Rate; assignments travel with the task and feed the heatmap, the resource pool's load figures and the task's cost
+- **Resource assignment on a task**: the task editor's **Resource** tab assigns one or more resources, teams, materials or cost resources to a task — work assignments take an effort-hours figure, an overtime-hours figure and a split percentage, materials take a Units entry (`20` fixed, `5/d` per working day) with cost computed as quantity × Std. Rate, and cost resources take the expense amount itself (plus an Actual figure) and may appear twice on one task; assignments travel with the task and feed the heatmap, the resource pool's load figures and the task's cost
 - **Backward scheduling**: Schedule from the finish date and the work is packed As Late As Possible against a deadline, rather than starting as soon as its links allow
 - **Retype in the grid**: Double-click the **Type** cell for a dropdown of every type. Picking one stores it — one undo step, and the editor shows it. Choosing `Milestone` sets the milestone flag with it, so the editor opens with the switch on; choosing anything else clears it again
 - **New task from the keyboard**: `⌥⌘.` on a Mac, `Ctrl+Alt+.` elsewhere, creates a task beside the row the cursor is on and opens its editor. With no cursor it goes at the end of the plan
@@ -128,8 +129,9 @@ gantt_app/
 │   ├── formcheck.py       # Checks the task form as it is filled in
 │   ├── advanced_tab.py    # The editor's Advanced tab: deadline and constraint
 │   ├── dependency_editor.py # Dependency tab shared by the task dialogs
-│   ├── assigntask.py      # The editor's Resource tab: work, overtime, split and material units
+│   ├── assigntask.py      # The editor's Resource tab: work, overtime, split, material units, cost amounts
 │   ├── resource_board.py  # The 4-panel Resource Planning view (list, inspector, pool, heatmap)
+│   ├── resource_usage.py  # The Resource Planning tab's usage grid - the pool as a tree of assigned tasks
 │   ├── resourcesettings.py # Resource grids and resource/team editor modals
 │   ├── ribbon.py          # The ribbon: tabbed captioned groups, File backstage
 │   ├── settingswindow.py  # The unified Settings hub (Project/Resource/Calendar/Presets/Baseline/Task Grid/System UI)
@@ -143,7 +145,7 @@ gantt_app/
 │   ├── project_dashboard.py # View → Views → Dashboard: the KPI summary and rings
 │   ├── scrollframe.py     # Scrolling container the task form is built in
 │   ├── contextmenu.py     # Right-click move/edit/delete menu for the task list
-│   ├── colorpicker.py     # Color picker with popup for task dialogs
+│   ├── colorpicker.py     # Task colour field backed by the system chooser
 │   ├── datepicker.py      # Date box and calendar shared by task/resource editors
 │   ├── dialogs.py         # Message boxes and file choosers, native per platform
 │   ├── holidaydialog.py   # Working week, public holidays, date overrides
@@ -238,6 +240,11 @@ piece of work.
 - **Material resources** are consumables — measured in a Material Label unit
   (bags, tons, gallons), costed per unit, with Accrue At, Group, Initials and
   Code and no capacity, overtime or calendar.
+- **Cost resources** are fixed expenditures — flights, permits, hotel stays —
+  carrying no rate, units or calendar at all. The amount is entered on each
+  task assignment (with a separate Actual figure for tracking), so the same
+  resource can cost differently per task and even twice on one task as two
+  expense lines.
 - **Project persistence** writes resources and teams into the same JSON object as
   the tasks. Copying or sharing a project file therefore carries its resource
   pool, schedules, leave and team allocations with it. Files saved before
@@ -245,11 +252,14 @@ piece of work.
 
 #### Grid-first Resource Settings window
 
-The **Resources**, **Teams** and **Material** tabs are full-width, scrollable
+The **Resources**, **Teams**, **Material** and **Cost** tabs are full-width,
+scrollable
 data grids rather than permanent forms. Resource rows show type, name, role,
 schedule, capacity, both rates, teams and days off. Team rows show schedule,
 calculation mode, total capacity, member count and a daily summary. Material
 rows show the unit label, initials, group, Std. Rate, Accrue At and code.
+Cost rows show initials, group, Accrue At and code — no rate column, since
+the amount lives on each assignment.
 Search narrows either table, and the Resources
 tab can also filter Named or Generic entries.
 
@@ -809,7 +819,7 @@ cannot pull its parent outside it either.
   - Create tasks with all fields visible at once (no more one-by-one input)
   - Circular dependency prevention (including parent-child relationships)
   - Milestone toggle with automatic end_date handling
-  - Colour chosen from a popup palette, built the first time it is opened
+  - Colour chosen with the platform's colour chooser, the one the baseline settings use
   - Start and end dates picked from a calendar, or typed as YYYY-MM-DD
   - Save & Close, or Save & New to keep entering tasks without reopening the dialog
   - Dependencies set on the form's own Dependency tab, which is built the first time it is looked at
@@ -865,8 +875,8 @@ the whole window when they are what you came for.
 - **Built to be quick**: the form is built in a scrolling frame of the
   application's own (`views/scrollframe.py`) rather than CustomTkinter's, whose
   scrollbar forces a full layout pass of the window on every draw - 3.2ms a
-  wheel notch against 0.11ms. The Dependency tab and the colour palette are
-  both built the first time they are asked for
+  wheel notch against 0.11ms. The Dependency tab is built the first time it
+  is asked for
 
 ### Copy, Cut and Paste (`utils/copypastecut.py`)
 - **Acts on the selection**: from the right-click menu, the ribbon's
@@ -2582,8 +2592,8 @@ finish, total float, and whether it is critical.
 ### 5. Color Management
 - A colour per work item type, so the five levels are told apart before
   anybody picks anything
-- Custom colours per task, chosen from a popup palette that is built the first
-  time it is opened rather than with every task dialog
+- Custom colours per task, chosen with the platform's colour chooser - the
+  same dialog the baseline settings offer
 - Critical path highlighting
 - Colour serialization in JSON
 
@@ -2595,8 +2605,9 @@ finish, total float, and whether it is critical.
 ### 7. A popup over a modal dialog takes the grab
 
 A Tk grab is **exclusive**: while a dialog holds one, every click goes to it
-and to the widgets inside it. A popup opened on top — the colour palette, the
-calendar — is a *separate window*, not a child, so it receives nothing. Its
+and to the widgets inside it. A popup opened on top — the toolbar's swatch
+grid, the calendar — is a *separate window*, not a child, so it receives
+nothing. Its
 buttons draw normally, its swatches highlight on hover, and not one of them
 responds.
 
@@ -2789,10 +2800,10 @@ Done:
 - [x] Microsoft Project export as MSPDI, with the dates pinned so Project does not re-solve them
 - [x] Recursive copy of a whole branch — copying a task includes every nested descendant and preserves the copied hierarchy
 - [x] Filtering — per-column rules, saved named filters, and a JQL-style Advanced query language
+- [x] Resource management — named/generic resources, teams, materials and cost resources, with assignments, workload heatmap and per-task costing
 
 Still to do:
 
-- [ ] Resource management — **In progress**
 - [ ] Grouping
 - [ ] Undo for a calendar change
 - [ ] Multiple projects support

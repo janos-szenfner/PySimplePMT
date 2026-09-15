@@ -233,7 +233,7 @@ class TestSerialization(unittest.TestCase):
         project = Project(name="Plan")
         project.deliverables.append(Deliverable.create(
             name="API", deliverable_id='001', status='In Progress',
-            progress=40, weight=2.5, assignee='@Sarah',
+            progress=40, weight=2.5, assignees=['@Sarah', '@Tom'],
             due_date=datetime(2026, 9, 1), priority='High',
             tags=['backend'], details='the acceptance criteria'))
         project.deliverables.append(Deliverable.create(
@@ -246,7 +246,7 @@ class TestSerialization(unittest.TestCase):
         self.assertEqual(first.name, 'API')
         self.assertEqual(first.progress, 40)
         self.assertEqual(first.weight, 2.5)
-        self.assertEqual(first.assignee, '@Sarah')
+        self.assertEqual(first.assignees, ['@Sarah', '@Tom'])
         self.assertEqual(first.due_date, datetime(2026, 9, 1))
         self.assertEqual(first.priority, 'High')
         self.assertEqual(first.tags, ['backend'])
@@ -259,6 +259,26 @@ class TestSerialization(unittest.TestCase):
         data = Project(name="Plan").to_dict()
         data.pop('deliverables')
         self.assertEqual(Project.from_dict(data).deliverables, [])
+
+    def test_a_legacy_single_assignee_loads_as_a_list(self):
+        """Files from before assignees became a list carry one string."""
+        data = Deliverable.create(
+            name='x', deliverable_id='a').to_dict()
+        del data['assignees']
+        data['assignee'] = '@Sarah'
+
+        loaded = Deliverable.from_dict(data)
+
+        self.assertEqual(loaded.assignees, ['@Sarah'])
+
+    def test_assignees_normalise(self):
+        """A bare string reads as a list; blank entries drop out."""
+        self.assertEqual(
+            Deliverable.create(assignees='@Sarah, @Tom').assignees,
+            ['@Sarah', '@Tom'])
+        self.assertEqual(
+            Deliverable.create(assignees=['@Sarah', '', '  ']).assignees,
+            ['@Sarah'])
 
     def test_an_unreadable_entry_is_skipped_not_fatal(self):
         data = Project(name="Plan").to_dict()

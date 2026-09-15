@@ -77,9 +77,9 @@ class SwatchPopup(ctk.CTkToplevel):
 
     DEVELOPMENT NOTES:
     ------------------
-    This is shaped like ColorPickerPopup, which is the colour window this
-    application already had and which works. The first version was not, and
-    was broken in three separate ways:
+    This is shaped like the calendar and colour windows this application
+    already had, which work. The first version was not, and was broken in
+    three separate ways:
 
       * It was an overrideredirect, always-on-top window. On macOS an
         update() with one of those open does not return, and mainloop is
@@ -158,24 +158,25 @@ class SwatchPopup(ctk.CTkToplevel):
 
     def _open_picker(self):
         """
-        Hand over to the full colour picker.
+        Hand over to the platform's colour chooser.
 
         DEVELOPMENT NOTES:
         ------------------
-        The parent is read before this window closes, because self.master is
-        gone once it has. The picker is opened after the close so the grab
-        this window holds is released first - opening it underneath a live
-        grab is precisely the fault take_grab exists to describe, and the
-        picker would have come up unable to receive a click.
+        The chooser is opened after this window closes so the grab this
+        window holds is released first - opening it underneath a live grab
+        is precisely the fault take_grab exists to describe, and the
+        chooser would have come up unable to receive a click.
         """
-        from gantt_app.views.colorpicker import ColorPickerPopup
+        from tkinter import colorchooser
 
-        parent = self.master
         self.close()
         try:
-            ColorPickerPopup(parent, DEFAULT_CUSTOM_COLOUR, self.on_pick)
+            result = colorchooser.askcolor(color=DEFAULT_CUSTOM_COLOUR,
+                                           title="Choose Colour")
+            if result and result[1]:
+                self.on_pick(result[1])
         except Exception:
-            logger.exception("Could not open the colour picker")
+            logger.exception("Could not open the colour chooser")
 
     def _picked(self, colour: Optional[str]):
         """Report the choice and go away."""

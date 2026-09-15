@@ -176,6 +176,15 @@ class RibbonBar(IconToolbar):
                 _S('grid', 'Grid Only', 'toggle_grid_view_only',
                    tip="Grid View Only", check='grid_view_only'),
             )),
+            # Shown only while the footer's Resource Planning tab is on
+            # top - see CONTEXT_GROUPS. It sits beside Views because it
+            # switches what that tab's view is.
+            ("Resources", (
+                _L('resource_grid', 'Usage Grid', 'toggle_resource_grid',
+                   tip="Resource usage grid - the pool as a tree of "
+                       "assigned tasks",
+                   check='resource_grid', key='resource_grid'),
+            )),
             ("Analysis", (
                 _L('critical_path', 'Critical', 'toggle_critical_path_rows',
                    tip="Highlight the Critical Path",
@@ -278,7 +287,15 @@ class RibbonBar(IconToolbar):
         'show_gantt_chart', 'show_dashboard', 'toggle_grid_view_only',
         'show_critical_path', 'show_log', 'show_about', 'show_changelog',
         'show_help', 'open_grid_filter', 'clear_grid_filter',
+        'toggle_resource_grid',
     )
+
+    #: Groups that belong to one footer-tab view and stay hidden while any
+    #: other is on top, keyed (ribbon tab, group caption) -> the view's
+    #: name in the footer tab bar. set_view_context shows and hides them.
+    CONTEXT_GROUPS = {
+        ("View", "Resources"): "Resource Planning",
+    }
 
     def __init__(self, master, project, galleries: Dict = None, **kwargs):
         #: Where the inherited helpers place what they build; None is the
@@ -300,6 +317,8 @@ class RibbonBar(IconToolbar):
         self._active_tab = self.DEFAULT_TAB
         self._backstage = None
         self._open_dropdown = None
+        #: Context groups currently off the page, by (tab, caption).
+        self._context_hidden = set()
         super().__init__(master, project, **kwargs)
         self.configure(height=self.STRIP_HEIGHT + self.BAND_HEIGHT)
 
@@ -428,6 +447,8 @@ class RibbonBar(IconToolbar):
                 group = self._build_group(page, caption, contents)
                 self._groups[(tab_name, caption)] = group
             self._pages[tab_name] = page
+        for key in self.CONTEXT_GROUPS:
+            self.set_group_visible(*key, visible=False)
 
     def _build_group(self, page, caption: str, contents):
         """
@@ -675,6 +696,50 @@ class RibbonBar(IconToolbar):
                 page.pack_forget()
         self._restyle_tabs()
 
+    def set_view_context(self, view_name: str) -> None:
+        """
+        Show the groups the active footer-tab view lends the ribbon.
+
+        The Resources group on the View page exists only while Resource
+        Planning is on top; the other pages' groups are always up.
+        """
+        for (tab, caption), wanted in self.CONTEXT_GROUPS.items():
+            self.set_group_visible(tab, caption, view_name == wanted)
+        self.refresh_checks()
+
+    def set_group_visible(self, tab: str, caption: str,
+                          visible: bool) -> None:
+        """
+        Pack or unpack one group on a page, keeping its place in the row.
+
+        A hidden group is pack_forget()'d; shown again it packs after the
+        nearest visible group that precedes it in the page's declared
+        order, so a context group always reappears where RIBBON put it.
+        """
+        group = self._groups.get((tab, caption))
+        if group is None:
+            return
+        if not visible:
+            if (tab, caption) not in self._context_hidden:
+                self._context_hidden.add((tab, caption))
+                group.pack_forget()
+            return
+        self._context_hidden.discard((tab, caption))
+        anchor = None
+        for name, groups in self.RIBBON:
+            if name != tab:
+                continue
+            for prev_caption, _contents in groups:
+                if prev_caption == caption:
+                    break
+                if (tab, prev_caption) not in self._context_hidden:
+                    anchor = self._groups.get((tab, prev_caption))
+            break
+        options = {'side': 'left', 'fill': 'y', 'padx': 3, 'pady': 3}
+        if anchor is not None:
+            options['after'] = anchor
+        group.pack(**options)
+
     def _restyle_tabs(self):
         """Draw the active tab apart from the rest."""
         for name, btn in self._tab_buttons.items():
@@ -719,6 +784,9 @@ class RibbonBar(IconToolbar):
         """Whether the state a toggle button stands for is on."""
         if which == 'grid_view_only':
             var = getattr(self, 'grid_view_only_var', None)
+            return bool(var is not None and var.get())
+        if which == 'resource_grid':
+            var = getattr(self, 'resource_grid_var', None)
             return bool(var is not None and var.get())
         if which == 'critical_path':
             task_list = getattr(self, 'task_list', None)

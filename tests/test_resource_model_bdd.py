@@ -13,7 +13,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 import pytest
 
 from gantt_app.core.resource_model import (
-    DAYS, AccrueAt, DaysOffRange, MaterialResource, Resource,
+    DAYS, AccrueAt, CostResource, DaysOffRange, MaterialResource, Resource,
     ResourceRepository, ResourceType, SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,
     material_assignment_cost, material_quantity, parse_material_units,
@@ -1261,3 +1261,186 @@ def compute_rated_cost(rated_repo, rated_task):
 def check_rated_cost(rated_cost, cost):
     # (10 - 2) x 50 + 2 x 75 + 25 = 575
     assert rated_cost == cost
+
+# SCENARIO: Cost resource round trip preserves the sheet's fields
+@given("a cost resource with initials group accrual and code",
+       target_fixture="cost_resource")
+def cost_resource():
+    return CostResource(
+        id="cost_1", name="Flight", initials="FLT",
+        group="Travel", accrue_at=AccrueAt.END, code="TRV-01")
+
+
+@when("serialized to dict and deserialized back as cost",
+      target_fixture="restored_cost")
+def serialize_deserialize_cost(cost_resource):
+    return CostResource.from_dict(cost_resource.to_dict())
+
+
+@then("the restored cost resource should equal the original")
+def check_restored_cost_equals_original(restored_cost, cost_resource):
+    assert restored_cost == cost_resource
+
+
+# SCENARIO: Cost resource requires a name
+@when("a cost resource with an empty name is built",
+      target_fixture="cost_error")
+def build_nameless_cost():
+    try:
+        CostResource(id="cost_1", name="")
+    except ValueError as error:
+        return error
+    return None
+
+
+@then("a ValueError was raised for the cost resource")
+def check_cost_error(cost_error):
+    assert isinstance(cost_error, ValueError)
+
+
+# SCENARIO: An unknown cost accrue at value reads as prorated
+@when("a cost dict with an unknown accrue at value is loaded",
+      target_fixture="loaded_cost")
+def load_unknown_accrue_cost():
+    return CostResource.from_dict(
+        {"id": "cost_1", "name": "Permit", "accrue_at": "Whenever"})
+
+
+@then("the cost accrual should be prorated")
+def check_cost_accrual_prorated(loaded_cost):
+    assert loaded_cost.accrue_at == AccrueAt.PRORATED
+
+
+# SCENARIO: Repository persists and loads cost resources
+@given("a resource repository with a cost resource for persistence test",
+       target_fixture="repository_with_cost")
+def repository_with_cost():
+    directory = tempfile.mkdtemp()
+    path = Path(directory) / "resources.json"
+    repository = ResourceRepository(str(path))
+    repository.add_cost(CostResource(id="cost_1", name="Flight"))
+    repository.save_to_file()
+    return {'path': path, 'repository': repository}
+
+
+@then("cost resources should be preserved")
+def check_costs_preserved(repository_with_cost):
+    loaded = ResourceRepository(str(repository_with_cost['path']))
+    loaded.load_from_file()
+    original = repository_with_cost['repository']
+    assert loaded.costs == original.costs
+
+
+# SCENARIO: A file without a costs section loads an empty cost pool
+@when("a repository dict without a costs section is loaded",
+      target_fixture="legacy_cost_repository")
+def load_legacy_cost_repository():
+    return ResourceRepository.from_dict({'resources': [], 'teams': []})
+
+
+@then("the costs pool should be empty")
+def check_costs_empty(legacy_cost_repository):
+    assert legacy_cost_repository.costs == {}
+
+
+# SCENARIO: A saved project keeps its cost pool
+@given("a project holding a cost resource", target_fixture="cost_project")
+def cost_project():
+    from gantt_app.core.models import Project
+    project = Project(name="Costs")
+    project.resource_repository.add_cost(
+        CostResource(id="cost_1", name="Permit Fee", group="Fees"))
+    return project
+
+
+@then("the cost resource should still be in its pool")
+def check_project_cost(restored_cost_project):
+    costs = restored_cost_project.resource_repository.costs
+    assert costs["cost_1"].name == "Permit Fee"
+    assert costs["cost_1"].group == "Fees"
+
+
+# SCENARIO: A task's cost is the amounts on its cost assignments
+@given("a task with two assignments of the same cost resource",
+       target_fixture="cost_ctx")
+def task_with_two_cost_assignments():
+    from gantt_app.core.models import Task
+    repository = ResourceRepository()
+    repository.add_cost(CostResource(id="cost_f", name="Flight"))
+    task = Task(id="t_c", name="Travel",
+                start_date=datetime(2026, 1, 5), duration=2)
+    # Two expense lines for one resource: Flight for two travellers.
+    task.resource_assignments = [
+        {"resource_id": "cost_f", "kind": "cost",
+         "cost": 300.0, "actual_cost": 0.0},
+        {"resource_id": "cost_f", "kind": "cost",
+         "cost": 350.0, "actual_cost": 0.0}]
+    return {'task': task, 'repository': repository}
+
+
+# SCENARIO: A cost assignment ignores the task's duration
+@given("a cost assignment of 300 on a ten-day task",
+       target_fixture="cost_ctx")
+def cost_assignment_on_long_task():
+    from gantt_app.core.models import Task
+    repository = ResourceRepository()
+    repository.add_cost(CostResource(id="cost_h", name="Hotel"))
+    task = Task(id="t_h", name="Stay",
+                start_date=datetime(2026, 1, 5), duration=10)
+    task.resource_assignments = [
+        {"resource_id": "cost_h", "kind": "cost",
+         "cost": 300.0, "actual_cost": 0.0}]
+    return {'task': task, 'repository': repository}
+
+
+@when("the cost task cost is computed", target_fixture="cost_total")
+def compute_cost_task_cost(cost_ctx):
+    from gantt_app.core.baselines import _task_cost
+    return _task_cost(cost_ctx['task'], cost_ctx['repository'])
+
+
+@then(parsers.parse("the cost total should be {cost:f}"))
+def check_cost_total(cost_total, cost):
+    assert cost_total == cost
+
+
+# SCENARIO: A summary task's cost rolls up its children
+@given("a phase whose child carries a cost assignment",
+       target_fixture="cost_project_ctx")
+def phase_with_cost_child():
+    from gantt_app.core.models import Project, Task
+    project = Project(name="Rollup")
+    project.resource_repository.add_cost(
+        CostResource(id="cost_f", name="Flight"))
+    phase = Task(id="p1", name="Phase",
+                 start_date=datetime(2026, 1, 5), duration=10,
+                 task_type="Phase")
+    child = Task(id="c1", name="Travel",
+                 start_date=datetime(2026, 1, 5), duration=2,
+                 parent_task_id="p1")
+    child.resource_assignments = [
+        {"resource_id": "cost_f", "kind": "cost",
+         "cost": 300.0, "actual_cost": 0.0},
+        {"resource_id": "cost_f", "kind": "cost",
+         "cost": 350.0, "actual_cost": 0.0}]
+    project.add_task(phase)
+    project.add_task(child)
+    return project
+
+
+@when("the rolled-up costs are computed", target_fixture="rolled_costs")
+def compute_rolled_costs(cost_project_ctx):
+    from gantt_app.core.baselines import rolled_task_costs
+    return rolled_task_costs(cost_project_ctx)
+
+
+@then(parsers.parse("the phase cost should be {cost:f}"))
+def check_phase_cost(rolled_costs, cost):
+    assert rolled_costs["p1"] == cost
+
+
+@when("the cost project is saved to a dict and read back",
+      target_fixture="restored_cost_project")
+def save_read_cost_project(cost_project):
+    from gantt_app.core.models import Project
+    return Project.from_dict(cost_project.to_dict())

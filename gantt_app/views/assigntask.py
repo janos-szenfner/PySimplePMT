@@ -12,8 +12,8 @@ import customtkinter as ctk
 
 from gantt_app.views import theme
 from gantt_app.core.resource_model import (
-    MaterialResource, Resource, ResourceRepository, ResourceType,
-    TeamPool, material_quantity,
+    CostResource, MaterialResource, Resource, ResourceRepository,
+    ResourceType, TeamPool, material_quantity,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.resourcesettings import _schedule_short
@@ -50,6 +50,8 @@ def _status_badge(used: float, capacity: float) -> Tuple[str, str, float]:
 
 
 def _type_badge(entity) -> str:
+    if isinstance(entity, CostResource):
+        return "[COST]"
     if isinstance(entity, MaterialResource):
         return "[MATERIAL]"
     if isinstance(entity, TeamPool):
@@ -179,6 +181,15 @@ class ResourceDropdown(ctk.CTkFrame):
                 f"{entity.name}  {_type_badge(entity)}",
                 label,
                 f"${entity.cost_per_unit:g} per {label}",
+                0.0,
+                "ok"))
+        for entity in sorted(self.repo.costs.values(),
+                             key=lambda c: c.name.lower()):
+            self._all_rows.append((
+                entity.id,
+                f"{entity.name}  {_type_badge(entity)}",
+                "fixed cost",
+                "amount set per task",
                 0.0,
                 "ok"))
 
@@ -382,7 +393,9 @@ class TaskResourceTab(ctk.CTkFrame):
             for col, width in enumerate(self._COLS):
                 row.columnconfigure(col, minsize=width, weight=0)
 
-            if isinstance(entity, MaterialResource):
+            if isinstance(entity, CostResource):
+                self._cost_row(index, assignment, entity, row)
+            elif isinstance(entity, MaterialResource):
                 self._material_row(index, assignment, entity, row)
             else:
                 self._labour_row(index, assignment, entity, row)
@@ -526,6 +539,72 @@ class TaskResourceTab(ctk.CTkFrame):
 
         self._row_cells.append(cells)
 
+    def _cost_row(self, index: int, assignment: Dict[str, object],
+                  entity: CostResource, row: ctk.CTkFrame) -> None:
+        """
+        One cost assignment's cells: the amount, entered here.
+
+        A cost resource carries no rate or units, so the assignment's
+        money is the only number the row has to take: a Cost entry for
+        the planned amount and an Actual entry for what was spent, side
+        by side in the wide cell the labour rows give to workload.
+        """
+        cells: List[ctk.CTkFrame] = []
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(
+                c, text=f"{entity.name}  {_type_badge(entity)}",
+                width=240, anchor=tk.W,
+                text_color=theme.now(theme.GRID_TEXT)),
+            240, 0))
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(
+                c, text=f"fixed · accrues {entity.accrue_at.value}",
+                width=150, anchor=tk.W,
+                text_color=theme.now(theme.GRID_TEXT)),
+            150, 1))
+
+        amounts = [None, None]
+
+        def make_amounts(cell):
+            holder = ctk.CTkFrame(cell, fg_color="transparent")
+            for slot, (label, key, width) in enumerate((
+                    ("Cost $", "cost", 62), ("Actual $", "actual_cost", 62))):
+                ctk.CTkLabel(
+                    holder, text=label, width=42, anchor=tk.W,
+                    text_color=theme.now(theme.MUTED_TEXT)).grid(
+                        row=0, column=slot * 2)
+                entry = ctk.CTkEntry(holder, width=width)
+                entry.insert(
+                    0, f"{float(assignment.get(key, 0.0)):g}")
+                entry.grid(row=0, column=slot * 2 + 1, padx=(2, 8))
+                entry._entry.bind(
+                    "<KeyRelease>",
+                    self._make_updater(index, key, entry))
+                amounts[slot] = entry
+            return holder
+
+        cells.append(self._cell(row, make_amounts, 230, 2))
+
+        for column, width in ((3, 65), (4, 50), (5, 55)):
+            cells.append(self._cell(
+                row,
+                lambda c, w=width: ctk.CTkLabel(
+                    c, text="—", width=w, anchor=tk.W,
+                    text_color=theme.now(theme.GRID_TEXT)),
+                width, column))
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkButton(c, text="Clear", width=65,
+                                    command=lambda i=index: self._remove(i)),
+            65, 6))
+
+        self._row_cells.append(cells)
+
     def _material_cost_text(self, index: int) -> str:
         """Live cost read-out for a material row: quantity x Std. Rate."""
         assignment = self._assignments[index]
@@ -586,6 +665,8 @@ class TaskResourceTab(ctk.CTkFrame):
             return self.repo.teams[entity_id]
         if entity_id in self.repo.materials:
             return self.repo.materials[entity_id]
+        if entity_id in self.repo.costs:
+            return self.repo.costs[entity_id]
         return None
 
     # ------------------------------------------------------------------
@@ -593,14 +674,25 @@ class TaskResourceTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def _on_picked(self, entity_id: str) -> None:
+        entity = self._entity_by_id(entity_id)
         # Avoid duplicates for now; later we can allow split per entity.
-        if any(a.get("resource_id") == entity_id for a in self._assignments):
-            self._hide_dropdown()
-            return
+        # Cost resources are exempt: each row is an independent expense
+        # line, so "Flight $300" and "Flight $350" can sit on one task.
+        if entity is not None and not isinstance(entity, CostResource):
+            if any(a.get("resource_id") == entity_id
+                   for a in self._assignments):
+                self._hide_dropdown()
+                return
         self.search_var.set("")
         self._hide_dropdown()
-        entity = self._entity_by_id(entity_id)
-        if isinstance(entity, MaterialResource):
+        if isinstance(entity, CostResource):
+            self._assignments.append({
+                "resource_id": entity_id,
+                "kind": "cost",
+                "cost": 0.0,
+                "actual_cost": 0.0,
+            })
+        elif isinstance(entity, MaterialResource):
             self._assignments.append({
                 "resource_id": entity_id,
                 "kind": "material",

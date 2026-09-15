@@ -22,11 +22,12 @@ import customtkinter as ctk
 from gantt_app.views import theme
 from gantt_app.core.models import Project, Task
 from gantt_app.core.resource_model import (
-    Resource, ResourceRepository, ResourceType, TeamPool,
+    CostResource, Resource, ResourceRepository, ResourceType, TeamPool,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.assigntask import _status_badge
 from gantt_app.views.scrollframe import ScrollFrame
+from gantt_app.views.resource_usage import ResourceUsageGrid
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,18 @@ STATUS_UNASSIGNED = "Status: Unassigned"
 
 
 def _entity_by_id(repo: ResourceRepository, entity_id: str):
-    return repo.resources.get(entity_id) or repo.teams.get(entity_id)
+    return (repo.resources.get(entity_id) or repo.teams.get(entity_id)
+            or repo.costs.get(entity_id))
+
+
+def _cost_committed(repo: ResourceRepository, entity_id: str,
+                    project: Project) -> float:
+    """Every assignment of a cost resource across the plan, summed."""
+    return sum(
+        float(assignment.get("cost", 0.0) or 0.0)
+        for task in project.tasks
+        for assignment in task.resource_assignments
+        if assignment.get("resource_id") == entity_id)
 
 
 def _working_days_between(start: date, end: date) -> int:
@@ -167,6 +179,18 @@ class ResourceBoard(ctk.CTkFrame):
             self, orient=tk.HORIZONTAL, style='Gantt.TPanedwindow')
         self._panes.grid(row=0, column=0, sticky="nsew")
 
+        #: The board's second face: the usage grid shares the paned
+        #: window's cell, and set_mode lifts whichever one the ribbon's
+        #: toggle names. Both stay built so a swap costs a lift, not a
+        #: rebuild, and the sashes keep the reader's split.
+        self._usage_grid = ResourceUsageGrid(
+            self, project, on_status=on_status,
+            on_project_changed=on_project_changed,
+            project_tracker=project_tracker)
+        self._usage_grid.grid(row=0, column=0, sticky="nsew")
+        self._mode = 'matrix'
+        self._panes.lift()
+
         self._build_task_list_panel()
         self._build_inspector_panel()
         self._build_pool_panel()
@@ -226,6 +250,28 @@ class ResourceBoard(ctk.CTkFrame):
             positions.append(int(width * cumulative / total))
         return positions
 
+    def set_mode(self, mode: str) -> None:
+        """
+        Swap the board's face: the allocation matrix, or the usage grid.
+
+        Both views share one grid cell, so the swap is a lift rather than
+        a rebuild - the matrix keeps its sash positions and the grid its
+        folds across the switch. The ribbon's Usage Grid toggle is the
+        caller.
+        """
+        if mode not in ('matrix', 'grid') or mode == self._mode:
+            return
+        self._mode = mode
+        if mode == 'grid':
+            self._usage_grid.refresh()
+            self._usage_grid.lift()
+        else:
+            self._panes.lift()
+            self._keep_default_proportions()
+        logger.info("Resource Planning switched to %s",
+                    'the usage grid' if mode == 'grid'
+                    else 'the allocation matrix')
+
     def on_shown(self) -> None:
         """
         Called when the board is brought to the front.
@@ -234,6 +280,9 @@ class ResourceBoard(ctk.CTkFrame):
         left-aligned rather than wherever a previous view left it scrolled,
         and settles the default panel split now that the board has a width.
         """
+        if self._mode == 'grid':
+            self._usage_grid.on_shown()
+            return
         self._keep_default_proportions()
         try:
             self.heatmap_canvas.xview_moveto(0.0)
@@ -368,7 +417,7 @@ class ResourceBoard(ctk.CTkFrame):
         ).grid(row=0, column=0, pady=(8, 4), padx=8, sticky="w")
 
         self.pool_filter = ctk.CTkOptionMenu(
-            p3, values=["All Types", "Named", "Generic", "Team"])
+            p3, values=["All Types", "Named", "Generic", "Team", "Cost"])
         self.pool_filter.grid(row=1, column=0, padx=8, pady=(0, 4),
                               sticky="ew")
         self.pool_filter.set("All Types")
@@ -478,6 +527,8 @@ class ResourceBoard(ctk.CTkFrame):
         self._filter_pool()
         self._update_preview()
         self._draw_heatmap()
+        if getattr(self, '_usage_grid', None) is not None:
+            self._usage_grid.apply_theme()
 
     def refresh(self) -> None:
         """Reload every panel from the current project state."""
@@ -491,6 +542,9 @@ class ResourceBoard(ctk.CTkFrame):
                 self._show_task(self._selected_task_id)
         except Exception:
             logger.exception("Could not refresh the resource board")
+        usage = getattr(self, '_usage_grid', None)
+        if usage is not None and self._mode == 'grid':
+            usage.refresh()
 
     # ------------------------------------------------------------------
     # Task list (panel 1)
@@ -691,10 +745,12 @@ class ResourceBoard(ctk.CTkFrame):
 
         self.inspector_text.configure(state="normal")
         self.inspector_text.delete("0.0", "end")
+        from gantt_app.core.baselines import _task_cost
         info = (
             f"TASK: #{task.id} {task.name}\n"
             f"Effort: {self._task_effort(task)}h\n"
             f"Duration: {self._task_duration(task)}d\n"
+            f"Cost: ${_task_cost(task, self.project.resource_repository):g}\n"
             f"Priority: {task.priority}\n"
             f"Calendar: {task.calendar_id or 'project'}\n"
         )
@@ -709,6 +765,12 @@ class ResourceBoard(ctk.CTkFrame):
                                  self._selected_resource_id or "")
         if task and resource:
             resources = list(self.project.resource_repository.resources.values())
+            if isinstance(resource, CostResource):
+                self.preview_label.configure(
+                    text=f"Assignee preview: {resource.name} - fixed "
+                         f"cost, the amount is entered on assignment",
+                    text_color=theme.now(theme.GRID_TEXT))
+                return
             if isinstance(resource, TeamPool):
                 capacity = resource.calculate_effective_capacity(resources)
                 used = sum(_team_load_for_date(
@@ -743,27 +805,38 @@ class ResourceBoard(ctk.CTkFrame):
             child.destroy()
 
         row = 0
-        for entity in list(repo.resources.values()) + list(repo.teams.values()):
+        entities = (list(repo.resources.values())
+                    + list(repo.teams.values()) + list(repo.costs.values()))
+        for entity in entities:
             is_team = isinstance(entity, TeamPool)
-            if selected_filter == "Named" and entity.resource_type != ResourceType.NAMED:
+            is_cost = isinstance(entity, CostResource)
+            if selected_filter == "Cost" and not is_cost:
                 continue
-            if selected_filter == "Generic" and entity.resource_type != ResourceType.GENERIC:
-                continue
-            if selected_filter == "Team" and not is_team:
-                continue
+            if not is_cost:
+                if selected_filter == "Named" and entity.resource_type != ResourceType.NAMED:
+                    continue
+                if selected_filter == "Generic" and entity.resource_type != ResourceType.GENERIC:
+                    continue
+                if selected_filter == "Team" and not is_team:
+                    continue
 
-            if is_team:
-                capacity = entity.calculate_effective_capacity(resources)
-                used = sum(_team_load_for_date(
-                    entity, resources, self.project).values())
+            if is_cost:
+                committed = _cost_committed(repo, entity.id, self.project)
+                text = (f"{entity.name} (COST)\n"
+                        f"${committed:g} committed")
             else:
-                used, capacity = self._resource_used(entity)
+                if is_team:
+                    capacity = entity.calculate_effective_capacity(resources)
+                    used = sum(_team_load_for_date(
+                        entity, resources, self.project).values())
+                else:
+                    used, capacity = self._resource_used(entity)
 
-            badge, colour, pct = _status_badge(used, capacity)
-            load_text = (f"{used:g} / {capacity:g} hrs "
-                         f"({pct:.0f}%)")
-            kind = "TEAM" if is_team else entity.resource_type.value.upper()
-            text = f"{badge} {entity.name} ({kind})\n{load_text}"
+                badge, colour, pct = _status_badge(used, capacity)
+                load_text = (f"{used:g} / {capacity:g} hrs "
+                             f"({pct:.0f}%)")
+                kind = "TEAM" if is_team else entity.resource_type.value.upper()
+                text = f"{badge} {entity.name} ({kind})\n{load_text}"
 
             card = ctk.CTkButton(
                 self.pool_frame.content,
@@ -936,6 +1009,10 @@ class ResourceBoard(ctk.CTkFrame):
             self._say("Select both a task and a resource first.")
             return
 
+        if isinstance(resource, CostResource):
+            self._assign_cost(task, resource)
+            return
+
         if any(a.get("resource_id") == resource.id
                for a in task.resource_assignments):
             self._say(f"{resource.name} is already assigned to this task.")
@@ -982,6 +1059,41 @@ class ResourceBoard(ctk.CTkFrame):
         logger.info("Assigned %r to task %s (%s)",
                     resource.name, task.id, task.name)
         self._say(f"Assigned {resource.name} to {task.name}.")
+        self._changed()
+
+    def _assign_cost(self, task: Task, resource: CostResource) -> None:
+        """
+        Attach a cost resource to a task, amount asked for on the spot.
+
+        Cost assignments are expense lines rather than roster entries, so
+        the duplicate check does not apply - the same "Flight" can sit on
+        a task twice, once per traveller - and no effort or duration math
+        runs: the money is duration-free by definition.
+        """
+        from tkinter import simpledialog
+        amount = simpledialog.askfloat(
+            "Assign Cost",
+            f"Amount for {resource.name} on {task.name}:",
+            minvalue=0.0, parent=self)
+        if amount is None:
+            return
+
+        assignments = [dict(a) for a in task.resource_assignments]
+        assignments.append({
+            "resource_id": resource.id,
+            "kind": "cost",
+            "cost": float(amount),
+            "actual_cost": 0.0,
+        })
+        if self.project_tracker:
+            self.project_tracker.update_task(
+                task.id, resource_assignments=assignments)
+        else:
+            task.resource_assignments = assignments
+
+        logger.info("Assigned cost resource %r ($%g) to task %s (%s)",
+                    resource.name, amount, task.id, task.name)
+        self._say(f"Assigned {resource.name} (${amount:g}) to {task.name}.")
         self._changed()
 
     def _assign_selected(self) -> None:

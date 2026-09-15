@@ -554,6 +554,7 @@ class GanttApp(ctk.CTk):
             content_frame, self.project, on_status=self._show_status,
             on_project_changed=self.update_all,
             project_tracker=self.project_tracker)
+        self.toolbar.set_resource_board(self.resource_board)
         self.resource_board.grid(
             row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
 
@@ -724,6 +725,12 @@ class GanttApp(ctk.CTk):
                 return
             self._active_view = name
             self._set_active_tab(name)
+            # The ribbon keeps a group for the view on top - Resource
+            # Planning lends the View page its Usage Grid toggle.
+            toolbar = getattr(self, 'toolbar', None)
+            context = getattr(toolbar, 'set_view_context', None)
+            if callable(context):
+                context(name)
             refresh = getattr(widget, 'refresh', None)
             if callable(refresh):
                 refresh()

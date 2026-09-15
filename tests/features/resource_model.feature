@@ -286,3 +286,53 @@ Feature: Resource model functionality
     And a ten-hour assignment with two overtime hours
     When the task cost is computed for it
     Then the rated cost should be 575.0
+
+  @resource_model
+  Scenario: Cost resource round trip preserves the sheet's fields
+    Given a cost resource with initials group accrual and code
+    When serialized to dict and deserialized back as cost
+    Then the restored cost resource should equal the original
+
+  @resource_model
+  Scenario: Cost resource requires a name
+    When a cost resource with an empty name is built
+    Then a ValueError was raised for the cost resource
+
+  @resource_model
+  Scenario: An unknown cost accrue at value reads as prorated
+    When a cost dict with an unknown accrue at value is loaded
+    Then the cost accrual should be prorated
+
+  @resource_model
+  Scenario: Repository persists and loads cost resources
+    Given a resource repository with a cost resource for persistence test
+    Then cost resources should be preserved
+
+  @resource_model
+  Scenario: A file without a costs section loads an empty cost pool
+    When a repository dict without a costs section is loaded
+    Then the costs pool should be empty
+
+  @resource_model
+  Scenario: A saved project keeps its cost pool
+    Given a project holding a cost resource
+    When the cost project is saved to a dict and read back
+    Then the cost resource should still be in its pool
+
+  @resource_model
+  Scenario: A task's cost is the amounts on its cost assignments
+    Given a task with two assignments of the same cost resource
+    When the cost task cost is computed
+    Then the cost total should be 650.0
+
+  @resource_model
+  Scenario: A cost assignment ignores the task's duration
+    Given a cost assignment of 300 on a ten-day task
+    When the cost task cost is computed
+    Then the cost total should be 300.0
+
+  @resource_model
+  Scenario: A summary task's cost rolls up its children
+    Given a phase whose child carries a cost assignment
+    When the rolled-up costs are computed
+    Then the phase cost should be 650.0

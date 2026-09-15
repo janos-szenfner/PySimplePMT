@@ -639,5 +639,132 @@ class TestReorderUndo(unittest.TestCase):
         self.assertEqual(self._ids(), ["001", "002", "003"])
 
 
+class TestResourcePoolUndo(unittest.TestCase):
+    """
+    The resource usage grid's undo paths: the pool snapshot command, the
+    pre-seeded record of a modal's own write, and the task snapshot's
+    coverage of the pool and the assignments a delete prunes.
+    """
+
+    def setUp(self):
+        self.project = Project(name="Test Project")
+        self.repo = self.project.resource_repository
+        self.manager = UndoRedoManager()
+        self.tracker = ProjectStateTracker(self.project, self.manager)
+
+    def _resource(self, resource_id="r1", name="Anna"):
+        from gantt_app.core.resource_model import Resource, ResourceType
+        return Resource(id=resource_id, name=name,
+                        resource_type=ResourceType.NAMED,
+                        role_type="dev", initials=name[:2].upper())
+
+    def test_pool_command_undoes_a_creation(self):
+        """run_resource_as_command makes a new resource undoable."""
+        resource = self._resource()
+        self.tracker.run_resource_as_command(
+            lambda: (self.repo.add_resource(resource) or True),
+            "New Resource")
+        self.assertIn("r1", self.repo.resources)
+
+        self.assertTrue(self.manager.undo())
+        self.assertNotIn("r1", self.repo.resources)
+
+        self.assertTrue(self.manager.redo())
+        self.assertIn("r1", self.repo.resources)
+        self.assertEqual(self.repo.resources["r1"].name, "Anna")
+
+    def test_record_pool_change_after_the_fact(self):
+        """A modal's own write is recorded, not re-run."""
+        resource = self._resource()
+        self.repo.add_resource(resource)
+
+        before = self.repo.to_dict()
+        self.repo.resources["r1"].initials = "AX"
+        self.assertTrue(
+            self.tracker.record_resource_pool_change(before, "Edit Resource"))
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(self.repo.resources["r1"].initials, "AN")
+        self.assertTrue(self.manager.redo())
+        self.assertEqual(self.repo.resources["r1"].initials, "AX")
+
+    def test_record_pool_change_noop_when_nothing_changed(self):
+        """An unchanged pool makes no history entry."""
+        self.repo.add_resource(self._resource())
+        before = self.repo.to_dict()
+        self.assertFalse(
+            self.tracker.record_resource_pool_change(before, "No-op"))
+        self.assertFalse(self.manager.can_undo())
+
+    def test_task_snapshot_restores_assignments_and_pool(self):
+        """
+        run_as_command covers the collections a delete reaches - the pool
+        entity and its id in every task's resource_assignments.
+        """
+        self.repo.add_resource(self._resource())
+        task = Task(id="001", name="Build", start_date=datetime(2026, 1, 1),
+                    end_date=datetime(2026, 1, 3),
+                    resource_assignments=[{
+                        "resource_id": "r1", "estimated_hours": 8.0,
+                        "resource_split": 100.0}])
+        self.project.add_task(task)
+
+        def delete_resource():
+            self.repo.remove_resource("r1")
+            for each in self.project.tasks:
+                each.resource_assignments = [
+                    a for a in each.resource_assignments
+                    if a.get("resource_id") != "r1"]
+            return True
+
+        self.tracker.run_as_command(delete_resource, "Delete Resource")
+        self.assertNotIn("r1", self.repo.resources)
+        self.assertEqual(
+            self.project.get_task_by_id("001").resource_assignments, [])
+
+        self.assertTrue(self.manager.undo())
+        self.assertIn("r1", self.repo.resources)
+        self.assertEqual(
+            self.project.get_task_by_id("001").resource_assignments,
+            [{"resource_id": "r1", "estimated_hours": 8.0,
+              "resource_split": 100.0}])
+
+    def test_snapshot_survives_in_place_assignment_edit(self):
+        """
+        The snapshot copies the assignments list, so an action that
+        mutates it in place does not rewrite the history.
+        """
+        self.repo.add_resource(self._resource())
+        task = Task(id="001", name="Build", start_date=datetime(2026, 1, 1),
+                    end_date=datetime(2026, 1, 3),
+                    resource_assignments=[{
+                        "resource_id": "r1", "estimated_hours": 8.0,
+                        "resource_split": 100.0}])
+        self.project.add_task(task)
+
+        def clear_in_place():
+            self.project.get_task_by_id("001").resource_assignments.clear()
+            return True
+
+        self.tracker.run_as_command(clear_in_place, "Clear Assignments")
+        self.assertEqual(
+            self.project.get_task_by_id("001").resource_assignments, [])
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(
+            len(self.project.get_task_by_id("001").resource_assignments), 1)
+
+    def test_pool_restore_keeps_the_repository_object(self):
+        """Undo swaps contents in place, so holders of the repo stay live."""
+        self.repo.add_resource(self._resource())
+        repo = self.repo
+        self.tracker.run_resource_as_command(
+            lambda: (self.repo.remove_resource("r1") or True),
+            "Delete Resource")
+        self.assertTrue(self.manager.undo())
+        self.assertIs(self.project.resource_repository, repo)
+        self.assertIn("r1", repo.resources)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -285,15 +285,12 @@ class TestAPopupOverADialogGetsItsClicks(unittest.TestCase):
 
 
 class TestThePopupsAskForIt(unittest.TestCase):
-    """Both windows that open over the task form take the grab."""
+    """
+    The windows that open over the task form take the grab.
 
-    def test_the_colour_picker_does(self):
-        """Read as source: building it needs the form it opens over."""
-        import inspect
-        from gantt_app.views import colorpicker
-
-        self.assertIn('take_grab',
-                      inspect.getsource(colorpicker.ColorPickerPopup.__init__))
+    The colour chooser is the platform's own and manages its grab itself;
+    the calendar is the one custom window left that has to ask.
+    """
 
     def test_the_calendar_does(self):
         """It has the same shape and had the same bug."""

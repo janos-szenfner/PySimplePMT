@@ -137,8 +137,8 @@ class ReferenceWindow(ctk.CTkToplevel):
 
         take_grab hands the grab back to whoever had it when this window
         closes, so the editor underneath is still modal afterwards. See
-        views/modal.take_grab, which the colour picker and the date picker
-        use for the same reason.
+        views/modal.take_grab, which the calendar and the toolbar's colour
+        popups use for the same reason.
 
         Imported here rather than at the top of the module: importing
         gantt_app.views runs its __init__, which reaches the task form and

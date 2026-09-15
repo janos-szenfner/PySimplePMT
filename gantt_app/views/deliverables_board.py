@@ -69,9 +69,6 @@ FILTER_ALL = 'All'
 FILTER_OVERDUE = 'Overdue'
 STATUS_FILTERS = (FILTER_ALL,) + DELIVERABLE_STATUSES + (FILTER_OVERDUE,)
 
-#: No assignee chosen.
-NO_ASSIGNEE = '(none)'
-
 #: Fill a row takes when its due date has passed and it is not done.
 OVERDUE_ROW_BG = theme.GRID_CRITICAL_BG
 #: Fill a Done row takes.
@@ -359,6 +356,20 @@ class DeliverablesBoard(ctk.CTkFrame):
                 values=self._row_values(deliverable))
             tree_items[deliverable.id] = item_id
 
+        # Assigned tasks hang under their deliverable as read-only rows,
+        # after its sub-deliverables - they are the inputs the row's
+        # progress is read from, drawn where a reader looks for them.
+        for deliverable in self.project.deliverable_display_order():
+            parent_item = tree_items.get(deliverable.id)
+            if parent_item is None:
+                continue
+            for task in self.project.tasks_for_deliverable(deliverable.id):
+                self.tree.insert(
+                    parent_item, tk.END,
+                    iid=self._task_row_id(deliverable.id, task.id),
+                    text=task.name or '(unnamed)', open=True,
+                    values=self._task_row_values(task))
+
         self._paint_rows()
         self._restore_view_state(state)
         self._refresh_gutter()
@@ -376,16 +387,69 @@ class DeliverablesBoard(ctk.CTkFrame):
         if has_inputs:
             # A derived progress is the roll-up's answer, not the row's own
             progress = 'Σ ' + progress
-        tasks = self.project.tasks_for_deliverable(deliverable.id)
+        task_count = len(deliverable.task_ids)
         return (
             deliverable.status,
-            deliverable.assignee,
-            ', '.join(t.name for t in tasks),
+            ', '.join(deliverable.assignees),
+            f"{task_count} task(s)" if task_count else '',
             due,
             deliverable.priority,
             ', '.join(deliverable.tags),
             ('%g' % deliverable.weight),
             progress,
+        )
+
+    @staticmethod
+    def _task_row_id(deliverable_id: str, task_id: str) -> str:
+        """
+        The tree id a task row hangs under.
+
+        The 'task:' prefix keeps it out of every id space the board keys
+        on - a task row is drawn, never edited, marked or dragged - and
+        carrying the deliverable's id lets one task sit under several rows
+        without the iids colliding.
+        """
+        return f"task:{deliverable_id}:{task_id}"
+
+    @staticmethod
+    def _is_task_row(item: str) -> bool:
+        """Whether a tree id is a task row rather than a deliverable."""
+        return isinstance(item, str) and item.startswith('task:')
+
+    def _task_row_values(self, task) -> tuple:
+        """
+        The cells a task row shows, in COLUMNS order.
+
+        Read-only by design: the row answers "what is this deliverable
+        waiting on and how done is it" - its own type in the Tasks cell,
+        its end date as the due date, its percentage in the Progress bar.
+        Editing happens in the task editor, not here.
+        """
+        assignee = ''
+        assignments = getattr(task, 'resource_assignments', None) or []
+        if assignments:
+            first = assignments[0]
+            resource_id = getattr(first, 'resource_id', None) or \
+                (first.get('resource_id') if isinstance(first, dict)
+                 else None)
+            repo = self.project.resource_repository
+            resource = (
+                repo.resources.get(resource_id)
+                or repo.teams.get(resource_id)
+                or repo.costs.get(resource_id)
+            ) if resource_id else None
+            assignee = getattr(resource, 'name', '') or str(
+                resource_id or '')
+        due = task.end_date.strftime(DATE_FORMAT) if task.end_date else ''
+        return (
+            getattr(task, 'status', '') or '',
+            assignee,
+            getattr(task, 'task_type', '') or '',
+            due,
+            getattr(task, 'priority', '') or '',
+            '',
+            '',
+            self._progress_text(task.progress),
         )
 
     @staticmethod
@@ -427,6 +491,12 @@ class DeliverablesBoard(ctk.CTkFrame):
             return
 
         for index, item in enumerate(rows):
+            if self._is_task_row(item):
+                # Task rows keep the banding so the striping reads
+                # through them, but take no warning colour of their own.
+                self.tree.item(item, tags=(
+                    'oddrow' if index % 2 else 'evenrow',))
+                continue
             deliverable = self.project.get_deliverable_by_id(item)
             if deliverable is None:
                 continue
@@ -461,7 +531,7 @@ class DeliverablesBoard(ctk.CTkFrame):
         for deliverable in self.project.deliverables:
             if search:
                 haystack = ' '.join(
-                    [deliverable.name, deliverable.assignee,
+                    [deliverable.name, ' '.join(deliverable.assignees),
                      ' '.join(deliverable.tags)]).lower()
                 if search not in haystack:
                     continue
@@ -510,7 +580,7 @@ class DeliverablesBoard(ctk.CTkFrame):
     def _on_gutter_click(self, event) -> str:
         """A click in the gutter toggles the row's mark."""
         item = self.id_tree.identify_row(event.y)
-        if item:
+        if item and not self._is_task_row(item):
             self._toggle_mark(item)
             self._say(f"{len(self._marked)} row(s) marked.")
         return 'break'
@@ -532,7 +602,9 @@ class DeliverablesBoard(ctk.CTkFrame):
                     if self.project.get_deliverable_by_id(i) is not None]
         if selected:
             return selected
-        return [clicked] if clicked else []
+        if clicked and not self._is_task_row(clicked):
+            return [clicked]
+        return []
 
     # ------------------------------------------------------------------
     # The gutter and scroll
@@ -561,8 +633,16 @@ class DeliverablesBoard(ctk.CTkFrame):
             return
 
         numbers = self.project.deliverable_display_ids()
+        task_numbers = self.project.display_ids()
         width = self.project.ID_WIDTH
         for item in self._rows_in_display_order():
+            if self._is_task_row(item):
+                # A task row carries the task's own number and no box -
+                # marks are a deliverable thing.
+                task_id = item.rsplit(':', 1)[-1]
+                label = str(task_numbers.get(task_id, '')).zfill(width)
+                gutter.insert('', tk.END, iid=item, text=f"{label}")
+                continue
             number = numbers.get(item)
             label = '' if number is None else str(number).zfill(width)
             gutter.insert('', tk.END, iid=item,
@@ -640,6 +720,8 @@ class DeliverablesBoard(ctk.CTkFrame):
         item = self.tree.identify_row(event.y)
         if not item:
             return None
+        if self._is_task_row(item):
+            return 'break'      # a task row is read-only display
 
         column = self._column_name(event.x)
         if column == '#0' or column == 'Tags' or column == 'Due Date' \
@@ -702,7 +784,7 @@ class DeliverablesBoard(ctk.CTkFrame):
 
         current = {
             '#0': deliverable.name,
-            'Assignee': deliverable.assignee,
+            'Assignee': ', '.join(deliverable.assignees),
             'Due Date': (deliverable.due_date.strftime(DATE_FORMAT)
                          if deliverable.due_date else ''),
             'Tags': ', '.join(deliverable.tags),
@@ -771,8 +853,10 @@ class DeliverablesBoard(ctk.CTkFrame):
         if column == '#0':
             self._write(deliverable_id, {'name': text}, 'Rename Deliverable')
         elif column == 'Assignee':
-            self._write(deliverable_id, {'assignee': text},
-                        'Set Assignee')
+            names = [part.strip() for part in text.split(',')
+                     if part.strip()]
+            self._write(deliverable_id, {'assignees': names},
+                        'Set Assignees')
         elif column == 'Due Date':
             if not text:
                 due = None
@@ -826,19 +910,77 @@ class DeliverablesBoard(ctk.CTkFrame):
                                       'Set Priority'))
 
     def _open_assignee_menu(self, item: str) -> None:
-        """Offer the resource pool's names, or a typing box if there are none."""
-        names = sorted(
-            resource.name for resource in
-            self.project.resource_repository.resources.values()
+        """
+        Pick the people and teams the row belongs to.
+
+        A checklist rather than the pick-one menu the other choice cells
+        get: a row can belong to several people and to whole teams, so the
+        gesture is tick/untick, not choose one. Free-text names already on
+        the row that match nothing in the pool are listed too, so they can
+        be unticked rather than silently kept.
+        """
+        deliverable = self.project.get_deliverable_by_id(item)
+        if deliverable is None:
+            return
+
+        repository = self.project.resource_repository
+        people = sorted(
+            resource.name for resource in repository.resources.values()
             if getattr(resource, 'name', ''))
-        if not names:
+        teams = sorted(
+            team.name for team in repository.teams.values()
+            if getattr(team, 'name', ''))
+        others = [name for name in deliverable.assignees
+                  if name not in people and name not in teams]
+
+        if not people and not teams and not others:
             self._open_cell_editor(item, 'Assignee')
             return
-        self._open_choice_menu(
-            item, 'Assignee', (NO_ASSIGNEE,) + tuple(names),
-            lambda value: self._write(
-                item, {'assignee': '' if value == NO_ASSIGNEE else value},
-                'Set Assignee'))
+
+        window = ctk.CTkToplevel(self.winfo_toplevel())
+        window.title('Assign to '
+                     f"{deliverable.name or 'deliverable'}")
+        window.geometry('360x340')
+        window.transient(self.winfo_toplevel())
+
+        checked = set(deliverable.assignees)
+        variables: Dict[str, tk.BooleanVar] = {}
+
+        scroller = ctk.CTkScrollableFrame(window)
+        scroller.pack(fill=tk.BOTH, expand=True, padx=12, pady=(12, 6))
+
+        def section(title: str, names) -> None:
+            if not names:
+                return
+            ctk.CTkLabel(
+                scroller, text=title.upper(),
+                font=('Arial', 11, 'bold'), anchor=tk.W,
+            ).pack(fill=tk.X, pady=(8, 2))
+            for name in names:
+                var = variables.setdefault(
+                    name, tk.BooleanVar(value=name in checked))
+                ctk.CTkCheckBox(scroller, text=name, variable=var).pack(
+                    fill=tk.X, pady=1)
+
+        section('People', people)
+        section('Teams', teams)
+        section('Other', others)
+
+        buttons = ctk.CTkFrame(window, fg_color='transparent')
+        buttons.pack(fill=tk.X, padx=12, pady=(0, 12))
+
+        def apply() -> None:
+            chosen = [name for name, var in variables.items()
+                      if var.get()]
+            window.destroy()
+            self._write(item, {'assignees': chosen}, 'Set Assignees')
+
+        ctk.CTkButton(buttons, text='Assign', width=90,
+                      command=apply).pack(side=tk.RIGHT, padx=(6, 0))
+        ctk.CTkButton(buttons, text='Cancel', width=90,
+                      command=window.destroy).pack(side=tk.RIGHT)
+
+        grab_when_visible(window)
 
     def _open_choice_menu(self, item: str, column: str, choices,
                           on_pick) -> None:
@@ -1108,13 +1250,15 @@ class DeliverablesBoard(ctk.CTkFrame):
                 logger.debug("Hierarchy shortcut %s unsupported", sequence)
 
     def _hotkey_indent(self, _event=None):
-        selected = list(self.tree.selection())
+        selected = [i for i in self.tree.selection()
+                    if not self._is_task_row(i)]
         if selected:
             self.indent_deliverables(selected)
         return 'break'
 
     def _hotkey_outdent(self, _event=None):
-        selected = list(self.tree.selection())
+        selected = [i for i in self.tree.selection()
+                    if not self._is_task_row(i)]
         if selected:
             self.outdent_deliverables(selected)
         return 'break'
@@ -1178,7 +1322,7 @@ class DeliverablesBoard(ctk.CTkFrame):
             self._close_cell_editor()
             return
         item = self.tree.identify_row(event.y)
-        if not item:
+        if not item or self._is_task_row(item):
             return
         self._drag_id = item
         self._drag_origin = (event.x, event.y)
@@ -1374,7 +1518,7 @@ class DeliverablesBoard(ctk.CTkFrame):
             order = {name: i for i, name in enumerate(DELIVERABLE_STATUSES)}
             return lambda d: order.get(d.status, 0)
         if column == 'Assignee':
-            return lambda d: (d.assignee or '').lower()
+            return lambda d: ', '.join(d.assignees).lower()
         if column == 'Due Date':
             # Rows without a date sort after dated ones either way round.
             return lambda d: (d.due_date is None,
@@ -1384,6 +1528,8 @@ class DeliverablesBoard(ctk.CTkFrame):
             return lambda d: order.get(d.priority, 0)
         if column == 'Tags':
             return lambda d: ', '.join(d.tags).lower()
+        if column == 'Tasks':
+            return lambda d: len(d.task_ids)
         if column == 'Weight':
             return lambda d: d.weight
         if column == 'Progress':
@@ -1416,6 +1562,9 @@ class DeliverablesBoard(ctk.CTkFrame):
 
     def _open_context_menu(self, item, x_root, y_root) -> None:
         """Build and post the menu for the row it was opened on."""
+        if item and self._is_task_row(item):
+            self._open_task_row_menu(item, x_root, y_root)
+            return
         menu = tk.Menu(self.tree, tearoff=0)
         chosen = self._actionable_ids(item)
         deliverable = (self.project.get_deliverable_by_id(item)
@@ -1810,6 +1959,25 @@ class DeliverablesBoard(ctk.CTkFrame):
         if self.on_project_changed:
             self.on_project_changed()
 
+    def _open_task_row_menu(self, item: str, x_root, y_root) -> None:
+        """
+        The right-click menu on an assigned-task row: it is display, not a
+        deliverable, so all it offers is the one thing it can change -
+        coming off the deliverable it hangs under.
+        """
+        _tag, deliverable_id, task_id = item.split(':', 2)
+        task = self.project.get_task_by_id(task_id)
+        label = (f"Remove '{task.name}' from deliverable"
+                 if task is not None else 'Remove from deliverable')
+        menu = tk.Menu(self.tree, tearoff=0)
+        menu.add_command(
+            label=label,
+            command=lambda: self._unassign_task(deliverable_id, task_id))
+        try:
+            menu.tk_popup(x_root, y_root)
+        finally:
+            menu.grab_release()
+
     def _unassign_task(self, deliverable_id: str, task_id: str) -> None:
         """Take one task off one row - the submenu's one-click remove."""
         def apply() -> bool:
@@ -1984,7 +2152,7 @@ class DeliverablesBoard(ctk.CTkFrame):
                             deliverable.status,
                             deliverable.progress,
                             deliverable.weight,
-                            deliverable.assignee,
+                            ', '.join(deliverable.assignees),
                             ', '.join(
                                 task.name for task in
                                 self.project.tasks_for_deliverable(

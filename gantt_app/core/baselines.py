@@ -39,12 +39,17 @@ def _task_cost(task: Task, repository: ResourceRepository) -> float:
     Work assignments pay the resource or team's hourly rate on the
     allocated hours; material assignments pay the material's Std. Rate
     on the consumed quantity - a fixed units entry outright, a rate
-    entry times the task's duration.
+    entry times the task's duration; a cost-resource assignment pays
+    the amount entered on it, duration-free.
     """
     total = 0.0
     for assignment in (task.resource_assignments or []):
         resource_id = assignment.get("resource_id")
         if not resource_id:
+            continue
+        cost_resource = repository.costs.get(resource_id)
+        if cost_resource is not None:
+            total += float(assignment.get("cost", 0.0) or 0.0)
             continue
         material = repository.materials.get(resource_id)
         if material is not None:
@@ -70,6 +75,32 @@ def _task_cost(task: Task, repository: ResourceRepository) -> float:
         total += overtime * (getattr(entity, "overtime_rate", 0.0) or 0.0)
         total += getattr(entity, "cost_per_use", 0.0) or 0.0
     return total
+
+
+def rolled_task_costs(project) -> Dict[str, float]:
+    """
+    Every task's cost including its descendants', computed in one pass.
+
+    A summary row's cost is the money on its own assignments plus
+    everything below it - the reading MS Project's Cost column gives -
+    so a plan's total spend is the sum over the top-level rows and no
+    assignment is counted twice.
+    """
+    children: Dict[str, list] = {}
+    for task in project.tasks:
+        children.setdefault(task.parent_task_id, []).append(task)
+    repository = project.resource_repository
+    memo: Dict[str, float] = {}
+
+    def roll(task) -> float:
+        if task.id in memo:
+            return memo[task.id]
+        memo[task.id] = 0.0  # a parent ring cannot recurse forever
+        memo[task.id] = _task_cost(task, repository) + sum(
+            roll(child) for child in children.get(task.id, ()))
+        return memo[task.id]
+
+    return {task.id: roll(task) for task in project.tasks}
 
 
 def _working_day_shift(current: Optional[datetime],

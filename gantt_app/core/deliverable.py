@@ -146,7 +146,8 @@ class Deliverable:
         progress: Completion percentage (0-100); rolled up while it has
             children
         weight: How much this row counts in its parent's progress
-        assignee: Who it belongs to - a resource name or free text
+        assignees: Who it belongs to - resource or team names, or free
+            text; several can share a row
         due_date: When it is owed, or None
         priority: One of PRIORITY_LEVELS
         tags: Free-text tags, shown comma-joined
@@ -160,7 +161,7 @@ class Deliverable:
     status: str = 'To Do'
     progress: int = 0
     weight: float = 1.0
-    assignee: str = ""
+    assignees: List[str] = field(default_factory=list)
     due_date: Optional[datetime] = None
     priority: str = DEFAULT_PRIORITY
     tags: List[str] = field(default_factory=list)
@@ -191,8 +192,18 @@ class Deliverable:
 
         self.tags = [str(tag) for tag in (self.tags or []) if str(tag)]
         self.details = str(self.details or '')
-        self.assignee = str(self.assignee or '')
         self.name = str(self.name or '')
+
+        # Assignees arrive as a list of names; a lone string - an older
+        # file, a caller that still speaks the old shape - reads as one.
+        if isinstance(self.assignees, str):
+            self.assignees = [part.strip()
+                              for part in self.assignees.split(',')
+                              if part.strip()]
+        else:
+            self.assignees = [str(name).strip()
+                              for name in (self.assignees or [])
+                              if str(name).strip()]
 
         # Task ids are kept once each, in the order they were assigned.
         seen = set()
@@ -234,7 +245,7 @@ class Deliverable:
             'status': self.status,
             'progress': self.progress,
             'weight': self.weight,
-            'assignee': self.assignee,
+            'assignees': list(self.assignees),
             'due_date': (self.due_date.isoformat()
                          if self.due_date else None),
             'priority': self.priority,
@@ -265,6 +276,13 @@ class Deliverable:
         elif not isinstance(due_date, datetime) and due_date is not None:
             due_date = None
 
+        # Files from before assignees became a list carry a single
+        # 'assignee' string; read it as the one-element list it meant.
+        assignees = data.get('assignees')
+        if assignees is None:
+            legacy = data.get('assignee')
+            assignees = [legacy] if legacy else []
+
         return cls(
             id=str(data.get('id') or uuid.uuid4()),
             name=str(data.get('name') or ''),
@@ -272,7 +290,7 @@ class Deliverable:
             status=data.get('status', 'To Do'),
             progress=data.get('progress', 0),
             weight=data.get('weight', 1.0),
-            assignee=data.get('assignee') or '',
+            assignees=list(assignees),
             due_date=due_date,
             priority=data.get('priority', DEFAULT_PRIORITY),
             tags=list(data.get('tags') or []),

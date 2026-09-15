@@ -146,6 +146,7 @@ class Resource:
     name: str
     resource_type: ResourceType
     role_type: str
+    initials: str = ""
     weekly_capacity_hours: float = 40.0
     cost_per_hour: float = 0.0
     overtime_rate: float = 0.0
@@ -166,6 +167,7 @@ class Resource:
             raise ValueError("Team resources must be represented by TeamPool")
         if not self.id.strip() or not self.name.strip():
             raise ValueError("Resource ID and name are required")
+        self.initials = self.initials.strip()
         if (self.weekly_capacity_hours < 0 or self.cost_per_hour < 0
                 or self.overtime_rate < 0 or self.cost_per_use < 0):
             raise ValueError("Capacity and cost cannot be negative")
@@ -263,6 +265,7 @@ class Resource:
             "name": self.name,
             "resource_type": self.resource_type.value,
             "role_type": self.role_type,
+            "initials": self.initials,
             "weekly_capacity_hours": self.weekly_capacity_hours,
             "cost_per_hour": self.cost_per_hour,
             "overtime_rate": self.overtime_rate,
@@ -418,6 +421,54 @@ class MaterialResource:
         return cls(**values)
 
 
+@dataclass
+class CostResource:
+    """
+    A fixed expenditure: an amount set per assignment, never per unit.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    A cost resource is a named expense - a flight, a permit fee, a hotel
+    stay - whose price depends on where it is spent rather than on how
+    much of it is used. So the sheet row carries identity only: there is
+    no rate, no units and no calendar, and the money is entered on the
+    assignment, which is why the same resource can cost $300 on one task
+    and $800 on the next. ``accrue_at`` says when the expense lands on
+    the task's budget.
+    """
+    id: str
+    name: str
+    initials: str = ""
+    group: str = ""
+    accrue_at: AccrueAt = AccrueAt.PRORATED
+    code: str = ""
+
+    def __post_init__(self):
+        self.accrue_at = AccrueAt.read(self.accrue_at)
+        if not self.id.strip() or not self.name.strip():
+            raise ValueError("Cost resource ID and name are required")
+        self.initials = self.initials.strip()
+        self.group = self.group.strip()
+        self.code = self.code.strip()
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "initials": self.initials,
+            "group": self.group,
+            "accrue_at": self.accrue_at.value,
+            "code": self.code,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CostResource":
+        values = data.copy()
+        values["accrue_at"] = AccrueAt.read(
+            values.get("accrue_at", AccrueAt.PRORATED.value))
+        return cls(**values)
+
+
 #: The period spellings a material assignment's Units accepts after the
 #: quantity: 20 is a fixed amount; 5/d is five units per working day, and
 #: /h and /w are the same rate read per working hour and per working
@@ -499,6 +550,7 @@ class ResourceRepository:
         self.resources: Dict[str, Resource] = {}
         self.teams: Dict[str, TeamPool] = {}
         self.materials: Dict[str, MaterialResource] = {}
+        self.costs: Dict[str, CostResource] = {}
 
     @staticmethod
     def new_id(prefix: str) -> str:
@@ -546,6 +598,15 @@ class ResourceRepository:
         if material:
             logger.info("Removed material %r (%s)", material.name, material_id)
 
+    def add_cost(self, cost: CostResource):
+        self.costs[cost.id] = cost
+        logger.info("Added cost resource %r (%s)", cost.name, cost.id)
+
+    def remove_cost(self, cost_id: str):
+        cost = self.costs.pop(cost_id, None)
+        if cost:
+            logger.info("Removed cost resource %r (%s)", cost.name, cost_id)
+
     def set_team_allocation(self, resource_id: str, team_id: str,
                             percentage: float):
         if resource_id not in self.resources:
@@ -590,6 +651,7 @@ class ResourceRepository:
             "teams": [team.to_dict() for team in self.teams.values()],
             "materials": [material.to_dict()
                           for material in self.materials.values()],
+            "costs": [cost.to_dict() for cost in self.costs.values()],
         }
 
     @classmethod
@@ -605,9 +667,10 @@ class ResourceRepository:
         with temporary.open("w", encoding="utf-8") as stream:
             json.dump(data, stream, indent=4, ensure_ascii=False)
         temporary.replace(self.filepath)
-        logger.info("Saved %d resources, %d teams and %d materials to %s",
-                    len(self.resources), len(self.teams),
-                    len(self.materials), self.filepath)
+        logger.info(
+            "Saved %d resources, %d teams, %d materials and %d cost "
+            "resources to %s", len(self.resources), len(self.teams),
+            len(self.materials), len(self.costs), self.filepath)
 
     def load_from_file(self):
         try:
@@ -617,12 +680,14 @@ class ResourceRepository:
             self.resources = {}
             self.teams = {}
             self.materials = {}
+            self.costs = {}
             logger.info("No resource file at %s; using an empty pool", self.filepath)
             return
         self._load_dict(data)
-        logger.info("Loaded %d resources, %d teams and %d materials from %s",
-                    len(self.resources), len(self.teams),
-                    len(self.materials), self.filepath)
+        logger.info(
+            "Loaded %d resources, %d teams, %d materials and %d cost "
+            "resources from %s", len(self.resources), len(self.teams),
+            len(self.materials), len(self.costs), self.filepath)
 
     def _load_dict(self, data):
         if data is None:
@@ -632,13 +697,16 @@ class ResourceRepository:
         resource_data = data.get("resources", [])
         team_data = data.get("teams", [])
         # Absent from every file written before materials existed; an
-        # empty pool is what those files meant.
+        # empty pool is what those files meant. Costs follow the same
+        # rule for files written before they existed.
         material_data = data.get("materials", [])
+        cost_data = data.get("costs", [])
         if (not isinstance(resource_data, list)
                 or not isinstance(team_data, list)
-                or not isinstance(material_data, list)):
+                or not isinstance(material_data, list)
+                or not isinstance(cost_data, list)):
             raise ValueError(
-                "Resources, teams and materials must be JSON arrays")
+                "Resources, teams, materials and costs must be JSON arrays")
         try:
             resources = {
                 item["id"]: Resource.from_dict(item)
@@ -652,11 +720,16 @@ class ResourceRepository:
                 item["id"]: MaterialResource.from_dict(item)
                 for item in material_data
             }
+            costs = {
+                item["id"]: CostResource.from_dict(item)
+                for item in cost_data
+            }
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("Resource settings have an invalid structure") from error
         self.resources = resources
         self.teams = teams
         self.materials = materials
+        self.costs = costs
 
     def named_resources(self, excluding: Optional[str] = None) -> List[Resource]:
         return [

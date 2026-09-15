@@ -36,7 +36,7 @@ Duration per Item
     One bar per row, its own length. Which pieces are big.
 
 Summary
-    The five numbers underneath all of it; see kpi_metrics.
+    The eight numbers underneath all of it; see kpi_metrics.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -56,6 +56,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import customtkinter as ctk
 
 from gantt_app.views import theme
+from gantt_app.core.baselines import rolled_task_costs
 from gantt_app.core.models import Project, TASK_TYPES
 from gantt_app.utils.log import get_logger
 
@@ -93,6 +94,7 @@ def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
         return []
 
     rows = []
+    costs = rolled_task_costs(project)
     for task in project.tasks:
         rows.append({
             'ID': task.id,
@@ -102,6 +104,7 @@ def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
             'Duration': task.duration_days or 0,
             'Progress': task.progress or 0,
             'Level': _level_of(task, project),
+            'Cost': costs.get(task.id, 0.0),
         })
     return rows
 
@@ -176,7 +179,7 @@ def duration_by_type(rows: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
 
 def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    The six numbers in the summary box.
+    The eight numbers in the summary box.
 
     RETURNS:
     --------
@@ -184,6 +187,8 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         total_scope      - days held by the top-level rows
         total_items      - how many rows there are
         milestones       - how many of them are milestones
+        total_cost       - the plan's whole spend: rolled-up Cost summed
+                           over the top-level rows
         completion       - weighted_progress over the same rows
         active_share     - percentage of rows marked Active
         estimated_share  - percentage marked Estimated
@@ -227,6 +232,9 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         'total_items': len(rows),
         'milestones': len([row for row in rows
                            if row['Type'] == 'Milestone']),
+        # Rolled up, so the top-level rows' costs are the plan's whole
+        # spend with nothing counted twice
+        'total_cost': sum(row.get('Cost', 0.0) for row in top),
         'completion': weighted_progress(rows),
         'active_share': active_share,
         'estimated_share': estimated_share,
@@ -592,7 +600,7 @@ class ProjectDashboardFrame(ctk.CTkFrame):
 
     def _draw_summary(self, rows, x, y, width, height):
         """
-        The seven figures, in a box of their own.
+        The eight figures, in a box of their own.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -616,6 +624,7 @@ class ProjectDashboardFrame(ctk.CTkFrame):
             ("Milestones Count",
              f"{metrics['milestones']} "
              f"{self._plural('Milestone', metrics['milestones'])}"),
+            ("Total Committed Cost", f"${metrics['total_cost']:g}"),
             ("Overall Completion", f"{metrics['completion']:.2f}%"),
             ("Active Status", f"{metrics['active_share']:.0f}% Active"),
             ("Estimated Status",

@@ -943,6 +943,11 @@ GUIDE_SECTIONS = (
             "project JSON as the tasks. Close leaves the in-memory changes in "
             "the plan, so the ordinary File > Save also writes them.",
 
+            "A named resource's editor also takes an Initials field under "
+            "the name - the person's short form, for cramped views - which "
+            "is hidden when the type is Generic, since a placeholder role "
+            "has no initials to shorten.",
+
             "A named resource's editor carries the cost fields a work "
             "resource has in MS Project: the Std. Rate it is paid per "
             "hour, an Ovt. Rate for hours booked as overtime, a Cost per "
@@ -974,6 +979,26 @@ GUIDE_SECTIONS = (
             "a longer task consumes - and costs - more. The row shows the "
             "consumed quantity and cost live, and the cost the project "
             "reports for the task is quantity x Standard Rate.",
+
+            "The Cost tab holds fixed expenditures: named expenses like "
+            "flights, hotel stays, permit fees or training costs that are "
+            "spent rather than worked or consumed. A cost resource carries "
+            "no rate, units, schedule or calendar - its amount depends on "
+            "where it is spent, so the sheet row is identity only (name, "
+            "initials, group, Accrue At, code) and the money is entered on "
+            "each assignment instead.",
+
+            "Cost resources are assigned from the Resource tab like "
+            "everything else - marked [COST] in the picker - and a cost row "
+            "takes two amounts: the planned Cost and, for tracking, the "
+            "Actual spent. Unlike other resources the same one can be "
+            "assigned twice on a task - Flight $300 for one traveller and "
+            "Flight $350 for the next are separate expense lines. Dragging "
+            "a cost resource onto a task on the Resource Board asks for the "
+            "amount on the spot. A task's cost is the sum of all its "
+            "assignments, a summary task's includes its children, and the "
+            "dashboard's Summary box shows the plan's Total Committed "
+            "Cost.",
 
             "A Generic resource may be left unnamed. It is named from its "
             "role, such as DevOps Placeholder #1, and can later be replaced "
@@ -1099,6 +1124,29 @@ GUIDE_SECTIONS = (
             "percentages. The colour bands and the heatmap update "
             "immediately. Overbooked resources are shown in red.",
 
+            "While the Resource Planning tab is on top, the ribbon's View "
+            "page gains a Resources group with the Usage Grid toggle. The "
+            "toggle swaps the matrix for a resource-as-tree grid - the "
+            "same view MS Project calls Resource Usage - and pressing it "
+            "again brings the matrix back.",
+
+            "The usage grid lists the pool in sections: teams first, then "
+            "generic placeholders, named people, materials and cost "
+            "resources. Every entity expands to the tasks assigned to it, "
+            "drawn as read-only rows with the task's own number, type and "
+            "progress bar. A person who belongs to a team also shows under "
+            "it, in italic - the team row is a lens onto its members, not "
+            "a folder that moves them out of their own section.",
+
+            "The + New button creates a named resource, generic resource, "
+            "team, material or cost resource through the same editors the "
+            "Resource Settings window uses, and double-clicking a row "
+            "opens that editor for the row. Right-click offers Assign "
+            "Tasks - a checklist of the plan where ticked means assigned - "
+            "and a task row's own menu removes it from the resource. "
+            "Everything the grid changes is one Undo step, pool edits "
+            "included.",
+
             "The view follows the active day/night theme. Switching the "
             "theme repaints every panel at once.",
         ],
@@ -1148,8 +1196,11 @@ GUIDE_SECTIONS = (
             "collapse a branch.",
 
             "Double-click a cell to edit it - names, tags, due dates, "
-            "weights and progress take typing, while status, priority "
-            "and assignee offer pick lists. Click a column heading to "
+            "weights and progress take typing, while status and priority "
+            "offer pick lists. The Assignee cell opens a checklist "
+            "instead: a row can belong to several people and to whole "
+            "teams at once, so the picker ticks any number of them. "
+            "Click a column heading to "
             "sort by it within each group; click again to reverse. The "
             "filter box and the status dropdown narrow the rows, keeping "
             "the parents of whatever matched so context is never lost.",

@@ -667,10 +667,11 @@ def _work_assignments(task) -> list:
     The assignments the effort engine reconciles.
 
     Material assignments carry a units quantity, not hours or a split -
-    they consume stock, not time - so they stay out of the work math.
+    they consume stock, not time - and cost assignments carry an amount,
+    so both stay out of the work math.
     """
     return [a for a in task.resource_assignments
-            if a.get('kind') != 'material']
+            if a.get('kind') not in ('material', 'cost')]
 
 
 def state_from_task(task, hours_per_day: float = DEFAULT_HOURS_PER_DAY) -> EffortState:

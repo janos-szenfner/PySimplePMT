@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.71.3 - 2026-09-15
+
+- **Resource Planning gained a Usage Grid.** A context-sensitive View
+  ribbon toggle - offered only while the Resource Planning tab is on
+  top - swaps the allocation matrix for a tree of the whole pool: teams
+  first, then generic, named, material and cost resources, with team
+  members mirrored under their team in italic. Assigned tasks nest
+  beneath each resource as read-only rows; a New menu creates resources
+  through the existing editors, the picker assigns tasks to a resource,
+  and every change - create, edit, delete, assign, remove - rides undo.
+  The same button drops back to the matrix with its sashes intact.
+
+- **Cost resources.** A fourth resource kind for fixed task expenses -
+  flights, permits, fees - with no rate, units or calendar. The amount
+  is entered per assignment, so one resource can cost differently on
+  each task, and the same resource may appear twice on a task as
+  independent expense lines. Costs feed the baseline's Cost and Cost
+  Variance fields, roll up into the dashboard's committed-cost total,
+  and can be dragged or clicked onto tasks from the pool.
+
+- **Named resources carry initials.** A text field under the name in
+  the resource editor, shown only for named resources, kept through
+  save and load.
+
 ## 1.71.2 - 2026-09-15
 
 - **The Assign Tasks dialog opens with its list now.** A misspelled

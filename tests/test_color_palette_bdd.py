@@ -6,9 +6,9 @@ Run with:
 
 These tests require a display for widget tests.
 """
-import re
 import tkinter as tk
 from datetime import datetime, timedelta
+from tkinter import colorchooser
 
 import customtkinter as ctk
 import pytest
@@ -16,7 +16,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from gantt_app.core.models import Project, Task
 from gantt_app.views.colorpicker import (
-    ColorEntry, FULL_PALETTE, DEFAULT_COLOR, normalise,
+    ColorEntry, DEFAULT_COLOR, normalise,
 )
 
 
@@ -36,44 +36,6 @@ pytestmark = [
 ]
 
 scenarios("features/color_palette.feature")
-
-
-# ---------------------------------------------------------------------------
-# What the palette holds, which needs no display
-# ---------------------------------------------------------------------------
-
-@when("checking all palette entries", target_fixture="palette_entries")
-def checking_all_palette_entries():
-    """The palette, for the Then steps to look through."""
-    return FULL_PALETTE
-
-
-@then("every entry value should be a valid hex color")
-def check_every_entry_is_hex_color(palette_entries):
-    """A swatch that is not a colour draws nothing."""
-    for value, _name in palette_entries:
-        assert re.match(r'^#[0-9a-f]{6}$', value), f"{value} is not a colour"
-
-
-@then("every entry should have a non-empty name")
-def check_every_entry_has_name(palette_entries):
-    """The name is the tooltip; an empty one says nothing."""
-    for value, name in palette_entries:
-        assert name.strip(), f"{value} has no name"
-
-
-@then("there should be no duplicate color values")
-def check_no_duplicate_colors(palette_entries):
-    """Two swatches of one colour is one swatch and a puzzle."""
-    values = [value for value, _name in palette_entries]
-    assert len(values) == len(set(values))
-
-
-@then(parsers.parse('the palette should contain "{color}"'))
-def check_palette_contains_color(palette_entries, color):
-    """The colours the application itself opens rows in."""
-    values = {value for value, _name in palette_entries}
-    assert color in values, f"{color} is not in the palette"
 
 
 # ---------------------------------------------------------------------------
@@ -233,79 +195,41 @@ def check_result_is_default_color(result):
 
 
 # ---------------------------------------------------------------------------
-# The picker the entry opens
+# The picker the entry opens - the platform's own chooser, stubbed
 # ---------------------------------------------------------------------------
 
-@when("opening the color picker", target_fixture="popup")
-@when("opening the picker", target_fixture="popup")
-def opening_the_picker(widget):
-    """The swatch grid."""
-    return widget.open_picker()
+@pytest.fixture
+def chooser_calls():
+    """What the stubbed colour chooser was asked with."""
+    return []
 
 
-@when("opening the picker first time", target_fixture="first")
-def opening_the_picker_first_time(widget):
-    """Once."""
-    return widget.open_picker()
+@when(parsers.parse('opening the picker and the chooser answers "{color}"'))
+def opening_picker_chooses(widget, monkeypatch, chooser_calls, color):
+    """The chooser comes back with the colour the scenario names."""
+    def fake_askcolor(**options):
+        chooser_calls.append(options)
+        return ((0, 0, 0), color)
+
+    monkeypatch.setattr(colorchooser, 'askcolor', fake_askcolor)
+    widget.open_picker()
 
 
-@when("opening the picker second time", target_fixture="second")
-def opening_the_picker_second_time(widget):
-    """And again, which must not build a second window."""
-    return widget.open_picker()
+@when("opening the picker and the chooser is cancelled")
+def opening_picker_cancelled(widget, monkeypatch, chooser_calls):
+    """Closing it without choosing is a (None, None) answer."""
+    def fake_askcolor(**options):
+        chooser_calls.append(options)
+        return (None, None)
+
+    monkeypatch.setattr(colorchooser, 'askcolor', fake_askcolor)
+    widget.open_picker()
 
 
-@when("opening the picker and updating", target_fixture="popup")
-def opening_the_picker_and_updating(widget):
-    """Opened and laid out, so its size can be read."""
-    popup = widget.open_picker()
-    popup.update_idletasks()
-    return popup
-
-
-@then("the popup should be None")
-def check_popup_is_none(widget):
-    """Nothing is built until somebody asks for it."""
-    assert widget._popup is None
-
-
-@then("the popup should have buttons for all palette entries")
-def check_popup_has_all_buttons(popup):
-    """Every colour is reachable."""
-    assert len(popup._buttons) == len(FULL_PALETTE)
-
-
-@then("both open calls should return the same popup")
-def check_same_popup(first, second):
-    """Opening it twice reuses the window."""
-    assert first is second
-
-
-@then("the popup width should be at least the grid frame required width")
-def check_popup_width(popup):
-    """It opens at the size of what is in it."""
-    assert int(popup._canvas.cget('width')) >= \
-        popup._grid_frame.winfo_reqwidth()
-
-
-@then("the popup height should be at least the grid frame required height")
-def check_popup_height(popup):
-    """The same, the other way up."""
-    assert int(popup._canvas.cget('height')) >= \
-        popup._grid_frame.winfo_reqheight()
-
-
-@then("the scrollbar should not be visible")
-def check_scrollbar_not_visible(popup):
-    """A palette that fits needs none."""
-    assert popup._scrollbar.winfo_manager() == ""
-
-
-@then("the swatch buttons should have mouse wheel binding")
-def check_swatch_mousewheel_binding(popup):
-    """The wheel scrolls the grid rather than stopping on a swatch."""
-    swatch = next(iter(popup._buttons.values()))
-    assert swatch.bind('<MouseWheel>')
+@then(parsers.parse('the chooser should have opened on "{color}"'))
+def check_chooser_opened_on(chooser_calls, color):
+    """It is seeded with the colour the entry shows."""
+    assert chooser_calls and chooser_calls[0].get('color') == color
 
 
 # ---------------------------------------------------------------------------

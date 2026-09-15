@@ -1,26 +1,5 @@
-Feature: Color palette functionality
-  Tests for the color picker and column sizing functionality.
-
-  # PALETTE CONTENT TESTS (no display needed)
-
-  Scenario: Every palette entry is a hex color
-    When checking all palette entries
-    Then every entry value should be a valid hex color
-
-  Scenario: Every palette entry is named
-    When checking all palette entries
-    Then every entry should have a non-empty name
-
-  Scenario: No duplicate colors in palette
-    When checking all palette entries
-    Then there should be no duplicate color values
-
-  Scenario: Application default colors are included in palette
-    When checking all palette entries
-    Then the palette should contain "#3498db"
-    And the palette should contain "#9b59b6"
-    And the palette should contain "#e74c3c"
-    And the palette should contain "#1f6aa5"
+Feature: Color entry functionality
+  Tests for the color entry and column sizing functionality.
 
   # COLOR ENTRY WIDGET TESTS (need display)
 
@@ -75,39 +54,18 @@ Feature: Color palette functionality
     When normalizing None
     Then the result should be the default color
 
-  # PALETTE BUILDING TESTS (need display)
+  # THE PICKER (needs a display; the system chooser itself is stubbed)
 
-  Scenario: No popup until color picker is asked for
-    Given a color entry widget
-    When the widget is created
-    Then the popup should be None
+  Scenario: The picker opens the system colour chooser on the current color
+    Given a color entry widget with color "#2ecc71"
+    When opening the picker and the chooser answers "#e74c3c"
+    Then the chooser should have opened on "#2ecc71"
+    And the widget color should be "#e74c3c"
 
-  Scenario: Opening picker builds the palette
-    Given a color entry widget
-    When opening the color picker
-    Then the popup should have buttons for all palette entries
-
-  Scenario: Opening picker twice reuses the same window
-    Given a color entry widget
-    When opening the picker first time
-    And opening the picker second time
-    Then both open calls should return the same popup
-
-  Scenario: Palette opens at size of palette
-    Given a color entry widget
-    When opening the picker and updating
-    Then the popup width should be at least the grid frame required width
-    And the popup height should be at least the grid frame required height
-
-  Scenario: Palette that fits shows no scrollbar
-    Given a color entry widget
-    When opening the picker and updating
-    Then the scrollbar should not be visible
-
-  Scenario: Mouse wheel is bound to swatches
-    Given a color entry widget
-    When opening the picker
-    Then the swatch buttons should have mouse wheel binding
+  Scenario: Cancelling the chooser keeps the color
+    Given a color entry widget with color "#2ecc71"
+    When opening the picker and the chooser is cancelled
+    Then the widget color should be "#2ecc71"
 
   # DIALOG COLOR PICKING TESTS (need display)
 

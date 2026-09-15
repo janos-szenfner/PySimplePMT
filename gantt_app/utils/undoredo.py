@@ -80,6 +80,7 @@ from typing import Dict, Optional, List, Callable
 import copy
 
 from gantt_app.core.models import Project, Task
+from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -518,7 +519,10 @@ class SnapshotCommand(Command):
     The deliverables are in there too: a task action can reach them - a
     delete prunes the removed id out of every deliverable's task_ids and
     re-rolls their progress - so the other collection is restored with the
-    same before/after pair rather than left as the action had it.
+    same before/after pair rather than left as the action had it. The
+    resource pool and each task's assignments are in there for the same
+    reason: the usage grid's delete removes an entity and prunes it out of
+    every task's resource_assignments in one gesture.
     """
 
     #: What an action recorded this way can change about a row, and so what
@@ -567,7 +571,11 @@ class SnapshotCommand(Command):
         tasks = [
             (task,
              {name: getattr(task, name) for name in self.FIELDS},
-             [copy.copy(link) for link in task.dependencies])
+             [copy.copy(link) for link in task.dependencies],
+             # Copied entry by entry, not aliased: an action can edit the
+             # list in place, and a snapshot holding the live list would
+             # be edited with it.
+             [dict(a) for a in task.resource_assignments])
             for task in self.project.tasks
         ]
         deliverables = [
@@ -576,20 +584,23 @@ class SnapshotCommand(Command):
               for name in DeliverableSnapshotCommand.FIELDS})
             for deliverable in self.project.deliverables
         ]
-        return tasks, deliverables
+        pool = copy.deepcopy(self.project.resource_repository.to_dict())
+        return tasks, deliverables, pool
 
     def _restore(self, snapshot: tuple) -> None:
         """Put back a snapshot taken by _snapshot."""
-        tasks, deliverables = snapshot
+        tasks, deliverables, pool = snapshot
         self.project.tasks = [row[0] for row in tasks]
-        for task, fields, links in tasks:
+        for task, fields, links, assignments in tasks:
             for name, value in fields.items():
                 setattr(task, name, value)
             task.dependencies = [copy.copy(link) for link in links]
+            task.resource_assignments = [dict(a) for a in assignments]
         self.project.deliverables = [row[0] for row in deliverables]
         for deliverable, fields in deliverables:
             for name, value in fields.items():
                 setattr(deliverable, name, copy.copy(value))
+        _restore_pool(self.project, pool)
         self.project._update_dates()
 
 
@@ -623,7 +634,7 @@ class DeliverableSnapshotCommand(Command):
     #: What an action recorded this way can change about a deliverable, and
     #: so what has to be put back. The whole row, less the identity.
     FIELDS = ('name', 'parent_id', 'status', 'progress', 'weight',
-              'assignee', 'due_date', 'priority', 'tags', 'details',
+              'assignees', 'due_date', 'priority', 'tags', 'details',
               'task_ids')
 
     project: Project
@@ -672,6 +683,87 @@ class DeliverableSnapshotCommand(Command):
         for deliverable, fields in snapshot:
             for name, value in fields.items():
                 setattr(deliverable, name, copy.copy(value))
+
+
+def _restore_pool(project: Project, data: dict) -> None:
+    """
+    Put a serialized resource pool back, keeping the repository's identity.
+
+    The swap is in place rather than a new ResourceRepository on the
+    project: the settings window and the boards hold the repository the
+    project was built with, and re-pointing it would leave them reading
+    the pool undo replaced.
+    """
+    loaded = ResourceRepository.from_dict(copy.deepcopy(data or {}))
+    repo = project.resource_repository
+    repo.resources = loaded.resources
+    repo.teams = loaded.teams
+    repo.materials = loaded.materials
+    repo.costs = loaded.costs
+
+
+@dataclass
+class ResourcePoolSnapshotCommand(Command):
+    """
+    Command that records whatever one action did to the resource pool.
+
+    PARAMETERS:
+    -----------
+    project : Project
+        The project whose resource_repository the action changes.
+    apply : Callable[[], bool]
+        The action. Returns False when it changed nothing.
+    label : str
+        What to call the change in the undo history.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The SnapshotCommand reading pointed at the pool. The pool is already
+    serialized whole - to_dict/from_dict is the repository's own round
+    trip - so the honest before/after is the serialized form rather than
+    a picked set of fields on each entity.
+
+    A command can also be pre-seeded with _before/_after - the modal
+    editors write through the repository themselves, so the grid records
+    what they did instead of running the change a second time. See
+    ProjectStateTracker.record_resource_pool_change.
+    """
+
+    project: Project
+    apply: Callable[[], bool]
+    label: str = "Change Resource Pool"
+    name: str = field(default="", init=False)
+    _before: Optional[dict] = field(default=None, init=False, repr=False)
+    _after: Optional[dict] = field(default=None, init=False, repr=False)
+
+    def __post_init__(self):
+        self.name = self.label
+
+    def execute(self) -> bool:
+        """Run the action the first time; put its result back on a redo."""
+        if self._after is not None:
+            _restore_pool(self.project, self._after)
+            return True
+
+        before = self._snapshot()
+        if not self.apply():
+            return False
+
+        self._before = before
+        self._after = self._snapshot()
+        return True
+
+    def undo(self) -> bool:
+        """Put the pool back as it was before the action."""
+        if self._before is None:
+            return False
+        _restore_pool(self.project, self._before)
+        return True
+
+    def _snapshot(self) -> dict:
+        """The whole pool, serialized - fresh data nothing else mutates."""
+        return copy.deepcopy(
+            self.project.resource_repository.to_dict())
 
 
 @dataclass
@@ -1122,6 +1214,17 @@ def create_deliverable_snapshot_command(
     return DeliverableSnapshotCommand(project, apply, label)
 
 
+def create_resource_pool_snapshot_command(
+        project: Project, apply: Callable[[], bool],
+        label: str = "Change Resource Pool") -> ResourcePoolSnapshotCommand:
+    """
+    Create a command that records whatever an action did to the pool.
+
+    The pool reading of create_snapshot_command - see it for the shape.
+    """
+    return ResourcePoolSnapshotCommand(project, apply, label)
+
+
 def create_compound_command(commands: List[Command], name: str = "Compound Command") -> CompoundCommand:
     """
     Create a compound command from multiple commands.
@@ -1412,6 +1515,63 @@ class ProjectStateTracker:
         """
         return self.manager.execute(
             create_deliverable_snapshot_command(self.project, apply, label))
+
+    def run_resource_as_command(self, apply: Callable[[], bool],
+                                label: str = "Change Resource Pool") -> bool:
+        """
+        Run an action that rewrites the resource pool, as one undoable step.
+
+        PARAMETERS:
+        -----------
+        apply : Callable[[], bool]
+            The action. Returns False when it changed nothing, in which case
+            nothing is added to the history.
+        label : str
+            What to call the change in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            What apply returned: True when the action did something.
+        """
+        return self.manager.execute(
+            create_resource_pool_snapshot_command(self.project, apply,
+                                                  label))
+
+    def record_resource_pool_change(self, before: dict,
+                                    label: str = "Change Resource Pool"
+                                    ) -> bool:
+        """
+        Record a pool change that already happened, as one undoable step.
+
+        PARAMETERS:
+        -----------
+        before : dict
+            resource_repository.to_dict() taken before the change ran.
+        label : str
+            What to call the change in the undo history.
+
+        RETURNS:
+        --------
+        bool
+            True when the pool actually changed and an entry was made.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        For changes whose write is not separable from their trigger - the
+        resource editor modals save through the repository themselves, so
+        the undoable unit is what they did, not an action to run again.
+        Executing the pre-seeded command re-applies the after state, which
+        is the same state already in place.
+        """
+        after = self.project.resource_repository.to_dict()
+        if before == after:
+            return False
+        command = create_resource_pool_snapshot_command(
+            self.project, lambda: True, label)
+        command._before = before
+        command._after = after
+        return self.manager.execute(command)
 
     def restructure_tasks(self, old_snapshot, new_snapshot,
                           label: str = "Restructure Tasks") -> bool:
