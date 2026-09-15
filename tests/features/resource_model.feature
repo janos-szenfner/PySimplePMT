@@ -177,3 +177,84 @@ Feature: Resource model functionality
     Given a resource repository with missing file
     Then resources should be empty
     And teams should be empty
+  @resource_model
+  Scenario: Material round trip preserves the sheet's fields
+    Given a material resource with label initials group rate accrual and code
+    When serialized to dict and deserialized back as material
+    Then the restored material should equal the original
+
+  @resource_model
+  Scenario: Material rejects a negative standard rate
+    When a material with a negative standard rate is built
+    Then a ValueError was raised for the material
+
+  @resource_model
+  Scenario: Material requires a name
+    When a material with an empty name is built
+    Then a ValueError was raised for the material
+
+  @resource_model
+  Scenario: An unknown accrue at value reads as prorated
+    When a material dict with an unknown accrue at value is loaded
+    Then the material accrual should be prorated
+
+  @resource_model
+  Scenario: Repository persists and loads materials
+    Given a resource repository with a material for persistence test
+    Then materials should be preserved
+
+  @resource_model
+  Scenario: A file without a materials section loads an empty material pool
+    When a repository dict without a materials section is loaded
+    Then the materials pool should be empty
+
+  @resource_model
+  Scenario: A saved project keeps its material pool
+    Given a project holding a material resource
+    When the project is saved to a dict and read back
+    Then the material should still be in its pool
+
+  @resource_model
+  Scenario: Material units parse a fixed quantity
+    When the material units "20" are parsed
+    Then the parsed units should be 20.0 with no period
+
+  @resource_model
+  Scenario: Material units parse a daily rate
+    When the material units "5/d" are parsed
+    Then the parsed units should be 5.0 per "d"
+
+  @resource_model
+  Scenario: Material units reject malformed input
+    When the malformed material units "soon" are parsed
+    Then a ValueError was raised for the units
+
+  @resource_model
+  Scenario: A fixed material quantity ignores task duration
+    Given a material assignment of "20" on a ten-day task
+    Then the consumed quantity should be 20.0
+
+  @resource_model
+  Scenario: A daily material rate scales with task duration
+    Given a material assignment of "5/d" on a ten-day task
+    Then the consumed quantity should be 50.0
+    And the assignment cost should be quantity times the standard rate
+
+  @resource_model
+  Scenario: Material assignments stay out of the effort engine
+    Given a task with a work assignment and a material assignment
+    When the effort state is built and written back
+    Then the state should hold only the work assignment
+    And the material assignment should be untouched
+
+  @resource_model
+  Scenario: A task's cost includes its material consumption
+    Given a task with a "5/d" material assignment at fifty a unit
+    When the task cost is computed
+    Then the cost should be 250.0
+
+  @resource_model
+  Scenario: A task dict keeps its material assignment
+    Given a task carrying a material assignment
+    When the task is saved to a dict and read back
+    Then the restored assignment should still be a material with its units

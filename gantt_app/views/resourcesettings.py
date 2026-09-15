@@ -10,8 +10,8 @@ from gantt_app.utils.shortcuts import (
     IS_MACOS, any_key_with, bind_all, is_key, modifiers_held,
 )
 from gantt_app.core.resource_model import (
-    DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, DaysOffRange, Resource,
-    ResourceType, SchedulePattern, TeamPool,
+    DAYS, DAY_LABELS, FTE_WEEKLY_HOURS, AccrueAt, DaysOffRange,
+    MaterialResource, Resource, ResourceType, SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,
 )
 from gantt_app.utils.log import get_logger
@@ -1016,6 +1016,110 @@ class TeamEditorModal(BaseEditorModal):
         self.destroy()
 
 
+class MaterialEditorModal(BaseEditorModal):
+    """
+    The material editor: units and a per-unit rate, no calendar.
+
+    A material is used up rather than worked, so the resource editor's
+    whole other half does not exist here - there is no capacity, no
+    schedule pattern, no overtime and no days off to fill in. The one
+    tab carries MS Project's material fields: the Material Label is the
+    unit the quantity is counted in, the Standard Rate is the cost of
+    one of those units, and Accrue At decides when an assignment's cost
+    lands on the task's budget.
+    """
+
+    GEOMETRY = "620x520"
+
+    def __init__(self, master, repo, material=None, on_apply=None):
+        self.repo = repo
+        self.material = material
+        title = (f"Material Editor: {material.name}" if material
+                 else "Create Material")
+        super().__init__(master, title, ("General",), on_apply)
+        self._build_general()
+        if material:
+            self._load_material()
+
+    def _build_general(self):
+        tab = self.tabs["General"]
+        tab.grid_columnconfigure(1, weight=1)
+        self.name_entry = ctk.CTkEntry(tab)
+        _field(tab, "Resource Name", self.name_entry, 0)
+        type_box = ctk.CTkOptionMenu(tab, values=["Material"], state="disabled")
+        type_box.set("Material")
+        _field(tab, "Type", type_box, 1)
+        self.label_entry = ctk.CTkEntry(
+            tab, placeholder_text="e.g. Bags, Tons, Gallons")
+        _field(tab, "Material Label", self.label_entry, 2)
+        self.initials_entry = ctk.CTkEntry(
+            tab, placeholder_text="e.g. CONC")
+        _field(tab, "Initials", self.initials_entry, 3)
+        self.group_entry = ctk.CTkEntry(
+            tab, placeholder_text="e.g. Building Supplies")
+        _field(tab, "Group", self.group_entry, 4)
+        self.rate_entry = ctk.CTkEntry(
+            tab, placeholder_text="Cost per unit, e.g. 3.50")
+        _field(tab, "Standard Rate ($)", self.rate_entry, 5)
+        self.accrue_menu = ctk.CTkOptionMenu(
+            tab, values=[mode.value for mode in AccrueAt])
+        self.accrue_menu.set(AccrueAt.PRORATED.value)
+        _field(tab, "Accrue At", self.accrue_menu, 6)
+        self.code_entry = ctk.CTkEntry(
+            tab, placeholder_text="Accounting / inventory code")
+        _field(tab, "Code", self.code_entry, 7)
+        ctk.CTkLabel(
+            tab, justify=tk.LEFT, anchor=tk.W, wraplength=380,
+            text_color=theme.now(theme.MUTED_TEXT),
+            text=("Materials are consumables: they have no working "
+                  "hours, schedule or calendar, so capacity, overtime "
+                  "and days off do not apply.")).grid(
+                      row=8, column=0, columnspan=2, padx=12,
+                      pady=(12, 6), sticky="w")
+
+    def _load_material(self):
+        _set_entry(self.name_entry, self.material.name)
+        _set_entry(self.label_entry, self.material.material_label)
+        _set_entry(self.initials_entry, self.material.initials)
+        _set_entry(self.group_entry, self.material.group)
+        _set_entry(self.rate_entry, f"{self.material.cost_per_unit:g}")
+        self.accrue_menu.set(self.material.accrue_at.value)
+        _set_entry(self.code_entry, self.material.code)
+
+    def save_and_apply(self):
+        name = self.name_entry.get().strip()
+        if not name:
+            self.fail("Resource Name is required.")
+            return
+        try:
+            rate = _number(self.rate_entry, "Standard rate")
+        except ValueError as error:
+            self.fail(str(error))
+            return
+        fields = dict(
+            name=name,
+            material_label=self.label_entry.get(),
+            initials=self.initials_entry.get(),
+            group=self.group_entry.get(),
+            cost_per_unit=rate,
+            accrue_at=AccrueAt.read(self.accrue_menu.get()),
+            code=self.code_entry.get())
+        if self.material:
+            material = self.material
+            for key, value in fields.items():
+                setattr(material, key, value)
+            material.__post_init__()
+            logger.info("Updated material %r (%s)", material.name,
+                        material.id)
+        else:
+            material = MaterialResource(id=self.repo.new_id("mat"),
+                                        **fields)
+            self.repo.add_material(material)
+        if self.on_apply:
+            self.on_apply(material.id)
+        self.destroy()
+
+
 class ResourceSettingsWindow(ctk.CTkToplevel):
     GEOMETRY = "1250x760"
     RESOURCE_COLUMNS = (
@@ -1038,6 +1142,16 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         ("Member Count", 100, 1, tk.W),
         ("Daily Summary", 150, 2, tk.W),
     )
+    MATERIAL_COLUMNS = (
+        ("#", 45, 0, tk.CENTER),
+        ("Material Name", 190, 3, tk.W),
+        ("Material Label", 110, 1, tk.W),
+        ("Initials", 70, 0, tk.W),
+        ("Group", 150, 2, tk.W),
+        ("Std. Rate", 90, 1, tk.W),
+        ("Accrue At", 95, 1, tk.W),
+        ("Code", 110, 1, tk.W),
+    )
 
 
     def __init__(self, master, repo, active_project_ids=None,
@@ -1050,10 +1164,12 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.on_save = on_save
         self.selected_resource_id = None
         self.selected_team_id = None
+        self.selected_material_id = None
         self.resource_rows = []
         self.team_rows = []
+        self.material_rows = []
         self.clipboard = None
-        self.title("Resource Settings - Manage Resources & Teams")
+        self.title("Resource Settings - Manage Resources, Teams & Materials")
         self.geometry(self.GEOMETRY)
         self.minsize(1050, 620)
         self.transient(master.winfo_toplevel())
@@ -1063,12 +1179,16 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.tabview.pack(fill=tk.BOTH, expand=True, padx=14, pady=14)
         self.tab_resources = self.tabview.add("Resources")
         self.tab_teams = self.tabview.add("Teams")
+        self.tab_materials = self.tabview.add("Material")
         self._build_resources_tab()
         self._build_teams_tab()
+        self._build_materials_tab()
         self._refresh_resources()
         self._refresh_teams()
-        logger.info("Opened Resource Settings with %d resources and %d teams",
-                    len(repo.resources), len(repo.teams))
+        self._refresh_materials()
+        logger.info("Opened Resource Settings with %d resources, %d teams "
+                    "and %d materials",
+                    len(repo.resources), len(repo.teams), len(repo.materials))
 
         # Follow theme changes. The DataGrid's field background comes from the
         # global ttk style, which the application re-colours; its row banding
@@ -1081,9 +1201,10 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         grab_when_visible(self)
 
     def _apply_theme(self, _mode=None, _appearance=None):
-        """Re-tag both grids so their rows follow a theme change."""
+        """Re-tag the grids so their rows follow a theme change."""
         for grid in (getattr(self, 'resource_grid', None),
-                     getattr(self, 'team_grid', None)):
+                     getattr(self, 'team_grid', None),
+                     getattr(self, 'material_grid', None)):
             if grid is None:
                 continue
             try:
@@ -1135,6 +1256,27 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.tab_teams, self.TEAM_COLUMNS, self._select_team,
             on_double_click=self._edit_team, border_width=1)
         self.team_grid.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+
+    def _build_materials_tab(self):
+        footer = self._footer(
+            self.tab_materials, "Create New Material", self._create_material,
+            self._edit_material, self._delete_material, "material")
+        self.material_footer = footer
+        filters = ctk.CTkFrame(self.tab_materials, fg_color="transparent")
+        filters.pack(fill=tk.X, padx=6, pady=(6, 4))
+        ctk.CTkLabel(filters, text="SEARCH & FILTER:").pack(side=tk.LEFT)
+        self.material_search = ctk.StringVar(value="")
+        ctk.CTkEntry(
+            filters, textvariable=self.material_search,
+            placeholder_text="Search material name, label or group...").pack(
+                side=tk.LEFT, fill=tk.X, expand=True, padx=8)
+        self.material_search.trace_add(
+            "write", lambda *_args: self._refresh_materials())
+        self.material_grid = DataGrid(
+            self.tab_materials, self.MATERIAL_COLUMNS, self._select_material,
+            on_double_click=self._edit_material, border_width=1)
+        self.material_grid.pack(fill=tk.BOTH, expand=True, padx=6,
+                                pady=(0, 6))
 
     def _footer(self, tab, create_text, create, edit, delete, prefix):
         footer = ctk.CTkFrame(tab)
@@ -1247,6 +1389,25 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                 tags=("overallocated",) if team_over else ())
         self._select_team(select_id if select_id in self.team_rows else None)
 
+    def _refresh_materials(self, select_id=None):
+        self.material_grid.clear()
+        query = self.material_search.get().strip().lower()
+        materials = [
+            material for material in self.repo.materials.values()
+            if not query or query in material.name.lower()
+            or query in material.material_label.lower()
+            or query in material.group.lower()]
+        self.material_rows = [item.id for item in materials]
+        for index, material in enumerate(materials, start=1):
+            self.material_grid.add_row(
+                material.id,
+                (str(index), material.name, material.material_label,
+                 material.initials, material.group,
+                 f"${material.cost_per_unit:g}",
+                 material.accrue_at.value, material.code))
+        self._select_material(
+            select_id if select_id in self.material_rows else None)
+
     def _select_resource(self, resource_id):
         self.selected_resource_id = resource_id
         state = "normal" if resource_id else "disabled"
@@ -1263,6 +1424,15 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.team_delete_button.configure(state=state)
         if team_id and self.team_grid.selected_id != team_id:
             self.team_grid.select(team_id, notify=False)
+        self._refresh_button_states()
+
+    def _select_material(self, material_id):
+        self.selected_material_id = material_id
+        state = "normal" if material_id else "disabled"
+        self.material_edit_button.configure(state=state)
+        self.material_delete_button.configure(state=state)
+        if material_id and self.material_grid.selected_id != material_id:
+            self.material_grid.select(material_id, notify=False)
         self._refresh_button_states()
 
     def _create_resource(self):
@@ -1317,6 +1487,32 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self._refresh_teams()
             self._refresh_resources()
 
+    def _create_material(self):
+        self.material_editor = MaterialEditorModal(
+            self, self.repo, on_apply=self._material_applied)
+
+    def _edit_material(self, material_id=None):
+        if material_id:
+            self._select_material(material_id)
+        if self.selected_material_id:
+            self.material_editor = MaterialEditorModal(
+                self, self.repo,
+                self.repo.materials[self.selected_material_id],
+                self._material_applied)
+
+    def _material_applied(self, material_id):
+        self._refresh_materials(material_id)
+
+    def _delete_material(self):
+        if not self.selected_material_id:
+            return
+        material = self.repo.materials[self.selected_material_id]
+        if messagebox.askyesno(
+                "Delete Material",
+                f"Delete {material.name} from the resource pool?"):
+            self.repo.remove_material(material.id)
+            self._refresh_materials()
+
     def _bind_shortcuts(self):
         bind_all(self, 'c', self._hotkey_copy)
         bind_all(self, 'v', self._hotkey_paste)
@@ -1358,8 +1554,11 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         return 'break'
 
     def _hotkey_create(self, _event=None):
-        if self.tabview.get() == "Resources":
+        tab = self.tabview.get()
+        if tab == "Resources":
             self._create_resource()
+        elif tab == "Material":
+            self._create_material()
         else:
             self._create_team()
         return 'break'
@@ -1370,6 +1569,10 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
     def _unique_team_name(self, name):
         names = {team.name for team in self.repo.teams.values()}
+        return self._unique_name(name, names)
+
+    def _unique_material_name(self, name):
+        names = {material.name for material in self.repo.materials.values()}
         return self._unique_name(name, names)
 
     @staticmethod
@@ -1394,8 +1597,11 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             index += 1
 
     def _copy_selected(self):
-        if self.tabview.get() == "Resources":
+        tab = self.tabview.get()
+        if tab == "Resources":
             self._copy_resource(self.selected_resource_id)
+        elif tab == "Material":
+            self._copy_material(self.selected_material_id)
         else:
             self._copy_team(self.selected_team_id)
 
@@ -1421,9 +1627,23 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         logger.info("Copied team %r (%s)", team.name, team_id)
         self._refresh_button_states()
 
+    def _copy_material(self, material_id):
+        if not material_id or material_id not in self.repo.materials:
+            return
+        material = self.repo.materials[material_id]
+        self.clipboard = {
+            "kind": "material",
+            "data": material.to_dict(),
+        }
+        logger.info("Copied material %r (%s)", material.name, material_id)
+        self._refresh_button_states()
+
     def _paste(self):
-        if self.tabview.get() == "Resources":
+        tab = self.tabview.get()
+        if tab == "Resources":
             self._paste_resource()
+        elif tab == "Material":
+            self._paste_material()
         else:
             self._paste_team()
 
@@ -1450,6 +1670,17 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         logger.info("Pasted team as %r (%s)", team.name, team.id)
         self._refresh_teams(team.id)
 
+    def _paste_material(self):
+        if not self.clipboard or self.clipboard.get("kind") != "material":
+            return
+        data = copy.deepcopy(self.clipboard["data"])
+        data["id"] = self.repo.new_id("mat")
+        data["name"] = self._unique_material_name(data["name"])
+        material = MaterialResource.from_dict(data)
+        self.repo.add_material(material)
+        logger.info("Pasted material as %r (%s)", material.name, material.id)
+        self._refresh_materials(material.id)
+
     def _refresh_button_states(self):
         if self.selected_resource_id:
             self.resource_copy_button.configure(state="normal")
@@ -1459,8 +1690,14 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.team_copy_button.configure(state="normal")
         else:
             self.team_copy_button.configure(state="disabled")
+        if self.selected_material_id:
+            self.material_copy_button.configure(state="normal")
+        else:
+            self.material_copy_button.configure(state="disabled")
         paste_kind = self.clipboard.get("kind") if self.clipboard else None
         self.resource_paste_button.configure(
             state="normal" if paste_kind == "resource" else "disabled")
         self.team_paste_button.configure(
             state="normal" if paste_kind == "team" else "disabled")
+        self.material_paste_button.configure(
+            state="normal" if paste_kind == "material" else "disabled")

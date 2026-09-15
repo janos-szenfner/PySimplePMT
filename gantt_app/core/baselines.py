@@ -11,7 +11,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from gantt_app.core.models import Project, Task
-from gantt_app.core.resource_model import ResourceRepository
+from gantt_app.core.resource_model import (
+    ResourceRepository, material_assignment_cost,
+)
 from gantt_app.utils.log import get_logger
 from gantt_app.core.workdaycalendar import WorkingCalendar, as_date
 
@@ -31,15 +33,28 @@ def _task_work_hours(task: Task) -> float:
 
 
 def _task_cost(task: Task, repository: ResourceRepository) -> float:
-    """Estimated cost for a task from resource/team hourly rates."""
+    """
+    Estimated cost for a task.
+
+    Work assignments pay the resource or team's hourly rate on the
+    allocated hours; material assignments pay the material's Std. Rate
+    on the consumed quantity - a fixed units entry outright, a rate
+    entry times the task's duration.
+    """
     total = 0.0
     for assignment in (task.resource_assignments or []):
-        hours = float(assignment.get("estimated_hours", 0.0) or 0.0)
-        split = float(assignment.get("resource_split", 100.0) or 100.0)
-        allocated = hours * (split / 100.0)
         resource_id = assignment.get("resource_id")
         if not resource_id:
             continue
+        material = repository.materials.get(resource_id)
+        if material is not None:
+            duration = float(getattr(task, "duration", 0.0) or 0.0)
+            total += material_assignment_cost(
+                assignment.get("units", "0"), material, duration)
+            continue
+        hours = float(assignment.get("estimated_hours", 0.0) or 0.0)
+        split = float(assignment.get("resource_split", 100.0) or 100.0)
+        allocated = hours * (split / 100.0)
         entity = repository.resources.get(resource_id) or repository.teams.get(resource_id)
         if entity is None:
             continue

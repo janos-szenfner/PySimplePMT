@@ -3507,6 +3507,7 @@ class Project:
             resource_repository=ResourceRepository.from_dict({
                 'resources': data.get('resources', []),
                 'teams': data.get('teams', []),
+                'materials': data.get('materials', []),
             }),
             # Absent from every plan saved before filters could be named;
             # an empty list is what those plans meant.

@@ -662,6 +662,17 @@ def _assignment_hours(assignment: dict) -> float:
         return 0.0
 
 
+def _work_assignments(task) -> list:
+    """
+    The assignments the effort engine reconciles.
+
+    Material assignments carry a units quantity, not hours or a split -
+    they consume stock, not time - so they stay out of the work math.
+    """
+    return [a for a in task.resource_assignments
+            if a.get('kind') != 'material']
+
+
 def state_from_task(task, hours_per_day: float = DEFAULT_HOURS_PER_DAY) -> EffortState:
     """
     Build an EffortState from a Task, reading its day duration in hours.
@@ -671,10 +682,11 @@ def state_from_task(task, hours_per_day: float = DEFAULT_HOURS_PER_DAY) -> Effor
     zero units, which the gate in :func:`reconcile` treats as "no effort
     logic", so nothing about it is touched.
     """
+    work_assignments = _work_assignments(task)
     assignments = [Assignment(a.get('resource_id', ''),
                               _assignment_units(a), _assignment_hours(a))
-                   for a in task.resource_assignments]
-    work = sum(_assignment_hours(a) for a in task.resource_assignments)
+                   for a in work_assignments]
+    work = sum(_assignment_hours(a) for a in work_assignments)
     duration_days = task.duration or 0
     return EffortState(
         effort_type=task.effort_type,
@@ -704,6 +716,6 @@ def write_state_to_task(state: EffortState, task,
     if state.duration_hours > 0:
         task.duration = max(1, round(state.duration_hours / hours_per_day))
 
-    for saved, computed in zip(task.resource_assignments, state.assignments):
+    for saved, computed in zip(_work_assignments(task), state.assignments):
         saved['resource_split'] = computed.units * 100.0
         saved['estimated_hours'] = state.duration_hours * computed.units

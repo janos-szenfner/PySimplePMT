@@ -188,6 +188,7 @@ class SettingsWindow(ctk.CTkToplevel):
             (
                 ("Resources", len(repository.resources)),
                 ("Teams", len(repository.teams)),
+                ("Materials", len(repository.materials)),
                 ("Active project", self.project.name or "New Project"),
             ),
             "Open Resource Settings",

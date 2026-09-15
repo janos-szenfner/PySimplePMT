@@ -12,7 +12,8 @@ import customtkinter as ctk
 
 from gantt_app.views import theme
 from gantt_app.core.resource_model import (
-    Resource, ResourceRepository, ResourceType, TeamPool,
+    MaterialResource, Resource, ResourceRepository, ResourceType,
+    TeamPool, material_quantity,
 )
 from gantt_app.utils.log import get_logger
 from gantt_app.views.resourcesettings import _schedule_short
@@ -49,6 +50,8 @@ def _status_badge(used: float, capacity: float) -> Tuple[str, str, float]:
 
 
 def _type_badge(entity) -> str:
+    if isinstance(entity, MaterialResource):
+        return "[MATERIAL]"
     if isinstance(entity, TeamPool):
         return "[TEAM]"
     if entity.resource_type == ResourceType.NAMED:
@@ -168,6 +171,16 @@ class ResourceDropdown(ctk.CTkFrame):
                 workload,
                 pct,
                 _row_tag(pct)))
+        for entity in sorted(self.repo.materials.values(),
+                             key=lambda m: m.name.lower()):
+            label = entity.material_label or "units"
+            self._all_rows.append((
+                entity.id,
+                f"{entity.name}  {_type_badge(entity)}",
+                label,
+                f"${entity.cost_per_unit:g} per {label}",
+                0.0,
+                "ok"))
 
     def apply_filter(self, text: str = "") -> None:
         """Populate the tree with the rows that match *text*."""
@@ -368,72 +381,162 @@ class TaskResourceTab(ctk.CTkFrame):
             for col, width in enumerate(self._COLS):
                 row.columnconfigure(col, minsize=width, weight=0)
 
-            cells: List[ctk.CTkFrame] = []
+            if isinstance(entity, MaterialResource):
+                self._material_row(index, assignment, entity, row)
+            else:
+                self._labour_row(index, assignment, entity, row)
 
-            badge = _type_badge(entity)
-            cells.append(self._cell(
-                row,
-                lambda c: ctk.CTkLabel(c, text=f"{entity.name}  {badge}",
-                                       width=240, anchor=tk.W,
-                                       text_color=theme.now(theme.GRID_TEXT)),
-                240, 0))
+    def _labour_row(self, index: int, assignment: Dict[str, object],
+                    entity, row: ctk.CTkFrame) -> None:
+        """One work assignment's cells: workload, effort hours, split."""
+        cells: List[ctk.CTkFrame] = []
 
-            schedule = _schedule_short(entity.schedule_pattern)
-            cells.append(self._cell(
-                row,
-                lambda c: ctk.CTkLabel(c, text=schedule, width=160,
-                                       anchor=tk.W,
-                                       text_color=theme.now(theme.GRID_TEXT)),
-                160, 1))
+        badge = _type_badge(entity)
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(c, text=f"{entity.name}  {badge}",
+                                   width=240, anchor=tk.W,
+                                   text_color=theme.now(theme.GRID_TEXT)),
+            240, 0))
 
-            resources = list(self.repo.resources.values())
-            effort = float(assignment.get('estimated_hours', 0.0))
-            workload, colour, _ = _projected_workload_text(
-                entity, resources, effort)
-            workload_label = [None]
+        schedule = _schedule_short(entity.schedule_pattern)
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(c, text=schedule, width=160,
+                                   anchor=tk.W,
+                                   text_color=theme.now(theme.GRID_TEXT)),
+            160, 1))
 
-            def make_workload(cell):
-                workload_label[0] = ctk.CTkLabel(
-                    cell, text=workload, width=240, text_color=colour,
-                    anchor=tk.W)
-                return workload_label[0]
+        resources = list(self.repo.resources.values())
+        effort = float(assignment.get('estimated_hours', 0.0))
+        workload, colour, _ = _projected_workload_text(
+            entity, resources, effort)
+        workload_label = [None]
 
-            cells.append(self._cell(row, make_workload, 240, 2))
-            self._workload_labels[index] = workload_label[0]
+        def make_workload(cell):
+            workload_label[0] = ctk.CTkLabel(
+                cell, text=workload, width=240, text_color=colour,
+                anchor=tk.W)
+            return workload_label[0]
 
-            effort_entry = [None]
+        cells.append(self._cell(row, make_workload, 240, 2))
+        self._workload_labels[index] = workload_label[0]
 
-            def make_effort(cell):
-                effort_entry[0] = ctk.CTkEntry(cell, width=70)
-                effort_entry[0].insert(
-                    0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
-                return effort_entry[0]
+        effort_entry = [None]
 
-            cells.append(self._cell(row, make_effort, 70, 3))
-            effort_entry[0]._entry.bind(
-                "<KeyRelease>", self._make_updater(
-                    index, "estimated_hours", effort_entry[0]))
+        def make_effort(cell):
+            effort_entry[0] = ctk.CTkEntry(cell, width=70)
+            effort_entry[0].insert(
+                0, f"{float(assignment.get('estimated_hours', 0.0)):g}")
+            return effort_entry[0]
 
-            split_entry = [None]
+        cells.append(self._cell(row, make_effort, 70, 3))
+        effort_entry[0]._entry.bind(
+            "<KeyRelease>", self._make_updater(
+                index, "estimated_hours", effort_entry[0]))
 
-            def make_split(cell):
-                split_entry[0] = ctk.CTkEntry(cell, width=60)
-                split_entry[0].insert(
-                    0, f"{float(assignment.get('resource_split', 0.0)):g}")
-                return split_entry[0]
+        split_entry = [None]
 
-            cells.append(self._cell(row, make_split, 60, 4))
-            split_entry[0]._entry.bind(
-                "<KeyRelease>", self._make_updater(
-                    index, "resource_split", split_entry[0]))
+        def make_split(cell):
+            split_entry[0] = ctk.CTkEntry(cell, width=60)
+            split_entry[0].insert(
+                0, f"{float(assignment.get('resource_split', 0.0)):g}")
+            return split_entry[0]
 
-            cells.append(self._cell(
-                row,
-                lambda c: ctk.CTkButton(c, text="Clear", width=70,
-                                        command=lambda i=index: self._remove(i)),
-                70, 5))
+        cells.append(self._cell(row, make_split, 60, 4))
+        split_entry[0]._entry.bind(
+            "<KeyRelease>", self._make_updater(
+                index, "resource_split", split_entry[0]))
 
-            self._row_cells.append(cells)
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkButton(c, text="Clear", width=70,
+                                    command=lambda i=index: self._remove(i)),
+            70, 5))
+
+        self._row_cells.append(cells)
+
+    def _material_row(self, index: int, assignment: Dict[str, object],
+                      entity: MaterialResource, row: ctk.CTkFrame) -> None:
+        """
+        One material assignment's cells.
+
+        Materials have no schedule or weekly load, so those cells carry
+        the material's label and the live cost instead. The Units entry
+        takes a fixed quantity (20) or a rate (5/d, 5/h, 5/w); the cost
+        label re-computes consumed quantity x Std. Rate on every edit.
+        """
+        cells: List[ctk.CTkFrame] = []
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(
+                c, text=f"{entity.name}  {_type_badge(entity)}",
+                width=240, anchor=tk.W,
+                text_color=theme.now(theme.GRID_TEXT)),
+            240, 0))
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(
+                c, text=entity.material_label or "units", width=160,
+                anchor=tk.W, text_color=theme.now(theme.GRID_TEXT)),
+            160, 1))
+
+        cost_label = [None]
+
+        def make_cost(cell):
+            cost_label[0] = ctk.CTkLabel(
+                cell, text=self._material_cost_text(index), width=240,
+                anchor=tk.W, text_color=theme.now(theme.GRID_TEXT))
+            return cost_label[0]
+
+        cells.append(self._cell(row, make_cost, 240, 2))
+        self._workload_labels[index] = cost_label[0]
+
+        units_entry = [None]
+
+        def make_units(cell):
+            units_entry[0] = ctk.CTkEntry(cell, width=70,
+                                          placeholder_text="e.g. 20, 5/d")
+            units_entry[0].insert(0, str(assignment.get("units", "1")))
+            return units_entry[0]
+
+        cells.append(self._cell(row, make_units, 70, 3))
+        units_entry[0]._entry.bind(
+            "<KeyRelease>", self._make_units_updater(index, units_entry[0]))
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkLabel(c, text="—", width=60, anchor=tk.W,
+                                   text_color=theme.now(theme.GRID_TEXT)),
+            60, 4))
+
+        cells.append(self._cell(
+            row,
+            lambda c: ctk.CTkButton(c, text="Clear", width=70,
+                                    command=lambda i=index: self._remove(i)),
+            70, 5))
+
+        self._row_cells.append(cells)
+
+    def _material_cost_text(self, index: int) -> str:
+        """Live cost read-out for a material row: quantity x Std. Rate."""
+        assignment = self._assignments[index]
+        entity = self._entity_by_id(assignment.get("resource_id", ""))
+        if not isinstance(entity, MaterialResource):
+            return ""
+        duration = float(getattr(self.task, "duration", 0.0) or 0.0)
+        hours_per_day = getattr(self.project, "hours_per_day", None) or 8.0
+        label = entity.material_label or "units"
+        try:
+            consumed = material_quantity(
+                assignment.get("units", "0"), duration,
+                hours_per_day=hours_per_day)
+        except ValueError:
+            return f"${entity.cost_per_unit:g} per {label}"
+        cost = consumed * entity.cost_per_unit
+        return f"{consumed:g} {label}  ·  ${cost:g}"
 
     def _make_updater(self, index: int, key: str, widget: ctk.CTkEntry):
         def _update(_event=None):
@@ -445,6 +548,16 @@ class TaskResourceTab(ctk.CTkFrame):
             self._assignments[index][key] = value
             if index in self._workload_labels:
                 self._update_projected_workload(index)
+        return _update
+
+    def _make_units_updater(self, index: int, widget: ctk.CTkEntry):
+        """Keep a material row's raw Units text so a rate like 5/d
+        survives, then refresh the cost read-out when it parses."""
+        def _update(_event=None):
+            self._assignments[index]["units"] = widget.get().strip() or "0"
+            if index in self._workload_labels:
+                self._workload_labels[index].configure(
+                    text=self._material_cost_text(index))
         return _update
 
     def _update_projected_workload(self, index: int) -> None:
@@ -465,6 +578,8 @@ class TaskResourceTab(ctk.CTkFrame):
             return self.repo.resources[entity_id]
         if entity_id in self.repo.teams:
             return self.repo.teams[entity_id]
+        if entity_id in self.repo.materials:
+            return self.repo.materials[entity_id]
         return None
 
     # ------------------------------------------------------------------
@@ -478,12 +593,19 @@ class TaskResourceTab(ctk.CTkFrame):
             return
         self.search_var.set("")
         self._hide_dropdown()
-        self._assignments.append({
-            "resource_id": entity_id,
-            "estimated_hours": 0.0,
-            "resource_split": 100.0,
-        })
         entity = self._entity_by_id(entity_id)
+        if isinstance(entity, MaterialResource):
+            self._assignments.append({
+                "resource_id": entity_id,
+                "kind": "material",
+                "units": "1",
+            })
+        else:
+            self._assignments.append({
+                "resource_id": entity_id,
+                "estimated_hours": 0.0,
+                "resource_split": 100.0,
+            })
         logger.debug("Assigned %r to %r in the task editor",
                      getattr(entity, 'name', entity_id),
                      getattr(self.task, 'name', self.task))

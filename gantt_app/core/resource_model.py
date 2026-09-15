@@ -323,11 +323,164 @@ class TeamPool:
         }
 
 
+class AccrueAt(Enum):
+    """When an assigned material's cost lands on the task's budget."""
+    START = "Start"
+    PRORATED = "Prorated"
+    END = "End"
+
+    @classmethod
+    def read(cls, value):
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value))
+        except ValueError:
+            # Prorated is MS Project's default and the safe reading of a
+            # value this build does not know.
+            return cls.PRORATED
+
+
+@dataclass
+class MaterialResource:
+    """
+    A consumable: measured in units, costed per unit, with no calendar.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    Materials are used up rather than worked, so the resource sheet's
+    time fields do not apply: there is no capacity, no schedule pattern
+    and no days off. ``material_label`` is the unit of measurement the
+    quantity is counted in (bags, tons, gallons); ``cost_per_unit`` is
+    the standard rate for one of those units, so an assignment costs
+    quantity x rate; ``accrue_at`` says when that cost lands on the
+    task's budget.
+    """
+    id: str
+    name: str
+    material_label: str = ""
+    initials: str = ""
+    group: str = ""
+    cost_per_unit: float = 0.0
+    accrue_at: AccrueAt = AccrueAt.PRORATED
+    code: str = ""
+
+    def __post_init__(self):
+        self.accrue_at = AccrueAt.read(self.accrue_at)
+        if not self.id.strip() or not self.name.strip():
+            raise ValueError("Material ID and name are required")
+        self.material_label = self.material_label.strip()
+        self.initials = self.initials.strip()
+        self.group = self.group.strip()
+        self.code = self.code.strip()
+        try:
+            self.cost_per_unit = float(self.cost_per_unit)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Standard rate must be a number") from error
+        if self.cost_per_unit < 0:
+            raise ValueError("Standard rate cannot be negative")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "material_label": self.material_label,
+            "initials": self.initials,
+            "group": self.group,
+            "cost_per_unit": self.cost_per_unit,
+            "accrue_at": self.accrue_at.value,
+            "code": self.code,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MaterialResource":
+        values = data.copy()
+        values["accrue_at"] = AccrueAt.read(
+            values.get("accrue_at", AccrueAt.PRORATED.value))
+        return cls(**values)
+
+
+#: The period spellings a material assignment's Units accepts after the
+#: quantity: 20 is a fixed amount; 5/d is five units per working day, and
+#: /h and /w are the same rate read per working hour and per working
+#: week - MS Project's material-units syntax.
+MATERIAL_PERIODS = ("d", "h", "w")
+
+#: The hours a working day is taken to hold when a per-hour rate is
+#: spread over a duration stated in days.
+MATERIAL_DAY_HOURS = 8.0
+
+#: The working days a working week is taken to hold for a /w rate.
+MATERIAL_WEEK_DAYS = 5.0
+
+
+def parse_material_units(text) -> "tuple[float, Optional[str]]":
+    """
+    Split a Units entry into (quantity, period).
+
+    A bare number is a fixed quantity the task consumes once; a number
+    followed by /d, /h or /w is a rate - the task consumes that many of
+    the material's units per working day, hour or week, so a longer task
+    consumes more.
+    """
+    raw = str(text or "").strip().lower()
+    number, period = raw, None
+    for candidate in MATERIAL_PERIODS:
+        suffix = f"/{candidate}"
+        if raw.endswith(suffix):
+            number = raw[:-len(suffix)].strip()
+            period = candidate
+            break
+    if not number:
+        raise ValueError(
+            f"Material units must be a quantity, optionally with "
+            f"/d, /h or /w: {text!r}")
+    try:
+        quantity = float(number)
+    except ValueError as error:
+        raise ValueError(
+            f"Material units must be a quantity, optionally with "
+            f"/d, /h or /w: {text!r}") from error
+    if quantity < 0:
+        raise ValueError("Material units cannot be negative")
+    return quantity, period
+
+
+def material_quantity(units, duration_days: float,
+                      hours_per_day: float = MATERIAL_DAY_HOURS) -> float:
+    """
+    How many of the material's units an assignment consumes.
+
+    A fixed units entry is the quantity outright. A rate entry is the
+    quantity times the task's length: /d counts working days, /h the
+    hours those days hold, /w the working weeks.
+    """
+    quantity, period = parse_material_units(units)
+    if period is None:
+        return quantity
+    days = max(float(duration_days or 0.0), 0.0)
+    if period == "d":
+        return quantity * days
+    if period == "h":
+        return quantity * days * hours_per_day
+    return quantity * days / MATERIAL_WEEK_DAYS
+
+
+def material_assignment_cost(units, material: MaterialResource,
+                             duration_days: float,
+                             hours_per_day: float = MATERIAL_DAY_HOURS
+                             ) -> float:
+    """An assignment's cost: the consumed quantity times the Std. Rate."""
+    return (material_quantity(units, duration_days, hours_per_day)
+            * material.cost_per_unit)
+
+
 class ResourceRepository:
     def __init__(self, filepath: str = "resources.json"):
         self.filepath = Path(filepath)
         self.resources: Dict[str, Resource] = {}
         self.teams: Dict[str, TeamPool] = {}
+        self.materials: Dict[str, MaterialResource] = {}
 
     @staticmethod
     def new_id(prefix: str) -> str:
@@ -365,6 +518,15 @@ class ResourceRepository:
             resource.team_memberships.pop(team_id, None)
         if team:
             logger.info("Removed resource team %r (%s)", team.name, team_id)
+
+    def add_material(self, material: MaterialResource):
+        self.materials[material.id] = material
+        logger.info("Added material %r (%s)", material.name, material.id)
+
+    def remove_material(self, material_id: str):
+        material = self.materials.pop(material_id, None)
+        if material:
+            logger.info("Removed material %r (%s)", material.name, material_id)
 
     def set_team_allocation(self, resource_id: str, team_id: str,
                             percentage: float):
@@ -408,6 +570,8 @@ class ResourceRepository:
             "resources": [resource.to_dict()
                           for resource in self.resources.values()],
             "teams": [team.to_dict() for team in self.teams.values()],
+            "materials": [material.to_dict()
+                          for material in self.materials.values()],
         }
 
     @classmethod
@@ -423,8 +587,9 @@ class ResourceRepository:
         with temporary.open("w", encoding="utf-8") as stream:
             json.dump(data, stream, indent=4, ensure_ascii=False)
         temporary.replace(self.filepath)
-        logger.info("Saved %d resources and %d teams to %s",
-                    len(self.resources), len(self.teams), self.filepath)
+        logger.info("Saved %d resources, %d teams and %d materials to %s",
+                    len(self.resources), len(self.teams),
+                    len(self.materials), self.filepath)
 
     def load_from_file(self):
         try:
@@ -433,11 +598,13 @@ class ResourceRepository:
         except FileNotFoundError:
             self.resources = {}
             self.teams = {}
+            self.materials = {}
             logger.info("No resource file at %s; using an empty pool", self.filepath)
             return
         self._load_dict(data)
-        logger.info("Loaded %d resources and %d teams from %s",
-                    len(self.resources), len(self.teams), self.filepath)
+        logger.info("Loaded %d resources, %d teams and %d materials from %s",
+                    len(self.resources), len(self.teams),
+                    len(self.materials), self.filepath)
 
     def _load_dict(self, data):
         if data is None:
@@ -446,8 +613,14 @@ class ResourceRepository:
             raise ValueError("Resource settings must contain a JSON object")
         resource_data = data.get("resources", [])
         team_data = data.get("teams", [])
-        if not isinstance(resource_data, list) or not isinstance(team_data, list):
-            raise ValueError("Resources and teams must be JSON arrays")
+        # Absent from every file written before materials existed; an
+        # empty pool is what those files meant.
+        material_data = data.get("materials", [])
+        if (not isinstance(resource_data, list)
+                or not isinstance(team_data, list)
+                or not isinstance(material_data, list)):
+            raise ValueError(
+                "Resources, teams and materials must be JSON arrays")
         try:
             resources = {
                 item["id"]: Resource.from_dict(item)
@@ -457,10 +630,15 @@ class ResourceRepository:
                 item["id"]: TeamPool(**item)
                 for item in team_data
             }
+            materials = {
+                item["id"]: MaterialResource.from_dict(item)
+                for item in material_data
+            }
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("Resource settings have an invalid structure") from error
         self.resources = resources
         self.teams = teams
+        self.materials = materials
 
     def named_resources(self, excluding: Optional[str] = None) -> List[Resource]:
         return [

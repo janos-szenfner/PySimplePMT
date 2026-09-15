@@ -5,7 +5,7 @@ Run with:
     python3 -m pytest tests/test_resource_model_bdd.py -q
 """
 
-from datetime import date
+from datetime import date, datetime
 import json
 import tempfile
 from pathlib import Path
@@ -13,9 +13,10 @@ from pytest_bdd import given, parsers, scenarios, then, when
 import pytest
 
 from gantt_app.core.resource_model import (
-    DAYS, DaysOffRange, Resource, ResourceRepository, ResourceType,
-    SchedulePattern, TeamPool,
+    DAYS, AccrueAt, DaysOffRange, MaterialResource, Resource,
+    ResourceRepository, ResourceType, SchedulePattern, TeamPool,
     capacity_from_entry, default_daily_capacity,
+    material_assignment_cost, material_quantity, parse_material_units,
 )
 
 
@@ -880,3 +881,272 @@ def check_missing_file_teams_empty(repository_with_missing_file):
     repo = repository_with_missing_file
     repo.load_from_file()
     assert repo.teams == {}
+
+
+# SCENARIO: Material round trip preserves the sheet's fields
+@given("a material resource with label initials group rate accrual and code",
+       target_fixture="material_resource")
+def material_resource():
+    return MaterialResource(
+        id="mat_1", name="Concrete", material_label="Bags",
+        initials="CONC", group="Building Supplies", cost_per_unit=12.5,
+        accrue_at=AccrueAt.START, code="CBS-01")
+
+
+@when("serialized to dict and deserialized back as material",
+      target_fixture="restored_material")
+def serialize_deserialize_material(material_resource):
+    return MaterialResource.from_dict(material_resource.to_dict())
+
+
+@then("the restored material should equal the original")
+def check_restored_material_equals_original(restored_material,
+                                            material_resource):
+    assert restored_material == material_resource
+
+
+# SCENARIO: Material rejects a negative standard rate
+@when("a material with a negative standard rate is built",
+      target_fixture="material_error")
+def build_negative_rate_material():
+    try:
+        MaterialResource(id="mat_1", name="Concrete", cost_per_unit=-1)
+    except ValueError as error:
+        return error
+    return None
+
+
+@then("a ValueError was raised for the material")
+def check_material_error(material_error):
+    assert isinstance(material_error, ValueError)
+
+
+# SCENARIO: Material requires a name
+@when("a material with an empty name is built", target_fixture="material_error")
+def build_nameless_material():
+    try:
+        MaterialResource(id="mat_1", name="")
+    except ValueError as error:
+        return error
+    return None
+
+
+# SCENARIO: An unknown accrue at value reads as prorated
+@when("a material dict with an unknown accrue at value is loaded",
+      target_fixture="loaded_material")
+def load_unknown_accrue_material():
+    return MaterialResource.from_dict(
+        {"id": "mat_1", "name": "Fuel", "accrue_at": "Whenever"})
+
+
+@then("the material accrual should be prorated")
+def check_material_accrual_prorated(loaded_material):
+    assert loaded_material.accrue_at == AccrueAt.PRORATED
+
+
+# SCENARIO: Repository persists and loads materials
+@given("a resource repository with a material for persistence test",
+       target_fixture="repository_with_material")
+def repository_with_material():
+    directory = tempfile.mkdtemp()
+    path = Path(directory) / "resources.json"
+    repository = ResourceRepository(str(path))
+    repository.add_material(MaterialResource(
+        id="mat_1", name="Concrete", material_label="Bags",
+        cost_per_unit=12.5))
+    repository.save_to_file()
+    return {'path': path, 'repository': repository}
+
+
+@then("materials should be preserved")
+def check_materials_preserved(repository_with_material):
+    loaded = ResourceRepository(str(repository_with_material['path']))
+    loaded.load_from_file()
+    original = repository_with_material['repository']
+    assert loaded.materials == original.materials
+
+
+# SCENARIO: A file without a materials section loads an empty material pool
+@when("a repository dict without a materials section is loaded",
+      target_fixture="legacy_repository")
+def load_legacy_repository():
+    return ResourceRepository.from_dict({'resources': [], 'teams': []})
+
+
+@then("the materials pool should be empty")
+def check_materials_empty(legacy_repository):
+    assert legacy_repository.materials == {}
+
+
+# SCENARIO: A saved project keeps its material pool
+@given("a project holding a material resource",
+       target_fixture="material_project")
+def material_project():
+    from gantt_app.core.models import Project
+    project = Project(name="Materials")
+    project.resource_repository.add_material(MaterialResource(
+        id="mat_1", name="Lumber", material_label="Linear Feet",
+        cost_per_unit=3.5))
+    return project
+
+
+@when("the project is saved to a dict and read back",
+      target_fixture="restored_project")
+def save_read_project(material_project):
+    from gantt_app.core.models import Project
+    return Project.from_dict(material_project.to_dict())
+
+
+@then("the material should still be in its pool")
+def check_project_material(restored_project):
+    materials = restored_project.resource_repository.materials
+    assert materials["mat_1"].name == "Lumber"
+    assert materials["mat_1"].material_label == "Linear Feet"
+
+
+# SCENARIO: Material units parse a fixed quantity / a daily rate / reject
+@when(parsers.parse('the material units "{units}" are parsed'),
+      target_fixture="parsed_units")
+def parse_units(units):
+    return parse_material_units(units)
+
+
+@then(parsers.parse("the parsed units should be {quantity:f} with no period"))
+def check_fixed_units(parsed_units, quantity):
+    assert parsed_units == (quantity, None)
+
+
+@then(parsers.parse('the parsed units should be {quantity:f} per "{period}"'))
+def check_rate_units(parsed_units, quantity, period):
+    assert parsed_units == (quantity, period)
+
+
+@when(parsers.parse('the malformed material units "{units}" are parsed'),
+      target_fixture="units_error")
+def parse_bad_units(units):
+    try:
+        parse_material_units(units)
+        return None
+    except ValueError as error:
+        return error
+
+
+@then("a ValueError was raised for the units")
+def check_units_error(units_error):
+    assert units_error is not None
+
+
+# SCENARIO: fixed vs rate-based quantity over task duration
+@given(parsers.parse('a material assignment of "{units}" on a ten-day task'),
+       target_fixture="material_assignment")
+def ten_day_material_assignment(units):
+    material = MaterialResource(id="mat_t", name="Fuel",
+                                material_label="gallons",
+                                cost_per_unit=3.5)
+    return {"material": material, "units": units, "duration": 10.0}
+
+
+@then(parsers.parse("the consumed quantity should be {quantity:f}"))
+def check_consumed(material_assignment, quantity):
+    assert material_quantity(material_assignment["units"],
+                             material_assignment["duration"]) == quantity
+
+
+@then("the assignment cost should be quantity times the standard rate")
+def check_assignment_cost(material_assignment):
+    expected = (material_quantity(material_assignment["units"],
+                                  material_assignment["duration"])
+                * material_assignment["material"].cost_per_unit)
+    assert material_assignment_cost(
+        material_assignment["units"], material_assignment["material"],
+        material_assignment["duration"]) == expected
+
+
+# SCENARIO: material assignments stay out of the effort engine
+@given("a task with a work assignment and a material assignment",
+       target_fixture="mixed_task")
+def mixed_task():
+    from gantt_app.core.models import Task
+    task = Task(id="t_mix", name="Mix",
+                start_date=datetime(2026, 1, 5), duration=4)
+    task.resource_assignments = [
+        {"resource_id": "res_1", "estimated_hours": 16.0,
+         "resource_split": 100.0},
+        {"resource_id": "mat_1", "kind": "material", "units": "5/d"},
+    ]
+    return task
+
+
+@when("the effort state is built and written back",
+      target_fixture="effort_state")
+def build_write_effort(mixed_task):
+    from gantt_app.core import effort
+    state = effort.state_from_task(mixed_task)
+    effort.write_state_to_task(state, mixed_task)
+    return state
+
+
+@then("the state should hold only the work assignment")
+def check_effort_filtered(effort_state):
+    assert len(effort_state.assignments) == 1
+    assert effort_state.assignments[0].resource_id == "res_1"
+    assert effort_state.work == 16.0
+
+
+@then("the material assignment should be untouched")
+def check_material_untouched(mixed_task):
+    assert mixed_task.resource_assignments[1] == {
+        "resource_id": "mat_1", "kind": "material", "units": "5/d"}
+
+
+# SCENARIO: task cost includes material consumption
+@given('a task with a "5/d" material assignment at fifty a unit',
+       target_fixture="costed_task")
+def costed_task():
+    from gantt_app.core.models import Task
+    repository = ResourceRepository()
+    repository.add_material(MaterialResource(
+        id="mat_c", name="Fuel", material_label="gallons",
+        cost_per_unit=50.0))
+    task = Task(id="t_cost", name="Generator",
+                start_date=datetime(2026, 1, 5), duration=1)
+    task.resource_assignments = [
+        {"resource_id": "mat_c", "kind": "material", "units": "5/d"}]
+    return {"task": task, "repository": repository}
+
+
+@when("the task cost is computed", target_fixture="task_cost")
+def compute_cost(costed_task):
+    from gantt_app.core.baselines import _task_cost
+    return _task_cost(costed_task["task"], costed_task["repository"])
+
+
+@then(parsers.parse("the cost should be {cost:f}"))
+def check_task_cost(task_cost, cost):
+    assert task_cost == cost
+
+
+# SCENARIO: a task dict keeps its material assignment
+@given("a task carrying a material assignment", target_fixture="assigned_task")
+def assigned_task():
+    from gantt_app.core.models import Task
+    task = Task(id="t_ser", name="Pour",
+                start_date=datetime(2026, 1, 5), duration=4)
+    task.resource_assignments = [
+        {"resource_id": "mat_s", "kind": "material", "units": "20"}]
+    return task
+
+
+@when("the task is saved to a dict and read back",
+      target_fixture="restored_task")
+def save_read_task(assigned_task):
+    from gantt_app.core.models import Task
+    return Task.from_dict(assigned_task.to_dict())
+
+
+@then("the restored assignment should still be a material with its units")
+def check_restored_assignment(restored_task):
+    assignment = restored_task.resource_assignments[0]
+    assert assignment["resource_id"] == "mat_s"
+    assert assignment["kind"] == "material"
+    assert assignment["units"] == "20"

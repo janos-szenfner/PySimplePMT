@@ -823,6 +823,106 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Filtering the task list",
+        [
+            "A plan of any size is scanned rather than read, and a filter "
+            "is the way to scan it for one thing at a time: the rows that "
+            "match are shown and the rest are hidden. Nothing is deleted "
+            "or changed - a hidden row is still in the plan and comes "
+            "back the moment the filter comes off.",
+
+            "The View tab's Filter button drops the saved filters. "
+            "Picking one applies it and ticks it; picking it a second "
+            "time, or the Clear button beside it, puts every row back.",
+
+            "Filter by Columns... opens the Filter window on its Basic "
+            "tab, which sets a rule per column. A text column takes a "
+            "substring to match inside it, a column with a fixed set of "
+            "values gives a checklist of the ones the plan actually "
+            "uses, and a number or date column gives a From and a To, "
+            "either of which may be left open. A column left alone asks "
+            "nothing, and Apply shows only the rows where every set "
+            "rule passes - each match keeping its ancestors, so the "
+            "outline still reads as a plan.",
+
+            "The Advanced tab asks the same question in words, the way "
+            "Jira's JQL does: type in (Task, Milestone) and progress < "
+            "50, or name ~ \"art\" and not status = \"In Progress\". A "
+            "field is typed the way it is read - name, start, "
+            "taskcalendar, baselinefinish and \"Task Name\" all resolve "
+            "- and the tests are = and !=, ~ for contains and !~ for "
+            "does not contain, the comparisons < <= > >=, in and not "
+            "in for a bracketed list, within and not within for a pair "
+            "of dates, and is empty or is not empty for a field that "
+            "may hold nothing. and, or and not combine the tests and "
+            "brackets group them; dates take the dashed, dotted or "
+            "slashed spellings the date boxes do.",
+
+            "The box is helped as it is typed. A list under it offers "
+            "the fields, tests and values that make sense at the "
+            "cursor - a click or Enter takes one - and the line beneath "
+            "reports whether the query parses and how many rows it "
+            "matches before it is ever applied. Recent drops the "
+            "queries already tried this sitting.",
+
+            "A filter worth keeping is saved with a name. Save As in "
+            "the Filter window keeps whatever the open tab holds - "
+            "column rules or a query - and the Highlight menu's New "
+            "Highlight Filter... opens the Filter Definition window: a "
+            "name, a Show in menu tick, and rows of And/Or, Field "
+            "Name, Test and Value(s), the same grid Microsoft Project "
+            "builds a filter in. A row's test list and value box "
+            "follow the field it names - a date field gets calendar "
+            "boxes, a fixed-set field the plan's own values - and is "
+            "within shows a second box rather than asking for two "
+            "values in one.",
+
+            "Saved filters live in the plan file, so they travel with "
+            "it, and the ones marked Show in menu list under both "
+            "Filter and Highlight. More Filters... opens the manager: "
+            "every standard and saved filter in one list, with Apply "
+            "to filter the grid to the selection, Highlight to paint "
+            "the matches instead, and New, Edit, Copy and Delete to "
+            "manage the set.",
+        ],
+    ),
+    (
+        "Highlighting the rows a filter matches",
+        [
+            "A highlight answers the same question the other way round. "
+            "A filter hides the rows that do not match; a highlight "
+            "leaves every row where it is and paints the ones that do, "
+            "in the yellow Microsoft Project's Highlight uses. Where a "
+            "filter answers 'show me only these', a highlight answers "
+            "'find these in the list I am looking at'.",
+
+            "The View tab's Highlight button drops the standard set - "
+            "Incomplete, Unstarted, In Progress and Complete Tasks, "
+            "Milestones, Summary Tasks, Tasks With Deadlines, Late "
+            "Tasks, and Estimated and Inactive Tasks - followed by any "
+            "saved filter marked Show in menu. Only one paints at a "
+            "time, because two yellows say no more than one: a new "
+            "pick replaces the old, and a second pick of the one "
+            "already on - or Clear Highlight - takes the paint off. "
+            "The entry painting rows carries a tick.",
+
+            "Late Tasks is the one that reads the whole plan: it "
+            "paints the rows a clashing constraint or a deadline now "
+            "behind the finish date puts at risk - the same set the "
+            "Alert column flags. The plan is settled before the "
+            "question is asked, the way the critical path is, so the "
+            "finishes it reads are the finished ones.",
+
+            "The paint shares the row with the critical path's red "
+            "rather than fighting it - a row both critical and matched "
+            "is drawn red - and it survives the redraw every edit "
+            "causes while it is on. It is a look, not markup: it is "
+            "not saved with the file and it is not an undo step. For a "
+            "colour that stays, the formatting group's highlighter "
+            "under Marking rows up is the permanent version.",
+        ],
+    ),
+    (
         "Resource Settings: people, placeholders and teams",
         [
             "Settings > Resource Settings opens the resource pool stored with "
@@ -837,6 +937,29 @@ GUIDE_SECTIONS = (
             "resource pool in memory; Save Changes writes it into the same "
             "project JSON as the tasks. Close leaves the in-memory changes in "
             "the plan, so the ordinary File > Save also writes them.",
+
+            "The Material tab beside them holds the consumables: things "
+            "used up, installed or depleted rather than worked. A material "
+            "has no working hours, schedule or calendar - capacity, "
+            "overtime and days off do not apply to something that is "
+            "counted, not clocked. Its fields are the unit it is measured "
+            "in (the Material Label - bags, tons, gallons, linear feet), "
+            "the Standard Rate that one of those units costs, an Initials "
+            "short form for cramped views, a Group for filtering, an "
+            "Accrue At choice - Start, End, or the usual Prorated - that "
+            "says when the cost lands on a task's budget, and an optional "
+            "Code for the accounts system's own numbering.",
+
+            "Materials are assigned to a task from the same Resource tab "
+            "in the task editor that takes people and teams - they are "
+            "marked [MATERIAL] in the picker. Instead of effort hours a "
+            "material row takes Units: a bare number like 20 is a fixed "
+            "quantity the task consumes once, whatever its duration; a "
+            "rate like 5/d consumes that many of the material's units per "
+            "working day (5/h and 5/w read per working hour and week), so "
+            "a longer task consumes - and costs - more. The row shows the "
+            "consumed quantity and cost live, and the cost the project "
+            "reports for the task is quantity x Standard Rate.",
 
             "A Generic resource may be left unnamed. It is named from its "
             "role, such as DevOps Placeholder #1, and can later be replaced "

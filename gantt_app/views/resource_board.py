@@ -582,7 +582,9 @@ class ResourceBoard(ctk.CTkFrame):
         names: List[str] = []
         seen: Set[str] = set()
         for assignment in task.resource_assignments:
-            entity = _entity_by_id(repo, assignment.get("resource_id", ""))
+            entity_id = assignment.get("resource_id", "")
+            entity = (_entity_by_id(repo, entity_id)
+                      or repo.materials.get(entity_id))
             if entity and entity.id not in seen:
                 names.append(entity.name)
                 seen.add(entity.id)
