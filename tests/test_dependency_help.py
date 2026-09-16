@@ -24,6 +24,25 @@ def all_text():
     return '\n'.join(parts)
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 class TestHelpContent(unittest.TestCase):
     """The reference covers what the Dependency tab offers."""
 
@@ -119,7 +138,7 @@ class TestHelpWindow(unittest.TestCase):
         if DependencyHelpWindow._open_window is not None:
             DependencyHelpWindow._open_window.close()
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 
@@ -230,7 +249,7 @@ class TestDependencyTabHasNoProse(unittest.TestCase):
         if DependencyHelpWindow._open_window is not None:
             DependencyHelpWindow._open_window.close()
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 

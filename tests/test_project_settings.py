@@ -33,6 +33,25 @@ from gantt_app.core.models import (
 MONDAY = datetime(2026, 8, 17)
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 class PlanTestCase(unittest.TestCase):
     """A chain of three, plus one task with float hanging off the first."""
 
@@ -295,7 +314,7 @@ class TestThePanel(PlanTestCase):
     def tearDown(self):
         """Close the window."""
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 
@@ -455,7 +474,7 @@ class TestThePanelIsLaidOut(PlanTestCase):
     def tearDown(self):
         """Close the window."""
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 

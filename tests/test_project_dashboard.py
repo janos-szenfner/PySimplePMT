@@ -69,6 +69,25 @@ def sample_project(**statuses) -> Project:
     return project
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 def _display_available() -> bool:
     """Whether a Tk window can be opened here."""
     try:
@@ -355,7 +374,7 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
     def tearDown(self):
         """Put the appearance back, and close the window."""
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
         try:
@@ -535,7 +554,7 @@ class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
     def tearDown(self):
         """Close the window."""
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 
@@ -629,7 +648,7 @@ class TestTheDashboardFollowsThePlan(unittest.TestCase):
     def tearDown(self):
         """Tear it down."""
         try:
-            self.app.destroy()
+            _shut_down(self.app)
         except Exception:
             pass
 

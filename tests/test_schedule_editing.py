@@ -26,6 +26,25 @@ def _project():
     return p, task
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 class TestReconcileSchedule(unittest.TestCase):
     def test_a_new_duration_moves_the_end_and_holds_the_start(self):
         p, t = _project()
@@ -123,7 +142,7 @@ class TestGridScheduleEditing(unittest.TestCase):
 
     def tearDown(self):
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 

@@ -33,6 +33,25 @@ from gantt_app.views.taskdialogs import EditTaskDialog
 BASE = datetime(2026, 1, 13)
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 class ProgressFieldTestCase(unittest.TestCase):
     """One plan holding a row of every type."""
 
@@ -57,7 +76,7 @@ class ProgressFieldTestCase(unittest.TestCase):
     def tearDown(self):
         """Tear the root window down."""
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 

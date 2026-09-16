@@ -15,6 +15,25 @@ from gantt_app.core.models import Project, Task
 from tests.pixels import flat_pixels
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 def _display_available() -> bool:
     """Whether a usable Tk display is present."""
     try:
@@ -51,7 +70,7 @@ class DialogTestCase(unittest.TestCase):
     def tearDown(self):
         """Tear the root window down."""
         try:
-            self.root.destroy()
+            _shut_down(self.root)
         except Exception:
             pass
 

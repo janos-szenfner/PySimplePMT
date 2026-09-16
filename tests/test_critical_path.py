@@ -396,6 +396,25 @@ class TestTheReportedNumbers(CriticalPathTestCase):
         self.assertEqual(analysis["B"].early_start, 5)
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 def _display_available() -> bool:
     """Whether a usable Tk display is present."""
     try:
@@ -437,11 +456,8 @@ class TestTheWindowItOpens(CriticalPathTestCase):
         self.project.reschedule()
 
     def tearDown(self):
-        """Tear the root window down."""
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
+        """Tear the root window down, analysis windows first."""
+        _shut_down(self.root)
 
     def window(self):
         """The analysis window over the fixture."""
@@ -941,11 +957,8 @@ class TestThePathPaintedIntoTheList(unittest.TestCase):
         self.root.update_idletasks()
 
     def tearDown(self):
-        """Close the window."""
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
+        """Close the window, children first."""
+        _shut_down(self.root)
 
     def fill(self, task_id: str) -> str:
         """The background the row is painted with."""

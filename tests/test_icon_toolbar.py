@@ -23,6 +23,25 @@ from gantt_app.resources.icons import (
 )
 
 
+def _shut_down(root) -> None:
+    """
+    Take a root down, children first, without raising.
+
+    Destroying a root while a Toplevel is still on it leaves Tk running
+    ttk::ThemeChanged against an interpreter that has already gone, which
+    floods stderr with "can't invoke event" tracebacks.
+    """
+    try:
+        for child in list(root.children.values()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        root.destroy()
+    except Exception:
+        pass
+
+
 class TestIconDefinitions(unittest.TestCase):
     """Test icon definitions and resources."""
 
@@ -119,7 +138,7 @@ class TestIconToolbarCreation(unittest.TestCase):
         """Clean up after tests."""
         if hasattr(self, 'toolbar'):
             self.toolbar.destroy()
-        self.root.destroy()
+        _shut_down(self.root)
 
     def test_icon_toolbar_creation(self):
         """Test that IconToolbar can be created."""
@@ -213,7 +232,7 @@ class TestIconToolbarButtonProperties(unittest.TestCase):
     def tearDown(self):
         """Clean up after tests."""
         self.toolbar.destroy()
-        self.root.destroy()
+        _shut_down(self.root)
 
     def test_buttons_have_correct_size(self):
         """Test that all buttons have the expected size."""
@@ -316,7 +335,7 @@ class TestIconToolbarStateManagement(unittest.TestCase):
         """Clean up after tests."""
         if hasattr(self, 'toolbar'):
             self.toolbar.destroy()
-        self.root.destroy()
+        _shut_down(self.root)
 
     def test_every_button_is_active_with_a_project(self):
         """Every action in the row acts on a plan, so all of them light up."""
@@ -391,7 +410,7 @@ class TestIconToolbarActions(unittest.TestCase):
     def tearDown(self):
         """Clean up after tests."""
         self.toolbar.destroy()
-        self.root.destroy()
+        _shut_down(self.root)
 
     def test_every_icon_names_an_action(self):
         """No icon is drawn with nothing to invoke. Dividers are not icons."""
@@ -464,7 +483,7 @@ class TestIconToolbarIntegration(unittest.TestCase):
         """Clean up after tests."""
         if hasattr(self, 'toolbar'):
             self.toolbar.destroy()
-        self.root.destroy()
+        _shut_down(self.root)
 
     def test_toolbar_creates_icon_toolbar(self):
         """Test that Toolbar creates an IconToolbar."""
