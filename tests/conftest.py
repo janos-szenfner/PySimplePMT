@@ -36,9 +36,49 @@ This runs under pytest only. The unittest modules tear their own roots down
 in tearDown; see run_tests.py for how the two halves of the suite are run.
 """
 
+import re
 import tkinter as tk
+from pathlib import Path
 
 import pytest
+
+
+def pytest_configure(config):
+    """
+    Register every mark the suite uses so pytest stops warning about them.
+
+    The BDD modules tag themselves twice over: a pytestmark list naming the
+    module's feature, and @tags in the feature files that pytest-bdd turns
+    into marks. Neither list lives anywhere pytest can see, so each one
+    earns a PytestUnknownMarkWarning. Registering them here keeps the
+    warnings for marks that are genuinely mistyped.
+
+    The names are collected from the files rather than written out again
+    here, so a new feature file or BDD module registers itself.
+    """
+    marks = set()
+    tests_dir = Path(__file__).parent
+    for path in tests_dir.glob('test_*.py'):
+        marks.update(re.findall(r'pytest\.mark\.(\w+)', path.read_text()))
+    for path in (tests_dir / 'features').glob('*.feature'):
+        for line in path.read_text().splitlines():
+            marks.update(re.findall(r'@(\w+)', line))
+
+    builtin = {'skipif', 'parametrize', 'usefixtures', 'filterwarnings',
+               'skip', 'xfail', 'timeout'}
+    for name in sorted(marks - builtin):
+        config.addinivalue_line('markers', f'{name}: PySimplePMT test mark')
+
+    # pytest-bdd calls fixture APIs pytest has deprecated; the warnings are
+    # inside pytest_bdd's own compat layer and can only be fixed upstream.
+    # The warning class is renamed for each pytest release, so resolve it
+    # rather than naming one.
+    for name in dir(pytest):
+        if name.startswith('PytestRemovedIn'):
+            config.addinivalue_line(
+                'filterwarnings',
+                f'ignore:Passing (baseid|nodeid) .* is deprecated:'
+                f'pytest.{name}')
 
 
 def _shut_down(root) -> None:
