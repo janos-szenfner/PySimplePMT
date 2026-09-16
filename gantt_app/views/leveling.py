@@ -25,7 +25,6 @@ import customtkinter as ctk
 
 from gantt_app.core.leveling import LevelingOptions, LevelingPlan, preview
 from gantt_app.core.models import Project
-from gantt_app.views.buttonstyle import secondary_button
 from gantt_app.views.modal import grab_when_visible
 from gantt_app.views import theme
 from gantt_app.utils.log import get_logger

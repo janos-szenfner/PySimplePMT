@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.71.6 - 2026-09-15
+
+- **A deep dependency chain can no longer break a Mermaid export.** The
+  export walked the links recursively, so a chain past the interpreter's
+  limit ended in a RecursionError instead of a file, and a loop in the
+  links could not return. The walk is an explicit stack now - the same
+  shape the scheduler's own ordering takes - and both cases are covered
+  by new scenarios.
+
+- **The task list finds every parent in one pass.** Rows used to be
+  placed by sweeping the whole plan once per level of nesting - deep
+  imported hierarchies made that quadratic. The tree now groups children
+  by parent once and walks each subtree directly, so any depth populates
+  in a single pass; a row whose parent is missing or filtered out still
+  lands at the top level, and a parent-child loop cannot hang the
+  refresh.
+
+- **Rescheduling no longer rebuilds its own order every pass.** The
+  settling loop re-ran the full topological sort and summary scan on
+  each of its passes, though only dates can move inside it. Both are
+  worked out once up front now, and the dependency analysis builds its
+  child map once rather than once per link.
+
+- **Undo snapshots skip a copy of nothing.** Each snapshot used to
+  deep-copy the resource pool's serialised form - already a fresh tree
+  with nothing shared. The copy is gone; the restore still guards the
+  stored snapshot the way it always did.
+
+- **A refresh cannot stack inside itself.** A change raised while the
+  window was mid-rebuild used to be able to nest a second full rebuild
+  inside the first; it is marked and run once more after the refresh
+  finishes instead.
+
+- **Housekeeping, verified not decorative.** A static-analysis pass
+  cleared unused imports, dead locals and a duplicated test class that
+  was silently shadowing its own tests - each removal checked for
+  re-exports and call sites first. A flake8 configuration matching the
+  codebase's own style now keeps the findings usable.
+
 ## 1.71.5 - 2026-09-15
 
 - **The status bar follows whatever is selected.** The line at the foot

@@ -242,26 +242,36 @@ def _sort_tasks_for_dependencies(project: Project) -> List[Task]:
     tracking visited tasks and not revisiting them.
     """
     visited = set()
+    in_progress: Set[str] = set()
     sorted_tasks = []
-    
-    def visit(task: Task):
-        """Recursively visit dependencies first, then the task itself."""
-        if task.id in visited:
-            return
-        
-        # Visit all dependencies first
-        for dep_id in task.dependency_ids:
-            dep_task = project.get_task_by_id(dep_id)
-            if dep_task:
-                visit(dep_task)
-        
-        visited.add(task.id)
-        sorted_tasks.append(task)
-    
-    # Start with all tasks
-    for task in project.tasks:
-        visit(task)
-    
+
+    # A depth-first walk with an explicit stack, like Project._schedule_order:
+    # a dependency chain deeper than the recursion limit would overflow the
+    # call stack, and a chain that loops would never return.
+    for root in project.tasks:
+        if root.id in visited:
+            continue
+        stack = [(root, False)]
+        while stack:
+            task, expanded = stack.pop()
+            if expanded:
+                in_progress.discard(task.id)
+                if task.id not in visited:
+                    visited.add(task.id)
+                    sorted_tasks.append(task)
+                continue
+            if task.id in visited or task.id in in_progress:
+                continue
+            in_progress.add(task.id)
+            stack.append((task, True))
+            # Reversed so the stack visits the links in their written order.
+            for dep_id in reversed(task.dependency_ids):
+                dep_task = project.get_task_by_id(dep_id)
+                if (dep_task is not None
+                        and dep_task.id not in visited
+                        and dep_task.id not in in_progress):
+                    stack.append((dep_task, False))
+
     return sorted_tasks
 
 

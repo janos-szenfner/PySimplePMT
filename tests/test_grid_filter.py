@@ -17,7 +17,7 @@ from datetime import datetime
 
 from gantt_app.core.models import Project, Task
 from gantt_app.views.gridfilter import (
-    COLUMN_KIND, TEXT_MIN, _with_ancestors, choice_values, column_value,
+    _with_ancestors, choice_values, column_value,
     filter_is_active, definition_matching_ids, definition_visible_ids,
     filtered_task_ids, matching_task_ids, row_matches, rule_matches,
     specs_to_rules)

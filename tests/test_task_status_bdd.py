@@ -23,8 +23,6 @@ scenarios that build a list need a display - CI provides one through xvfb -
 and skip without one; the model and dashboard-metric scenarios need none and
 run everywhere.
 """
-import os
-import tempfile
 import tkinter as tk
 from datetime import datetime, timedelta
 

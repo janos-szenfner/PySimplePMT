@@ -14,7 +14,7 @@ import ast
 from pathlib import Path
 
 import pytest
-from pytest_bdd import given, parsers, scenarios, then, when
+from pytest_bdd import parsers, scenarios, then, when
 
 import run_tests
 

@@ -351,7 +351,7 @@ def check_same_tooltip_returned(hover, reattached):
 
 
 @then(parsers.parse('the tooltip text should be "{text}"'))
-def check_tooltip_text(hover, text):
+def check_tooltip_text_is(hover, text):
     """And it says the new thing."""
     _button, tooltip = hover
     assert tooltip.text == text

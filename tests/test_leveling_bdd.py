@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.core.leveling import LevelingOptions, level_resources, preview
+from gantt_app.core.leveling import LevelingOptions, level_resources
 from gantt_app.core.models import Project, Task, Dependency
 from gantt_app.core.priority import normalize_priority
 from gantt_app.core.resource_model import (

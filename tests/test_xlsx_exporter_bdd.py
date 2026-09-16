@@ -7,7 +7,7 @@ Run with:
 Nothing here needs a display. Converted from test_xlsx_exporter.py -
 every case carried over.
 """
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 

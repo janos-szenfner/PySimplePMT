@@ -390,8 +390,8 @@ def level_resources(project: Project,
             found = analysis.get(task.id)
             room = (found.free_float if options.within_free_float
                     else found.total_float) if found else 0
-            cap, blocker = _allowed_delay(project, task,
-                                          max(room, 0), options)
+            cap, _blocker = _allowed_delay(project, task,
+                                           max(room, 0), options)
 
             # The delay that clears the day: the task must start on the
             # first of its working days after it.
@@ -429,7 +429,6 @@ def level_resources(project: Project,
 
     # The moves: everything whose dates differ from before, whether the
     # engine picked it or a dragged successor - both are "what changed".
-    after_analysis = project.schedule_analysis()
     for task in project.tasks:
         old_start, old_end = before.get(task.id, (None, None))
         if (task.start_date, task.end_date) == (old_start, old_end):

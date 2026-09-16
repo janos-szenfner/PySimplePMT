@@ -737,7 +737,6 @@ class TestTheMilestoneFlagFollowsTheType(InlineEditingTestCase):
 
     def test_the_editor_opens_with_the_box_ticked(self):
         """Which is what the request asked to be able to see."""
-        from unittest import mock
         from gantt_app.views.taskdialogs import EditTaskDialog
 
         self.task_list.set_task_type('u1', 'Milestone')

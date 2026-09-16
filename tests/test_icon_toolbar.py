@@ -12,9 +12,9 @@ This module tests the graphical icon toolbar functionality including:
 import unittest
 import tkinter as tk
 import customtkinter as ctk
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from gantt_app.core.models import Project, Task
+from gantt_app.core.models import Project
 from tests.pixels import flat_pixels
 from gantt_app.views.toolbar import IconToolbar, Toolbar
 from gantt_app.resources.icons import (

@@ -599,7 +599,7 @@ def specs_to_rules(filters: Dict, project=None) -> list:
                           'value': sorted(str(v) for v in allowed)})
     # Every rule after the first joins with 'and' - the first row's join
     # is read but ignored, the way MS Project's is.
-    for index, rule in enumerate(rules):
+    for rule in rules:
         rule['join'] = 'and'
     return rules
 
@@ -611,7 +611,7 @@ def field_name_for_query(column: str) -> str:
     The shortest alias that resolves back to it, or the column's own name
     quoted when it holds a space - "Task Name" stays readable either way.
     """
-    from gantt_app.views.filterlang import FIELD_ALIASES, resolve_field
+    from gantt_app.views.filterlang import FIELD_ALIASES
     best = None
     for alias, target in FIELD_ALIASES.items():
         if target == column and (best is None or len(alias) < len(best)):
@@ -868,8 +868,6 @@ class GridFilterDialog(ctk.CTkToplevel):
 
     def _build_advanced(self, tab, query):
         """The query box, its verdict line, and the recent queries."""
-        from gantt_app.views import filterlang
-
         ctk.CTkLabel(
             tab,
             text='Write the filter: name ~ "art" and progress < 50, '
@@ -984,7 +982,7 @@ class GridFilterDialog(ctk.CTkToplevel):
 
         text = self._query_entry.get()
         try:
-            parse_query_text = filterlang.parse_query(text)
+            filterlang.parse_query(text)
         except filterlang.QueryError as error:
             self._query_status.configure(
                 text=f"✗ {error} (position {error.position})",

@@ -940,7 +940,27 @@ class GanttApp(ctk.CTk):
 
         reschedule returns whether anything moved and is a no-op on a settled
         plan, so calling it on every refresh costs a single pass.
+
+        A refresh that sets another change off - a callback on a widget the
+        rebuild touched - must not nest a second full rebuild inside the
+        first: it marks the plan dirty again, and the refresh runs once
+        more when this one finishes.
         """
+        if getattr(self, '_updating_all', False):
+            self._update_all_again = True
+            return
+        self._updating_all = True
+        try:
+            self._update_all_now()
+        finally:
+            self._updating_all = False
+            again = getattr(self, '_update_all_again', False)
+            self._update_all_again = False
+        if again:
+            self.update_all()
+
+    def _update_all_now(self):
+        """The refresh itself; update_all guards it against re-entry."""
         # Track unsaved changes unless the caller is resetting the project
         if not self._dirty_tracking_suspended:
             self.mark_dirty()

@@ -839,7 +839,7 @@ class ResourceBoard(ctk.CTkFrame):
                 else:
                     used, capacity = self._resource_used(entity)
 
-                badge, colour, pct = _status_badge(used, capacity)
+                badge, _colour, pct = _status_badge(used, capacity)
                 load_text = (f"{used:g} / {capacity:g} hrs "
                              f"({pct:.0f}%)")
                 kind = "TEAM" if is_team else entity.resource_type.value.upper()
@@ -1051,7 +1051,7 @@ class ResourceBoard(ctk.CTkFrame):
         duration = task.duration
         if managed:
             new_state = eff.state_from_task(probe, hpd)
-            result, conflict = eff.reconcile(old_state, new_state)
+            _result, conflict = eff.reconcile(old_state, new_state)
             if conflict is None:
                 eff.write_state_to_task(new_state, probe, hpd)
                 duration = probe.duration

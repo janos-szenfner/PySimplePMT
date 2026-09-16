@@ -6,7 +6,6 @@ Run with:
 
 These tests require a display because they build the full GanttApp.
 """
-import json
 import os
 import tempfile
 import tkinter as tk
@@ -16,7 +15,7 @@ import customtkinter as ctk
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.core.models import Project, Task
+from gantt_app.core.models import Task
 from gantt_app.utils.chart_render import render_image
 from tests.pixels import flat_pixels
 

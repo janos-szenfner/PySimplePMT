@@ -690,3 +690,46 @@ def a_section_line_is_present(ctx, prefix):
 def the_line_is_present(ctx, line):
     lines = [l.strip() for l in ctx.content.splitlines()]
     assert line in lines
+
+
+# ------------------------------------------------------------------
+# Deep chains and cycles - the walk must not recurse
+# ------------------------------------------------------------------
+
+@given(parsers.parse("a plan holding a dependency chain {depth:d} tasks "
+                     "deep"), target_fixture="ctx")
+def a_plan_holding_a_deep_chain(depth):
+    project = Project(name="Deep")
+    day = datetime(2026, 1, 5)
+    previous = None
+    for number in range(depth):
+        start = day + timedelta(days=number)
+        task = Task.create_task(f"Task {number + 1}", start,
+                                start + timedelta(days=1))
+        if previous is not None:
+            task.dependencies = [previous.id]
+        project.add_task(task)
+        previous = task
+    return SimpleNamespace(project=project)
+
+
+@given("a plan holding a two-task dependency cycle", target_fixture="ctx")
+def a_plan_holding_a_cycle():
+    project = Project(name="Cyclic")
+    day = datetime(2026, 1, 5)
+    first = Task.create_task("First", day, day + timedelta(days=1))
+    second = Task.create_task("Second", day + timedelta(days=2),
+                              day + timedelta(days=3))
+    project.add_task(first)
+    project.add_task(second)
+    first.dependencies = [second.id]
+    second.dependencies = [first.id]
+    return SimpleNamespace(project=project)
+
+
+@then(parsers.parse("the export holds {count:d} task lines"))
+def the_export_holds_task_lines(ctx, count):
+    import re
+    task_lines = [line for line in ctx.content.splitlines()
+                  if re.search(r" :[A-Za-z0-9_]+,", line)]
+    assert len(task_lines) == count

@@ -22,11 +22,10 @@ and slashed forms the date boxes accept as well as the dashed one.
 """
 
 import fnmatch
-from datetime import datetime
 from typing import Dict, List, Optional, Set
 
 from gantt_app.core.workdaycalendar import as_date
-from gantt_app.views.datepicker import parse_date, DATE_FORMAT
+from gantt_app.views.datepicker import parse_date
 from gantt_app.views.gridfilter import (
     ALERT_NONE, COLUMN_KIND, column_value, choice_values)
 

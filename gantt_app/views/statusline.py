@@ -13,7 +13,6 @@ from typing import Optional
 from gantt_app.core.resource_model import (
     CostResource,
     MaterialResource,
-    Resource,
     ResourceType,
     TeamPool,
 )

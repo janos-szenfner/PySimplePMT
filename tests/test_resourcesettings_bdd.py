@@ -6,7 +6,7 @@ Run with:
 """
 
 from types import SimpleNamespace
-from pytest_bdd import given, parsers, scenarios, then, when
+from pytest_bdd import given, scenarios, then
 import pytest
 
 from gantt_app.core.resource_model import SchedulePattern, DAYS

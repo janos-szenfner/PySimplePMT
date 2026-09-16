@@ -153,7 +153,7 @@ class ResourceDropdown(ctk.CTkFrame):
         for entity in sorted(resources, key=lambda r: r.name.lower()):
             badge = _type_badge(entity)
             schedule = _schedule_short(entity.schedule_pattern)
-            workload, colour, pct = _workload_text(entity, resources)
+            workload, _colour, pct = _workload_text(entity, resources)
             self._all_rows.append((
                 entity.id,
                 f"{entity.name}  {badge}",
@@ -165,7 +165,7 @@ class ResourceDropdown(ctk.CTkFrame):
                              key=lambda t: t.name.lower()):
             badge = _type_badge(entity)
             schedule = _schedule_short(entity.schedule_pattern)
-            workload, colour, pct = _workload_text(entity, resources)
+            workload, _colour, pct = _workload_text(entity, resources)
             self._all_rows.append((
                 entity.id,
                 f"{entity.name}  {badge}",

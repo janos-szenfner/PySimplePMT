@@ -326,3 +326,15 @@ Feature: Mermaid Gantt charts import and export
       """
     Then the imported project is not nothing
     And the imported task names are "Task one"
+
+  Scenario: A chain deeper than the call stack still exports
+    The dependency walk used to recurse once per link, so a chain past
+    the interpreter's limit ended in a RecursionError instead of a file.
+    Given a plan holding a dependency chain 1200 tasks deep
+    When the plan is exported to Mermaid text
+    Then the export holds 1200 task lines
+
+  Scenario: A dependency cycle still exports
+    Given a plan holding a two-task dependency cycle
+    When the plan is exported to Mermaid text
+    Then the export holds 2 task lines

@@ -8,7 +8,6 @@ These tests require a display because they build the full GanttApp.
 """
 import os
 import tkinter as tk
-from unittest.mock import MagicMock
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when

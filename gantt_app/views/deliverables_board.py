@@ -531,7 +531,6 @@ class DeliverablesBoard(ctk.CTkFrame):
         if not search and status == FILTER_ALL:
             return None
 
-        today = datetime.now().date()
         matches: Set[str] = set()
         for deliverable in self.project.deliverables:
             if search:
@@ -999,7 +998,7 @@ class DeliverablesBoard(ctk.CTkFrame):
         box = self._cell_box(item, column)
         if box is None:
             return
-        x, y, width, height = box
+        x, y, _width, height = box
         menu = tk.Menu(self.tree, tearoff=0)
         for choice in choices:
             menu.add_command(label=choice,

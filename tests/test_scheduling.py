@@ -18,7 +18,7 @@ January 2026, which puts a weekend inside the first chain deliberately.
 
 import logging
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from gantt_app.core.models import (
     Dependency, Project, Task,

@@ -7,8 +7,7 @@ Run with:
 
 import os
 import tempfile
-from pytest_bdd import given, parsers, scenarios, then, when
-import pytest
+from pytest_bdd import given, scenarios, then, when
 
 from gantt_app.utils.mpp_importer import (
     BINARY_MPP_MESSAGE, OLE2_SIGNATURE, import_mpp_file, is_binary_mpp,

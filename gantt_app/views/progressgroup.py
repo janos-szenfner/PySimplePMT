@@ -226,7 +226,7 @@ class ProgressGroup(ctk.CTkFrame):
         self.enabled = bool(enabled)
         state = tk.NORMAL if self.enabled else tk.DISABLED
 
-        for name, button in self.buttons.items():
+        for button in self.buttons.values():
             try:
                 button.configure(state=state)
             except tk.TclError:

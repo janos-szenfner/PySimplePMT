@@ -11,10 +11,8 @@ Tests the clipboard operations including:
 
 import unittest
 from datetime import datetime, timedelta
-import uuid
-import copy
 
-from gantt_app.core.models import Task, Project, Dependency
+from gantt_app.core.models import Task, Project
 from gantt_app.utils.undoredo import create_add_task_command
 from gantt_app.utils.copypastecut import (
     ClipboardService,

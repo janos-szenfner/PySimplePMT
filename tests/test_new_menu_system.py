@@ -6,7 +6,6 @@ toolbar functionality including copy/paste/cut operations.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
 from types import SimpleNamespace
 import tkinter as tk
 import inspect
@@ -84,59 +83,6 @@ class TestToolbarCopyPaste(unittest.TestCase):
 
     def test_copy_paste_methods_have_proper_signatures(self):
         """Test that copy/paste methods have the expected signatures."""
-        # Check copy_tasks method
-        copy_sig = inspect.signature(Toolbar.copy_tasks)
-        copy_params = list(copy_sig.parameters.keys())
-        self.assertEqual(len(copy_params), 1)  # Only self
-        
-        # Check cut_tasks method  
-        cut_sig = inspect.signature(Toolbar.cut_tasks)
-        cut_params = list(cut_sig.parameters.keys())
-        self.assertEqual(len(cut_params), 1)  # Only self
-        
-        # Check paste_tasks method
-        paste_sig = inspect.signature(Toolbar.paste_tasks)
-        paste_params = list(paste_sig.parameters.keys())
-        self.assertEqual(len(paste_params), 1)  # Only self
-        
-        # Check set_task_list method
-        set_task_sig = inspect.signature(Toolbar.set_task_list)
-        set_task_params = list(set_task_sig.parameters.keys())
-        self.assertEqual(len(set_task_params), 2)  # self and task_list
-
-
-class TestToolbarCopyPaste(unittest.TestCase):
-    """Tests for the copy/paste/cut functionality in Toolbar."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.project = Project("Test Project")
-        
-    def test_toolbar_has_copy_paste_methods(self):
-        """Test that Toolbar class has copy/paste/cut methods."""
-        # Test class methods exist without creating instances
-        self.assertTrue(hasattr(Toolbar, 'copy_tasks'))
-        self.assertTrue(hasattr(Toolbar, 'cut_tasks'))
-        self.assertTrue(hasattr(Toolbar, 'paste_tasks'))
-        self.assertTrue(hasattr(Toolbar, 'set_task_list'))
-        self.assertTrue(callable(getattr(Toolbar, 'copy_tasks', None)))
-        self.assertTrue(callable(getattr(Toolbar, 'cut_tasks', None)))
-        self.assertTrue(callable(getattr(Toolbar, 'paste_tasks', None)))
-        self.assertTrue(callable(getattr(Toolbar, 'set_task_list', None)))
-
-    def test_toolbar_accepts_clipboard_manager_parameter(self):
-        """Test that Toolbar constructor accepts clipboard_manager parameter."""
-        # Test by examining the __init__ signature
-        import inspect
-        sig = inspect.signature(Toolbar.__init__)
-        params = list(sig.parameters.keys())
-        self.assertIn('clipboard_manager', params, 
-                     "Toolbar.__init__ should accept clipboard_manager parameter")
-
-    def test_copy_paste_methods_have_proper_signatures(self):
-        """Test that copy/paste methods have the expected signatures."""
-        import inspect
-        
         # Check copy_tasks method
         copy_sig = inspect.signature(Toolbar.copy_tasks)
         copy_params = list(copy_sig.parameters.keys())

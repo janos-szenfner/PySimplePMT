@@ -584,7 +584,10 @@ class SnapshotCommand(Command):
               for name in DeliverableSnapshotCommand.FIELDS})
             for deliverable in self.project.deliverables
         ]
-        pool = copy.deepcopy(self.project.resource_repository.to_dict())
+        # to_dict already answers a fresh plain-data tree - mutating it
+        # cannot reach the live repository, so a deepcopy on top of it
+        # would copy a snapshot that shares nothing to begin with.
+        pool = self.project.resource_repository.to_dict()
         return tasks, deliverables, pool
 
     def _restore(self, snapshot: tuple) -> None:

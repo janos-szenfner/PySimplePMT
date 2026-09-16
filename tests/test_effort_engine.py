@@ -18,7 +18,6 @@ from gantt_app.core.effort import (
     classify_changes,
     days_to_hours,
     edit_duration,
-    edit_units,
     edit_work,
     effort_driven_effective,
     logic_applies,

@@ -37,7 +37,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 from gantt_app.core.priority import (
-    DEFAULT_PRIORITY, PRIORITY_LEVELS, normalize_priority)
+    DEFAULT_PRIORITY, normalize_priority)
 
 
 #: What a deliverable may be. To Do is the default and the first value, so a

@@ -119,7 +119,7 @@ class TestTheWorkItemTable(PageTestCase):
         them wrong.
         """
         from gantt_app.utils.page_render import (
-            SUMMARY_COLUMNS, TABLE_COLUMNS, _cells,
+            SUMMARY_COLUMNS, _cells,
         )
 
         cells = _cells(self.project, self.project.get_task_by_id("003"))

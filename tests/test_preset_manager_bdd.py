@@ -12,8 +12,6 @@ The display scenarios build the toolbar's item list and the settings grid
 directly rather than opening the floating preset window, which is topmost and
 watches for clicks - not something a headless test should drive.
 """
-import os
-import tempfile
 import tkinter as tk
 
 import pytest

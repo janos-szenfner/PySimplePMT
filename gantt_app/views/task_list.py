@@ -3717,42 +3717,43 @@ class DragDropTaskList(ctk.CTkFrame):
         # Map task IDs to tree items for parent-child relationships
         tree_items = {}
 
-        # First pass: add all root tasks
-        for task in self.project.get_root_tasks():
+        # Children grouped by the row they hang under, each group in plan
+        # order. One pass replaces the sweep-until-settled loop this used
+        # to run, which walked every unplaced task once per level of
+        # nesting - deep imported hierarchies made that quadratic.
+        children: dict = {}
+        for task in self.project.tasks:
+            if task.parent_task_id is None:
+                continue
             if self._hidden_by_search(task) or self._hidden_by_filter(task):
                 continue
-            item_id = self._add_task_to_tree(task)
-            tree_items[task.id] = item_id
+            children.setdefault(task.parent_task_id, []).append(task)
 
-        # Further passes: add subtasks once their parent is in the tree.
-        # Imported files (notably GanttProject) can nest tasks several levels
-        # deep, so keep sweeping until a pass places nothing new - a single
-        # pass would silently drop anything below the second level.
-        remaining = [t for t in self.project.tasks
-                     if t.parent_task_id and not self._hidden_by_search(t)
-                     and not self._hidden_by_filter(t)]
+        # Roots first, then each subtree depth-first through an explicit
+        # stack, so a row lands under its parent the moment the parent is
+        # in the tree - any depth of nesting in one walk.
+        placed = set()
+        stack = [(task, '') for task in reversed([
+            task for task in self.project.get_root_tasks()
+            if not self._hidden_by_search(task)
+            and not self._hidden_by_filter(task)])]
+        while stack:
+            task, parent_item = stack.pop()
+            tree_items[task.id] = self._add_task_to_tree(
+                task, parent_item=parent_item)
+            placed.add(task.id)
+            for child in reversed(children.get(task.id, [])):
+                stack.append((child, tree_items[task.id]))
 
-        while remaining:
-            placed = []
-            for task in remaining:
-                parent_item = tree_items.get(task.parent_task_id)
-                if parent_item is None:
-                    continue
-                item_id = self._add_task_to_tree(task,
-                                                 parent_item=parent_item)
-                tree_items[task.id] = item_id
-                placed.append(task)
-
-            if not placed:
-                # Orphaned subtasks (parent missing or a cycle) - show at
-                # root. A search reaches here too: a match whose parent is
-                # filtered out has nowhere to hang, and the alternative to
-                # showing it at the top is not showing the match at all.
-                for task in remaining:
-                    tree_items[task.id] = self._add_task_to_tree(task)
-                break
-
-            remaining = [t for t in remaining if t not in placed]
+        # Orphaned subtasks (parent missing, filtered out or a cycle) -
+        # show at root. A search reaches here too: a match whose parent is
+        # filtered out has nowhere to hang, and the alternative to showing
+        # it at the top is not showing the match at all.
+        for task in self.project.tasks:
+            if task.parent_task_id and task.id not in placed \
+                    and not self._hidden_by_search(task) \
+                    and not self._hidden_by_filter(task):
+                tree_items[task.id] = self._add_task_to_tree(task)
     
     def _add_task_to_tree(self, task: Task, parent_item: str = ''):
         """

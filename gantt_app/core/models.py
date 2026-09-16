@@ -5505,11 +5505,15 @@ class Project:
         if self.normalise_milestones():
             changed = True
 
-        for _ in range(self.MAX_SCHEDULE_PASSES):
-            summary_ids = self.get_summary_task_ids()
+        # The order and the summary set are structural - nothing a pass
+        # does changes a link or a parent, only dates - so both are worked
+        # out once rather than once per pass.
+        schedule_order = self._schedule_order()
+        summary_ids = self.get_summary_task_ids()
 
+        for _ in range(self.MAX_SCHEDULE_PASSES):
             moved = False
-            for task in self._schedule_order():
+            for task in schedule_order:
                 if task.id in summary_ids:
                     if self._pull_branch_after_its_links(
                             task, forward_only=forward_only):
@@ -5796,11 +5800,14 @@ class Project:
         finish = max(early_finish.values())
 
         # ---- the network, both ways ------------------------------------
+        # The children map is built once for every resolution - walking it
+        # per edge rebuilt the whole hierarchy once per dependency.
+        children = self._children_by_parent()
         successors: Dict[str, List[Dependency]] = {t.id: [] for t in tasks}
         for task in tasks:
             for dependency in task.dependencies:
                 for resolved in self._resolve_to_work(dependency.task_id,
-                                                      by_id, summary_ids):
+                                                      by_id, children):
                     successors[resolved].append(
                         Dependency(task_id=task.id,
                                    dep_type=dependency.dep_type,
@@ -5917,9 +5924,16 @@ class Project:
         return analysis
 
     def _resolve_to_work(self, task_id: str, by_id: Dict[str, Task],
-                         summary_ids: Set[str]) -> List[str]:
+                         children: Dict[Optional[str], List[Task]]
+                         ) -> List[str]:
         """
         The tasks that hold the work a dependency refers to.
+
+        PARAMETERS:
+        -----------
+        children : Dict[Optional[str], List[Task]]
+            The parent-to-children map, built once by the caller rather
+            than rebuilt here for every edge of the network.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -5931,7 +5945,6 @@ class Project:
         if task_id in by_id:
             return [task_id]
 
-        children = self._children_by_parent()
         found: List[str] = []
         stack = [task_id]
         seen: Set[str] = set()
