@@ -63,7 +63,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Run the test suite
-        run: xvfb-run -a python run_tests.py
+        run: xvfb-run -a python run_tests.py -v
 
       - name: Build the .deb
         run: ./packaging/build_deb.sh "${{ steps.version.outputs.version }}"
@@ -218,7 +218,7 @@ jobs:
       # The macOS runner has a window server, so the widget tests run without
       # a virtual display.
       - name: Run the test suite
-        run: python run_tests.py
+        run: python run_tests.py -v
 
       - name: Build the .app and the .dmg
         run: ./packaging/build_dmg.sh "${{ steps.version.outputs.version }}"

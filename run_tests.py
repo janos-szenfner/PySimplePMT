@@ -3,6 +3,7 @@
 Test runner for the Gantt Project Management Tool.
 
 Run all tests with: python3 run_tests.py
+Run them loudly with: python3 run_tests.py -v
 Run specific tests with: python3 run_tests.py test_module
 """
 
@@ -65,7 +66,7 @@ def pytest_only_modules():
     return found
 
 
-def run_pytest_modules(modules):
+def run_pytest_modules(modules, verbose=False):
     """
     Run the pytest-only modules, with pytest.
 
@@ -73,6 +74,11 @@ def run_pytest_modules(modules):
     -----------
     modules : list[str]
         Module names, as pytest_only_modules returns them.
+    verbose : bool
+        True to name every scenario as it runs, the way the unittest
+        half already does; False leaves pytest at -q, the dots and the
+        percentage. CI passes -v so the log says which scenario was
+        running when a build hung or failed.
 
     RETURNS:
     --------
@@ -99,10 +105,10 @@ def run_pytest_modules(modules):
     print("=" * 50)
     print("Running with pytest: " + ", ".join(modules))
     paths = [str(TESTS_DIR / f"{name}.py") for name in modules]
-    return pytest.main(['-q', *paths]) == 0
+    return pytest.main(['-v' if verbose else '-q', *paths]) == 0
 
 
-def run_all_tests():
+def run_all_tests(verbose=False):
     """
     Run every test in the tests directory.
 
@@ -127,12 +133,12 @@ def run_all_tests():
 
     # Both halves run whatever the other did, so one failure does not hide
     # the other's results
-    passed_pytest = run_pytest_modules(sorted(excluded))
+    passed_pytest = run_pytest_modules(sorted(excluded), verbose)
 
     return result.wasSuccessful() and passed_pytest
 
 
-def run_specific_test(test_module: str):
+def run_specific_test(test_module: str, verbose=False):
     """
     Run one named test module.
 
@@ -144,7 +150,7 @@ def run_specific_test(test_module: str):
     test rather than as the wrong runner.
     """
     if test_module in pytest_only_modules():
-        return run_pytest_modules([test_module])
+        return run_pytest_modules([test_module], verbose)
 
     try:
         # Import and run the specific test module
@@ -167,15 +173,19 @@ def main():
     print("Gantt Project Management Tool - Test Runner")
     print("=" * 50)
     
-    if len(sys.argv) > 1:
+    args = [arg for arg in sys.argv[1:]]
+    verbose = '-v' in args or '--verbose' in args
+    args = [arg for arg in args if arg not in ('-v', '--verbose')]
+
+    if args:
         # Run specific test module
-        test_module = sys.argv[1]
+        test_module = args[0]
         print(f"Running tests from: {test_module}")
-        success = run_specific_test(test_module)
+        success = run_specific_test(test_module, verbose)
     else:
         # Run all tests
         print("Running all tests...")
-        success = run_all_tests()
+        success = run_all_tests(verbose)
     
     print("=" * 50)
     if success:

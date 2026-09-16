@@ -48,7 +48,7 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run the test suite
-        run: xvfb-run -a python run_tests.py
+        run: xvfb-run -a python run_tests.py -v
 
   build-check:
     name: Package build check
