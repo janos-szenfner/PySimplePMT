@@ -109,7 +109,7 @@ class TestClipboardPayloadModel(unittest.TestCase):
         """Test CONTAINER_TYPES constant."""
         self.assertIn("phase", CONTAINER_TYPES)
         self.assertIn("task", CONTAINER_TYPES)
-        self.assertNotIn("subtask", CONTAINER_TYPES)
+        self.assertIn("subtask", CONTAINER_TYPES)
         self.assertNotIn("milestone", CONTAINER_TYPES)
 
 
@@ -254,8 +254,8 @@ class TestClipboardService(unittest.TestCase):
 
     def test_cannot_paste_into_leaf(self):
         """Test that paste into a leaf node (non-container) is prevented."""
-        # Make task2 a subtask (leaf node)
-        self.task2.task_type = "Subtask"
+        # Make task2 a milestone (leaf node)
+        self.task2.task_type = "Milestone"
         
         # Copy task
         self.service.copy(["001"])
@@ -297,7 +297,7 @@ class TestClipboardService(unittest.TestCase):
         self.assertTrue(self.service.can_paste("003"))
         
         # With leaf container
-        self.task2.task_type = "Subtask"
+        self.task2.task_type = "Milestone"
         self.assertFalse(self.service.can_paste("002"))
 
     def test_copy_creates_deep_copy(self):
@@ -379,9 +379,13 @@ class TestClipboardService(unittest.TestCase):
         self.assertTrue(self.service._can_accept_types(None, ["task"]))
         self.assertTrue(self.service._can_accept_types(None, ["phase"]))
         
-        # Subtask cannot accept children
-        self.task2.task_type = "Subtask"
+        # A milestone marks a moment; it holds nothing
+        self.task2.task_type = "Milestone"
         self.assertFalse(self.service._can_accept_types("002", ["task"]))
+
+        # A sub-task may be a grouping row - see issue #56
+        self.task2.task_type = "Subtask"
+        self.assertTrue(self.service._can_accept_types("002", ["task"]))
 
     def test_copy_with_nonexistent_task(self):
         """Test copying a task that doesn't exist."""
@@ -810,25 +814,27 @@ class TestWhatMayGoWhere(unittest.TestCase):
                 self.service._can_accept_types(container, ["phase"]),
                 f"a phase should not go inside {container}")
 
-    def test_a_subtask_belongs_to_a_task(self):
-        """It is a tick on that task's checklist and on nobody else's."""
-        self.assertTrue(self.service._can_accept_types("T", ["subtask"]))
+    def test_a_subtask_belongs_to_a_task_or_a_subtask_group(self):
+        """It is a tick on that checklist, or a row in the group below one."""
+        for container in ("T", "S"):
+            self.assertTrue(
+                self.service._can_accept_types(container, ["subtask"]),
+                f"a subtask should go inside {container}")
         self.assertFalse(self.service._can_accept_types("P", ["subtask"]))
 
-    def test_a_task_goes_under_the_two_that_hold_work(self):
-        """A phase, or another task."""
-        for container in ("P", "T"):
+    def test_a_task_goes_under_the_three_that_hold_work(self):
+        """A phase, another task, or a sub-task grouping row."""
+        for container in ("P", "T", "S"):
             self.assertTrue(
                 self.service._can_accept_types(container, ["task"]),
                 f"a task should go inside {container}")
 
-    def test_nothing_goes_inside_a_leaf(self):
-        """A sub-task and a milestone hold nothing."""
-        for container in ("S", "M"):
-            for kind in ("task", "subtask", "milestone"):
-                self.assertFalse(
-                    self.service._can_accept_types(container, [kind]),
-                    f"{kind} should not go inside {container}")
+    def test_nothing_goes_inside_a_milestone(self):
+        """The only leaf: a moment holds nothing."""
+        for kind in ("task", "subtask", "milestone"):
+            self.assertFalse(
+                self.service._can_accept_types("M", [kind]),
+                f"{kind} should not go inside a milestone")
 
     def test_a_phase_pasted_into_a_task_changes_nothing(self):
         """The rule is applied, not merely reported."""
@@ -838,6 +844,30 @@ class TestWhatMayGoWhere(unittest.TestCase):
         self.service.paste("T")
 
         self.assertEqual(len(self.project.tasks), before)
+
+    def test_a_paste_inside_a_subtask_group_lands(self):
+        """
+        Issue #56: beside a row inside a sub-task grouping row.
+
+        The empty line the report blamed was only where the paste was
+        aimed - the rule refused everything under a Subtask parent, so a
+        paste near a row inside such a group did nothing.
+        """
+        today = datetime(2024, 1, 1)
+        inner = Task.create_task(name="Inner", start_date=today,
+                                 end_date=today + timedelta(days=1),
+                                 task_id="SI")
+        inner.task_type = "Subtask"
+        inner.parent_task_id = "S"
+        self.project.add_task(inner)
+
+        self.service.copy(["M"])
+
+        pasted = self.service.paste_at("SI")
+
+        self.assertEqual(len(pasted), 1)
+        self.assertEqual(
+            self.project.get_task_by_id(pasted[0]).parent_task_id, "S")
 
 
 class TestSayingWhatWasPasted(unittest.TestCase):
@@ -1197,9 +1227,14 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         self.assertTrue(self.service._can_accept_types("P001", ["task"]))
         self.assertTrue(self.service._can_accept_types("T001", ["task"]))
 
-    def test_leaf_types_cannot_accept_children(self):
-        """Test that Subtask and Milestone cannot accept children."""
-        self.assertFalse(self.service._can_accept_types("ST001", ["task"]))
+    def test_a_subtask_group_can_accept_children(self):
+        """A sub-task may hold rows of its own - issue #56."""
+        self.assertTrue(self.service._can_accept_types("ST001", ["task"]))
+        self.assertTrue(
+            self.service._can_accept_types("ST001", ["subtask"]))
+
+    def test_a_milestone_cannot_accept_children(self):
+        """The only leaf type: a moment holds nothing."""
         self.assertFalse(self.service._can_accept_types("M001", ["task"]))
 
     def test_paste_task_into_phase(self):

@@ -55,15 +55,14 @@ class TestDeepSubtaskCreation(unittest.TestCase):
         self.assertEqual(self.project.get_parent_task(self.level3.id).id,
                          self.level2.id)
 
-    def test_only_container_types_are_offered_as_parents(self):
-        """Only the types that hold work - Phase and Task - can be parents."""
+    def test_every_type_that_can_hold_rows_is_offered_as_a_parent(self):
+        """Subtasks are included - hierarchies deeper than two levels are
+        built from the UI this way (issue #56)."""
         offered = {t.id for t in candidate_parents(self.project)}
 
-        # Level 1 is a Task (container) - should be offered
         self.assertIn(self.level1.id, offered)
-        # Level 2 and Level 3 are Subtasks (not containers) - should NOT be offered
-        self.assertNotIn(self.level2.id, offered)
-        self.assertNotIn(self.level3.id, offered)
+        self.assertIn(self.level2.id, offered)
+        self.assertIn(self.level3.id, offered)
 
     def test_candidates_are_in_hierarchy_order(self):
         """Parents are listed before their own descendants."""
@@ -72,14 +71,17 @@ class TestDeepSubtaskCreation(unittest.TestCase):
                                 self.start + timedelta(days=30))
         phase.task_type = "Phase"
         self.project.add_task(phase)
-        
+
         names = [t.name for t in candidate_parents(self.project)]
 
-        # Only Phase and Level 1 (Task) should be offered as parents
+        # Everything that can hold rows is offered, each parent
+        # immediately followed by its own descendants
         self.assertIn("Phase", names)
         self.assertIn("Level 1", names)
-        self.assertNotIn("Level 2", names)
-        self.assertNotIn("Level 3", names)
+        self.assertIn("Level 2", names)
+        self.assertIn("Level 3", names)
+        self.assertLess(names.index("Level 1"), names.index("Level 2"))
+        self.assertLess(names.index("Level 2"), names.index("Level 3"))
 
     def test_milestones_are_not_offered_as_parents(self):
         """A milestone has no span for a child to sit inside."""
@@ -168,14 +170,14 @@ class TestTaskTypeCompatibility(unittest.TestCase):
         
         self.assertTrue(task.can_have_children)
 
-    def test_subtask_cannot_have_children(self):
-        """Subtask cannot have children."""
+    def test_subtask_can_have_children(self):
+        """A Subtask may be a grouping row - issue #56."""
         parent = Task.create_task("Parent", self.start,
                                   self.start + timedelta(days=10))
         subtask = Task.create_subtask("Subtask", parent_task=parent)
         self.project.add_task(subtask)
         
-        self.assertFalse(subtask.can_have_children)
+        self.assertTrue(subtask.can_have_children)
 
     def test_milestone_cannot_have_children(self):
         """Milestone cannot have children."""
@@ -184,12 +186,12 @@ class TestTaskTypeCompatibility(unittest.TestCase):
         
         self.assertFalse(milestone.can_have_children)
 
-    def test_subtask_is_leaf(self):
-        """Subtask is a leaf node."""
+    def test_subtask_is_not_a_leaf(self):
+        """A grouping row can hold rows of its own - issue #56."""
         parent = Task.create_task("Parent", self.start,
                                   self.start + timedelta(days=10))
         subtask = Task.create_subtask("Subtask", parent_task=parent)
-        self.assertTrue(subtask.is_leaf)
+        self.assertFalse(subtask.is_leaf)
 
     def test_milestone_is_leaf(self):
         """Milestone is a leaf node."""
@@ -250,8 +252,8 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         """
         And so keeps being able to hold sub-tasks.
 
-        A Subtask cannot have children - see Task.can_have_children - so
-        retyping it here took away the level below it as well.
+        A Subtask used to be unable to hold children, so retyping it
+        here took away the level below it as well.
         """
         project = self.plan([("D", "Phase", None), ("T", "Task", None)])
 

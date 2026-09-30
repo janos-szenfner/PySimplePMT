@@ -211,20 +211,26 @@ CONTAINER_TYPES = ('Phase',)
 #: Work types that represent actual work items
 WORK_TYPES = ('Task', 'Subtask')
 
-#: Types that can have subtasks
-PARENT_TYPES = ('Phase', 'Task')
+#: Types that can have subtasks. A Subtask may: real plans carry grouping
+#: rows of that type with rows under them (issue #56), indenting already
+#: puts rows under whichever sibling sits above, and imported files arrive
+#: nested however their own format allowed.
+PARENT_TYPES = ('Phase', 'Task', 'Subtask')
 
-#: Types that cannot have children (leaf nodes)
-LEAF_TYPES = ('Subtask', 'Milestone')
+#: Types that cannot have children (leaf nodes). A milestone marks a moment
+#: rather than spanning one, so nothing sits inside it.
+LEAF_TYPES = ('Milestone',)
 
 #: What a task is allowed to be, by the type of the parent it sits under.
 #:
 #: The types describe a three-level plan - Phase > Task > Subtask - with a
 #: Milestone allowed at any level, since a milestone marks a moment in
-#: whatever it is a moment in.
+#: whatever it is a moment in. A Subtask holding rows of its own is a
+#: grouping row: what goes under it is still a Subtask, again however deep.
 ALLOWED_CHILD_TYPES = {
     'Phase': ('Task', 'Milestone'),
     'Task': ('Subtask', 'Milestone'),
+    'Subtask': ('Subtask', 'Milestone'),
 }
 
 #: What a task becomes when its own type is not one the parent can hold.
@@ -234,6 +240,7 @@ ALLOWED_CHILD_TYPES = {
 DEFAULT_CHILD_TYPE = {
     'Phase': 'Task',
     'Task': 'Subtask',
+    'Subtask': 'Subtask',
 }
 
 #: What a task is allowed to be at the top of the plan. A Subtask is not:

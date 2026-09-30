@@ -26,8 +26,10 @@ if TYPE_CHECKING:
 #: Supported entity types for clipboard operations
 ENTITY_TYPES = ('task', 'phase', 'subtask', 'milestone')
 
-#: Container types that can accept pasted items
-CONTAINER_TYPES = ('phase', 'task')
+#: Container types that can accept pasted items. A sub-task row may be a
+#: grouping row with rows of its own, which is the shape real plans take
+#: (issue #56).
+CONTAINER_TYPES = ('phase', 'task', 'subtask')
 
 #: The columns written to the desktop clipboard, tab-separated so a
 #: spreadsheet splits them into cells and a note shows them as a table. See
@@ -38,18 +40,19 @@ CLIPBOARD_COLUMNS = ("Task Name", "Type", "Start", "End", "Duration", "Status")
 #: would go under. An empty tuple means the top level and nowhere else.
 #:
 #: The plan runs Phase, Task, Subtask, and pasting is held to
-#: that: a phase is a top-level scope and does not go inside a task, a
-#: sub-task belongs to a task and to nothing else. Paste is greyed out on
-#: the menu where this says no, rather than being offered and then refused.
+#: that: a phase is a top-level scope and does not go inside a task, and a
+#: milestone marks a moment that holds nothing, so it is the only leaf.
+#: Paste is greyed out on the menu where this says no, rather than being
+#: offered and then refused.
 #:
-#: A Task may go under a Task. Sub-tasks are the usual thing to find there,
-#: but a plan nested deeper than the four levels is one this application has
-#: always allowed and imported files arrive carrying.
+#: A sub-task may be a grouping row with rows under it - plans built by
+#: indenting and imported files both nest that way, so a paste beside a
+#: row inside a sub-task group lands inside that group (issue #56).
 ALLOWED_PARENT_TYPES = {
     'phase': (),
-    'task': ('phase', 'task'),
-    'subtask': ('task',),
-    'milestone': ('phase', 'task'),
+    'task': ('phase', 'task', 'subtask'),
+    'subtask': ('task', 'subtask'),
+    'milestone': ('phase', 'task', 'subtask'),
 }
 
 
