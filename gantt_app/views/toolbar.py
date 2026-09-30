@@ -1620,7 +1620,22 @@ class Toolbar(ctk.CTkFrame):
         self._create_of_type("Phase")
 
     def add_task(self):
-        """Add a new task to the project with undo support."""
+        """
+        Add a new task where the cursor is, with undo support.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        A task made from the menu used to land at the end of the plan no
+        matter which row was selected - see _save_created for the placing
+        itself. With a task list wired it asks the list for the same insert
+        the keyboard shortcut makes, so both routes put the new row above
+        the selected one; before the list exists it falls back to appending
+        at the top level.
+        """
+        if self.task_list is not None and \
+                hasattr(self.task_list, 'create_task_at_cursor'):
+            self.task_list.create_task_at_cursor()
+            return
         self._create_of_type("Task")
 
 

@@ -32,7 +32,7 @@ import customtkinter as ctk
 from gantt_app.views import theme
 from gantt_app.core.models import (
     TASK_TYPES, GRID_DATA_COLUMNS, GRID_PINNED_COLUMN,
-    order_grid_columns, Task, Project)
+    child_type_for, order_grid_columns, Task, Project)
 from gantt_app.core.calendarregistry import PROJECT_DEFAULT_LABEL
 from gantt_app.core.dependencysyntax import format_links
 from gantt_app.core.taskstyle import resolve as resolve_style
@@ -3008,7 +3008,7 @@ class DragDropTaskList(ctk.CTkFrame):
         if self.on_project_changed:
             self.on_project_changed()
 
-    def create_task(self, task_type: str, anchor_id: str):
+    def create_task(self, task_type: str, anchor_id: str, above: bool = False):
         """
         Open the create dialog for a new task placed at a row.
 
@@ -3019,18 +3019,24 @@ class DragDropTaskList(ctk.CTkFrame):
         anchor_id : Optional[str]
             The row the context menu was opened on, or None when it was
             opened over the empty space below the rows.
+        above : bool
+            True places a new sibling above the anchor, pushing the anchor
+            down - the insert rule the keyboard shortcut and the ribbon's
+            New Task follow, as the reference tool does. False is the
+            right-click rule: the new row drops in directly below the row
+            the menu was opened on.
 
         DEVELOPMENT NOTES:
         ------------------
         A sub-task is created under the clicked row, which is what makes it
-        a sub-task. A task or milestone is created beside it and dropped in
-        directly below, rather than at the end of the plan: the menu was
-        opened on a particular row, so that is where the new one belongs.
+        a sub-task. A task or milestone is created beside it rather than at
+        the end of the plan: the gesture pointed at a particular row, so
+        that is where the new one belongs.
 
-        With no row behind the menu the new task goes at the end of the plan
-        at the top level, which is what right-clicking the empty space below
-        the last row asks for. A sub-task has nothing to go under there, and
-        the menu greys it out.
+        With no row behind the gesture the new task goes at the end of the
+        plan at the top level, which is what right-clicking the empty space
+        below the last row asks for. A sub-task has nothing to go under
+        there, and the menu greys it out.
         """
         if anchor_id is None:
             anchor = None
@@ -3064,7 +3070,8 @@ class DragDropTaskList(ctk.CTkFrame):
             self.winfo_toplevel(), self.project,
             task_type=task_type,
             parent_task=parent,
-            on_save=lambda task: self._save_created(task, anchor_id, parent_id),
+            on_save=lambda task: self._save_created(
+                task, anchor_id, parent_id, above),
             project_tracker=self.project_tracker,
         )
 
@@ -3080,14 +3087,16 @@ class DragDropTaskList(ctk.CTkFrame):
         and the right-click needs a row to open on, so the first row of a
         plan could only be made from the menu.
 
-        It goes beside the focused row and drops in below it, as the
-        right-click Create does; with no cursor - a list nobody has clicked
+        It is inserted above the focused row, taking its place as the
+        reference tool's insert does and a paste already does here; the row
+        it lands on moves down. With no cursor - a list nobody has clicked
         in yet - it goes at the end of the plan at the top level, which is
         where a row made without pointing at anything belongs.
         """
-        self.create_task('Task', self.focused_task_id())
+        self.create_task('Task', self.focused_task_id(), above=True)
 
-    def _save_created(self, task: Task, anchor_id: str, parent_id):
+    def _save_created(self, task: Task, anchor_id: str, parent_id,
+                      above: bool = False):
         """
         Add a newly created task and put it where the menu was opened.
 
@@ -3096,27 +3105,35 @@ class DragDropTaskList(ctk.CTkFrame):
         The level is set here rather than left to the dialog, which only
         honours a parent when it is building a sub-task. Choosing Task from
         a sub-task's menu should give another task beside it, not one that
-        jumps out to the top of the plan.
+        jumps out to the top of the plan. The type follows the level the row
+        lands at - a sibling of a task inside a phase stays a Task, one
+        beside a sub-task is a sub-task too - rather than a blanket Subtask,
+        which was what the cursor route wrongly produced inside a phase.
 
-        add_task appends, so a sibling is then moved up behind the row it
-        was created from. A sub-task needs no move: rebuilding from the
-        hierarchy already places it under its parent.
+        add_task appends, so a sibling is then moved to where it belongs:
+        in front of the row it was created from for the insert rule, or one
+        place under it when the right-click menu asked for below. A
+        sub-task needs no move: rebuilding from the hierarchy already
+        places it under its parent.
         """
         def apply() -> bool:
             """Place the new row, then renew the numbering it changed."""
             task.parent_task_id = parent_id
-            # Only set task_type to Subtask if it's not already set to a
-            # specific type and has a parent
+            # A phase or milestone stays what it was; anything else takes
+            # the type the level it lands at calls for
             if parent_id and task.task_type not in ("Phase", "Milestone"):
-                task.task_type = "Subtask"
+                parent = self.project.get_task_by_id(parent_id)
+                task.task_type = child_type_for(parent, task)
 
             self.project.add_task(task)
             anchor = self.project.get_task_by_id(anchor_id)
 
             if anchor is not None and task.parent_task_id == anchor.parent_task_id:
-                # A sibling: slot it in directly after the row it came from
+                # A sibling takes the anchor's place; the right-click rule
+                # drops it one place lower, directly below
                 self.project.move_task_before(task.id, anchor_id)
-                self.project.move_task(task.id, 'down')
+                if not above:
+                    self.project.move_task(task.id, 'down')
 
             return True
 

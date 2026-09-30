@@ -40,8 +40,9 @@ Feature: The new-task shortcut is actually bound to the window
     Then a bare key net is bound exactly when running on macOS
 
   Scenario: The handler makes a task where the cursor is
-    # The end of the chain: the row the cursor is on gets a sibling.
-    # The dialog is stubbed out; what is checked is that the keyboard
-    # route reaches the same creation the right-click menu does.
+    # The end of the chain: a sibling inserted where the cursor is,
+    # taking the focused row's place. The dialog is stubbed out; what is
+    # checked is that the keyboard route reaches the same creation the
+    # right-click menu does.
     When the new-task hotkey fires
     Then a task is created as a sibling of the focused row

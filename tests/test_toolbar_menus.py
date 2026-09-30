@@ -256,6 +256,46 @@ class TestTheNewTaskHotkeyIsWired(unittest.TestCase):
         stub.task_list.create_task_at_cursor.assert_called_once_with()
 
 
+class TestTheMenuCreatesAtTheCursor(unittest.TestCase):
+    """
+    The ribbon's New Task had to take the same route as the hotkey.
+
+    WHY THESE EXIST:
+    ================
+    Issue #59: the menu's add_task built the dialog itself and appended
+    the new row at the end of the plan, ignoring the selected row. The
+    insert rule lives in the task list now, so the menu delegates to the
+    same create the keyboard shortcut uses.
+    """
+
+    def test_it_asks_the_task_list_to_create_one(self):
+        """The same insert the keyboard route makes."""
+        from unittest import mock
+
+        from gantt_app.views.toolbar import Toolbar
+
+        stub = Toolbar.__new__(Toolbar)
+        stub.task_list = mock.Mock(spec=['create_task_at_cursor'])
+
+        Toolbar.add_task(stub)
+
+        stub.task_list.create_task_at_cursor.assert_called_once_with()
+
+    def test_without_a_list_it_falls_back_to_appending(self):
+        """Before the list exists there is no cursor to insert at."""
+        from unittest import mock
+
+        from gantt_app.views.toolbar import Toolbar
+
+        stub = Toolbar.__new__(Toolbar)
+        stub.task_list = None
+
+        with mock.patch.object(Toolbar, '_create_of_type') as make:
+            Toolbar.add_task(stub)
+
+        make.assert_called_once_with('Task')
+
+
 class TestTheOptionKeyIsMatchedByThePhysicalKey(unittest.TestCase):
     """
     Option is a compose key on macOS, so the keysym cannot be relied on.

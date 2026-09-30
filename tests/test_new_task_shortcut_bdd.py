@@ -167,4 +167,4 @@ def a_bare_key_net_only_on_macos(ctx):
 
 @then("a task is created as a sibling of the focused row")
 def a_task_is_created_at_the_cursor(ctx):
-    ctx.create.assert_called_once_with('Task', '1')
+    ctx.create.assert_called_once_with('Task', '1', above=True)

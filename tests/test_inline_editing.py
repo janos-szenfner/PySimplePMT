@@ -854,7 +854,7 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
         with mock.patch.object(self.task_list, 'create_task') as made:
             self.task_list.create_task_at_cursor()
 
-        made.assert_called_once_with('Task', 'u2')
+        made.assert_called_once_with('Task', 'u2', above=True)
 
     def test_it_goes_at_the_end_with_no_cursor(self):
         """A list nobody has clicked in yet still makes a row."""
@@ -866,7 +866,76 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
         with mock.patch.object(self.task_list, 'create_task') as made:
             self.task_list.create_task_at_cursor()
 
-        made.assert_called_once_with('Task', None)
+        made.assert_called_once_with('Task', None, above=True)
+
+    def new_task(self, task_id='new1'):
+        """The task a saved dialog would hand back."""
+        return Task(id=task_id, name='New', task_type='Task',
+                    start_date=BASE, end_date=BASE + timedelta(days=1))
+
+    def top_order(self):
+        """The top-level rows, in the order they read."""
+        return [task.id for task in self.project.get_root_tasks()]
+
+    def test_the_new_row_takes_the_focused_row_s_place(self):
+        """
+        Above it, not below - issue #59.
+
+        The shortcut landed the new row under the one it was made on. The
+        insert rule, here and in the reference tool, is that the new row
+        takes the selected row's place and pushes it down.
+        """
+        self.task_list._save_created(self.new_task(), 'u1', None, above=True)
+
+        self.assertEqual(self.top_order(), ['new1', 'u1'])
+
+    def test_the_new_row_inside_a_group_lands_above_its_anchor(self):
+        """The same insert between siblings, one level down."""
+        self.task_list._save_created(self.new_task(), 'u2', 'u1',
+                                     above=True)
+
+        self.assertEqual(
+            [task.id for task in self.project.get_subtasks('u1')],
+            ['new1', 'u2'])
+
+    def test_the_right_click_create_still_lands_below(self):
+        """Opening the menu on a row asks for a row underneath it."""
+        self.task_list._save_created(self.new_task(), 'u1', None)
+
+        self.assertEqual(self.top_order(), ['u1', 'new1'])
+
+    def test_a_new_row_beside_a_subtask_is_a_subtask(self):
+        """Its level's type, whatever the dialog offered."""
+        self.task_list._save_created(self.new_task(), 'u2', 'u1',
+                                     above=True)
+
+        self.assertEqual(self.project.get_task_by_id('new1').task_type,
+                         'Subtask')
+
+    def test_a_new_row_beside_a_phase_s_task_stays_a_task(self):
+        """
+        Issue #59's default: inside a phase the new row is a Task.
+
+        The shortcut's blanket Subtask retype is what made rows made inside
+        a phase come out as sub-tasks; the level under a phase is the task
+        level, so the type is left alone.
+        """
+        self.project.add_task(Task(
+            id='p1', name='Phase', task_type='Phase', start_date=BASE,
+            end_date=BASE + timedelta(days=5)))
+        self.project.add_task(Task(
+            id='p2', name='Inner', task_type='Task', parent_task_id='p1',
+            start_date=BASE, end_date=BASE + timedelta(days=2)))
+
+        self.task_list._save_created(self.new_task(), 'p2', 'p1',
+                                     above=True)
+
+        new_row = self.project.get_task_by_id('new1')
+        self.assertEqual(new_row.task_type, 'Task')
+        self.assertEqual(new_row.parent_task_id, 'p1')
+        self.assertEqual(
+            [task.id for task in self.project.get_subtasks('p1')],
+            ['new1', 'p2'])
 
     def test_the_key_is_the_platform_s(self):
         """Option on a Mac, Alt elsewhere, with the usual modifier."""
