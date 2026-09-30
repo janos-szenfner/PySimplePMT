@@ -300,9 +300,16 @@ class GanttApp(ctk.CTk):
         Help" to ``tk::mac::ShowHelp``. Left alone, About shows Tk's plain
         panel and Help does nothing (the reader sees "no help"). Redefining
         both commands with createcommand points them at our About window and
-        the user guide. No native menubar is built: the app's own menus live
-        in the in-window toolbar, and this only re-points items macOS already
-        draws.
+        the user guide. The app's own menus live in the in-window toolbar,
+        and this only re-points items macOS already draws.
+
+        The window still needs a menubar of its own: left unset, TkAqua
+        installs its default one, which carries a File menu with
+        "Source..." - a file dialog that sources whatever Tcl script is
+        picked (issue #55). An explicit bar holds only what we put on it;
+        Aqua still prepends the Apple and application menus itself, and a
+        Help cascade keeps the user guide where the handler expects it.
+        Naming its menu "help" gives it the platform's help-search field.
 
         Only meaningful on Aqua; elsewhere the same windows are reached from
         the in-window About and View menus. Failure is logged and stepped
@@ -314,6 +321,13 @@ class GanttApp(ctk.CTk):
             self.createcommand('tk::mac::standardAboutPanel',
                                self._show_about_window)
             self.createcommand('tk::mac::ShowHelp', self._show_help_window)
+
+            menubar = tk.Menu(self)
+            help_menu = tk.Menu(menubar, name='help')
+            help_menu.add_command(label='PySimplePMT Help',
+                                  command=self._show_help_window)
+            menubar.add_cascade(label='Help', menu=help_menu)
+            self.configure(menu=menubar)
             logger.info("macOS About and Help menu handlers installed")
         except Exception:
             logger.exception("Could not install the macOS menu handlers")
