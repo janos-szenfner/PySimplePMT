@@ -249,7 +249,38 @@ class TestTheGroupIsSetApart(ProgressGroupTestCase):
             self.assertTrue(attached.text.strip(), name)
 
         self.assertIsInstance(
-            getattr(self.group.scope_button, 'tooltip_widget', None), Tooltip)
+            getattr(self.group.project_button, 'tooltip_widget', None),
+            Tooltip)
+
+    def test_each_mark_press_names_the_rows_it_reaches(self):
+        """
+        The complaint that split the button.
+
+        The press used to be an unmarked icon with a chevron beside it that
+        opened a scope menu - so nobody could tell which rows a press was
+        about to move, or whether the chevron set a default the button then
+        used. Each press now names its scope on its face.
+        """
+        self.assertEqual(self.group.buttons['mark_on_track'].cget('text'),
+                         'Selected')
+        self.assertEqual(self.group.project_button.cget('text'), 'Project')
+
+    def test_the_scope_a_press_names_is_the_scope_it_applies(self):
+        """No remembered default: the button does exactly what it says."""
+        self.select('past')
+
+        self.group.buttons['mark_on_track'].invoke()
+
+        self.assertEqual(self.progress('past'), 100)
+        self.assertEqual(self.progress('future'), 0)
+
+    def test_the_project_press_marks_the_whole_plan(self):
+        """The second press, which used to hide in a menu."""
+        self.select()
+
+        self.group.project_button.invoke()
+
+        self.assertEqual(self.progress('past'), 100)
 
     def test_it_sits_between_two_dividers(self):
         """Like the formatting group it stands beside - its own group."""
@@ -430,10 +461,11 @@ class TestMarkOnTrack(ProgressGroupTestCase):
         self.assertEqual(self.progress('future'), 0)
 
     def test_the_scope_control_stays_live_with_nothing_selected(self):
-        """Entire Project does not need a selection to mean something."""
+        """Marking the project does not need a selection to mean something."""
         self.select()
 
-        self.assertEqual(str(self.group.scope_button.cget('state')), 'normal')
+        self.assertEqual(str(self.group.project_button.cget('state')),
+                         'normal')
 
     def test_it_is_one_undo_step_too(self):
         """However much of the plan it reached."""

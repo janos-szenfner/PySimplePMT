@@ -4217,8 +4217,8 @@ class Toolbar(ctk.CTkFrame):
         if not targets:
             messagebox.showinfo(
                 "Mark on Track",
-                "There is no work to mark. Select some tasks, or choose "
-                "Entire Project from the arrow beside the button.")
+                "There is no work to mark. Select some tasks, or press "
+                "the Project button beside the Selected one.")
             return
 
         updates = {}

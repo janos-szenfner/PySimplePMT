@@ -132,6 +132,17 @@ ICON_STROKES: Dict[str, List[tuple]] = {
         ('line', [(0.44, 0.32), (0.62, 0.50), (0.44, 0.68)]),
         ('line', [(0.80, 0.14), (0.80, 0.86)]),
     ],
+    # The whole plan caught up: the same arrow and status line, with the
+    # rows above and below the one the arrow crosses drawn in too. A second
+    # button rather than a scope remembered somewhere, so nobody has to ask
+    # which rows a press is about to move.
+    'mark_all_on_track': [
+        ('line', [(0.08, 0.18), (0.30, 0.18)]),
+        ('line', [(0.08, 0.50), (0.62, 0.50)]),
+        ('line', [(0.44, 0.32), (0.62, 0.50), (0.44, 0.68)]),
+        ('line', [(0.80, 0.14), (0.80, 0.86)]),
+        ('line', [(0.08, 0.82), (0.30, 0.82)]),
+    ],
     # Indent and outdent: the plan as four rows with the middle two moved,
     # and an arrow saying which way. Mirror images of each other, because
     # that is the only thing that tells them apart at 20 pixels.

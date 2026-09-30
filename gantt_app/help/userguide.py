@@ -650,10 +650,11 @@ GUIDE_SECTIONS = (
             "starting on a Friday is a fifth done by Sunday, not two "
             "fifths - the weekend is not worked, so it does not count.",
 
-            "It measures against today. The arrow beside the button chooses "
-            "what it applies to: the selected tasks, or the entire project. "
-            "Entire Project needs nothing selected, which is why that arrow "
-            "stays available when the rest of the group is greyed out.",
+            "It measures against the status date, which is today when the "
+            "plan has not set one. Two buttons say which rows it applies "
+            "to: Selected brings the rows in hand up to date, and Project "
+            "the whole plan. Project needs nothing selected, which is why "
+            "it stays available when the rest of the group is greyed out.",
 
             "Mark on Track is a statement about the schedule rather than "
             "about the work. It fills in the rows nobody has had to think "

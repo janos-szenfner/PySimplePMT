@@ -60,14 +60,11 @@ PRESET_CAPTIONS = {
     100: "Complete - set the selected tasks to 100%",
 }
 
-#: The two scopes Mark on Track can be asked for.
+#: The two scopes Mark on Track can be asked for. Each is a button of its
+#: own - the press says what it reaches, rather than leaving the reader to
+#: guess which scope an unnamed default is set to.
 SCOPE_SELECTED = 'selected'
 SCOPE_PROJECT = 'project'
-
-SCOPE_LABELS = (
-    ("Selected Tasks Only", SCOPE_SELECTED),
-    ("Entire Project", SCOPE_PROJECT),
-)
 
 
 class ProgressGroup(ctk.CTkFrame):
@@ -91,9 +88,6 @@ class ProgressGroup(ctk.CTkFrame):
     #: How wide a percentage button is. Enough for "100%" and no wider: five
     #: of these sit in a row that already has a good deal in it.
     PRESET_WIDTH = 42
-
-    #: The chevron that opens the scope menu, beside the main button.
-    CHEVRON_WIDTH = 18
 
     def __init__(self, master, on_preset: Callable, on_mark_on_track: Callable,
                  button_size: int = 32, icon_image: Optional[Callable] = None,
@@ -143,42 +137,54 @@ class ProgressGroup(ctk.CTkFrame):
 
     def _mark_on_track_buttons(self):
         """
-        The main press, and the chevron that offers the other scope.
+        Two named presses: the selected rows, and the whole plan.
 
         DEVELOPMENT NOTES:
         ------------------
-        Two buttons rather than one that does both. A single button opening
-        a menu would put a menu between the reader and the thing they press
-        every week; a single button that only acted would leave no way to
-        reach the whole plan at once.
+        Two buttons rather than a main press with a chevron offering the
+        other scope. A split button reads as though the chevron sets a
+        default the main press then uses, and it does not - so a reader
+        could not tell which rows a press was about to move, and the menu
+        offered "the selected tasks" beside a button that already did
+        exactly that. Now each press says on its face what it reaches:
+        Selected, or Project.
 
-        The chevron stays live with nothing selected, because Entire Project
-        does not need a selection - greying it out would hide the one scope
-        that still applies.
+        The words are on the buttons rather than only in a tooltip, because
+        the difference between them is the whole point of having two.
+
+        The project press stays live with nothing selected, because the
+        whole plan does not need a selection - greying it out would hide
+        the one scope that still applies.
         """
         image = self._icon_image('mark_on_track')
         main = ctk.CTkButton(
-            self, text='' if image is not None else 'Track',
-            image=image, width=self.button_size, height=self.button_size,
+            self, text="Selected", image=image, compound='left',
+            height=self.button_size,
             fg_color='transparent', hover_color=theme.MENU_HOVER,
             text_color=theme.MENU_TEXT, corner_radius=4,
+            font=ctk.CTkFont(size=12),
             command=lambda: self._mark(SCOPE_SELECTED))
         main.pack(side='left', padx=(1, 0), pady=2)
         main.icon_image = image
         main.tooltip_widget = attach_tooltip(
-            main, "Mark on Track - set the selected tasks to where today's "
-                  "date says they should be")
+            main, "Mark on Track - bring the selected tasks up to where "
+                  "the status date says they should be")
         self.buttons['mark_on_track'] = main
 
-        self.scope_button = ctk.CTkButton(
-            self, text="▾", width=self.CHEVRON_WIDTH,
-            height=self.button_size, fg_color='transparent',
-            hover_color=theme.MENU_HOVER, text_color=theme.MENU_TEXT,
-            corner_radius=4, font=ctk.CTkFont(size=11),
-            command=self._open_scope_menu)
-        self.scope_button.pack(side='left', padx=(0, 1), pady=2)
-        self.scope_button.tooltip_widget = attach_tooltip(
-            self.scope_button, "Mark on Track - choose what to apply it to")
+        image = self._icon_image('mark_all_on_track')
+        self.project_button = ctk.CTkButton(
+            self, text="Project", image=image, compound='left',
+            height=self.button_size,
+            fg_color='transparent', hover_color=theme.MENU_HOVER,
+            text_color=theme.MENU_TEXT, corner_radius=4,
+            font=ctk.CTkFont(size=12),
+            command=lambda: self._mark(SCOPE_PROJECT))
+        self.project_button.pack(side='left', padx=(0, 1), pady=2)
+        self.project_button.icon_image = image
+        self.project_button.tooltip_widget = attach_tooltip(
+            self.project_button, "Mark on Track - bring every task in the "
+                                 "plan up to where the status date says it "
+                                 "should be")
 
     # ---- what the controls do ------------------------------------------
 
@@ -200,19 +206,6 @@ class ProgressGroup(ctk.CTkFrame):
         except Exception:
             logger.exception("Could not mark %s on track", scope)
 
-    def _open_scope_menu(self):
-        """Offer the two scopes under the chevron."""
-        from gantt_app.views.toolbar import CTkDropdownMenu
-
-        items = [{"text": label,
-                  "command": (lambda value=scope: self._mark(value))}
-                 for label, scope in SCOPE_LABELS]
-
-        menu = CTkDropdownMenu(self, items=items)
-        menu.geometry(
-            f"+{self.scope_button.winfo_rootx()}"
-            f"+{self.scope_button.winfo_rooty() + self.scope_button.winfo_height() + 2}")
-
     # ---- what the controls show ----------------------------------------
 
     def set_state(self, enabled: bool):
@@ -221,7 +214,8 @@ class ProgressGroup(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        The chevron is deliberately left alone; see _mark_on_track_buttons.
+        The project press is deliberately left alone; see
+        _mark_on_track_buttons.
         """
         self.enabled = bool(enabled)
         state = tk.NORMAL if self.enabled else tk.DISABLED
