@@ -217,17 +217,34 @@ class TestDoubleClickingTheName(InlineEditingTestCase):
 
         sent.assert_called_once_with('u1')
 
-    def test_a_column_without_its_own_editor_opens_nothing(self):
+    def test_a_leaf_s_progress_cell_is_routed_to_its_own_editor(self):
         """
-        Progress is edited in the form, not in place.
+        Issue #61: the completion is typed in place, like the dates.
 
-        The schedule columns (Duration, Start, End) grew their own cell
-        editors (issues #23 and #31); a column that did not opens nothing
-        here - the form is a click away.
+        u2 is the leaf; the percentage it carries is its own, so the grid
+        takes the typing rather than opening the form.
         """
-        self.double_click('u1', column='Progress')
+        from unittest import mock
 
-        self.assertIsNone(self.task_list._cell_editor)
+        with mock.patch.object(self.task_list, 'edit_progress_cell') as sent:
+            self.double_click('u2', column='Progress')
+
+        sent.assert_called_once_with('u2')
+
+    def test_a_summary_s_progress_cell_opens_the_form(self):
+        """
+        Its figure is rolled up from the work beneath it.
+
+        Typing over it would be overwritten by the next roll-up, so the
+        cell does what a summary's schedule cells do - opens the editor,
+        where the field explains it is derived.
+        """
+        from unittest import mock
+
+        with mock.patch.object(self.task_list, 'edit_task') as sent:
+            self.double_click('u1', column='Progress')
+
+        sent.assert_called_once_with('u1')
 
     def test_a_schedule_column_is_routed_to_its_own_editor(self):
         """
@@ -830,6 +847,189 @@ class TestTheEditorCanRetypeAnyRow(InlineEditingTestCase):
 
         self.assertEqual(self.project.get_task_by_id('u2').parent_task_id,
                          'u1')
+
+    def tracked_dialog(self, task_id):
+        """An edit dialog wired to the undo history."""
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(
+            self.root, self.project.get_task_by_id(task_id), self.project,
+            on_save=lambda t: None, on_delete=lambda i: None,
+            project_tracker=self.task_list.project_tracker)
+        dialog.withdraw()
+        dialog.update_idletasks()
+        return dialog
+
+    def save_as_milestone(self, task_id):
+        """Retype a row through the editor, as the issue's reader did."""
+        dialog = self.tracked_dialog(task_id)
+        try:
+            dialog.task_type_var.set('Milestone')
+            dialog.is_milestone_var.set(True)
+            dialog.save()
+        finally:
+            if dialog.winfo_exists():
+                dialog.destroy()
+
+    def test_a_group_retyped_as_a_milestone_promotes_its_rows_one_level(self):
+        """
+        Issue #58: they join the milestone's level, not the top of the plan.
+
+        The normalise pass used to set every orphan's parent to None, so a
+        sub-task group turned milestone dropped its rows at the top of the
+        plan - and the reparenting ran inside the refresh, outside the
+        save's undo record, so undo could not put them back.
+        """
+        self.project.add_task(Task(
+            id='u3', name='Grand', task_type='Subtask', parent_task_id='u2',
+            start_date=BASE, end_date=BASE + timedelta(days=1)))
+
+        self.save_as_milestone('u2')
+
+        promoted = self.project.get_task_by_id('u3')
+        self.assertEqual(promoted.parent_task_id, 'u1')
+        self.assertEqual(promoted.task_type, 'Subtask')
+
+        self.assertTrue(self.manager.undo())
+        restored = self.project.get_task_by_id('u3')
+        self.assertEqual(restored.parent_task_id, 'u2')
+        self.assertEqual(
+            self.project.get_task_by_id('u2').task_type, 'Subtask')
+
+    def test_a_promoted_group_keeps_the_rows_under_it(self):
+        """
+        Issue #58's second example: a nested group stays a group.
+
+        Only the milestone's own children move, each up one level; what
+        sat under one of them keeps the parent it had.
+        """
+        self.project.add_task(Task(
+            id='u3', name='Inner group', task_type='Subtask',
+            parent_task_id='u2', start_date=BASE,
+            end_date=BASE + timedelta(days=2)))
+        self.project.add_task(Task(
+            id='u4', name='Deep', task_type='Subtask', parent_task_id='u3',
+            start_date=BASE, end_date=BASE + timedelta(days=1)))
+
+        self.save_as_milestone('u2')
+
+        group = self.project.get_task_by_id('u3')
+        self.assertEqual(group.parent_task_id, 'u1')
+        self.assertEqual(
+            self.project.get_task_by_id('u4').parent_task_id, 'u3')
+
+        self.assertTrue(self.manager.undo())
+        self.assertEqual(
+            self.project.get_task_by_id('u3').parent_task_id, 'u2')
+        self.assertEqual(
+            self.project.get_task_by_id('u4').parent_task_id, 'u3')
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTypingIntoTheProgressCell(InlineEditingTestCase):
+    """
+    The Progress column typed into in place (issue #61).
+
+    WHY THESE EXIST:
+    ================
+    Completion used to be reachable only through the editor's Progress
+    field or the ribbon's preset buttons. The column shows the figure
+    already, so the fast path is typing over it - the same gesture the
+    Duration, Start and End columns take.
+    """
+
+    def progress_of(self, task_id='u2') -> int:
+        """What the plan says the row has done."""
+        return self.project.get_task_by_id(task_id).progress
+
+    def progress_cell(self, task_id='u2') -> str:
+        """What the grid says the row has done."""
+        columns = list(self.task_list.tree.cget('columns'))
+        index = columns.index('Progress')
+        return self.task_list.tree.item(task_id, 'values')[index]
+
+    def test_the_box_opens_holding_the_number(self):
+        """Bare, so a sign need not be typed off first."""
+        self.project.get_task_by_id('u2').progress = 30
+        self.task_list.update_task_list()
+
+        self.task_list.edit_progress_cell('u2')
+
+        self.assertIsNotNone(self.task_list._cell_editor)
+        self.assertEqual(self.task_list._cell_editor.get(), '30')
+
+    def test_enter_stores_it(self):
+        """On the task and in the cell, which is what makes it real."""
+        self.task_list.edit_progress_cell('u2')
+        self.type_into_editor('60')
+
+        self.task_list._commit_progress()
+
+        self.assertEqual(self.progress_of(), 60)
+        self.assertEqual(self.progress_cell(), '60%')
+
+    def test_the_sign_the_cell_shows_is_accepted_back(self):
+        """Typing what was there - percent sign and all - is no offence."""
+        self.task_list.edit_progress_cell('u2')
+        self.type_into_editor('75%')
+
+        self.task_list._commit_progress()
+
+        self.assertEqual(self.progress_of(), 75)
+
+    def test_past_the_ends_is_clamped(self):
+        """As the ribbon's own buttons clamp theirs."""
+        self.task_list.set_progress('u2', 150)
+        self.assertEqual(self.progress_of(), 100)
+
+        self.task_list.set_progress('u2', -10)
+        self.assertEqual(self.progress_of(), 0)
+
+    def test_something_that_is_not_a_number_is_refused(self):
+        """Nothing is stored, and the reader is told why."""
+        from unittest import mock
+
+        self.task_list.edit_progress_cell('u2')
+        self.type_into_editor('halfway')
+        with mock.patch('gantt_app.views.task_list.messagebox.showerror'
+                        ) as told:
+            self.task_list._commit_progress()
+
+        told.assert_called_once()
+        self.assertEqual(self.progress_of(), 0)
+
+    def test_it_is_one_step_in_the_undo_history(self):
+        """Like a percentage typed into the editor."""
+        depth = len(self.manager.undo_stack)
+
+        self.task_list.set_progress('u2', 60)
+
+        self.assertEqual(len(self.manager.undo_stack), depth + 1)
+
+    def test_undo_puts_the_old_figure_back(self):
+        """And redo brings the new one again."""
+        self.task_list.set_progress('u2', 60)
+
+        self.manager.undo()
+        self.assertEqual(self.progress_of(), 0)
+
+        self.manager.redo()
+        self.assertEqual(self.progress_of(), 60)
+
+    def test_writing_what_is_already_there_costs_nothing(self):
+        """No undo step for a change that changed nothing."""
+        depth = len(self.manager.undo_stack)
+
+        self.task_list.set_progress('u2', 0)
+
+        self.assertEqual(len(self.manager.undo_stack), depth)
+
+    def test_the_parent_reads_the_new_figure(self):
+        """A leaf's progress is what its summary's roll-up is made of."""
+        self.task_list.set_progress('u2', 60)
+
+        self.assertEqual(
+            self.project.get_task_by_id('u1').progress, 60)
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")

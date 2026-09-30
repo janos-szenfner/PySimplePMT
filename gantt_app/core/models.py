@@ -5002,20 +5002,31 @@ class Project:
         ------------------
         A milestone marks a moment, so it carries no end date and takes no
         time. A milestone with sub-tasks would have to span them, which
-        contradicts that, so anything parented to one is promoted to a task
-        of its own rather than being silently dropped.
+        contradicts that, so anything parented to one is promoted rather
+        than being silently dropped: up exactly one level, onto the level
+        the milestone itself sits on, which is what turning a grouping row
+        into a milestone asks for (issue #58). A promoted row that is itself
+        a grouping row keeps the rows under it - only its own parent moves.
+
+        The type follows the level it lands on: lifted to the top of the
+        plan a sub-task reads as a Task, while under a task it stays a
+        sub-task beside its new siblings.
         """
         changed = False
 
-        milestone_ids = {t.id for t in self.tasks if t.is_milestone}
+        milestone_parents = {t.id: t.parent_task_id
+                             for t in self.tasks if t.effective_milestone}
 
         for task in self.tasks:
-            if task.is_milestone and task.end_date is not None:
+            if task.effective_milestone and task.end_date is not None:
                 task.end_date = None
                 changed = True
-            if task.parent_task_id in milestone_ids:
-                task.parent_task_id = None
-                task.task_type = "Task"
+            if task.parent_task_id in milestone_parents:
+                new_parent_id = milestone_parents[task.parent_task_id]
+                new_parent = (self.get_task_by_id(new_parent_id)
+                              if new_parent_id else None)
+                task.parent_task_id = new_parent_id
+                task.task_type = child_type_for(new_parent, task)
                 changed = True
 
         return changed

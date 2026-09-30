@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.72.0 - 2026-09-30
+
+- **A new task lands where the cursor is.** Choosing Task from the New
+  Task menu appended the row to the end of the plan no matter what was
+  selected, and the keyboard route dropped it below the cursor retyped
+  as a Subtask. Both now take the selected row's place and push it down,
+  the way the reference tool's insert and this application's own paste
+  already behave - and the type follows the level it lands at, so a row
+  made beside a phase's task is a Task, not a sub-task (issue #59).
+
+- **A Subtask can hold rows of its own.** Plans, imports and indents
+  could all build a grouping row typed Subtask, yet the paste rules
+  refused to place anything inside one - which read as the empty-named
+  row refusing pastes (issue #56). A milestone is now the only true
+  leaf: pastes, Paste as Sub-Task and the toolbar's parent pickers all
+  agree that a sub-task group is a container, so pasted rows land inside
+  it rather than being refused.
+
+- **Retyping a grouping row to Milestone no longer scatters its rows.**
+  A milestone cannot hold children, but converting one used to dump
+  every sub-task at the top of the plan - and because the reparenting
+  ran inside the refresh, outside the save's undo record, Undo could not
+  put them back. The rows now move up exactly one level to the
+  milestone's own, a nested group keeps the rows under it, and the whole
+  change is one undoable step (issue #58).
+
+- **The Progress column is editable in the task list.** Completion used
+  to be reachable only through the editor or the ribbon's preset
+  buttons; a double-click on the cell now opens a typing box like the
+  schedule columns take. A figure off the ends is clamped to 0-100, a
+  non-number is refused with a reason, the write is one step in the undo
+  history, and the summaries above re-roll the moment it lands. A
+  summary row's cell still opens the editor - its figure is rolled up
+  from the work beneath it, not typed (issue #61).
+
+- **The stray "Source..." menu on macOS is gone.** A Tk application that
+  builds no menubar of its own is handed a default one, and its File
+  menu carries an item that opens a file dialog waiting for a Tcl script
+  to run. The window now owns its menubar - the Aqua-provided Apple and
+  application menus plus a Help cascade pointing at the user guide - so
+  the default, and the script prompt with it, no longer appears
+  (issue #55).
+
+- **The test suite finishes its migration to pytest-bdd.** Every
+  remaining unittest module under twenty tests became feature files and
+  step definitions, one scenario per test, and the CI log names each
+  scenario instead of counting percentages. Tk teardowns across the
+  suite now destroy children before their root, ending the
+  `ttk::ThemeChanged` floods that surfaced file by file on CI.
+
 ## 1.71.6 - 2026-09-15
 
 - **A deep dependency chain can no longer break a Mermaid export.** The

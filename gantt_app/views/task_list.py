@@ -782,6 +782,8 @@ class DragDropTaskList(ctk.CTkFrame):
             self.edit_type_cell(item)
         elif cell == 'Label':
             self.edit_label_cell(item)
+        elif cell == 'Progress' and self._progress_cell_editable(item):
+            self.edit_progress_cell(item)
         elif cell in ('Duration', 'Start', 'End') \
                 and self._schedule_cell_editable(item, cell):
             self.edit_schedule_cell(item, cell)
@@ -809,6 +811,20 @@ class DragDropTaskList(ctk.CTkFrame):
         if task.effective_milestone and cell in ('Duration', 'End'):
             return False
         return True
+
+    def _progress_cell_editable(self, task_id: str) -> bool:
+        """
+        Whether a Progress cell can be typed into in place.
+
+        A row with children takes its completion from the work beneath it -
+        the roll-up would overwrite anything typed before the next refresh
+        - so its cell opens the editor instead, as a container's schedule
+        cells already do (issue #61).
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None or task.is_container:
+            return False
+        return task_id not in self.project.get_summary_task_ids()
 
     def _cancel_rename(self):
         """Call off a rename that has not opened yet."""
@@ -1548,6 +1564,89 @@ class DragDropTaskList(ctk.CTkFrame):
                     task_id, start.date() if start else None,
                     end.date() if end else None, duration,
                     " (SNET)" if snet_date is not None else "")
+
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+    # ------------------------------------------------------------------
+    # The Progress column (issue #61)
+    # ------------------------------------------------------------------
+
+    def edit_progress_cell(self, task_id: str):
+        """
+        Type into a task's Progress cell in the grid.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Only a leaf row gets here - see _progress_cell_editable - so the
+        number belongs to the task itself rather than being rolled up from
+        its children.
+        """
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+        self._open_cell_editor(task_id, 'Progress', str(task.progress),
+                               self._commit_progress)
+
+    def _commit_progress(self):
+        """
+        Read the cell, store the percentage it said.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Anything that is not a whole percentage is reported and nothing is
+        stored, the same refusal the schedule and Dependencies cells make.
+        A figure outside 0-100 is clamped to the nearest end, which is what
+        the progress group's buttons do with theirs.
+        """
+        text, task_id = self._editor_text()
+        if task_id is None:
+            return
+        task = self.project.get_task_by_id(task_id)
+        if task is None:
+            return
+
+        try:
+            percent = int(text.strip().rstrip('%').strip())
+        except ValueError:
+            messagebox.showerror(
+                "Progress", "Enter a percentage from 0 to 100.")
+            return
+
+        self.set_progress(task_id, max(0, min(100, percent)))
+
+    def set_progress(self, task_id: str, percent: int):
+        """
+        Write one row's completion as one undoable step, and redraw.
+
+        PARAMETERS:
+        -----------
+        task_id : str
+            The task being marked.
+        percent : int
+            0 to 100.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Through the tracker, so a grid edit is one entry in the undo history
+        like the editor's. The plan is rescheduled afterwards rather than
+        the parents being left stale: a leaf's progress is what their
+        roll-up is made of, and the summary rows above it have to show the
+        new figure now, not the next time anything reschedules.
+        """
+        task = self.project.get_task_by_id(task_id)
+        percent = max(0, min(100, int(percent)))
+        if task is None or task.progress == percent:
+            return
+
+        if self.project_tracker:
+            self.project_tracker.update_task(task_id, progress=percent)
+        else:
+            task.progress = percent
+
+        self.project.apply_schedule()
+        logger.info("Set task %s to %d%%", task_id, percent)
 
         self.update_task_list()
         if self.on_project_changed:

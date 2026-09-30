@@ -27,7 +27,8 @@ import customtkinter as ctk
 from gantt_app.core.models import Task, Project, TASK_TYPES, child_type_for
 from gantt_app.utils.undoredo import (
     ProjectStateTracker, create_update_task_command,
-    create_deliverable_snapshot_command, create_compound_command)
+    create_deliverable_snapshot_command, create_compound_command,
+    create_restructure_tasks_command)
 from gantt_app.views.taskform import TaskFormDialog
 from gantt_app.utils.log import get_logger
 
@@ -256,6 +257,22 @@ class EditTaskDialog(TaskFormDialog):
                 # Untouched tab means untouched links
                 self.task.dependencies = self._dependency_editor.get_links()
 
+            milestone_children = []
+            if self.task.effective_milestone:
+                milestone_children = \
+                    self.project.get_subtasks(self.task.id)
+            structure_before = structure_after = None
+            if milestone_children:
+                # A milestone cannot hold children: the rows under it move
+                # up to its own level here, inside this save, where undo
+                # can see the reparenting (issue #58). Leaving it to the
+                # next refresh's normalise pass put the move outside the
+                # undo record entirely, which is why undo could not
+                # reverse it.
+                structure_before = self.project.structure_snapshot()
+                self.project.normalise_milestones()
+                structure_after = self.project.structure_snapshot()
+
             if self.project_tracker:
                 new_task = copy.copy(self.task)
                 # The task write and the Deliverables tab's membership write
@@ -269,6 +286,15 @@ class EditTaskDialog(TaskFormDialog):
                 if membership_command is not None:
                     command = create_compound_command(
                         [command, membership_command], name=command.name)
+                if milestone_children:
+                    # The reparenting ran above; this leg of the save's one
+                    # undo entry records the before/after structure so undo
+                    # puts the rows back under the row they came from.
+                    command = create_compound_command(
+                        [command, create_restructure_tasks_command(
+                            self.project, structure_before, structure_after,
+                            "Promote the milestone's sub-tasks")],
+                        name=command.name)
                 if self.project_tracker.manager.execute(command):
                     logger.info("Edited task %s %r with %d resource assignment(s)",
                                 new_task.id, new_task.name,
