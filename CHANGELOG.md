@@ -35,6 +35,15 @@
   summary row's cell still opens the editor - its figure is rolled up
   from the work beneath it, not typed (issue #61).
 
+- **Mark on Track is two named presses, not a guessing game.** The
+  control used to be an unmarked icon beside a chevron whose menu
+  offered the selected tasks and the entire project - so the button
+  and the menu's first item did the same thing, and nothing said which
+  rows a press would move. The chevron is gone; the group now carries a
+  Selected button and a Project button, each doing exactly what its
+  label says, and the project press still needs nothing selected
+  (issue #60).
+
 - **The stray "Source..." menu on macOS is gone.** A Tk application that
   builds no menubar of its own is handed a default one, and its File
   menu carries an item that opens a file dialog waiting for a Tcl script
