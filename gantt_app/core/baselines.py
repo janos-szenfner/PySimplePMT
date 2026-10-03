@@ -409,7 +409,7 @@ class BaselineManager:
             return {}
         baseline = slot.baseline
         logger.info("Comparing project against baseline %d", number)
-        cal = calendar or project.calendar
+        cal = calendar or project.plan_calendar()
         variances = {}
         for task in project.tasks:
             snapshot = baseline.task_snapshots.get(task.id)
@@ -496,7 +496,7 @@ class BaselineManager:
             if finishes:
                 snap.finish_date = max(finishes)
             if snap.start_date and snap.finish_date:
-                snap.duration = project.calendar.working_days_between(
+                snap.duration = project.plan_calendar().working_days_between(
                     snap.start_date, snap.finish_date)
             snap.work_hours = sum(c.work_hours for c in children)
             snap.cost = sum(c.cost for c in children)

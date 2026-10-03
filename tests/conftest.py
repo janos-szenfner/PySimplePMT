@@ -37,10 +37,31 @@ in tearDown; see run_tests.py for how the two halves of the suite are run.
 """
 
 import re
+import tempfile
 import tkinter as tk
 from pathlib import Path
+from unittest import mock
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _own_settings_file(tmp_path):
+    """
+    Point the app's settings.json at a throwaway directory for the test.
+
+    theme.save_mode, the style presets and the application preferences all
+    read-modify-write the one file under theme.settings_directory(). Tests
+    that saved a baseline slot name or a calendar were writing the
+    developer's real settings, and once those writes started carrying
+    behaviour - a renamed baseline slot changes the menus a later test
+    reads - the real file turned the suite order-dependent. Each test gets
+    a clean file: a preference still has to survive a save and a reload,
+    it just may not leak from one test into the next.
+    """
+    with mock.patch('gantt_app.views.theme.settings_directory',
+                    return_value=tmp_path):
+        yield tmp_path
 
 
 def pytest_configure(config):

@@ -409,7 +409,7 @@ def _after_reproduces_the_start(task: Task, predecessor: Optional[Task],
     if finish is None:
         return False
 
-    expected = project.calendar.get_next_working_day(finish + timedelta(days=1))
+    expected = project.plan_calendar().get_next_working_day(finish + timedelta(days=1))
     return expected.date() == task.start_date.date()
 
 

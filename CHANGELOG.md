@@ -158,6 +158,35 @@
   gives the same dialog - and the ribbon's Resources button tip and the
   user guide follow (issue #90).
 
+- **Opening a file brings back everything that was saved.** The loader
+  copied the plan's name, tasks and dates field by field, and the list
+  was short - the status date, schedule direction, deadline, priority,
+  working hours, calendars and the grid layout were all left behind, so
+  a saved plan reopened with its Project Status blank and half its
+  settings back at the defaults. New Project, Close Project and the
+  importers kept the same partial set in the other direction, leaking
+  the old plan's rules into a plan that had never seen them. The whole
+  persisted state is now taken on or cleared as one set at every one of
+  those points (issue #93).
+
+- **The plan itself can follow a named calendar.** Project Settings
+  offered a Calendar menu that was built, shown and never read -
+  picking a named calendar there did nothing at all. The choice is now
+  stored on the plan, survives the file, and is what tasks that name no
+  calendar of their own are scheduled on; the working-day axes, the
+  baseline maths and the exports all read it. The calendar the plan
+  names is still editable in Calendar Settings alongside its own
+  (issue #93).
+
+- **Calendar and baseline preferences outlive the file.** The named
+  calendars and the baseline slots' names and colours used to live only
+  inside the project file, so they were rebuilt for every project and
+  lost the moment the program closed without a save. Both are now kept
+  in the application's own settings - a calendar built in one plan is
+  offered to the next, and a slot's name and colour read the same
+  whichever plan is open - while the file's own values still travel
+  with it and are folded into the library on open (issue #92).
+
 ## 1.71.6 - 2026-09-15
 
 - **A deep dependency chain can no longer break a Mermaid export.** The

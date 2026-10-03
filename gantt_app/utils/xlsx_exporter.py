@@ -481,7 +481,7 @@ def _project_holidays(project: Project) -> List[date]:
     writes the literal date wherever the two disagree, so the sheet stays
     truthful and only loses the live recalculation on those rows.
     """
-    calendar = project.calendar
+    calendar = project.plan_calendar()
     if not (calendar.holidays or calendar.recurring_holidays
             or calendar.countries or calendar.overrides):
         return []

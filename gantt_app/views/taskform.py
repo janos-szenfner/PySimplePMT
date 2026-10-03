@@ -873,7 +873,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         labels = []
         for calendar_id, name in options:
             calendar = self.project.calendars.resolve(calendar_id,
-                                                      self.project.calendar)
+                                                      self.project.plan_calendar())
             label = f"{name} ({describe_week(calendar)})"
             self._calendar_ids[label] = calendar_id
             labels.append(label)
@@ -957,7 +957,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         file that declared its holidays gets them here too.
         """
         return self.project.calendars.resolve(self.chosen_calendar_id(),
-                                              self.project.calendar)
+                                              self.project.plan_calendar())
 
     def _recalculate_schedule(self, *_args):
         """

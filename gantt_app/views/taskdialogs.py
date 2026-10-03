@@ -439,7 +439,7 @@ class CreateTaskDialog(TaskFormDialog):
         rather than one two days of which fall over the weekend. A start on a
         weekend is moved to the Monday for the same reason.
         """
-        calendar = self.project.calendar
+        calendar = self.project.plan_calendar()
 
         if self.parent_task and not self.is_milestone:
             start = calendar.get_next_working_day(self.parent_task.start_date)

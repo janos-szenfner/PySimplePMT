@@ -799,7 +799,7 @@ def _build_date_header(layout: 'ChartLayout', project: Project,
     layout.header_mode = _header_mode(total_days, plot_span, font_size)
     mode = layout.header_mode
 
-    calendar = project.calendar
+    calendar = project.plan_calendar()
     today = datetime.now().date()
     min_date = as_date(min_date)
     max_date = as_date(max_date)

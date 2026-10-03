@@ -146,7 +146,7 @@ def _write_calendars(root: ET.Element, project: Project) -> None:
     at all: a <date> entry only ever takes a day off. Those are counted and
     logged, since the alternative is a file that silently schedules over them.
     """
-    calendar = project.calendar
+    calendar = project.plan_calendar()
     calendars = ET.SubElement(root, 'calendars', {'base-id': 'none'})
     day_types = ET.SubElement(calendars, 'day-types')
     ET.SubElement(day_types, 'day-type', {'id': '0'})
@@ -333,7 +333,7 @@ def _write_tasks(root: ET.Element, project: Project,
     for row in rows:
         if row.level == 1:
             _write_task(tasks, row, by_id, numbers, successors,
-                        project.calendar)
+                        project.plan_calendar())
 
 
 # ---------------------------------------------------------------------------

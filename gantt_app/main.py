@@ -16,7 +16,6 @@ import customtkinter as ctk
 from gantt_app.views import theme
 from gantt_app.core.baselines import BaselineManager
 from gantt_app.core.models import Project, Task
-from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.views.task_list import DragDropTaskList
 from gantt_app.views.taskdialogs import EditTaskDialog
 from gantt_app.views.gantt_chart import GanttChart
@@ -116,6 +115,16 @@ class GanttApp(ctk.CTk):
         # Create project and baseline manager
         self.project = Project(name="New Project")
         self.baseline_manager = BaselineManager()
+
+        # The preference stores: named calendars are a library shared by
+        # every plan, and a baseline slot's name and colour read the same
+        # whichever file is open - both kept in the application's own
+        # settings rather than rebuilt per project (issue #92).
+        from gantt_app.views.preferences import (
+            apply_baseline_slot_preferences, load_calendar_library)
+        self.calendar_library = load_calendar_library()
+        self.project.calendars = self.calendar_library
+        apply_baseline_slot_preferences(self.baseline_manager)
 
         # Dirty-state tracking for unsaved-change protection
         self.is_dirty = False
@@ -1238,11 +1247,7 @@ class GanttApp(ctk.CTk):
         """Initialize a fresh, empty project."""
         logger.info("Starting new empty project named %r", name)
         self.toolbar.current_file_path = None
-        self.project.name = name
-        self.project.tasks = []
-        self.project.start_date = None
-        self.project.end_date = None
-        self.project.resource_repository = ResourceRepository()
+        self.toolbar._blank_project(name)
 
         self.toolbar._forget_the_previous_plan()
         self.update_all()
@@ -1251,11 +1256,7 @@ class GanttApp(ctk.CTk):
     def _load_sample_project(self):
         """Load the built-in sample project."""
         logger.info("Loading built-in sample project")
-        self.project.tasks = []
-        self.project.deliverables = []
-        self.project.start_date = None
-        self.project.end_date = None
-        self.project.resource_repository = ResourceRepository()
+        self.toolbar._blank_project(self.project.name)
 
         self._create_sample_data()
         self.toolbar._forget_the_previous_plan()

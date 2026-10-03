@@ -7,6 +7,7 @@ Run with:
 These tests require a display because they build the full GanttApp.
 """
 import os
+import re
 import tempfile
 import tkinter as tk
 from datetime import datetime, timedelta
@@ -245,7 +246,11 @@ def the_compare_baseline_menu_offers(app, label):
 
 @then(parsers.parse('the Compare Baseline menu draws "{label}" in bold'))
 def the_compare_baseline_menu_bolds(app, label):
-    item = next(i for i in _compare_menu_items(app) if label in i['label'])
+    # "Baseline 1" must not match "Baseline 10 (...)" - the label ends at a
+    # space, an opening parenthesis, or the end of the string.
+    pattern = re.compile(re.escape(label) + r'(?:\s|\(|$)')
+    item = next(i for i in _compare_menu_items(app)
+                if pattern.search(i['label']))
     assert item.get('bold'), \
         f"expected {item['label']!r} to carry the bold flag"
 

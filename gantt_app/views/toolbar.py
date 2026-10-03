@@ -18,7 +18,6 @@ from typing import Optional, Callable, List, Dict
 import customtkinter as ctk
 
 from gantt_app.core.models import Task, Project
-from gantt_app.core.resource_model import ResourceRepository
 from gantt_app.utils.file_io import save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
 from gantt_app.utils.mpp_importer import (
@@ -1853,13 +1852,28 @@ class Toolbar(ctk.CTkFrame):
             changed.append(True)
 
         def apply_calendars(calendars):
-            """Take the edited named calendars, and settle the plan on them."""
+            """
+            Take the edited named calendars, and settle the plan on them.
+
+            The set is stored centrally as well as on the plan: named
+            calendars are a library shared by every project rather than a
+            preference rebuilt per file, so the change is written to the
+            application's own settings and offered to the next plan too
+            (issue #92).
+            """
             if list(calendars) == list(self.project.calendars):
                 return
 
             self.project.set_calendars(calendars)
             logger.info("Project %r now holds %d named calendar(s)",
                         self.project.name, len(calendars))
+
+            library = getattr(self.master, 'calendar_library', None)
+            if library is not None:
+                from gantt_app.views.preferences import (
+                    save_calendar_library)
+                self.master.calendar_library = self.project.calendars
+                save_calendar_library(self.project.calendars)
             changed.append(True)
 
         def applied():
@@ -2599,13 +2613,12 @@ class Toolbar(ctk.CTkFrame):
             # Replace current project. Native project files already use the
             # app's IDs and carry baseline snapshots keyed by those IDs, so
             # we keep them as-is; imports use their own renumbering path.
-            self.project.name = project.name
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
-            self.project.tasks = project.tasks
-            self.project.deliverables = project.deliverables
-            self.project.start_date = project.start_date
-            self.project.end_date = project.end_date
-            self.project.resource_repository = project.resource_repository
+            # Named calendars are a shared library, not a plan's own: the
+            # file's customs are adopted into it so a calendar built in any
+            # project is offered to every other (issue #92).
+            self._merge_loaded_calendars(project)
+            self._take_on_project_fields(project)
 
             # Restore any baseline data that was saved with the project
             if self.baseline_manager is not None:
@@ -2615,6 +2628,12 @@ class Toolbar(ctk.CTkFrame):
                     if isinstance(data, dict) and 'baselines' in data:
                         self.baseline_manager.from_dict(data['baselines'])
                         logger.info("Restored baseline slots from %s", file_path)
+                    # A slot's name and colour are preferences, kept
+                    # centrally rather than per file: they overlay whatever
+                    # the file carried (issue #92).
+                    from gantt_app.views.preferences import (
+                        apply_baseline_slot_preferences)
+                    apply_baseline_slot_preferences(self.baseline_manager)
                 except Exception:
                     logger.exception("Could not restore baselines from %s", file_path)
                 self.refresh_menus()
@@ -2643,6 +2662,79 @@ class Toolbar(ctk.CTkFrame):
             logger.error("Failed to load project from %s", file_path)
             messagebox.showerror("Error", "Failed to load project")
 
+    def _merge_loaded_calendars(self, project: Project):
+        """
+        Fold a loaded file's named calendars into the shared library.
+
+        The library is the source of truth for an id it already holds - a
+        calendar the user renamed or retuned centrally keeps its own rules
+        rather than being pulled back by an older file. An id the library
+        has never seen is adopted into it and saved, so the file's own
+        customs travel with it and outlive it (issue #92). The loaded
+        project's registry is then replaced by the library itself.
+        """
+        library = getattr(self.master, 'calendar_library', None)
+        if library is None:
+            return
+        adopted = [named for named in project.calendars
+                   if named.id not in library]
+        for named in adopted:
+            library.add(named)
+        project.calendars = library
+        if adopted:
+            from gantt_app.views.preferences import save_calendar_library
+            save_calendar_library(library)
+            logger.info("Adopted %d calendar(s) from the file into the "
+                        "shared library", len(adopted))
+
+    def _take_on_project_fields(self, project: Project):
+        """
+        Make the live project hold everything the loaded one does.
+
+        The project object itself is not swapped - the task list, the chart,
+        the undo tracker and the boards all hold the one built at startup -
+        so the fields are what move. That is every field to_dict saves, not
+        the subset this once was: status date, deadline, direction,
+        priority, hours per day, the calendars, the grid layout and the
+        custom filters used to be left behind, which is how an opened plan
+        read as though half of its settings had never been saved (issue
+        #93).
+        """
+        self.project.name = project.name
+        self.project.tasks = project.tasks
+        self.project.deliverables = project.deliverables
+        self.project.start_date = project.start_date
+        self.project.end_date = project.end_date
+        self.project.resource_repository = project.resource_repository
+        self.project.calendar = project.calendar
+        self.project.calendars = project.calendars
+        self.project.calendar_id = project.calendar_id
+        self.project.schedule_from = project.schedule_from
+        self.project.deadline = project.deadline
+        self.project.status_date = project.status_date
+        self.project.priority = project.priority
+        self.project.hours_per_day = project.hours_per_day
+        self.project.hidden_grid_columns = project.hidden_grid_columns
+        self.project.grid_column_order = project.grid_column_order
+        self.project.custom_filters = project.custom_filters
+
+    def _blank_project(self, name: str):
+        """
+        Reset the live project to a blank plan, keeping nothing but the name.
+
+        A new or closed-out project used to inherit the previous plan's
+        status date, deadline, direction, priority, grid layout and
+        calendars - the same partial reset the loader had, mirrored
+        (issue #93). The named calendars are the one deliberate exception:
+        they are a shared library rather than a plan's own, so a calendar
+        built for one project is offered to the next (issue #92).
+        """
+        fresh = Project(name=name)
+        self._take_on_project_fields(fresh)
+        library = getattr(self.master, 'calendar_library', None)
+        if library is not None:
+            self.project.calendars = library
+
     def new_project(self):
         """Create a new empty project, prompting if there are unsaved changes."""
         logger.info("Creating new project via toolbar")
@@ -2667,13 +2759,7 @@ class Toolbar(ctk.CTkFrame):
             # writing it over whatever file the last plan came from is the
             # one thing it must not do
             self.current_file_path = None
-            # Clear current project
-            self.project.name = new_name
-            self.project.tasks = []
-            self.project.deliverables = []
-            self.project.start_date = None
-            self.project.end_date = None
-            self.project.resource_repository = ResourceRepository()
+            self._blank_project(new_name)
 
             self._forget_the_previous_plan()
 
@@ -2714,12 +2800,7 @@ class Toolbar(ctk.CTkFrame):
 
         # Save now writes to a fresh file, not the one just closed.
         self.current_file_path = None
-        self.project.name = "New Project"
-        self.project.tasks = []
-        self.project.deliverables = []
-        self.project.start_date = None
-        self.project.end_date = None
-        self.project.resource_repository = ResourceRepository()
+        self._blank_project("New Project")
 
         self._forget_the_previous_plan()
 
@@ -2894,13 +2975,10 @@ class Toolbar(ctk.CTkFrame):
         project = import_gan_file(file_path)
         if project:
             # Replace current project
-            self.project.name = project.name
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
-            self.project.tasks = project.tasks
-            self.project.deliverables = project.deliverables
-            self.project.start_date = project.start_date
-            self.project.end_date = project.end_date
+            self._merge_loaded_calendars(project)
+            self._take_on_project_fields(project)
 
             self._forget_the_previous_plan()
 
@@ -2948,13 +3026,10 @@ class Toolbar(ctk.CTkFrame):
         project = import_mpp_file(file_path)
         if project:
             # Replace current project
-            self.project.name = project.name
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
-            self.project.tasks = project.tasks
-            self.project.deliverables = project.deliverables
-            self.project.start_date = project.start_date
-            self.project.end_date = project.end_date
+            self._merge_loaded_calendars(project)
+            self._take_on_project_fields(project)
 
             self._forget_the_previous_plan()
 
@@ -2988,13 +3063,10 @@ class Toolbar(ctk.CTkFrame):
         project = import_mermaid_file(file_path)
         if project:
             # Replace current project
-            self.project.name = project.name
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
-            self.project.tasks = project.tasks
-            self.project.deliverables = project.deliverables
-            self.project.start_date = project.start_date
-            self.project.end_date = project.end_date
+            self._merge_loaded_calendars(project)
+            self._take_on_project_fields(project)
 
             self._forget_the_previous_plan()
 
@@ -3021,14 +3093,10 @@ class Toolbar(ctk.CTkFrame):
         project = import_xlsx_file(file_path)
         if project:
             # Replace current project
-            self.project.name = project.name
             project.renumber_task_ids()
             logger.info("Imported %d task(s) from %s", len(project.tasks), file_path)
-            self.project.tasks = project.tasks
-            self.project.deliverables = project.deliverables
-            self.project.start_date = project.start_date
-            self.project.end_date = project.end_date
-            self.project.resource_repository = project.resource_repository
+            self._merge_loaded_calendars(project)
+            self._take_on_project_fields(project)
 
             self._forget_the_previous_plan()
 

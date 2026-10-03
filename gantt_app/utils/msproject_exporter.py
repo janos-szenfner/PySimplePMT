@@ -262,7 +262,7 @@ def _write_calendars(root: ET.Element, project: Project,
     span = plan_span(project)
     calendars = ET.SubElement(root, 'Calendars')
     _write_calendar(calendars, BASE_CALENDAR_UID, BASE_CALENDAR_NAME,
-                    project.calendar, span)
+                    project.plan_calendar(), span)
 
     for calendar_id, uid in sorted(uids.items(), key=lambda pair: pair[1]):
         named = project.calendars.get(calendar_id)
@@ -403,7 +403,7 @@ def _write_properties(root: ET.Element, project: Project) -> None:
     """
     span = plan_span(project)
     worked_weekdays = sum(1 for weekday in range(7)
-                          if weekday not in project.calendar.non_working_days)
+                          if weekday not in project.plan_calendar().non_working_days)
 
     _text(root, 'SaveVersion', SAVE_VERSION)
     _text(root, 'Name', f"{project.name or 'Project'}.xml")

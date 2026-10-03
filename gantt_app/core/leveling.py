@@ -250,7 +250,7 @@ def _allowed_delay(project: Project, task: Task, free_room: int,
     blocker = None
     deadline = getattr(task, 'deadline', None)
     if options.respect_deadlines and deadline is not None and task.end_date:
-        headroom = project.calendar.working_days_between(
+        headroom = project.plan_calendar().working_days_between(
             task.end_date, deadline) - 1
         if headroom < cap:
             cap = max(headroom, 0)
@@ -433,7 +433,7 @@ def level_resources(project: Project,
         old_start, old_end = before.get(task.id, (None, None))
         if (task.start_date, task.end_date) == (old_start, old_end):
             continue
-        delay = project.calendar.working_days_between(
+        delay = project.plan_calendar().working_days_between(
             old_start, task.start_date) - 1 if old_start else 0
         plan.moves.append(LevelingMove(
             task_id=task.id,

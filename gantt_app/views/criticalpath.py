@@ -231,7 +231,7 @@ class CriticalPathWindow(ctk.CTkToplevel):
         if self.project.start_date is None:
             return '—'
         try:
-            moment = self.project.calendar.add_working_days(
+            moment = self.project.plan_calendar().add_working_days(
                 self.project.start_date, offset + 1
             )
         except Exception:

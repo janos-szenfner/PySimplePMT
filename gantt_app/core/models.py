@@ -1397,6 +1397,11 @@ class Project:
     end_date: Optional[datetime] = None
     calendar: WorkingCalendar = field(default_factory=WorkingCalendar)
     calendars: CalendarRegistry = field(default_factory=default_registry)
+    #: The named calendar the plan itself follows, when it names one - the
+    #: Calendar choice in Project Settings (issue #93). None leaves the
+    #: plan on its own `calendar`, which is what every plan meant before
+    #: the field existed and what an unknown id falls back to.
+    calendar_id: Optional[str] = None
     #: Which end the dates are worked out from; see SCHEDULE_FROM.
     schedule_from: str = SCHEDULE_FROM_START
     #: The date the plan must be finished by, when it is scheduled backward.
@@ -1440,6 +1445,18 @@ class Project:
     #: holds; see gantt_app.core.deliverable for why these are not tasks.
     deliverables: List[Deliverable] = field(default_factory=list)
 
+    def plan_calendar(self) -> WorkingCalendar:
+        """
+        The calendar the plan itself follows.
+
+        The named calendar picked for the plan in Project Settings, or the
+        plan's own `calendar` when it names none - including when it names
+        one that has since been deleted, which is resolve()'s answer. What
+        "the plan's days" means for the working-day axes and for tasks that
+        name no calendar of their own (issue #93).
+        """
+        return self.calendars.resolve(self.calendar_id, self.calendar)
+
     def calendar_for(self, task: Task) -> WorkingCalendar:
         """
         The calendar one task is scheduled against.
@@ -1455,9 +1472,10 @@ class Project:
         ------------------
         Every piece of scheduling that touches a single task goes through
         here rather than reading `self.calendar`, which is what makes a
-        per-task calendar work at all. The plan-wide numbers - the span the
-        chart draws, where the project starts - stay on `self.calendar`,
-        because they are not about any one task.
+        per-task calendar work at all. A task that names nothing follows
+        the plan's - `plan_calendar`, which is the named calendar the plan
+        itself was put on in Project Settings, or the plan's own
+        `calendar` when it names none (issue #93).
 
         The calendar the task follows is then crossed with the calendars of
         the resources on it (issue #38): a member's empty weekday or booked
@@ -1465,7 +1483,7 @@ class Project:
         task whose ignores_resource_calendars is set skips that - its own
         calendar alone decides, which is what the flag is for.
         """
-        base = self.calendars.resolve(task.calendar_id, self.calendar)
+        base = self.calendars.resolve(task.calendar_id, self.plan_calendar())
         if getattr(task, 'ignores_resource_calendars', False):
             return base
         # A resource that works no weekday at all cannot be intersected into
@@ -2554,7 +2572,8 @@ class Project:
         """
         if self.start_date is None:
             return None
-        return self.calendar.add_working_days(self.start_date, offset + 1)
+        return self.plan_calendar().add_working_days(self.start_date,
+                                                     offset + 1)
 
     def apply_backward_schedule(self) -> bool:
         """
@@ -3905,6 +3924,7 @@ class Project:
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'calendar': self.calendar.to_dict(),
             'calendars': self.calendars.to_dict(),
+            'calendar_id': self.calendar_id,
             'schedule_from': self.schedule_from,
             'deadline': self.deadline.isoformat() if self.deadline else None,
             'status_date': (self.status_date.isoformat()
@@ -4082,6 +4102,9 @@ class Project:
             # appearing in a file nobody added them to. Only a brand new
             # project is seeded; see the field's default.
             calendars=CalendarRegistry.from_dict(data.get('calendars')),
+            # Absent from every plan saved before the plan itself could
+            # follow a named calendar - those plans were on their own.
+            calendar_id=data.get('calendar_id') or None,
             # Absent from every plan saved before the settings existed, and
             # the defaults are what those plans meant: scheduled forward,
             # no deadline, reported against today
@@ -4278,7 +4301,7 @@ class Project:
         """
         if not days:
             return moment
-        calendar = calendar or self.calendar
+        calendar = calendar or self.plan_calendar()
         if days > 0:
             return calendar.add_working_days(moment, days + 1)
         return calendar.subtract_working_days(moment, -days + 1)
@@ -5145,15 +5168,33 @@ class Project:
         self.calendar = calendar
         if calendars is not None:
             self.calendars = calendars
-        moved = False
+        return self._rebuild_tasks_on_current_calendars(durations)
 
+    def _rebuild_tasks_on_current_calendars(self, durations) -> bool:
+        """
+        Re-lay every task's dates on the calendar it now follows.
+
+        PARAMETERS:
+        -----------
+        durations : Dict[str, int]
+            Each task's working duration read before the change - under the
+            old calendars, since the whole point is the work does not move,
+            the finish does.
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        A task's own calendar decides, not the plan's: a task following a
+        named calendar is not rebuilt on the plan's week just because the
+        plan's week changed.
+        """
+        moved = False
         for task in self.tasks:
             if task.is_container:
                 continue
 
-            # The task's own calendar, not the one just passed in: a task
-            # following a named calendar is not rebuilt on the plan's week
-            # just because the plan's week changed.
             task_calendar = self.calendar_for(task)
 
             new_start = task_calendar.get_next_working_day(task.start_date)
@@ -5176,6 +5217,33 @@ class Project:
         if moved or settled:
             self._update_dates()
         return moved or settled
+
+    def set_plan_calendar(self, calendar_id: Optional[str]) -> bool:
+        """
+        Put the plan itself on a named calendar, or back on its own.
+
+        PARAMETERS:
+        -----------
+        calendar_id : Optional[str]
+            The registry id the plan follows from now on; None puts it back
+            on its own `calendar` - the "Project calendar" choice in the
+            settings panel (issue #93).
+
+        RETURNS:
+        --------
+        bool
+            True when anything moved.
+
+        Same rule as apply_calendar: the work a task holds does not change
+        because the plan's calendar did, so its finish is what moves.
+        """
+        calendar_id = calendar_id or None
+        if calendar_id == self.calendar_id:
+            return False
+        durations = {task.id: self.working_duration(task)
+                     for task in self.tasks}
+        self.calendar_id = calendar_id
+        return self._rebuild_tasks_on_current_calendars(durations)
 
     def set_holiday_countries(self, codes) -> bool:
         """
@@ -5684,7 +5752,7 @@ class Project:
         which came to 211,703 calls to is_working_day on a thousand-task
         plan. Walking the span once and remembering makes it O(span + tasks).
 
-        The plan's own calendar, like the offsets it replaces. A task
+        The calendar the plan follows, like the offsets it replaces. A task
         following a calendar of its own is still placed on this axis - it is
         the one ruler every task's float is compared against.
         """
@@ -5695,7 +5763,7 @@ class Project:
                 finish = end
 
         axis: Dict[date, int] = {}
-        calendar = self.calendar
+        calendar = self.plan_calendar()
         worked = 0
         day = as_date(origin)
         last = as_date(finish)
@@ -5860,7 +5928,7 @@ class Project:
             found = axis.get(as_date(moment))
             if found is not None:
                 return found
-            return max(self.calendar.working_days_between(origin, moment) - 1, 0)
+            return max(self.plan_calendar().working_days_between(origin, moment) - 1, 0)
 
         # ---- forward: where each task is, as scheduled ------------------
         early_start = {t.id: offset(t.start_date) for t in tasks}

@@ -194,7 +194,13 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
 
         self.calendar_menu = ctk.CTkOptionMenu(self.content,
                                                values=self._calendars())
-        self.calendar_menu.set(PLAN_CALENDAR_LABEL)
+        # The choice the plan already follows: its own calendar unless a
+        # named one was picked before - the menu used to open on Project
+        # calendar regardless, which is how an applied choice looked lost
+        # the next time the panel opened (issue #93).
+        named = self.project.calendars.get(self.project.calendar_id)
+        self.calendar_menu.set(named.name if named is not None
+                               else PLAN_CALENDAR_LABEL)
         self._field("Calendar:", self.calendar_menu,
                     "Which days the plan works. Edit them in "
                     "Actions > Calendar Settings.")
@@ -349,6 +355,17 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
         self.project.schedule_from = (SCHEDULE_FROM_FINISH if backward
                                       else SCHEDULE_FROM_START)
         self.project.deadline = deadline
+
+        # The calendar menu actually changes something now: it used to be
+        # built, shown and never read, so a picked calendar quietly did
+        # nothing (issue #93). The plan keeps its tasks' work under the
+        # new calendar - set_plan_calendar moves the finishes, not the
+        # durations.
+        picked = self.calendar_menu.get()
+        calendar_id = (None if picked == PLAN_CALENDAR_LABEL else
+                       next((named.id for named in self.project.calendars
+                             if named.name == picked), None))
+        self.project.set_plan_calendar(calendar_id)
 
         start = self.start_entry.get_date()
         if start is not None:

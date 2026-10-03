@@ -196,7 +196,7 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _build_calendar_tab(self):
         """Build the Calendar settings overview."""
-        calendar = self.project.calendar
+        calendar = self.project.plan_calendar()
         self._card(
             "Calendar",
             "Calendar Settings",
@@ -320,6 +320,17 @@ class SettingsWindow(ctk.CTkToplevel):
             self.baseline_manager.rename_slot(number, entry.get().strip())
             self.baseline_manager.set_slot_color(
                 number, self._baseline_color_vars.get(number, ""))
+        # The names and colours are preferences, not plan data: they are
+        # kept in the application's own settings and read the same whichever
+        # project is open, rather than being lost with the file (issue #92).
+        from gantt_app.views.preferences import save_baseline_slot_preferences
+        save_baseline_slot_preferences({
+            number: {
+                "name": self.baseline_manager.get_slot(number).display_name,
+                "color": self.baseline_manager.get_slot(number).color,
+            }
+            for number in self._baseline_entries
+        })
         self._baseline_error.configure(text="Settings saved.",
                                        text_color=theme.POSITIVE_TEXT)
         logger.info("Saved baseline slot names and colors")
