@@ -235,7 +235,7 @@ class RibbonBar(IconToolbar):
             )),
             ("Resources", (
                 _L('resource', 'Resources', 'open_resource_settings',
-                   tip="Resource Settings..."),
+                   tip="Resource Information..."),
             )),
             ("Leveling", (
                 _L('level', 'Level...', 'preview_leveling',

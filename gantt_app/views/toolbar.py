@@ -3604,10 +3604,10 @@ class Toolbar(ctk.CTkFrame):
         self.theme_controller.toggle()
     
     def open_resource_settings(self):
-        """Open the resource and team settings dialog."""
+        """Open the Resource Information window (resources, teams, materials, costs)."""
         from gantt_app.views.resourcesettings import ResourceSettingsWindow
 
-        logger.info("Opening the resource settings")
+        logger.info("Opening Resource Information")
         ResourceSettingsWindow(
             self.winfo_toplevel(), self.project.resource_repository,
             active_project_ids=[self.project.name],

@@ -150,6 +150,14 @@
   - the ribbon's Compare Baseline button and the Actions > Baseline
   sub-menu (issue #88).
 
+- **The resource window is called Resource Information.** The Settings
+  hub's Resource card offered an "Open Resource Settings" button under
+  a "Resource Settings" heading, and the window it opened titled itself
+  "Resource Settings - Manage Resources, Teams, Materials & Costs".
+  All three now say Resource Information - the name the reference tool
+  gives the same dialog - and the ribbon's Resources button tip and the
+  user guide follow (issue #90).
+
 ## 1.71.6 - 2026-09-15
 
 - **A deep dependency chain can no longer break a Mermaid export.** The

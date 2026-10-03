@@ -1308,7 +1308,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.material_rows = []
         self.cost_rows = []
         self.clipboard = None
-        self.title("Resource Settings - Manage Resources, Teams, Materials & Costs")
+        self.title("Resource Information")
         self.geometry(self.GEOMETRY)
         self.minsize(1050, 620)
         self.transient(master.winfo_toplevel())
@@ -1328,7 +1328,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self._refresh_teams()
         self._refresh_materials()
         self._refresh_costs()
-        logger.info("Opened Resource Settings with %d resources, %d teams, "
+        logger.info("Opened Resource Information with %d resources, %d teams, "
                     "%d materials and %d cost resources",
                     len(repo.resources), len(repo.teams), len(repo.materials),
                     len(repo.costs))

@@ -116,7 +116,7 @@ class TestTheGuideCovers(unittest.TestCase):
 
     def test_resource_management_and_capacity_statuses_are_explained(self):
         body = self.body()
-        for phrase in ("resource settings", "named resources",
+        for phrase in ("resource information", "named resources",
                        "generic resources", "team members & split matrix",
                        "days off", "200%", "free (neutral)",
                        "optimal (green)", "full capacity (yellow)",

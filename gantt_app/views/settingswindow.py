@@ -182,7 +182,7 @@ class SettingsWindow(ctk.CTkToplevel):
         repository = self.project.resource_repository
         self._card(
             "Resource",
-            "Resource Settings",
+            "Resource Information",
             "Manage named resources, generic placeholders, team pools, "
             "availability, capacity, schedules, and team allocations.",
             (
@@ -191,7 +191,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 ("Materials", len(repository.materials)),
                 ("Active project", self.project.name or "New Project"),
             ),
-            "Open Resource Settings",
+            "Resource Information",
         )
 
     def _build_calendar_tab(self):

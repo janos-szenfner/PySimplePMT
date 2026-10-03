@@ -930,9 +930,9 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
-        "Resource Settings: people, placeholders and teams",
+        "Resource Information: people, placeholders and teams",
         [
-            "Settings > Resource Settings opens the resource pool stored with "
+            "Settings > Resource Information opens the resource pool stored with "
             "the project. Resources are separate from tasks: Named resources "
             "describe known people, Generic resources hold a role until the "
             "person is known, and Teams aggregate the capacity contributed by "
@@ -1142,7 +1142,7 @@ GUIDE_SECTIONS = (
 
             "The + New button creates a named resource, generic resource, "
             "team, material or cost resource through the same editors the "
-            "Resource Settings window uses, and double-clicking a row "
+            "Resource Information window uses, and double-clicking a row "
             "opens that editor for the row. Right-click offers Assign "
             "Tasks - a checklist of the plan where ticked means assigned - "
             "and a task row's own menu removes it from the resource. "
