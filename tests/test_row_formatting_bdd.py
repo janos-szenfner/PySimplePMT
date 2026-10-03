@@ -123,7 +123,7 @@ def a_plan_with_a_phase_work_and_a_standalone():
 
 @when(parsers.parse('a subtask is nested under "{task_id}"'))
 def a_subtask_is_nested_under(ctx, task_id):
-    ctx.project.add_task(Task(id="S1", name="Nested", task_type="Subtask",
+    ctx.project.add_task(Task(id="S1", name="Nested", task_type="Task",
                               parent_task_id=task_id, start_date=BASE,
                               end_date=BASE + timedelta(days=1)))
     ctx.task_list.update_task_list()
@@ -247,14 +247,9 @@ def the_visual_tags_match(ctx, first_id, second_id):
     assert tags[0] == tags[1]
 
 
-@then(parsers.parse('the tags on the new subtask include "{marker}"'))
-def the_tags_include(ctx, marker):
-    assert marker in ctx.task_list.tree.item('S1', 'tags')
-
-
 @then("no marker tag paints a colour")
 def no_marker_tag_paints_a_colour(ctx):
-    for marker in ('subtask', 'cut', 'search_context', 'oddrow',
+    for marker in ('cut', 'search_context', 'oddrow',
                    'evenrow'):
         configured = ctx.task_list.tree.tag_configure(marker)
         assert not str(configured.get('background') or ''), marker

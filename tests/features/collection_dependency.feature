@@ -4,7 +4,7 @@ Feature: A dependency on a collection row drives the work inside it
 
   Two faults were reported on the same plan:
 
-    * A Task- or Subtask-typed row that had grown children never
+    * A Task-typed row that had grown children never
       settled: the working-calendar pass rebuilt it from its stored
       duration while the roll-up rebuilt it from its children, and the
       two took turns for every pass of the reschedule loop.

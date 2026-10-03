@@ -84,7 +84,7 @@ DEPENDENCY_HARDNESS_LABELS = {
 }
 
 #: Task types in the new hierarchy
-TASK_TYPES = ('Phase', 'Task', 'Subtask', 'Milestone')
+TASK_TYPES = ('Phase', 'Task', 'Milestone')
 
 #: The scheduling constraints a task may carry, as MS Project names them.
 #: The stored value is the short enum; CONSTRAINT_LABELS gives the title the
@@ -186,36 +186,39 @@ def order_grid_columns(order, hidden) -> List[str]:
 TASK_TYPE_LABELS = {
     'Phase': 'Phase',
     'Task': 'Task',
-    'Subtask': 'Subtask',
     'Milestone': 'Milestone',
 }
 
 #: What a type that is no longer offered becomes when a plan carrying it is
 #: opened.
 #:
-#: Deliverable was a level between Phase and Task. Plans, saved files and
-#: imports still carry it, and a row whose type is not one this application
-#: knows would be a row nothing could decide anything about - which rule
-#: rolls its progress up, whether it may hold children, what it is called in
-#: the Type column. Read as the nearest thing that is still offered instead,
-#: which is a Task: it holds work, it may have rows beneath it, and a phase
-#: full of them reads as it did.
+#: Deliverable was a level between Phase and Task, and Subtask named a Task
+#: that happened to sit under one - the hierarchy already says which rows
+#: are sub-tasks, so a type for it only duplicated what indenting shows
+#: (issue #63). Plans, saved files and imports still carry both, and a row
+#: whose type is not one this application knows would be a row nothing
+#: could decide anything about - which rule rolls its progress up, whether
+#: it may hold children, what it is called in the Type column. Read as the
+#: nearest thing that is still offered instead, which is a Task: it holds
+#: work, it may have rows beneath it, and a phase full of them reads as it
+#: did.
 RETIRED_TASK_TYPES = {
     'Deliverable': 'Task',
-    'Sub-Task': 'Subtask',
+    'Subtask': 'Task',
+    'Sub-Task': 'Task',
 }
 
 #: Container types that have children and roll up dates/progress
 CONTAINER_TYPES = ('Phase',)
 
 #: Work types that represent actual work items
-WORK_TYPES = ('Task', 'Subtask')
+WORK_TYPES = ('Task',)
 
-#: Types that can have subtasks. A Subtask may: real plans carry grouping
-#: rows of that type with rows under them (issue #56), indenting already
-#: puts rows under whichever sibling sits above, and imported files arrive
-#: nested however their own format allowed.
-PARENT_TYPES = ('Phase', 'Task', 'Subtask')
+#: Types that can have subtasks. A Task may, however deep the nesting runs:
+#: real plans carry grouping rows with rows under them (issue #56),
+#: indenting already puts rows under whichever sibling sits above, and
+#: imported files arrive nested however their own format allowed.
+PARENT_TYPES = ('Phase', 'Task')
 
 #: Types that cannot have children (leaf nodes). A milestone marks a moment
 #: rather than spanning one, so nothing sits inside it.
@@ -223,14 +226,12 @@ LEAF_TYPES = ('Milestone',)
 
 #: What a task is allowed to be, by the type of the parent it sits under.
 #:
-#: The types describe a three-level plan - Phase > Task > Subtask - with a
-#: Milestone allowed at any level, since a milestone marks a moment in
-#: whatever it is a moment in. A Subtask holding rows of its own is a
-#: grouping row: what goes under it is still a Subtask, again however deep.
+#: With the Subtask type retired the rule is a plain one - a Task may sit
+#: anywhere work can go - with a Milestone allowed at any level, since a
+#: milestone marks a moment in whatever it is a moment in.
 ALLOWED_CHILD_TYPES = {
     'Phase': ('Task', 'Milestone'),
-    'Task': ('Subtask', 'Milestone'),
-    'Subtask': ('Subtask', 'Milestone'),
+    'Task': ('Task', 'Milestone'),
 }
 
 #: What a task becomes when its own type is not one the parent can hold.
@@ -239,12 +240,10 @@ ALLOWED_CHILD_TYPES = {
 #: is being placed in a plan, not promoted into a bracket over other rows.
 DEFAULT_CHILD_TYPE = {
     'Phase': 'Task',
-    'Task': 'Subtask',
-    'Subtask': 'Subtask',
+    'Task': 'Task',
 }
 
-#: What a task is allowed to be at the top of the plan. A Subtask is not:
-#: it is the level below a Task, so lifted clear of one it becomes a Task.
+#: What a task is allowed to be at the top of the plan.
 ROOT_TYPES = ('Phase', 'Task', 'Milestone')
 
 
@@ -279,10 +278,10 @@ def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
     if parent is None:
         return task.task_type if task.task_type in ROOT_TYPES else 'Task'
 
-    allowed = ALLOWED_CHILD_TYPES.get(parent.task_type, ('Subtask',))
+    allowed = ALLOWED_CHILD_TYPES.get(parent.task_type, ('Task',))
     if task.task_type in allowed:
         return task.task_type
-    return DEFAULT_CHILD_TYPE.get(parent.task_type, 'Subtask')
+    return DEFAULT_CHILD_TYPE.get(parent.task_type, 'Task')
 
 
 def rolled_up_progress(parent, children) -> int:
@@ -309,7 +308,7 @@ def rolled_up_progress(parent, children) -> int:
     Each level of the plan counts what is under it in the way that suits
     what that level is.
 
-A Subtask carries a percentage of its own, like every other row.
+A sub-task carries a percentage of its own, like every other row.
 
     A Task with sub-tasks averages their percentages, evenly. It is a
     checklist, and a checklist is counted rather than weighted - four
@@ -612,7 +611,7 @@ class Task:
         progress: Completion percentage (0-100)
         dependencies: List of task IDs that must complete before this task
         color: Hex color string for visualization
-        task_type: Type of task - one of TASK_TYPES (Phase, Task, Subtask, Milestone)
+        task_type: Type of task - one of TASK_TYPES (Phase, Task, Milestone)
         parent_task_id: ID of parent task (for hierarchical organization)
         duration: Duration in days (can be manually set)
         priority: Task priority level
@@ -624,11 +623,12 @@ class Task:
     
     DEVELOPMENT NOTES:
     ------------------
-    - task_type can be 'Phase', 'Task', 'Subtask', or 'Milestone'
+    - task_type can be 'Phase', 'Task', or 'Milestone'
     - A Phase is a container type that rolls up dates and progress from its
       children; so does any other row that comes to have them
-    - Task is the primary work unit with duration, start/end dates, and completion
-    - Subtask is a micro-action under a Task for basic completion tracking
+    - Task is the primary work unit with duration, start/end dates, and
+      completion. A task under another is a sub-task in the hierarchy's
+      sense - that is a parent link, not a type (issue #63)
     - Milestone is a zero-duration marker representing key events
     - is_milestone flag is maintained for backward compatibility but task_type='Milestone' is authoritative
     """
@@ -708,7 +708,7 @@ class Task:
         dependencies carried a type load unchanged.
         
         Handles backward compatibility for legacy is_milestone flag and
-        old task_type values ('Task', 'Subtask').
+        old task_type values ('Deliverable', 'Subtask', 'Sub-Task').
         """
         # A name is not required. A blank row is a legitimate thing to want
         # - a spacer between groups, a line to fill in later - and the plan
@@ -814,7 +814,7 @@ class Task:
 
     @property
     def is_work_item(self) -> bool:
-        """Whether this task is a work item (Task or Subtask)."""
+        """Whether this task is a work item (a Task)."""
         return self.task_type in WORK_TYPES
 
     @property
@@ -862,9 +862,8 @@ class Task:
 
     @property
     def can_have_dependencies(self) -> bool:
-        """Whether this task type can have dependencies."""
-        # Container types can have dependencies, but leaf nodes like Subtasks might not
-        return self.task_type != "Subtask"  # Subtasks typically don't have complex dependencies
+        """Whether this task type can have dependencies. Any row may."""
+        return True
 
     @property
     def can_edit_duration(self) -> bool:
@@ -995,8 +994,10 @@ class Task:
         RETURNS:
         --------
         Task
-            A new subtask with task_type='Sub-Task' and parent_task_id set
-        
+            A new sub-task: a Task with parent_task_id set. Being under
+            another row is what makes it one - there is no Subtask type any
+            more (issue #63)
+
         DEVELOPMENT NOTES:
         ------------------
         Subtasks automatically inherit the start_date from their parent task.
@@ -1005,14 +1006,14 @@ class Task:
         """
         # Use parent's start_date for the subtask
         parent_start = parent_task.start_date
-        
+
         # If end_date not provided, set it to same as start_date (1 day) or leave None
         subtask_end = end_date
         if subtask_end is None and not parent_task.is_milestone:
             # Default to 1 day duration if parent has an end_date
             if parent_task.end_date:
                 subtask_end = parent_start  # Will be 1 day by default
-        
+
         return cls(
             id=task_id or str(uuid.uuid4()),
             name=name,
@@ -1022,7 +1023,7 @@ class Task:
             dependencies=dependencies or [],
             color=color,
             is_milestone=False,
-            task_type="Subtask",
+            task_type="Task",
             parent_task_id=parent_task.id
         )
     
@@ -2112,7 +2113,9 @@ class Project:
         rather than the indent being refused.
 
         The task keeps its type. Every one of them, wherever it lands: a
-        Task indented under another Task is still a Task.
+        Task indented under another Task is still a Task - sitting under a
+        row is what makes a sub-task now, and the type says nothing about
+        that either way (issue #63).
 
         It used to be retyped to whatever the new parent expected, so
         indenting a Task under a Task made it a Subtask - and the row you
@@ -2237,8 +2240,8 @@ class Project:
         DEVELOPMENT NOTES:
         ------------------
         The task keeps its type, at the top of the plan as anywhere else -
-        a Subtask lifted clear of its task is still a Subtask until
-        somebody says otherwise. See indent_task for why.
+        a Task lifted clear of its parent is still a Task until somebody
+        says otherwise. See indent_task for why.
 
         It keeps its own sub-tasks. Its old parent may stop being a summary
         entirely, in which case that parent goes back to holding its own
@@ -5280,7 +5283,7 @@ class Project:
         dates from the children beneath it when it has any - see
         roll_up_summaries, which brackets "anything with children, whatever it
         is called" - and those are on working days by the time this is done
-        with them. Skipping only the Phase type left a Task or Subtask that
+        with them. Skipping only the Phase type left a Task or sub-task that
         had grown children being rebuilt here from its own stored duration
         while roll_up rebuilt it from its children: the two disagreed and took
         turns for all twelve passes, so a plan with a Task-typed phase never

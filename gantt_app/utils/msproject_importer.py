@@ -343,8 +343,8 @@ def _task_type(is_milestone: bool, is_summary: bool, level: int) -> str:
     ------------------
     Project has one kind of summary row, so the depth decides: the top
     level is a Phase and anything below it a Task. child_type_for then moves
-    it to whatever its parent can actually hold, which is what keeps a
-    summary three levels down a Task, so its own children can be Subtasks.
+    it to whatever its parent can actually hold - which is a Task at any
+    depth now that sub-task is a parent link rather than a type (issue #63).
     """
     if is_milestone:
         return 'Milestone'

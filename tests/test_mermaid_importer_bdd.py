@@ -62,12 +62,12 @@ def build_full_fidelity() -> Project:
 
     add("P1", "Planning", "Phase", None, 0)
     add("D1", "Signed contract", "Task", "P1", 0)
-    add("T1", "Business case", "Subtask", "D1", 4, progress=30,
+    add("T1", "Business case", "Task", "D1", 4, progress=30,
         colour="#ff0000")
-    add("T2", "Procurement", "Subtask", "D1", 9).add_dependency(
+    add("T2", "Procurement", "Task", "D1", 9).add_dependency(
         "T1", 'FS', 'Hard')
     add("P2", "Delivery", "Phase", None, 0)
-    add("T3", "Build", "Subtask", "P2", 9, progress=100).add_dependency(
+    add("T3", "Build", "Task", "P2", 9, progress=100).add_dependency(
         "T2", 'SS', 'Hard', 2)
     add("M1", "Go-Live", "Milestone", "P2", 0,
         milestone=True).add_dependency("T3", 'FS', 'Hard')
@@ -477,7 +477,9 @@ def the_phase_holds_subtasks(ctx, phase, a, b):
     subtasks = ctx.project.get_subtasks(parent.id)
     assert [t.name for t in subtasks] == [a, b]
     for subtask in subtasks:
-        assert subtask.task_type == "Subtask"
+        # Nested rows are Tasks: the parent link is what makes them
+        # sub-tasks now (issue #63)
+        assert subtask.task_type == "Task"
 
 
 @then(parsers.parse('the first "{a}" holds "{ta}" and the second holds '
@@ -641,7 +643,7 @@ def every_task_matches(ctx):
 
 
 @then(parsers.parse('"{p}" is a "Phase", "{d}" a "Task" under it, and '
-                    '"{t}" a "Subtask" under "{d}"'))
+                    '"{t}" a "Task" under "{d}"'))
 def the_levels_survive(ctx, p, d, t):
     types = {task.id: task.task_type for task in ctx.imported.tasks}
     assert types[p] == "Phase"

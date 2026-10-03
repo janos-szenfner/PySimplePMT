@@ -430,7 +430,9 @@ class GANImporter:
                 dependencies=[],
                 color=self._task_color(task_elem, color_map, is_milestone),
                 is_milestone=is_milestone,
-                task_type="Subtask" if parent_id else "Task",
+                # Nested rows are Tasks too - the parent link, not a type,
+                # is what makes them sub-tasks (issue #63)
+                task_type="Task",
                 parent_task_id=parent_id,
                 status=status,
             )

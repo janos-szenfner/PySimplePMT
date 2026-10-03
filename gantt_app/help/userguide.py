@@ -57,25 +57,24 @@ GUIDE_SECTIONS = (
     (
         "The levels of a plan",
         [
-            "Work is described at four levels, plus a marker that can sit at "
-            "any of them:",
+            "Work is described at three levels, plus a marker that can sit "
+            "at any of them:",
 
             "Phase - the outermost grouping. A stage of the project, holding "
             "the work under it. It has no length of its own: its dates and "
             "its progress come from what is inside it.",
 
             "Task - the primary unit of work. This is what holds a duration, "
-            "a start, a finish and a percentage complete.",
-
-            "Subtask - a step inside a task, for tracking completion at a "
-            "finer grain than the task itself.",
+            "a start, a finish and a percentage complete. A task under "
+            "another task is a sub-task; that is the indent talking, not a "
+            "type - the hierarchy itself says which rows sit inside which.",
 
             "Milestone - a moment rather than a stretch of work. It has no "
             "duration and no finish; it marks a date. Drawn as a diamond.",
 
-            "Only the levels that hold work - Task and Subtask - have "
-            "durations you set. A row with children showing a duration is "
-            "reporting what they span, not a number of its own.",
+            "Only the levels that hold work have durations you set. A row "
+            "with children showing a duration is reporting what they span, "
+            "not a number of its own.",
         ],
     ),
     (
@@ -89,17 +88,13 @@ GUIDE_SECTIONS = (
             "The type is yours to set, and only you set it. It used to "
             "follow the tree - a Task indented under a Task came back a "
             "Subtask, dropping a level and losing the sub-tasks it had been "
-            "built to hold. Where a row sits and what it is are two "
-            "separate statements, and moving it makes only the first.",
+            "built to hold. There is no Subtask type at all now: where a row "
+            "sits and what it is are two separate statements, and moving it "
+            "makes only the first.",
 
             "Change a type in the Type column - double-click the cell and "
             "pick from the list - or in the task editor. Both accept an "
             "answer for any row, nested or not.",
-
-            "Creating a row under a parent still settles its type from what "
-            "that parent holds, since a row created from a parent's Create "
-            "menu has no type anybody has chosen yet. A sub-task created as "
-            "a sub-task is one until you say otherwise.",
 
             "Indenting and outdenting act on every selected row, not only "
             "the one under the pointer.",
@@ -114,7 +109,7 @@ GUIDE_SECTIONS = (
             "ID - assigned by the application and shown for reference. It is "
             "what dependencies and calendars point at internally.",
 
-            "Type - Phase, Task, Subtask or Milestone. See the levels "
+            "Type - Phase, Task or Milestone. See the levels "
             "above. Any row can be retyped, wherever it sits, and choosing "
             "Milestone here or in the Type column marks it as one.",
 

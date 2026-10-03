@@ -9,7 +9,7 @@ painted with Pillow at whatever size and ink the row asks for.
 
 Available icons:
 - open, new_project, save, edit
-- task, subtask, milestone, phase
+- task, milestone, phase
 - cut, copy, paste, delete
 - undo, redo
 - sun, moon (the light and dark appearances)
@@ -32,7 +32,7 @@ ALWAYS_ACTIVE: List[str] = ['open']
 # Icons that should be active only when there's an open/new project
 ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
     'new_project', 'save', 'save_as', 'edit',
-    'task', 'subtask', 'milestone', 'phase',
+    'task', 'milestone', 'phase',
     'indent', 'outdent',
     'link', 'unlink',
     'bold', 'italic', 'underline',
@@ -44,7 +44,7 @@ ACTIVE_WHEN_PROJECT_OPEN: List[str] = [
 ]
 
 # Work item creation icons
-WORK_ITEM_CREATION_ICONS: List[str] = ['task', 'subtask', 'milestone', 'phase']
+WORK_ITEM_CREATION_ICONS: List[str] = ['task', 'milestone', 'phase']
 
 # =============================================================================
 # DRAWN ICONS
@@ -191,10 +191,6 @@ ICON_STROKES: Dict[str, List[tuple]] = {
     'task': [
         ('shape', [(0.12, 0.34), (0.88, 0.34), (0.88, 0.66), (0.12, 0.66)]),
         ('fill', [(0.12, 0.34), (0.46, 0.66)]),
-    ],
-    'subtask': [
-        ('line', [(0.14, 0.18), (0.14, 0.62), (0.34, 0.62)]),
-        ('shape', [(0.34, 0.44), (0.90, 0.44), (0.90, 0.78), (0.34, 0.78)]),
     ],
     'milestone': [
         ('shape', [(0.50, 0.12), (0.88, 0.50), (0.50, 0.88), (0.12, 0.50)]),

@@ -91,7 +91,7 @@ Feature: Mermaid Gantt charts import and export
 
   # -- Sections --------------------------------------------------------
 
-  Scenario: Each section becomes a parent task holding its tasks as Subtasks
+  Scenario: Each section becomes a parent task holding its tasks as sub-tasks
     When the sectioned Mermaid chart is imported
     Then it holds 5 tasks
     And the root tasks are "Phase One" and "Phase Two"
@@ -272,7 +272,7 @@ Feature: Mermaid Gantt charts import and export
   Scenario: The levels survive
     Given the full-fidelity plan
     When the plan is exported and imported back through Mermaid, then rescheduled
-    Then "P1" is a "Phase", "D1" a "Task" under it, and "T1" a "Subtask" under "D1"
+    Then "P1" is a "Phase", "D1" a "Task" under it, and "T1" a "Task" under "D1"
 
   Scenario: The exact percentage survives
     Given the full-fidelity plan

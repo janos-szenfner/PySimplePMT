@@ -30,7 +30,7 @@ Feature: The XLSX importer reads a spreadsheet into a plan
     And the imported task "2" is 0 percent done
     And the imported task "3" is 100 percent done
 
-  Scenario: Each phase becomes a parent task holding its rows as Subtasks
+  Scenario: Each phase becomes a parent task holding its rows as sub-tasks
     When the sample worksheet is imported
     Then the root tasks are "Phase One" and "Phase Two"
     And "Phase One" holds "Kick-off" and "Analysis" as subtasks
@@ -122,7 +122,7 @@ Feature: The XLSX importer reads a spreadsheet into a plan
       | 1  | Parent |             | 2024-01-01 | 2024-01-10 |
       | 2  | Child  | Parent      | 2024-01-01 | 2024-01-05 |
     Then it holds 2 tasks
-    And the imported task "2" has parent "1" and type "Subtask"
+    And the imported task "2" has parent "1" and type "Task"
 
   Scenario: A workbook whose first sheet has no table still imports
     When a workbook is imported whose cover sheet holds notes and whose "Tasks" sheet holds a table

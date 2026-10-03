@@ -223,7 +223,7 @@ def _deliverable_of(project: Project, task: Task) -> str:
     ------------------
     This used to name the nearest ancestor of the Deliverable type, falling
     back to the notes where a plan had none. That type is no longer offered -
-    a plan runs Phase, Task, Subtask - so the fallback is the whole rule now.
+    a plan runs Phase and Task - so the fallback is the whole rule now.
 
     The column keeps its heading. What a piece of work delivers is something
     a reader of a project spreadsheet looks for, and it does not stop being

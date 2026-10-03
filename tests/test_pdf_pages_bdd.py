@@ -37,11 +37,11 @@ def the_four_row_rollout_plan(tmp_path):
     project.add_task(Task(id="001", name="Planning", task_type="Phase",
                           start_date=base, end_date=base))
     project.add_task(Task(
-        id="002", name="Kick-off", task_type="Subtask",
+        id="002", name="Kick-off", task_type="Task",
         parent_task_id="001", start_date=base, end_date=base,
         progress=100))
     project.add_task(Task(
-        id="003", name="Requirements Gathering", task_type="Subtask",
+        id="003", name="Requirements Gathering", task_type="Task",
         parent_task_id="001", start_date=base,
         end_date=base + timedelta(days=6), progress=60))
     project.get_task_by_id("003").add_dependency("002", 'FS', 'Hard')

@@ -1,9 +1,23 @@
 Feature: Software startup and project selection
   The application opens a Welcome screen that lets users start a new project,
-  open the built-in sample, or pick from recent project files.
+  open an existing project file, open the built-in sample, or pick from
+  recent project files.
 
   Background:
     Given the application is started with the welcome dialog
+
+  Scenario: An existing project can be opened from the welcome screen
+    # Issue #71: the poor PM has already done some work, so Open belongs
+    # on the first screen, not behind an empty project.
+    Given a project file named "Existing Plan" exists as "existing.json"
+    And the Welcome modal is open
+    When the "Open Existing Project..." button is pressed and the file is chosen
+    Then the project name is "Existing Plan"
+
+  Scenario: Cancelling the open chooser keeps the modal up
+    Given the Welcome modal is open
+    When the "Open Existing Project..." button is pressed and no file is chosen
+    Then the Welcome modal is still open
 
   Scenario: New Empty Project starts a clean project
     When the user selects "new" in the Welcome modal

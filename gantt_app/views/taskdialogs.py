@@ -106,7 +106,9 @@ class EditTaskDialog(TaskFormDialog):
         """Name the parent, when there is one."""
         parent = self.seed_parent()
         name = parent.name if parent else "Unknown"
-        if self.task.task_type == "Subtask" and self.task.parent_task_id:
+        # Sitting under another row is what makes this a sub-task; the
+        # parent is named whatever the row's own type is (issue #63)
+        if self.task.parent_task_id:
             self.parent_label = ctk.CTkLabel(frame, text=name)
             self._field(frame, "Parent Task:", self.parent_label,
                         sticky=tk.W)
@@ -401,7 +403,6 @@ class CreateTaskDialog(TaskFormDialog):
 
         titles = {
             'Milestone': "Create New Milestone",
-            'Subtask': "Create New Subtask",
         }
         super().__init__(master, project,
                          titles.get(task_type, "Create New Task"),
@@ -480,39 +481,13 @@ class CreateTaskDialog(TaskFormDialog):
         self._field(frame, "Type:", self.task_type_menu, where=self.LEFT)
 
     def _build_parent(self, frame):
-        """Name the parent, or offer the tasks that could be one."""
+        """Name the parent, when the caller picked one."""
         if self.parent_task:
             super()._build_parent(frame)
-            return
-
-        if self.task_type != "Subtask":
-            return
-
-        names = [t.name for t in self.project.get_root_tasks()]
-        if names:
-            self.parent_var = ctk.StringVar()
-            self.parent_menu = ctk.CTkOptionMenu(
-                frame, variable=self.parent_var, values=names)
-            self._field(frame, "Parent Task:", self.parent_menu)
-        else:
-            self.parent_label = ctk.CTkLabel(
-                frame, text="No parent tasks available")
-            self._field(frame, "Parent Task:", self.parent_label, sticky=tk.W)
 
     def _resolve_parent_id(self) -> Optional[str]:
         """The ID of the parent to hang the new task off, if any."""
-        if self.parent_task:
-            return self.parent_task.id
-
-        chosen = getattr(self, 'parent_var', None)
-        name = chosen.get() if chosen else ''
-        if not name:
-            return None
-
-        match = self.project.get_task_by_id(name)
-        if match:
-            return match.id
-        return next((t.id for t in self.project.tasks if t.name == name), None)
+        return self.parent_task.id if self.parent_task else None
 
     # ---- saving --------------------------------------------------------
 

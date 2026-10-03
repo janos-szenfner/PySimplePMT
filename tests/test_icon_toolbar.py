@@ -56,7 +56,7 @@ class TestIconDefinitions(unittest.TestCase):
         """
         expected_icons = [
             'open', 'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone', 'phase',
+            'task', 'milestone', 'phase',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_icons:
@@ -105,7 +105,7 @@ class TestIconDefinitions(unittest.TestCase):
         # Test ACTIVE_WHEN_PROJECT_OPEN group
         expected_active_icons = [
             'new_project', 'save', 'edit',
-            'task', 'subtask', 'milestone', 'phase',
+            'task', 'milestone', 'phase',
             'cut', 'copy', 'paste', 'delete', 'undo', 'redo'
         ]
         for icon_name in expected_active_icons:
@@ -113,7 +113,7 @@ class TestIconDefinitions(unittest.TestCase):
                         f"'{icon_name}' should be in ACTIVE_WHEN_PROJECT_OPEN")
 
         # Test WORK_ITEM_CREATION_ICONS group
-        expected_work_items = ['task', 'subtask', 'milestone', 'phase']
+        expected_work_items = ['task', 'milestone', 'phase']
         for icon_name in expected_work_items:
             self.assertIn(icon_name, WORK_ITEM_CREATION_ICONS,
                         f"'{icon_name}' should be in WORK_ITEM_CREATION_ICONS")

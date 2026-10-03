@@ -798,8 +798,8 @@ class DragDropTaskList(ctk.CTkFrame):
 
         A row with children takes those from the work beneath it, so its cells
         are not the user's to type; the double-click opens the editor instead.
-        Any row with children counts, not only a Phase - a Task or Subtask
-        that has grown children rolls its dates up too (see issue #25). A
+        Any row with children counts, not only a Phase - a Task that has
+        grown children rolls its dates up too (see issue #25). A
         milestone has neither an end nor a length, so only its start is
         editable in the grid (issues #23 and #31).
         """
@@ -3114,7 +3114,7 @@ class DragDropTaskList(ctk.CTkFrame):
         PARAMETERS:
         -----------
         task_type : str
-            'Task', 'Sub-Task' or 'Milestone'.
+            'Phase', 'Task' or 'Milestone'.
         anchor_id : Optional[str]
             The row the context menu was opened on, or None when it was
             opened over the empty space below the rows.
@@ -3127,15 +3127,15 @@ class DragDropTaskList(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        A sub-task is created under the clicked row, which is what makes it
-        a sub-task. A task or milestone is created beside it rather than at
-        the end of the plan: the gesture pointed at a particular row, so
-        that is where the new one belongs.
+        The new row is created beside the clicked one rather than at the
+        end of the plan: the gesture pointed at a particular row, so that
+        is where it belongs. Making it a child of that row is the separate
+        Indent gesture - sitting under a row is what makes a row a
+        sub-task now, not a type anybody picks (issue #63).
 
         With no row behind the gesture the new task goes at the end of the
         plan at the top level, which is what right-clicking the empty space
-        below the last row asks for. A sub-task has nothing to go under
-        there, and the menu greys it out.
+        below the last row asks for.
         """
         if anchor_id is None:
             anchor = None
@@ -3148,16 +3148,7 @@ class DragDropTaskList(ctk.CTkFrame):
                 logger.warning("Cannot create at unknown task %s", anchor_id)
                 return
 
-        if anchor is None:
-            if task_type == "Subtask":
-                return
-            parent_id = None
-        elif task_type == "Subtask":
-            # A sub-task goes inside the clicked row; a task or milestone
-            # goes beside it, which is what "under this row" means for those
-            parent_id = anchor.id
-        else:
-            parent_id = anchor.parent_task_id
+        parent_id = anchor.parent_task_id if anchor else None
 
         parent = self.project.get_task_by_id(parent_id) if parent_id else None
 
@@ -3202,18 +3193,15 @@ class DragDropTaskList(ctk.CTkFrame):
         DEVELOPMENT NOTES:
         ------------------
         The level is set here rather than left to the dialog, which only
-        honours a parent when it is building a sub-task. Choosing Task from
-        a sub-task's menu should give another task beside it, not one that
-        jumps out to the top of the plan. The type follows the level the row
-        lands at - a sibling of a task inside a phase stays a Task, one
-        beside a sub-task is a sub-task too - rather than a blanket Subtask,
-        which was what the cursor route wrongly produced inside a phase.
+        knows the type it was asked for. The type follows the level the row
+        lands at - a sibling of a task inside a phase stays a Task, and
+        every work row is a Task now wherever it sits (issue #63).
 
         add_task appends, so a sibling is then moved to where it belongs:
         in front of the row it was created from for the insert rule, or one
-        place under it when the right-click menu asked for below. A
-        sub-task needs no move: rebuilding from the hierarchy already
-        places it under its parent.
+        place under it when the right-click menu asked for below. A child
+        needs no move: rebuilding from the hierarchy already places it
+        under its parent.
         """
         def apply() -> bool:
             """Place the new row, then renew the numbering it changed."""
@@ -3965,8 +3953,6 @@ class DragDropTaskList(ctk.CTkFrame):
         # every row is in place and the order they are drawn in is known -
         # see _paint_rows.
         tags = []
-        if task.task_type == 'Subtask':
-            tags.append('subtask')
         if task.id in self._cut_task_ids():
             tags.append('cut')
         if self._is_search_context(task):

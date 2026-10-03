@@ -79,14 +79,15 @@ Feature: The GAN importer reads a GanttProject file into a plan
     Then the imported project is named "Sample Project"
     And it holds 6 tasks
 
-  Scenario: A task inside a task becomes a Subtask of it
+  Scenario: A task inside a task becomes a sub-task of it
+    # A parent link, not a type - there is no Subtask type (issue #63)
     When the sample GAN file is imported
-    Then the imported task "4" has parent "3" and type "Subtask"
+    Then the imported task "4" has parent "3" and type "Task"
     And the top-level tasks are "1", "2" and "3"
 
   Scenario: Nesting deeper than one level keeps its real parent
     When the sample GAN file is imported
-    Then the imported task "5" has parent "4" and type "Subtask"
+    Then the imported task "5" has parent "4" and type "Task"
 
   Scenario: A depend element names a successor
     When the sample GAN file is imported

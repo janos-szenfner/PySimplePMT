@@ -3,32 +3,19 @@ Tests for building task hierarchies deeper than two levels.
 
 DEVELOPMENT NOTES:
 ------------------
-The toolbar helpers under test only read self.project, so they are exercised
-against a lightweight stand-in rather than a real widget. That keeps these
-tests headless while still covering the logic that decides which tasks may
-act as a parent.
+Nesting is a parent link and nothing more now - there is no Subtask type
+(issue #63), so a task at any depth can hold rows of its own and the model
+questions asked here are the ones the rest of the app asks.
 """
 
 import unittest
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 
 from gantt_app.core.models import Project, Task
-from gantt_app.views.toolbar import Toolbar
-
-
-def candidate_parents(project):
-    """Call the toolbar's parent-selection helper against a project."""
-    return Toolbar._candidate_parent_tasks(SimpleNamespace(project=project))
-
-
-def task_depth(project, task):
-    """Call the toolbar's depth helper against a project."""
-    return Toolbar._task_depth(SimpleNamespace(project=project), task)
 
 
 class TestDeepSubtaskCreation(unittest.TestCase):
-    """Tests for creating sub-tasks below other sub-tasks."""
+    """Tests for tasks nested below other tasks."""
 
     def setUp(self):
         """Build a three-level hierarchy."""
@@ -46,7 +33,8 @@ class TestDeepSubtaskCreation(unittest.TestCase):
         """The data model tracks a parent chain of any depth."""
         self.assertEqual(self.level3.parent_task_id, self.level2.id)
         self.assertEqual(self.level2.parent_task_id, self.level1.id)
-        self.assertEqual(self.level3.task_type, "Subtask")
+        # Nested rows are Tasks: depth is the hierarchy's business now
+        self.assertEqual(self.level3.task_type, "Task")
 
         self.assertEqual([t.id for t in self.project.get_root_tasks()],
                          [self.level1.id])
@@ -55,75 +43,11 @@ class TestDeepSubtaskCreation(unittest.TestCase):
         self.assertEqual(self.project.get_parent_task(self.level3.id).id,
                          self.level2.id)
 
-    def test_every_type_that_can_hold_rows_is_offered_as_a_parent(self):
-        """Subtasks are included - hierarchies deeper than two levels are
-        built from the UI this way (issue #56)."""
-        offered = {t.id for t in candidate_parents(self.project)}
-
-        self.assertIn(self.level1.id, offered)
-        self.assertIn(self.level2.id, offered)
-        self.assertIn(self.level3.id, offered)
-
-    def test_candidates_are_in_hierarchy_order(self):
-        """Parents are listed before their own descendants."""
-        # Add a Phase as well to test ordering
-        phase = Task.create_task("Phase", self.start,
-                                self.start + timedelta(days=30))
-        phase.task_type = "Phase"
-        self.project.add_task(phase)
-
-        names = [t.name for t in candidate_parents(self.project)]
-
-        # Everything that can hold rows is offered, each parent
-        # immediately followed by its own descendants
-        self.assertIn("Phase", names)
-        self.assertIn("Level 1", names)
-        self.assertIn("Level 2", names)
-        self.assertIn("Level 3", names)
-        self.assertLess(names.index("Level 1"), names.index("Level 2"))
-        self.assertLess(names.index("Level 2"), names.index("Level 3"))
-
-    def test_milestones_are_not_offered_as_parents(self):
-        """A milestone has no span for a child to sit inside."""
-        milestone = Task.create_milestone("Review", self.start)
-        self.project.add_task(milestone)
-
-        offered = {t.id for t in candidate_parents(self.project)}
-        self.assertNotIn(milestone.id, offered)
-
-    def test_depth_reported_for_indentation(self):
-        """Depth counts how many levels down a task sits."""
-        self.assertEqual(task_depth(self.project, self.level1), 0)
-        self.assertEqual(task_depth(self.project, self.level2), 1)
-        self.assertEqual(task_depth(self.project, self.level3), 2)
-
-    def test_orphaned_task_with_container_type_is_still_offered(self):
-        """A task with container type whose parent is gone is not lost from the list."""
-        orphan = Task(
-            id="orphan", name="Orphan", start_date=self.start,
-            end_date=self.start + timedelta(days=2),
-            task_type="Task", parent_task_id="missing-parent"
-        )
-        self.project.add_task(orphan)
-
-        offered = {t.id for t in candidate_parents(self.project)}
-        self.assertIn("orphan", offered)
-
-    def test_depth_survives_a_parent_cycle(self):
-        """A cyclic parent reference does not hang the depth calculation."""
-        first = Task(id="a", name="A", start_date=self.start,
-                     end_date=self.start + timedelta(days=1))
-        second = Task(id="b", name="B", start_date=self.start,
-                      end_date=self.start + timedelta(days=1),
-                      task_type="Task", parent_task_id="a")
-        first.parent_task_id = "b"
-        first.task_type = "Task"
-
-        project = Project(name="Cyclic", tasks=[first, second])
-
-        self.assertIsInstance(task_depth(project, first), int)
-        # Both are Tasks (container types), so both should be offered
-        self.assertEqual(len(candidate_parents(project)), 2)
+    def test_every_level_can_hold_rows(self):
+        """A task at any depth may be a grouping row (issues #56 and #63)."""
+        for task in (self.level1, self.level2, self.level3):
+            with self.subTest(task=task.name):
+                self.assertTrue(task.can_have_children)
 
 
 class TestDeepHierarchyFromImport(unittest.TestCase):
@@ -205,6 +129,20 @@ class TestTaskTypeCompatibility(unittest.TestCase):
         phase.task_type = "Phase"
         self.assertFalse(phase.is_leaf)
         self.assertTrue(phase.is_container)
+
+    def test_a_saved_subtask_type_loads_as_a_task(self):
+        """
+        Issue #63: the retired type still reads, as the Task it always was.
+
+        Files written before the type went carry 'Subtask' and 'Sub-Task'
+        rows; being under another row is what made them sub-tasks, so they
+        open as plain Tasks and keep their place in the hierarchy.
+        """
+        for retired in ("Subtask", "Sub-Task"):
+            with self.subTest(task_type=retired):
+                task = Task(id="s", name="S", start_date=self.start,
+                            task_type=retired)
+                self.assertEqual(task.task_type, "Task")
 
 
 class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
@@ -292,23 +230,23 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         self.assertEqual(milestone.task_type, "Milestone")
         self.assertTrue(milestone.is_milestone)
 
-    def test_a_subtask_lifted_into_a_phase_stays_a_subtask(self):
+    def test_a_subtask_lifted_into_a_phase_stays_a_task(self):
         """Until somebody says otherwise, which is what the Type column is."""
         project = self.plan([("P", "Phase", None), ("T", "Task", "P"),
-                             ("S", "Subtask", "T")])
+                             ("S", "Task", "T")])
 
         project.outdent_task("S")
 
-        self.assertEqual(project.get_task_by_id("S").task_type, "Subtask")
+        self.assertEqual(project.get_task_by_id("S").task_type, "Task")
         self.assertEqual(project.get_task_by_id("S").parent_task_id, "P")
 
-    def test_a_subtask_lifted_clear_of_everything_stays_a_subtask(self):
+    def test_a_subtask_lifted_clear_of_everything_stays_a_task(self):
         """The top of the plan is a position, not a type."""
-        project = self.plan([("T", "Task", None), ("S", "Subtask", "T")])
+        project = self.plan([("T", "Task", None), ("S", "Task", "T")])
 
         project.outdent_task("S")
 
-        self.assertEqual(project.get_task_by_id("S").task_type, "Subtask")
+        self.assertEqual(project.get_task_by_id("S").task_type, "Task")
         self.assertIsNone(project.get_task_by_id("S").parent_task_id)
 
     def test_a_phase_indented_under_a_phase_stays_a_phase(self):
@@ -366,7 +304,7 @@ class TestMovingSeveralRowsAtOnce(unittest.TestCase):
         for task_id, parent in rows:
             project.add_task(Task(
                 id=task_id, name=task_id, parent_task_id=parent,
-                task_type="Subtask" if parent else "Task",
+                task_type="Task",
                 start_date=datetime(2026, 1, 5),
                 end_date=datetime(2026, 1, 9),
             ))

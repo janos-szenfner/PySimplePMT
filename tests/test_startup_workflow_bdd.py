@@ -104,6 +104,48 @@ def the_user_selects_in_the_welcome_modal(app, mode):
     app._on_welcome_select(mode)
 
 
+def _find_button(widget, text):
+    """The CTkButton anywhere under the widget carrying the given text."""
+    import customtkinter as ctk
+
+    for child in widget.winfo_children():
+        if isinstance(child, ctk.CTkButton) and child.cget("text") == text:
+            return child
+        found = _find_button(child, text)
+        if found is not None:
+            return found
+    return None
+
+
+@when(parsers.parse('the "{label}" button is pressed and the file is chosen'))
+def the_open_button_is_pressed_and_a_file_chosen(
+        welcome_modal, label, project_file_path, monkeypatch):
+    monkeypatch.setattr(
+        "gantt_app.views.startup_setting.filedialog.askopenfilename",
+        lambda **kwargs: project_file_path,
+    )
+    button = _find_button(welcome_modal, label)
+    assert button is not None, f"no {label!r} button in the modal"
+    button.invoke()
+
+
+@when(parsers.parse('the "{label}" button is pressed and no file is chosen'))
+def the_open_button_is_pressed_and_no_file_chosen(
+        welcome_modal, label, monkeypatch):
+    monkeypatch.setattr(
+        "gantt_app.views.startup_setting.filedialog.askopenfilename",
+        lambda **kwargs: "",
+    )
+    button = _find_button(welcome_modal, label)
+    assert button is not None, f"no {label!r} button in the modal"
+    button.invoke()
+
+
+@then("the Welcome modal is still open")
+def the_welcome_modal_is_still_open(welcome_modal):
+    assert welcome_modal.winfo_exists()
+
+
 @when("the user selects that recent project")
 def the_user_selects_that_recent_project(app, project_file):
     app._on_welcome_select("recent", project_file)

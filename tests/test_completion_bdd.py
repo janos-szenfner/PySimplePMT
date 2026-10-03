@@ -59,8 +59,8 @@ def a_phase_over_tasks():
     # A task of ten days holding two sub-tasks
     project.add_task(_task("T1", "Task", parent="P", days=10,
                            start=base))
-    project.add_task(_task("S1", "Subtask", parent="T1", start=base))
-    project.add_task(_task("S2", "Subtask", parent="T1", start=base))
+    project.add_task(_task("S1", "Task", parent="T1", start=base))
+    project.add_task(_task("S2", "Task", parent="T1", start=base))
 
     # A task of ten days with no sub-tasks, part done
     project.add_task(_task("T2", "Task", parent="P", days=10,

@@ -12,9 +12,9 @@ Feature: A new task starts off the timeline
     When a create-dialog template is built for a "Milestone"
     Then the template is off the timeline
 
-  Scenario: A new subtask starts off the timeline
+  Scenario: A new row under a parent starts off the timeline
     Given a parent task exists
-    When a create-dialog template is built for a "Subtask" under it
+    When a create-dialog template is built for a "Task" under it
     Then the template is off the timeline
 
   Scenario: A loaded task keeps the model's default

@@ -52,7 +52,7 @@ Feature: The ribbon
   @needs_display
   Scenario: The split button drops the work-item gallery
     When the "New Task" arrow is pressed
-    Then a drop-down offers "Task...", "Phase...", "Subtask..." and "Milestone..."
+    Then a drop-down offers "Task...", "Phase..." and "Milestone..."
 
   @ribbon
   @needs_display

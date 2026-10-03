@@ -148,7 +148,6 @@ class RibbonBar(IconToolbar):
                 _SPLIT('task', 'New Task', 'add_task', (
                     ("Task...", 'add_task'),
                     ("Phase...", 'add_phase'),
-                    ("Subtask...", 'add_subtask'),
                     ("Milestone...", 'add_milestone'),
                 ), tip="Create a task"),
             )),
@@ -290,7 +289,7 @@ class RibbonBar(IconToolbar):
     #: every button here reaches the same handler the menus used to reach.
     EXTRA_ACTIONS = (
         'new_project', 'load_project', 'close_project',
-        'add_task', 'add_phase', 'add_subtask', 'add_milestone',
+        'add_task', 'add_phase', 'add_milestone',
         'open_settings', 'edit_holidays', 'open_resource_settings',
         'set_baseline', 'clear_baseline',
         'show_gantt_chart', 'show_dashboard', 'toggle_grid_view_only',

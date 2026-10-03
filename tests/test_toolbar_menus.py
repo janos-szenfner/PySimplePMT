@@ -134,8 +134,7 @@ class TestMenuContents(unittest.TestCase):
         create = find(self.tree, 'Edit')['items'][0]
 
         self.assertEqual(labels(create['submenu']),
-                         ['Phase...', 'Task...', 'Subtask...',
-                          'Milestone...'])
+                         ['Phase...', 'Task...', 'Milestone...'])
 
     def test_project_settings_is_reached_from_the_settings_hub(self):
         """The existing full Project editor remains wired behind the hub."""

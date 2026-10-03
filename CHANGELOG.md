@@ -63,6 +63,23 @@
   seed a seven-day task; it now offers the reference tool's own one
   working day, through the plan's calendar as before (issue #74).
 
+- **The Subtask type is gone; indentation is the hierarchy.** A task
+  nested under another used to be retyped Subtask, which meant the
+  ribbon, the editor and the context menus each offered a type that
+  was really just a parent link in disguise. Indenting now keeps a
+  task a Task - only the parent link changes - and every place that
+  offered Subtask (the New Task menu, the editor's type list, the
+  toolbar and context menus) offers the three real types: Phase,
+  Task and Milestone. Saved plans and imports carrying the old type
+  load unchanged, their Subtask rows reading in as Tasks under their
+  parents (issue #63).
+
+- **The welcome screen can open an existing project.** The startup
+  dialog offered a new plan, the sample and the recent list, but no
+  way at a project file it had not met before. Open Existing
+  Project... now sits under New Empty Project, opening the same file
+  chooser the toolbar's Open uses (issue #71).
+
 - **The stray "Source..." menu on macOS is gone.** A Tk application that
   builds no menubar of its own is handed a default one, and its File
   menu carries an item that opens a file dialog waiting for a Tcl script

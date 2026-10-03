@@ -125,8 +125,8 @@ class XLSXImporter:
         -----------
         group_by_phase : bool, optional
             When True (default), each distinct value of the Phase column
-            becomes a parent Task and its rows become Sub-Tasks of it. Ignored
-            when the sheet carries an explicit 'Parent Task' column.
+            becomes a parent Task and its rows become child Tasks of it.
+            Ignored when the sheet carries an explicit 'Parent Task' column.
         """
         self.default_color = "#1f6aa5"
         self.milestone_color = "#f39c12"
@@ -602,13 +602,14 @@ class XLSXImporter:
             token = str(raw).strip()
             parent = by_id.get(token) or by_name.get(token.lower())
             if parent is not None and parent.id != task.id:
+                # The parent link says what the old Subtask type did -
+                # the row stays a Task (issue #63)
                 task.parent_task_id = parent.id
-                task.task_type = "Subtask"
 
     def _group_by_phase(self, records: List[Dict[str, Any]],
                         tasks: List[Task]) -> List[Task]:
         """
-        Turn the Phase column into parent tasks holding their rows as Sub-Tasks.
+        Turn the Phase column into parent tasks holding their rows beneath them.
 
         RETURNS:
         --------
@@ -667,7 +668,6 @@ class XLSXImporter:
             phase_tasks[phase] = parent
 
             for member in group:
-                member.task_type = "Subtask"
                 member.parent_task_id = phase_id
 
         ordered: List[Task] = []

@@ -183,7 +183,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     DEFAULT_COLORS = {
         'Phase': "#2ecc71",        # Green
         'Task': "#1f6aa5",         # Blue, the button accent
-        'Subtask': "#1f6aa5",      # Blue, the button accent
         'Milestone': "#f39c12",    # Orange
     }
 

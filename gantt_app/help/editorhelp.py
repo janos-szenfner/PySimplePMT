@@ -54,10 +54,9 @@ HELP_SECTIONS = (
             "progress come from what is inside it.",
 
             "Task - the primary unit of work. This is the level that holds a "
-            "duration, a start, a finish and a percentage complete.",
-
-            "Subtask - a step inside a task, for tracking completion at a "
-            "finer grain than the task itself.",
+            "duration, a start, a finish and a percentage complete. A task "
+            "under another is a sub-task; that is the indent talking, not a "
+            "type.",
 
             "Milestone - a moment rather than a stretch of work. No duration "
             "and no finish; it marks a date.",

@@ -307,7 +307,7 @@ def the_phase_holds_subtasks(ctx, phase, a, b):
     subtasks = ctx.project.get_subtasks(parent.id)
     assert [t.name for t in subtasks] == [a, b]
     for subtask in subtasks:
-        assert subtask.task_type == "Subtask"
+        assert subtask.task_type == "Task"
 
 
 @then(parsers.parse('the imported "{name}" starts on "{start}" and ends on '

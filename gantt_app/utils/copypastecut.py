@@ -23,12 +23,14 @@ if TYPE_CHECKING:
     from gantt_app.core.models import Project, Task
 
 
-#: Supported entity types for clipboard operations
+#: Supported entity types for clipboard operations. 'subtask' is kept for
+#: clips written by older versions - the type is retired now (issue #63),
+#: and a row carried under it lands as an ordinary task.
 ENTITY_TYPES = ('task', 'phase', 'subtask', 'milestone')
 
-#: Container types that can accept pasted items. A sub-task row may be a
+#: Container types that can accept pasted items. A task row may be a
 #: grouping row with rows of its own, which is the shape real plans take
-#: (issue #56).
+#: (issue #56); 'subtask' stays for clips written before the type went.
 CONTAINER_TYPES = ('phase', 'task', 'subtask')
 
 #: The columns written to the desktop clipboard, tab-separated so a
@@ -39,15 +41,16 @@ CLIPBOARD_COLUMNS = ("Task Name", "Type", "Start", "End", "Duration", "Status")
 #: What each kind of item may be pasted into, by the type of the row it
 #: would go under. An empty tuple means the top level and nowhere else.
 #:
-#: The plan runs Phase, Task, Subtask, and pasting is held to
-#: that: a phase is a top-level scope and does not go inside a task, and a
-#: milestone marks a moment that holds nothing, so it is the only leaf.
-#: Paste is greyed out on the menu where this says no, rather than being
-#: offered and then refused.
+#: The plan runs Phase and Task - pasting is held to that: a phase is a
+#: top-level scope and does not go inside a task, and a milestone marks a
+#: moment that holds nothing, so it is the only leaf. Paste is greyed out
+#: on the menu where this says no, rather than being offered and then
+#: refused. 'subtask' keys stay for clips written before the type went -
+#: those rows land as tasks now (issue #63).
 #:
-#: A sub-task may be a grouping row with rows under it - plans built by
+#: A task may be a grouping row with rows under it - plans built by
 #: indenting and imported files both nest that way, so a paste beside a
-#: row inside a sub-task group lands inside that group (issue #56).
+#: row inside a task group lands inside that group (issue #56).
 ALLOWED_PARENT_TYPES = {
     'phase': (),
     'task': ('phase', 'task', 'subtask'),

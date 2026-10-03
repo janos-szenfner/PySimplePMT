@@ -86,7 +86,7 @@ class InlineEditingTestCase(unittest.TestCase):
         self.project.add_task(Task(id='u1', name='Planning', task_type='Task',
                                    start_date=BASE,
                                    end_date=BASE + timedelta(days=2)))
-        self.project.add_task(Task(id='u2', name='Sub', task_type='Subtask',
+        self.project.add_task(Task(id='u2', name='Sub', task_type='Task',
                                    parent_task_id='u1', start_date=BASE,
                                    end_date=BASE + timedelta(days=1)))
 
@@ -881,20 +881,20 @@ class TestTheEditorCanRetypeAnyRow(InlineEditingTestCase):
         save's undo record, so undo could not put them back.
         """
         self.project.add_task(Task(
-            id='u3', name='Grand', task_type='Subtask', parent_task_id='u2',
+            id='u3', name='Grand', task_type='Task', parent_task_id='u2',
             start_date=BASE, end_date=BASE + timedelta(days=1)))
 
         self.save_as_milestone('u2')
 
         promoted = self.project.get_task_by_id('u3')
         self.assertEqual(promoted.parent_task_id, 'u1')
-        self.assertEqual(promoted.task_type, 'Subtask')
+        self.assertEqual(promoted.task_type, 'Task')
 
         self.assertTrue(self.manager.undo())
         restored = self.project.get_task_by_id('u3')
         self.assertEqual(restored.parent_task_id, 'u2')
         self.assertEqual(
-            self.project.get_task_by_id('u2').task_type, 'Subtask')
+            self.project.get_task_by_id('u2').task_type, 'Task')
 
     def test_a_promoted_group_keeps_the_rows_under_it(self):
         """
@@ -904,11 +904,11 @@ class TestTheEditorCanRetypeAnyRow(InlineEditingTestCase):
         sat under one of them keeps the parent it had.
         """
         self.project.add_task(Task(
-            id='u3', name='Inner group', task_type='Subtask',
+            id='u3', name='Inner group', task_type='Task',
             parent_task_id='u2', start_date=BASE,
             end_date=BASE + timedelta(days=2)))
         self.project.add_task(Task(
-            id='u4', name='Deep', task_type='Subtask', parent_task_id='u3',
+            id='u4', name='Deep', task_type='Task', parent_task_id='u3',
             start_date=BASE, end_date=BASE + timedelta(days=1)))
 
         self.save_as_milestone('u2')
@@ -1104,13 +1104,20 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
 
         self.assertEqual(self.top_order(), ['u1', 'new1'])
 
-    def test_a_new_row_beside_a_subtask_is_a_subtask(self):
-        """Its level's type, whatever the dialog offered."""
+    def test_a_new_row_beside_a_subtask_is_a_task(self):
+        """
+        Its level's type, whatever the dialog offered.
+
+        A sub-task is a Task with a parent now (issue #63), so a row
+        created beside one is a Task - the parent link under u1 is what
+        the next assertion checks.
+        """
         self.task_list._save_created(self.new_task(), 'u2', 'u1',
                                      above=True)
 
-        self.assertEqual(self.project.get_task_by_id('new1').task_type,
-                         'Subtask')
+        new_row = self.project.get_task_by_id('new1')
+        self.assertEqual(new_row.task_type, 'Task')
+        self.assertEqual(new_row.parent_task_id, 'u1')
 
     def test_a_new_row_beside_a_phase_s_task_stays_a_task(self):
         """

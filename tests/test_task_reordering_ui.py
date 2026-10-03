@@ -79,7 +79,7 @@ class TaskListTestCase(unittest.TestCase):
         for task_id, name in [("004", "Beta one"), ("005", "Beta two")]:
             self.project.add_task(Task(
                 id=task_id, name=name, start_date=base,
-                task_type="Subtask", parent_task_id="002",
+                task_type="Task", parent_task_id="002",
             ))
 
         self.task_list = DragDropTaskList(self.root, self.project)
@@ -360,10 +360,10 @@ class TestIndentOutdent(TaskListTestCase):
         self.assertIn("002", self.task_list.tree.get_children("001"))
 
     def test_outdenting_lifts_a_subtask_without_retyping_it(self):
-        """It reaches the top level and is still a sub-task."""
+        """It reaches the top level and is still a task."""
         self.invoke_entry("004", "Outdent")
 
-        self.assertEqual(self.levels()["004"], ("Subtask", None))
+        self.assertEqual(self.levels()["004"], ("Task", None))
 
     def test_the_moved_row_stays_selected(self):
         """The task stays put so it can be moved again."""
@@ -390,7 +390,7 @@ class TestIndentOutdent(TaskListTestCase):
 
         levels = self.levels()
         self.assertEqual(levels["002"], ("Task", "001"))
-        self.assertEqual(levels["004"], ("Subtask", "002"))
+        self.assertEqual(levels["004"], ("Task", "002"))
 
     def test_indenting_under_a_milestone_is_refused(self):
         """A milestone cannot bracket sub-tasks."""
@@ -451,11 +451,11 @@ class TestIndentUndo(TaskListTestCase):
     def test_undo_restores_an_outdent(self):
         """The same holds coming the other way."""
         self.task_list.outdent_task("004")
-        self.assertEqual(self.level_of("004"), ("Subtask", None))
+        self.assertEqual(self.level_of("004"), ("Task", None))
 
         self.manager.undo()
 
-        self.assertEqual(self.level_of("004"), ("Subtask", "002"))
+        self.assertEqual(self.level_of("004"), ("Task", "002"))
 
     def test_a_refused_change_records_nothing(self):
         """Indenting the first row leaves the undo history alone."""
@@ -487,9 +487,7 @@ class TestCreateSubmenu(TaskListTestCase):
                         on_save=None, project_tracker=None):
             """Stand in for the dialog, saving as a user pressing Save would."""
             new_id = project.next_task_id()
-            if task_type == "Subtask":
-                task = Task.create_subtask("New", parent_task, task_id=new_id)
-            elif task_type == "Milestone":
+            if task_type == "Milestone":
                 task = Task.create_milestone("New", dt(2026, 1, 1),
                                              task_id=new_id)
             else:
@@ -516,7 +514,7 @@ class TestCreateSubmenu(TaskListTestCase):
         """The four the plan is built from, outermost first."""
         self.assertEqual(
             self.submenu_labels("001"),
-            ["Phase", "Task", "Subtask", "Milestone"])
+            ["Phase", "Task", "Milestone"])
 
     def test_a_task_lands_below_the_clicked_row(self):
         """
@@ -535,13 +533,20 @@ class TestCreateSubmenu(TaskListTestCase):
 
         self.assertEqual(self.created.parent_task_id, "002")
 
-    def test_a_subtask_lands_under_the_clicked_row(self):
-        """A sub-task is created inside the task the menu was opened on."""
-        self.task_list.create_task("Subtask", "001")
+    def test_indenting_puts_the_new_row_under_the_clicked_one(self):
+        """
+        How a sub-task is made now: create beside, then indent.
+
+        There is no Subtask type to create as any more (issue #63) - a row
+        goes under another by being indented there.
+        """
+        self.task_list.create_task("Task", "001")
+        new_id = self.created.id
+
+        self.task_list.indent_task(new_id)
 
         self.assertEqual(self.created.parent_task_id, "001")
-        self.assertIn(self.created.id,
-                      self.task_list.tree.get_children("001"))
+        self.assertIn(new_id, self.task_list.tree.get_children("001"))
 
     def test_a_milestone_lands_below_the_clicked_row(self):
         """A milestone is a sibling, like a task."""
@@ -592,13 +597,14 @@ class TestCreateSubmenu(TaskListTestCase):
         self.assertTrue(self.created.is_milestone)
         self.assertEqual(self.rows()[-1], self.created.id)
 
-    def test_no_row_cannot_create_a_subtask(self):
-        """A sub-task has nothing to go under."""
-        before = len(self.project.tasks)
+    def test_no_row_creates_every_type_at_the_end(self):
+        """Phase, Task and Milestone all work over empty space."""
+        for task_type in ("Phase", "Task", "Milestone"):
+            with self.subTest(task_type=task_type):
+                self.task_list.create_task(task_type, None)
 
-        self.task_list.create_task("Subtask", None)
-
-        self.assertEqual(len(self.project.tasks), before)
+                self.assertEqual(self.rows()[-1], self.created.id)
+                self.assertIsNone(self.created.parent_task_id)
 
 
 class TestUndoRedoEntries(TaskListTestCase):
@@ -1295,8 +1301,8 @@ class TestContextMenu(TaskListTestCase):
         self.assertEqual(states["Task"], 'normal')
         self.assertEqual(states["Milestone"], 'normal')
 
-    def test_a_subtask_cannot_be_created_over_empty_space(self):
-        """There is no row for it to go under."""
+    def test_every_create_type_is_offered_over_empty_space(self):
+        """Nothing left in the submenu needs a row to go under."""
         menu = self.task_list.context_menu._build(self.project, None)
         index = self.entry_index(menu, "Create")
         submenu = menu.nametowidget(menu.entrycget(index, 'menu'))
@@ -1305,7 +1311,9 @@ class TestContextMenu(TaskListTestCase):
                   str(submenu.entrycget(i, 'state'))
                   for i in range(submenu.index('end') + 1)}
 
-        self.assertEqual(states["Subtask"], 'disabled')
+        self.assertEqual(
+            states,
+            {"Phase": 'normal', "Task": 'normal', "Milestone": 'normal'})
 
 
 class TestShiftRangeSelection(TaskListTestCase):

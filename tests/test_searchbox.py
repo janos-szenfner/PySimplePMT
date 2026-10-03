@@ -80,7 +80,7 @@ class SearchTestCase(unittest.TestCase):
         self.subtask = Task(id="S1", name="Wireframe",
                             start_date=datetime(2026, 9, 7),
                             end_date=datetime(2026, 9, 8),
-                            parent_task_id="T1", task_type='Subtask')
+                            parent_task_id="T1")
         self.other = Task(id="T2", name="Server migration",
                           start_date=datetime(2026, 9, 14),
                           end_date=datetime(2026, 9, 15),
@@ -129,7 +129,7 @@ class TestEveryFieldCanBeSearched(SearchTestCase):
         self.assertEqual(self.found("T2"), [])
 
     def test_by_type(self):
-        self.assertEqual(self.found("subtask"), ["Wireframe"])
+        self.assertEqual(self.found("phase"), ["Design Phase"])
 
     def test_by_notes(self):
         """The ticket number somebody pasted into the details."""

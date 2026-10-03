@@ -51,9 +51,9 @@ class MermaidImporter:
         -----------
         group_by_section : bool, optional
             When True (default), each 'section' in the Mermaid chart becomes a
-            parent Task and the tasks below it become Sub-Tasks of it, so the
-            chart's grouping survives the import. Set to False to import a
-            flat task list instead.
+            parent Task and the tasks below it become child Tasks of it, so
+            the chart's grouping survives the import. Set to False to import
+            a flat task list instead.
         """
         self.default_color = "#1f6aa5"
         self.milestone_color = "#f39c12"
@@ -400,7 +400,7 @@ class MermaidImporter:
     def _build_section_hierarchy(self, tasks_info: List[Dict], task_map: Dict,
                                  tasks: List[Task]) -> List[Task]:
         """
-        Turn Mermaid sections into parent tasks holding their tasks as Sub-Tasks.
+        Turn Mermaid sections into parent tasks holding their tasks beneath them.
 
         RETURNS:
         --------
@@ -467,7 +467,6 @@ class MermaidImporter:
             section_tasks[section] = parent
 
             for member in members:
-                member.task_type = "Subtask"
                 member.parent_task_id = section_id
 
         # Rebuild the list so each parent precedes the tasks it contains

@@ -11,6 +11,7 @@ from typing import Callable, List, Optional
 
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import filedialog
 
 from gantt_app.utils.log import get_logger
 
@@ -145,6 +146,15 @@ class WelcomeModal(ctk.CTkToplevel):
         )
         btn_new.pack(padx=10, pady=8, fill=tk.X)
 
+        # The poor PM has already done some work - let them point at it
+        # here instead of opening an empty project to reach Open (issue #71)
+        btn_open = ctk.CTkButton(
+            frame_actions,
+            text="Open Existing Project...",
+            command=self._choose_file,
+        )
+        btn_open.pack(padx=10, pady=(0, 8), fill=tk.X)
+
         btn_sample = ctk.CTkButton(
             frame_actions,
             text="Open Built-in Sample Project",
@@ -278,6 +288,23 @@ class WelcomeModal(ctk.CTkToplevel):
         logger.debug("Formatted recent-project timestamp %r as %r",
                      value, formatted)
         return formatted
+
+    def _choose_file(self):
+        """
+        Ask for a project file and open it.
+
+        Cancelling the chooser is not a choice - the modal stays up, so a
+        dismissed dialog does not drop the user into an empty plan.
+        """
+        file_path = filedialog.askopenfilename(
+            parent=self,
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            title="Open Project",
+        )
+        if not file_path:
+            logger.info("Welcome modal open-file choice cancelled")
+            return
+        self._select("open", file_path)
 
     def _select(self, mode: str, payload: Optional[str] = None):
         """Return the user's choice and close the modal."""

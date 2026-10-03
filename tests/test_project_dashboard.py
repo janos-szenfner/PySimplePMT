@@ -37,9 +37,9 @@ BASE = datetime(2026, 1, 5)
 #: (id, name, type, duration, progress, parent, status).
 WORKED_EXAMPLE = (
     ("001", "Project Planning", "Task", 2, 0, None, 'Active'),
-    ("002", "Requirements Gathering", "Subtask", 1, 0, "001", 'Active'),
+    ("002", "Requirements Gathering", "Task", 1, 0, "001", 'Active'),
     ("003", "Design Phase", "Task", 5, 0, None, 'Active'),
-    ("004", "UI Mockups", "Subtask", 3, 0, "003", 'Active'),
+    ("004", "UI Mockups", "Task", 3, 0, "003", 'Active'),
     ("005", "Implementation", "Task", 8, 30, None, 'Active'),
     ("006", "Design Review", "Milestone", 0, 0, None, 'Active'),
     ("007", "Testing", "Task", 3, 0, None, 'Active'),
@@ -174,7 +174,7 @@ class TestWeightedProgress(unittest.TestCase):
         """
         rows = [
             {'Level': 1, 'Duration': 10, 'Progress': 0, 'Type': 'Task'},
-            {'Level': 2, 'Duration': 10, 'Progress': 100, 'Type': 'Subtask'},
+            {'Level': 2, 'Duration': 10, 'Progress': 100, 'Type': 'Task'},
         ]
 
         self.assertEqual(weighted_progress(rows), 0.0)
@@ -200,31 +200,30 @@ class TestDurationByType(unittest.TestCase):
     """What the donut divides up."""
 
     def test_the_specifications_worked_example(self):
-        """21 days of tasks, 4 of sub-tasks, none of milestones."""
+        """25 days of tasks, none of milestones - a sub-task is a task."""
         shares = dict(duration_by_type(dashboard_rows(sample_project())))
 
-        self.assertEqual(shares['Task'], 21)
-        self.assertEqual(shares['Subtask'], 4)
+        self.assertEqual(shares['Task'], 25)
+        self.assertNotIn('Subtask', shares)
         self.assertEqual(shares['Milestone'], 0)
 
     def test_the_shares_are_what_the_specification_says(self):
-        """84%, 16% and nothing, out of 25 days."""
+        """Every worked day is a task's, out of 25 of them."""
         shares = dict(duration_by_type(dashboard_rows(sample_project())))
         total = sum(shares.values())
 
         self.assertEqual(total, 25)
-        self.assertAlmostEqual(shares['Task'] / total * 100, 84.0)
-        self.assertAlmostEqual(shares['Subtask'] / total * 100, 16.0)
+        self.assertAlmostEqual(shares['Task'] / total * 100, 100.0)
 
     def test_the_order_is_the_models_own(self):
         """
         Or the colours move between two readings of the same plan, and a
-        reader who learnt that green means sub-task learns it again.
+        reader who learnt that orange means milestone learns it again.
         """
         order = [kind for kind, _days
                  in duration_by_type(dashboard_rows(sample_project()))]
 
-        self.assertEqual(order, ['Task', 'Subtask', 'Milestone'])
+        self.assertEqual(order, ['Task', 'Milestone'])
 
     def test_a_type_nobody_used_is_not_listed(self):
         """A plan with no phases says nothing about phases."""
@@ -417,7 +416,7 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
 
     def test_the_ring_has_a_segment_per_type_that_holds_days(self):
         """A milestone holds no days, so it has no segment - only a key."""
-        self.assertEqual(self.kinds().get('arc', 0), 2)
+        self.assertEqual(self.kinds().get('arc', 0), 1)
 
     def test_the_summary_shows_the_numbers(self):
         """The figures a reader came for, not just their captions."""

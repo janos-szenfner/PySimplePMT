@@ -22,7 +22,7 @@ Feature: Toolbar duration functionality
     And the created and imported tasks should have the same duration days
 
   @toolbar_duration
-  Scenario: Subtask duration matches the request
+  Scenario: Sub-task duration matches the request
     Given a start date of 2024-01-01
     When creating a parent task and subtasks with various durations
     Then the subtask duration should match the requested duration

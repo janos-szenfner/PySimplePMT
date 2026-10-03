@@ -11,37 +11,37 @@ Feature: The completion a parent takes from the work under it
 
   Scenario: A full sub-task counts as done
     # 100% is the ticked state.
-    Then a "Subtask" at 100 percent is completed
+    Then a "Task" at 100 percent is completed
 
   Scenario: An empty sub-task does not
     # 0% is the unticked one.
-    Then a "Subtask" at 0 percent is not completed
+    Then a "Task" at 0 percent is not completed
 
   Scenario: A part-finished sub-task does not count as done
     # Anything short of 100 is unfinished. Nothing on the form can
     # produce this - a sub-task is entered with a tick box - but an
     # imported file can carry it, and a job half done is not a job
     # done.
-    Then a "Subtask" at 60 percent is not completed
+    Then a "Task" at 60 percent is not completed
 
   Scenario: None done is none counted
     # A Task with sub-tasks averages their percentages - which is what
     # counting ticks was: these all hold 0 or 100, and the average of
     # those is the proportion ticked.
     Given a "Task" parent
-    When it holds two "Subtask" children at 0 and 0 percent
+    When it holds two "Task" children at 0 and 0 percent
     Then the roll-up is 0
 
   Scenario: Half done is half counted
     # One of two ticked is half.
     Given a "Task" parent
-    When it holds two "Subtask" children at 100 and 0 percent
+    When it holds two "Task" children at 100 and 0 percent
     Then the roll-up is 50
 
   Scenario: All done is all counted
     # Every box ticked is finished.
     Given a "Task" parent
-    When it holds two "Subtask" children at 100 and 100 percent
+    When it holds two "Task" children at 100 and 100 percent
     Then the roll-up is 100
 
   Scenario: Length does not come into it
@@ -49,13 +49,13 @@ Feature: The completion a parent takes from the work under it
     # each are four boxes like any other four, so a ticked short one
     # counts the same as a ticked long one.
     Given a "Task" parent
-    When it holds two "Subtask" children of 1 and 99 days at 100 and 0 percent
+    When it holds two "Task" children of 1 and 99 days at 100 and 0 percent
     Then the roll-up is 50
 
   Scenario: A third rounds to a whole percent
     # One of three is 33, not 33.3.
     Given a "Task" parent
-    When it holds three "Subtask" children at 100, 0 and 0 percent
+    When it holds three "Task" children at 100, 0 and 0 percent
     Then the roll-up is 33
 
   Scenario: Other parents weight by days

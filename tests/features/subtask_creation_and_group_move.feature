@@ -1,27 +1,12 @@
-Feature: Subtask creation and multi-row movement
-  Creating a subtask uses the selected task as its parent, and task movement
-  applies to every selected row.
+Feature: Multi-row movement
+  Task movement applies to every selected row. The creation scenarios that
+  used to live here went with the Subtask type (issue #63): a row goes
+  under another by being indented or pasted as a sub-task, not by being
+  created as a Subtask.
 
   Background:
     Given a project with four root tasks
     And the task list and toolbar are open
-
-  Scenario: Create a subtask under the selected task
-    Given the second root task is selected
-    When the user creates and saves a subtask named "Selected Child"
-    Then "Selected Child" exists in the project
-    And "Selected Child" is a child of the second root task
-    And "Selected Child" appears directly under the second root task
-
-  Scenario: Cancelling subtask creation changes nothing
-    Given the second root task is selected
-    When the user cancels subtask creation
-    Then the project still contains four tasks
-
-  Scenario: A milestone cannot become a subtask parent
-    Given the selected row is a milestone
-    When the user requests a new subtask
-    Then the parent chooser is used instead of the milestone
 
   Scenario: Move two selected tasks up together
     Given the second and third root tasks are selected

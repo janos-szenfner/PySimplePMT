@@ -109,12 +109,6 @@ Feature: How a row is painted: the hierarchy, and the formatting on top
     When "T2" is styled with fill "#fff2cc" and cut
     Then the background on "T2" is "#fff2cc"
 
-  Scenario: A subtask is still marked as one
-    # The marker is what the rest of the file identifies rows by.
-    Given a plan with a phase, work under it and a standalone task
-    When a subtask is nested under "T2"
-    Then the tags on the new subtask include "subtask"
-
   Scenario: The markers paint nothing
     # Every colour is on the resolved tag, and only there - two tags
     # both setting a background leaves Tk to decide which wins, which

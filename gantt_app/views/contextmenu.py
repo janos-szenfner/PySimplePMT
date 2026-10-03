@@ -42,7 +42,9 @@ LEVEL_ACTIONS = (
 )
 
 #: What the Create submenu offers, as the task_type each entry builds.
-CREATE_TYPES = ("Phase", "Task", "Subtask", "Milestone")
+#: There is no Subtask any more (issue #63): a row goes under another by
+#: being indented or pasted as a sub-task, not by being created as one.
+CREATE_TYPES = ("Phase", "Task", "Milestone")
 
 #: Entries following the moves, after a separator.
 TASK_ACTIONS = ("Edit", "Delete")
@@ -376,16 +378,9 @@ class TaskContextMenu:
 
         create = tk.Menu(menu, tearoff=0)
         for task_type in CREATE_TYPES:
-            # A sub-task needs a row to go under; the rest do not, and over
-            # empty space they are added at the end of the plan.
-            #
-            # The type is spelt as the model spells it. Against the old
-            # hyphenated "Sub-Task" this test was true of every entry, so
-            # Subtask was offered over empty space with no parent to hang it
-            # on.
-            can_create = self._on_create is not None and (
-                has_task or task_type != "Subtask"
-            )
+            # Every remaining type is safe over empty space: the row is
+            # added at the end of the plan when no row was pointed at.
+            can_create = self._on_create is not None
             create.add_command(
                 label=task_type,
                 state=tk.NORMAL if can_create else tk.DISABLED,

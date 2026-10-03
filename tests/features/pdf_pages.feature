@@ -43,7 +43,7 @@ Feature: The pages of the exported PDF
     # a page showing five of the eight put Type under Start and
     # Duration under End.
     Then the cells for "003" carry every summary column
-    And the cells for "003" read type "Subtask" and progress "60%"
+    And the cells for "003" read type "Task" and progress "60%"
 
   Scenario: The hierarchy is indented
     # A sub-task reads as one, the way it does in the window.

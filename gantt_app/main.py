@@ -1215,6 +1215,8 @@ class GanttApp(ctk.CTk):
         logger.info("Welcome selection: mode=%r payload=%r", mode, payload)
         if mode == "new":
             self._start_new_project()
+        elif mode == "open":
+            self._load_file_path(payload)
         elif mode == "sample":
             self._load_sample_project()
         elif mode == "recent":
