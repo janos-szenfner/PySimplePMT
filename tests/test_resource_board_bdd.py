@@ -432,19 +432,6 @@ def the_footer_contains_the_label(app, label):
     assert label in texts, f"expected {label!r} in footer labels, got {texts}"
 
 
-@then(parsers.parse('the footer contains a "{text}" button'))
-def the_footer_contains_a_button(app, text):
-    assert app.close_button.cget("text") == text
-
-
-@then(parsers.parse('the "Close" button is to the right of the {container}'))
-def the_close_button_is_to_the_right_of_the_switch(app, container):
-    close_col = int(app.close_button.grid_info().get("column", -1))
-    switch_col = int(app.resource_switch_frame.grid_info().get("column", -1))
-    assert close_col > switch_col, (
-        f"Close column {close_col} not to the right of {container} column {switch_col}")
-
-
 @then("the resource planning switch is off")
 def the_resource_planning_switch_is_off(app):
     assert app._active_view == "Task Planning"

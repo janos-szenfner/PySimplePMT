@@ -607,7 +607,6 @@ class GanttApp(ctk.CTk):
         self.footer_frame.grid_columnconfigure(0, weight=1)
         self.footer_frame.grid_columnconfigure(1, weight=0)
         self.footer_frame.grid_columnconfigure(2, weight=1)
-        self.footer_frame.grid_columnconfigure(3, weight=0)
 
         self.status_bar = ctk.CTkLabel(
             self.footer_frame, text="Ready", anchor=tk.W,
@@ -616,7 +615,7 @@ class GanttApp(ctk.CTk):
         self.status_bar.grid(row=0, column=0, sticky=tk.W)
 
         # View-mode tab bar, centred in the footer.  The first tab is the
-        # default.  Close stays on the far right.
+        # default.
         self._tab_names = ["Task Planning", "Resource Planning", "Deliverables"]
         self.resource_switch_frame = ctk.CTkFrame(
             self.footer_frame, fg_color="transparent")
@@ -641,12 +640,6 @@ class GanttApp(ctk.CTk):
         self._zoom_controls = self.gantt_chart.build_zoom_controls(
             self.footer_frame)
         self._zoom_controls.grid(row=0, column=2, sticky=tk.E)
-
-        self.close_button = ctk.CTkButton(
-            self.footer_frame, text="Close", width=80,
-            command=self.on_close
-        )
-        self.close_button.grid(row=0, column=3, sticky=tk.E, padx=(10, 0))
         
         # The clipboard needs a widget to reach the desktop's own
         self.clipboard_manager.set_clipboard_widget(self)

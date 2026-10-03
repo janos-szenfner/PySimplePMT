@@ -5,13 +5,11 @@ Feature: 4-Panel Resource Planning Matrix
   Background:
     Given the application is started
 
-  Scenario: The footer has Task Planning, Resource Planning and Deliverables tabs with Close on the right
+  Scenario: The footer has Task Planning, Resource Planning and Deliverables tabs
     Then the footer contains the "Task Planning" tab
     And the footer contains the "Resource Planning" tab
     And the footer contains the "Deliverables" tab
     And the "Deliverables" tab is enabled
-    And the footer contains a "Close" button
-    And the "Close" button is to the right of the tab bar
 
   Scenario: The four panels sit in a draggable split kept at the default
     Then the resource board panels are a resizable split

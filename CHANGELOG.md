@@ -112,6 +112,12 @@
   the wheel and scrollbar on either side move the pair together
   (issue #70).
 
+- **The footer's Close button is gone.** A bare Close sitting in the
+  status bar read as if it closed something in particular, yet it quit
+  the whole window - the job the window's own close control already
+  does. Closing still runs the save-first prompt; the zoom controls
+  now own the right of the status bar (issue #85).
+
 - **The test suite finishes its migration to pytest-bdd.** Every
   remaining unittest module under twenty tests became feature files and
   step definitions, one scenario per test, and the CI log names each
