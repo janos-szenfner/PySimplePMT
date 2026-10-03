@@ -107,6 +107,13 @@ Feature: Baseline management end-to-end UI
     Then the Compare Baseline menu offers "Saved:"
     And the Compare Baseline menu offers "Active"
 
+  Scenario: The compared baseline is drawn bold in the Compare Baseline menu
+    Then the Compare Baseline menu draws "None (Current Only)" in bold
+    Given the user has set baseline 1 for the entire project
+    When the user selects "Baseline 1" from the Compare Baseline sub-menu
+    Then the Compare Baseline menu draws "Baseline 1" in bold
+    And only that entry in the Compare Baseline menu is bold
+
   Scenario: Gantt overlay uses the selected baseline color
     Given the user has set baseline 1 for the entire project
     And baseline slot 1 has color "#ff0000"

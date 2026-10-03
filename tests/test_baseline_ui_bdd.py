@@ -227,15 +227,34 @@ def the_toolbar_owns_the_baseline_manager(app):
     assert app.toolbar.baseline_manager is app.baseline_manager
 
 
-@then(parsers.parse('the Compare Baseline menu offers "{label}"'))
-def the_compare_baseline_menu_offers(app, label):
+def _compare_menu_items(app):
+    """The Compare Baseline sub-menu's entries, from the live menu config."""
     menu_config = app.toolbar.menu_bar.menu_config
     actions = menu_config['Actions']
     baseline = next(d for d in actions if d.get('label') == 'Baseline')
     compare = next(d for d in baseline['items'] if d.get('label') == 'Compare Baseline')
-    values = [item['label'] for item in compare['items']]
+    return compare['items']
+
+
+@then(parsers.parse('the Compare Baseline menu offers "{label}"'))
+def the_compare_baseline_menu_offers(app, label):
+    values = [item['label'] for item in _compare_menu_items(app)]
     assert any(label in v for v in values), \
         f"expected a value containing {label!r} in {values!r}"
+
+
+@then(parsers.parse('the Compare Baseline menu draws "{label}" in bold'))
+def the_compare_baseline_menu_bolds(app, label):
+    item = next(i for i in _compare_menu_items(app) if label in i['label'])
+    assert item.get('bold'), \
+        f"expected {item['label']!r} to carry the bold flag"
+
+
+@then("only that entry in the Compare Baseline menu is bold")
+def only_that_compare_entry_is_bold(app):
+    bold = [i['label'] for i in _compare_menu_items(app) if i.get('bold')]
+    assert len(bold) == 1, \
+        f"expected exactly one bold entry, found {bold!r}"
 
 
 @then("the settings window shows 10 baseline rows")

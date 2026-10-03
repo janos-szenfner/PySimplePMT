@@ -195,6 +195,34 @@ def stop_watching_for_click_elsewhere(window, handler) -> None:
         pass
 
 
+def compare_baseline_menu_entries(manager, handler) -> List[Dict]:
+    """
+    The Compare Baseline list: None (Current Only), then every slot.
+
+    A plain function rather than a Toolbar method, because the same list
+    feeds both the ribbon's Compare gallery and the Actions > Baseline
+    sub-menu, and _menu_definitions is also asked for the menu tree on a
+    stand-in where a bound method would not be one - the handler itself is
+    taken as an argument and only referenced, never called here.
+
+    Each entry carries "bold" for the row that states what the chart is
+    compared against - the active slot, or None when nothing is (issue
+    #88) - so the list answers "which one" at a glance rather than through
+    the [Active] suffix alone.
+    """
+    items = [{"label": "None (Current Only)",
+              "command": partial(handler, None),
+              "bold": manager is None
+                      or manager.active_slot_number is None}]
+    for slot in (manager.slots if manager is not None else []):
+        items.append({
+            "label": slot.status_label(),
+            "command": partial(handler, slot.number),
+            "bold": slot.active,
+        })
+    return items
+
+
 class CTkDropdownMenu(ctk.CTkToplevel):
     """Floating dropdown menu window for CustomTkinter with Windows-style appearance."""
     
@@ -448,7 +476,7 @@ class CTkDropdownMenu(ctk.CTkToplevel):
             # Create handler to avoid lambda scoping issues
             def make_action_handler(i):
                 return lambda: self._handle_action(i)
-            
+
             btn = ctk.CTkButton(
                 row,
                 text=f"    {label_text}",
@@ -458,6 +486,11 @@ class CTkDropdownMenu(ctk.CTkToplevel):
                 hover_color=WIN_MENU_HOVER,
                 height=self.ITEM_HEIGHT - 2,
                 corner_radius=6,
+                # A row flagging "bold" draws its label in the menu's own
+                # face at the heavier weight - the emphasis the compare
+                # list gives the baseline being compared against (issue
+                # #88).
+                font=ctk.CTkFont(weight="bold") if item.get("bold") else None,
                 command=make_action_handler(item)
             )
             highlight_on_hover(btn)
@@ -1290,18 +1323,12 @@ class Toolbar(ctk.CTkFrame):
 
         The same entries the Baseline submenu builds - slot.status_label()
         carries both the slot's name and whether it is the one being
-        compared against - built on demand so the list is never stale.
+        compared against, and the "bold" flag draws that row in the heavier
+        weight - built on demand so the list is never stale.
         """
-        items = [{"label": "None (Current Only)",
-                  "command": partial(self._compare_baseline_selected, None)}]
-        manager = getattr(self, 'baseline_manager', None)
-        for slot in (manager.slots if manager is not None else []):
-            items.append({
-                "label": slot.status_label(),
-                "command": partial(self._compare_baseline_selected,
-                                   slot.number),
-            })
-        return items
+        return compare_baseline_menu_entries(
+            getattr(self, 'baseline_manager', None),
+            self._compare_baseline_selected)
 
     def _recent_gallery_items(self):
         """The recent projects, one entry per file the list still holds."""
@@ -1392,6 +1419,10 @@ class Toolbar(ctk.CTkFrame):
                 new_item['label'] = item['text']
                 new_item['type'] = 'action'
                 new_item['command'] = item['command']
+                if item.get('bold'):
+                    # Emphasis survives the conversion - the compare list's
+                    # active row would lose it here (issue #88).
+                    new_item['bold'] = True
             else:
                 # Fallback - treat as action
                 new_item['label'] = item.get('text', item.get('label', ''))
@@ -1443,17 +1474,16 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "Set Baseline...", "command": self.set_baseline},
                         {"text": "Clear Baseline...", "command": self.clear_baseline},
                         {"text": "Compare Baseline", "submenu": [
-                            {"text": "None (Current Only)",
-                             "command": partial(self._compare_baseline_selected, None)},
-                            *[
-                                {"text": slot.status_label(),
-                                 "command": partial(self._compare_baseline_selected, slot.number)}
-                                for slot in (
-                                    self.baseline_manager.slots
-                                    if getattr(self, 'baseline_manager', None)
-                                    else []
-                                )
-                            ],
+                            # The same entries the ribbon's Compare gallery
+                            # drops - one builder keeps the labels and the
+                            # active row's bold identical on both surfaces.
+                            # Built through the module function: this tree is
+                            # also asked of a stand-in where a bound method
+                            # would not be one.
+                            {**entry, "text": entry["label"]}
+                            for entry in compare_baseline_menu_entries(
+                                getattr(self, 'baseline_manager', None),
+                                self._compare_baseline_selected)
                         ]},
                     ]},
                     {"text": "Import", "submenu": [

@@ -142,6 +142,14 @@
   mutation point, so the "No." sequence the user sees is the plan
   itself (issue #64).
 
+- **The compared baseline is drawn bold in its menu.** The Compare
+  Baseline list marked the row being compared against with an "[Active]"
+  suffix and nothing more - a quiet answer to a question asked at a
+  glance. That row, or None (Current Only) while nothing is compared,
+  now draws in the menu's heavier weight on both surfaces that offer it
+  - the ribbon's Compare Baseline button and the Actions > Baseline
+  sub-menu (issue #88).
+
 ## 1.71.6 - 2026-09-15
 
 - **A deep dependency chain can no longer break a Mermaid export.** The
