@@ -448,7 +448,7 @@ HAVE_DISPLAY = _display_available()
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestZoomControls(unittest.TestCase):
-    """The zoom buttons under the chart."""
+    """The zoom controls, which live outside the chart's own pane."""
 
     def setUp(self):
         """Build a chart widget over a small project."""
@@ -464,6 +464,7 @@ class TestZoomControls(unittest.TestCase):
                                    end_date=base + timedelta(days=5)))
 
         self.chart = GanttChart(self.root, self.project)
+        self.chart.build_zoom_controls(self.root)
 
     def tearDown(self):
         """Tear the root window down."""
@@ -587,6 +588,49 @@ class TestZoomControls(unittest.TestCase):
         self.chart.set_zoom(self.chart._zoom)
 
         self.assertEqual(calls, [])
+
+    def test_the_controls_are_not_in_the_chart_pane(self):
+        """
+        Issue #70: a control strip inside the chart's pane took height from
+        the canvas, and the bottom rows fell out of line with the task list.
+        The chart's pane is chart alone; the controls are hosted elsewhere.
+        """
+        import customtkinter as ctk
+
+        panes = [child for child in self.chart.winfo_children()
+                 if isinstance(child, ctk.CTkFrame)]
+        self.assertEqual(panes, [self.chart.chart_frame],
+                         "something besides the chart shares its pane")
+
+    def test_the_controls_live_where_they_are_put(self):
+        """build_zoom_controls answers a frame on the host it was given."""
+        import customtkinter as ctk
+
+        host = ctk.CTkFrame(self.root)
+        bar = self.chart.build_zoom_controls(host)
+
+        self.assertIs(bar.master, host)
+
+    def test_zooming_never_changes_the_row_height(self):
+        """
+        Zoom is a width-and-scale change only.
+
+        Rows of the chart are the rows of the list, and a zoom that made
+        them taller or shorter would set the two panes drifting apart
+        (issue #70).
+        """
+        from gantt_app.utils.chart_render import layout_chart, RowPlan
+        from gantt_app.utils.chart_render import MARGIN_BOTTOM
+
+        tasks = self.project.tasks
+        rows = RowPlan(tasks=tasks, row_height=26, top_margin=80,
+                       label_width=0)
+        narrow = layout_chart(self.project, width=400, rows=rows)
+        wide = layout_chart(self.project, width=4000, rows=rows)
+
+        expected = 80 + len(tasks) * 26 + MARGIN_BOTTOM
+        self.assertEqual(narrow.height, expected)
+        self.assertEqual(wide.height, expected)
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")

@@ -472,7 +472,7 @@ HELP_SECTIONS = (
             "naming the month, and under it a cell per day carrying its "
             "number. Where a plan is too long for every day to have a cell "
             "the strip falls back to one per week, and then to the month "
-            "band alone - the zoom controls below the chart move between "
+            "band alone - the zoom controls in the status bar move between "
             "them, and Fit returns to the whole plan.",
 
             "Days nobody works are shaded down the whole chart, so a weekend "

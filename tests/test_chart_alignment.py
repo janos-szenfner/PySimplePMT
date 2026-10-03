@@ -176,6 +176,28 @@ class TestTheRowsLineUp(ChartTestCase):
 
         self.assertGreater(layout.height, max(row_centres(layout)))
 
+    def test_nothing_takes_a_row_after_the_last_one(self):
+        """
+        Issue #70: a control strip used to ride in the chart's pane and take
+        the height of a row or two, so the last bar could never sit level
+        with the last row of the list. The image ends a margin after the
+        final row - there is no room for anything else.
+        """
+        from gantt_app.utils.chart_render import MARGIN_BOTTOM
+        given = self.tasks("001", "002", "003", "004", "005")
+        top_margin, row_height = 80, 26
+
+        layout = layout_chart(
+            self.project, width=1000,
+            rows=plan_of(self.project, given,
+                         row_height=row_height, top_margin=top_margin))
+
+        self.assertEqual(layout.height,
+                         top_margin + len(given) * row_height
+                         + MARGIN_BOTTOM)
+        self.assertLessEqual(layout.height - max(row_centres(layout)),
+                             row_height // 2 + MARGIN_BOTTOM)
+
 
 class TestTheNamesAreNotPrintedTwice(ChartTestCase):
     """Beside a task list, the chart drops its own label column."""
@@ -409,6 +431,60 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
 
         self.assertEqual(chart._drawn_row_height,
                          self.app.task_list.GRID_ROW_HEIGHT)
+
+    def test_the_offset_survives_the_redraw_an_edit_causes(self):
+        """
+        Issue #70: a good task edit shattered the alignment.
+
+        The redraw a save triggers asked the list where its rows were while
+        it was still rebuilding, got an unsettled answer, and drew every bar
+        a margin too high or low. Once measured, the offset is kept until the
+        panes themselves move - it is the panes that have to stay put, not
+        the answer that has to keep being asked for.
+        """
+        chart = self.app.gantt_chart
+
+        rows_top, settled = chart._task_rows_top()
+        if not settled:
+            self.skipTest("the window had not settled")
+
+        before = chart._first_row_offset()
+
+        chart.draw_chart()
+        self.app.update_idletasks()
+        # The list answering 'not yet' mid-redraw must not move the rows
+        chart._task_rows_top = lambda: (0, False)
+
+        self.assertEqual(chart._first_row_offset(), before)
+
+    def test_a_redraw_keeps_the_chart_where_the_list_scrolled_it(self):
+        """
+        Issue #70: the rebuilt canvas opened at the top whatever the list
+        was showing.
+
+        Every draw rebuilds the canvas, and a fresh canvas sits at scroll
+        position zero while the list beside it is wherever the reader put
+        it - so the draw hands the position back before the gap can show.
+        """
+        chart = self.app.gantt_chart
+
+        # Enough rows to have somewhere to scroll to
+        for i in range(40):
+            self.app.project.add_task(Task(
+                id=f"x{i:03d}", name=f"Filler {i}", task_type="Task",
+                start_date=BASE, end_date=BASE + timedelta(days=4)))
+        self.app.task_list.update_task_list()
+        chart.draw_chart()
+        self.app.update_idletasks()
+
+        self.app.task_list.tree.yview_moveto(0.5)
+        self.app.update_idletasks()
+
+        chart.draw_chart()
+        self.app.update_idletasks()
+
+        self.assertGreater(chart._chart_canvas.yview()[0], 0.0,
+                           "the redrawn chart went back to the top")
 
 
 class TestTheChartFontIsChosenForSpeedToo(unittest.TestCase):

@@ -607,6 +607,7 @@ class GanttApp(ctk.CTk):
         self.footer_frame.grid_columnconfigure(0, weight=1)
         self.footer_frame.grid_columnconfigure(1, weight=0)
         self.footer_frame.grid_columnconfigure(2, weight=1)
+        self.footer_frame.grid_columnconfigure(3, weight=0)
 
         self.status_bar = ctk.CTkLabel(
             self.footer_frame, text="Ready", anchor=tk.W,
@@ -633,11 +634,19 @@ class GanttApp(ctk.CTk):
         self._view_tabs.set("Task Planning")
         self._view_tabs.pack()
 
+        # The chart's zoom controls belong to the status bar, the way the
+        # reference tool places them - a strip inside the chart's own pane
+        # used to take height from the canvas and leave the bottom rows a
+        # step out of line with the task list (issue #70)
+        self._zoom_controls = self.gantt_chart.build_zoom_controls(
+            self.footer_frame)
+        self._zoom_controls.grid(row=0, column=2, sticky=tk.E)
+
         self.close_button = ctk.CTkButton(
             self.footer_frame, text="Close", width=80,
             command=self.on_close
         )
-        self.close_button.grid(row=0, column=2, sticky=tk.E, padx=(10, 0))
+        self.close_button.grid(row=0, column=3, sticky=tk.E, padx=(10, 0))
         
         # The clipboard needs a widget to reach the desktop's own
         self.clipboard_manager.set_clipboard_widget(self)
@@ -760,6 +769,14 @@ class GanttApp(ctk.CTk):
             if callable(refresh):
                 refresh()
             widget.lift()
+            # The zoom controls are the chart's; they go away with the view
+            # that shows it rather than sitting live under another board
+            controls = getattr(self, '_zoom_controls', None)
+            if controls is not None:
+                if name == "Task Planning":
+                    controls.grid()
+                else:
+                    controls.grid_remove()
             on_shown = getattr(widget, 'on_shown', None)
             if callable(on_shown):
                 widget.after_idle(on_shown)

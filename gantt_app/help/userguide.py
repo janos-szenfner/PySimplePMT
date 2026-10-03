@@ -563,7 +563,8 @@ GUIDE_SECTIONS = (
             "bar is drawn: Bar color for its paint, Bar shape for its ends "
             "- Rectangle square, Rounded a pill, Default the chart's own. "
             "Settings > Gantt Settings holds the chart-wide options; the "
-            "zoom controls and Fit are under the chart itself.",
+            "zoom controls and Fit sit in the status bar at the bottom of "
+            "the window.",
 
             "The chart opens framed on the plan: one day of calendar before "
             "the first bar and enough after the last for its label. Use Fit "

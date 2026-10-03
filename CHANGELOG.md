@@ -100,6 +100,18 @@
   the default, and the script prompt with it, no longer appears
   (issue #55).
 
+- **The chart's rows sit level with the list's, top to bottom.** The
+  zoom strip used to ride inside the chart's pane, taking a row or two
+  of height, so the last bar could never reach the last row of the
+  grid - and editing a task measured the list mid-rebuild or left the
+  rebuilt canvas at the top, scattering the rest. The controls now live
+  in the status bar beside Close, where the reference tool keeps them,
+  and zoom widens the chart's days without ever touching a row height.
+  Where the rows start is measured once and kept until the panes move,
+  a redraw hands the chart back the row the list is scrolled to, and
+  the wheel and scrollbar on either side move the pair together
+  (issue #70).
+
 - **The test suite finishes its migration to pytest-bdd.** Every
   remaining unittest module under twenty tests became feature files and
   step definitions, one scenario per test, and the CI log names each

@@ -75,8 +75,8 @@ class GanttChart(ctk.CTkFrame):
         # bg_color is handed over rather than detected: the master is a
         # ttk.PanedWindow, which CustomTkinter cannot read a colour from and
         # falls back to black for. The sash palette is what the paned window
-        # itself wears, so the frame's edges and the gap under the zoom bar
-        # blend with what is actually behind it in both appearances.
+        # itself wears, so the frame's edges blend with what is actually
+        # behind it in both appearances.
         super().__init__(master, bg_color=theme.pair(theme.SASH_BG))
         
         self.master = master
@@ -112,13 +112,13 @@ class GanttChart(ctk.CTkFrame):
         self.figure = go.Figure()
 
         # How far the chart is zoomed in. 1.0 fits the available width; the
-        # buttons below the chart step it, and Fit returns to 1.0
+        # controls in the status bar step it, and Fit returns to 1.0
         self._zoom = 1.0
-
-        # The controls go in first so the chart cannot squeeze them out when
-        # a tall plan fills the pane
-        self._zoom_bar = self._build_zoom_bar()
-        self._zoom_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=(0, 4))
+        #: Set by build_zoom_controls, which main.py calls with the status
+        #: bar as the host - a strip inside this pane would take height from
+        #: the chart and put its last row out of line with the list's
+        #: (issue #70)
+        self._zoom_label = None
 
         # Create a frame to hold the chart
         self.chart_frame = ctk.CTkFrame(self)
@@ -154,28 +154,41 @@ class GanttChart(ctk.CTkFrame):
         # Bind to configure events for resizing
         self.bind('<Configure>', self.on_resize)
 
-    def _build_zoom_bar(self):
+    def build_zoom_controls(self, host):
         """
-        Build the zoom controls that sit under the chart.
+        Build the zoom controls inside the frame they are offered.
+
+        PARAMETERS:
+        -----------
+        host : tk widget
+            The frame to hold them - the application's status bar, which is
+            where the reference tool keeps its chart zoom. Not packed here:
+            the caller places the returned frame where it belongs.
 
         RETURNS:
         --------
         ctk.CTkFrame
-            A strip holding zoom out, zoom in, Fit and the current level.
+            A strip holding zoom out, zoom in, Fit, Reset and the level.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        They used to sit in a row under the chart inside its own pane.
+        Anything in the pane that is not chart costs the canvas height, and
+        the rows down at the bottom stopped lining up with the task list
+        beside it - which is the one thing the panes are measured against
+        (issue #70). Given a host they live wherever they are put, and the
+        chart pane is nothing but chart.
         """
-        bar = ctk.CTkFrame(self)
+        bar = ctk.CTkFrame(host, fg_color="transparent")
 
         ctk.CTkButton(bar, text="−", width=36,
-                      command=self.zoom_out).pack(side=tk.LEFT, padx=(6, 2),
-                                                  pady=4)
+                      command=self.zoom_out).pack(side=tk.LEFT, padx=(0, 2))
         ctk.CTkButton(bar, text="+", width=36,
-                      command=self.zoom_in).pack(side=tk.LEFT, padx=2, pady=4)
+                      command=self.zoom_in).pack(side=tk.LEFT, padx=2)
         ctk.CTkButton(bar, text="Fit", width=48,
-                      command=self.zoom_to_fit).pack(side=tk.LEFT, padx=(6, 2),
-                                                     pady=4)
+                      command=self.zoom_to_fit).pack(side=tk.LEFT, padx=(6, 2))
         ctk.CTkButton(bar, text="Reset", width=58,
-                      command=self.zoom_reset).pack(side=tk.LEFT, padx=2,
-                                                    pady=4)
+                      command=self.zoom_reset).pack(side=tk.LEFT, padx=2)
 
         self._zoom_label = ctk.CTkLabel(bar, text="100%", width=52)
         self._zoom_label.pack(side=tk.LEFT, padx=6)
@@ -401,6 +414,11 @@ class GanttChart(ctk.CTkFrame):
             self._drawn_rows = []
         self._drawn_height = image.size[1] / SCREEN_SCALE
 
+        # The canvas was just rebuilt, so it is back at the top while the
+        # list beside it is wherever the reader scrolled it - put the chart
+        # back on the same row before the difference can be seen (issue #70)
+        self._scroll_to_match()
+
         logger.debug("Drew Gantt chart for %r (%d task(s), %dpx wide)",
                      self.project.name, len(self.project.tasks), width)
 
@@ -434,7 +452,10 @@ class GanttChart(ctk.CTkFrame):
         """
         rows = self.task_list.visible_rows() if self.task_list else []
         if rows != self._drawn_rows:
+            # _draw_chart_now scrolls to match once it finishes; calling it
+            # here as well would run against the canvas about to be replaced
             self.draw_chart()
+            return
         self._scroll_to_match()
 
     def _scroll_to_match(self):
@@ -447,6 +468,13 @@ class GanttChart(ctk.CTkFrame):
         fraction. The two panes are not the same height and the chart has a
         title and a date axis above its first row, so the same fraction of
         each is not the same row of the plan.
+
+        The scroll is first_row * row_height, and no more: the image's own
+        top margin is drawn to sit where the list's heading sits, so a row
+        scrolled up by i row-heights still lands the same distance below the
+        top of its pane as the row beside it. Taking the margin into the
+        scroll as well put every row out by that much the moment the list
+        moved - the misalignment issue #70 was raised over.
         """
         if self._chart_canvas is None or not self._drawn_rows:
             return
@@ -454,7 +482,7 @@ class GanttChart(ctk.CTkFrame):
         try:
             fraction = self.task_list.rows_scrolled_to()
             first_row = round(fraction * len(self._drawn_rows))
-            top = self._drawn_top_margin + first_row * self._drawn_row_height
+            top = first_row * self._drawn_row_height
             height = max(self._drawn_height, 1)
             self._chart_canvas.yview_moveto(max(0.0, top / height))
         except (tk.TclError, AttributeError, ZeroDivisionError):
@@ -530,6 +558,13 @@ class GanttChart(ctk.CTkFrame):
         where its first row actually is, which it can only do once it is on
         screen with rows in it.
         """
+        if self._row_offset is not None:
+            # Measured once, kept until the panes are resized. Re-measuring
+            # on every draw asked a list mid-rebuild where its rows are, and
+            # the fallback answer it came back with moved every bar (the
+            # broken alignment an ordinary task edit left behind - #70).
+            return self._row_offset
+
         try:
             rows_top, settled = self._task_rows_top()
             frame_top = self.chart_frame.winfo_rooty()
@@ -550,6 +585,7 @@ class GanttChart(ctk.CTkFrame):
 
         logger.debug("Chart rows start %dpx down, to match the task list",
                      offset)
+        self._row_offset = offset
         return offset
 
     def _task_rows_top(self):
@@ -687,6 +723,9 @@ class GanttChart(ctk.CTkFrame):
                 return
         except tk.TclError:
             return
+        # A new theme can mean a new heading height in the list, so the
+        # measured offset is worth asking for again
+        self._row_offset = None
         self.update_chart()
 
     def _release_photo(self):
@@ -759,8 +798,14 @@ class GanttChart(ctk.CTkFrame):
             background=self._figure_settings().get(
                 'bg_color', theme.now(theme.CHART_BG))
         )
-        vertical = ttk.Scrollbar(container, orient=tk.VERTICAL,
-                                 command=canvas.yview)
+        # The vertical scrollbar drives the task list rather than this
+        # canvas: the list's scroll answers back through the row watchers
+        # and puts the chart where it belongs, so the two panes read as one
+        # table whichever side is dragged (issue #70)
+        tree = getattr(getattr(self, 'task_list', None), 'tree', None)
+        vertical = ttk.Scrollbar(
+            container, orient=tk.VERTICAL,
+            command=(tree.yview if tree is not None else canvas.yview))
         horizontal = ttk.Scrollbar(container, orient=tk.HORIZONTAL,
                                    command=canvas.xview)
         # Classic scrollbars on Tk 8.5 take no TScrollbar style; see
@@ -809,7 +854,15 @@ class GanttChart(ctk.CTkFrame):
             if event.state & 0x0001:  # Shift
                 canvas.xview_scroll(steps, 'units')
             else:
-                canvas.yview_scroll(steps, 'units')
+                # The list drives: its scroll event reports back through the
+                # row watchers and the chart is put where it belongs, so the
+                # wheel moves both panes whatever side it landed on (#70)
+                tree = getattr(getattr(self, 'task_list', None),
+                               'tree', None)
+                if tree is not None:
+                    tree.yview_scroll(steps, 'units')
+                else:
+                    canvas.yview_scroll(steps, 'units')
 
         def on_horizontal_wheel(event):
             """Trackpad sideways scrolling."""
