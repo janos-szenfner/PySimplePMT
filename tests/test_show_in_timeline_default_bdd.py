@@ -86,3 +86,8 @@ def the_template_is_off_the_timeline(template):
 @then("the task is on the timeline")
 def the_task_is_on_the_timeline(template):
     assert template.show_in_timeline is True
+
+
+@then("the template runs one working day")
+def the_template_runs_one_working_day(template):
+    assert template.duration_days == 1

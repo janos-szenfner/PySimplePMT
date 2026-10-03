@@ -562,9 +562,11 @@ GUIDE_SECTIONS = (
             "several on at once, select them and choose Add to Timeline from "
             "the right-click menu.",
 
-            "Shape and Colour set how a bar is drawn. Settings > Gantt "
-            "Settings holds the chart-wide options; the zoom controls and "
-            "Fit are under the chart itself.",
+            "The Gantt Chart display section of the task editor sets how a "
+            "bar is drawn: Bar color for its paint, Bar shape for its ends "
+            "- Rectangle square, Rounded a pill, Default the chart's own. "
+            "Settings > Gantt Settings holds the chart-wide options; the "
+            "zoom controls and Fit are under the chart itself.",
 
             "The chart opens framed on the plan: one day of calendar before "
             "the first bar and enough after the last for its label. Use Fit "

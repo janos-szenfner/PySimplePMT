@@ -747,5 +747,74 @@ class TestCriticalPathHighlight(ChartLayoutTestCase):
                             if t.id in critical))
 
 
+class TestBarShape(unittest.TestCase):
+    """
+    The editor's Bar shape, carried onto what the chart draws (issue #69).
+
+    The box always wrote task.shape; nothing read it, so the choice changed
+    nothing on screen. The layout now carries it and both emitters honour
+    it.
+    """
+
+    def project(self, shape):
+        """One plain task drawn in the named shape."""
+        project = Project(name="S")
+        project.add_task(Task(
+            id="t", name="Work", task_type="Task", color="#ff0000",
+            start_date=datetime(2026, 1, 5), end_date=datetime(2026, 1, 9),
+            shape=shape))
+        return project
+
+    def bar(self, shape):
+        """The bar the layout draws for a task in the named shape."""
+        layout = layout_chart(self.project(shape), width=1200)
+        self.assertEqual(len(layout.bars), 1)
+        return layout.bars[0]
+
+    def test_the_bar_carries_the_task_s_shape(self):
+        """The box wrote the model; the layout has to reach the emitters."""
+        self.assertEqual(self.bar('Rounded')['shape'], 'Rounded')
+        self.assertEqual(self.bar('Rectangle')['shape'], 'Rectangle')
+        self.assertEqual(self.bar('Default')['shape'], 'Default')
+
+    def test_the_corner_radius_follows_the_shape(self):
+        """Square for Rectangle, a pill for Rounded, the chart's own else."""
+        from gantt_app.utils.chart_render import _bar_radius
+
+        rounded = self.bar('Rounded')
+        self.assertEqual(
+            _bar_radius(rounded), (rounded['y1'] - rounded['y0']) / 2)
+        self.assertEqual(_bar_radius(self.bar('Rectangle')), 0)
+        self.assertEqual(_bar_radius(self.bar('Default')), 2)
+        # A shape a newer file names and this one does not is not a crash
+        self.assertEqual(_bar_radius({'shape': 'Helix', 'y0': 0, 'y1': 8}),
+                         2)
+
+    def _corner_differs(self, shape):
+        """
+        Whether the bar's top-left corner differs from its centre, drawn.
+
+        The picture rather than the geometry: a Rounded bar's corner is the
+        background, while a Rectangle's is its colour.
+        """
+        project = self.project(shape)
+        layout = layout_chart(project, width=1200)
+        bar = layout.bars[0]
+        image = render_image(project, width=1200, scale=1)
+
+        corner = image.getpixel((int(bar['x0']) + 1, int(bar['y0']) + 1))
+        centre = image.getpixel((int((bar['x0'] + bar['x1']) / 2),
+                                 int((bar['y0'] + bar['y1']) / 2)))
+        return corner != centre
+
+    def test_a_rounded_bar_loses_its_corners(self):
+        """The pill end is background where the corner was (issue #69)."""
+        self.assertTrue(self._corner_differs('Rounded'))
+
+    def test_a_rectangle_keeps_its_corners(self):
+        """And square stays square, so the two are visibly different."""
+        self.assertFalse(self._corner_differs('Rectangle'))
+
+
 if __name__ == '__main__':
     unittest.main()

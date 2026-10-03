@@ -908,7 +908,7 @@ class TestWhereTheFieldsSit(DialogTestCase):
         """The section titles, in order."""
         return [text for text in self.labels(dialog)
                 if text in ("Basic Information", "Schedule", "Calendar",
-                            "Display")]
+                            "Gantt Chart Display")]
 
     def test_the_start_date_is_first_under_the_schedule_heading(self):
         """
@@ -935,7 +935,7 @@ class TestWhereTheFieldsSit(DialogTestCase):
         """What the row is, when it happens, which week, how it is drawn."""
         self.assertEqual(self.sections(self.dialog()),
                          ["Basic Information", "Schedule", "Calendar",
-                          "Display"])
+                          "Gantt Chart Display"])
 
     def test_a_title_has_its_row_to_itself(self):
         """
@@ -957,13 +957,14 @@ class TestWhereTheFieldsSit(DialogTestCase):
         for row, texts in titled.items():
             for text in texts:
                 if text in ("Basic Information", "Schedule", "Calendar",
-                            "Display"):
+                            "Gantt Chart Display"):
                     self.assertEqual(len(texts), 1,
                                      f"{text} shares row {row}")
 
     def test_every_section_after_the_first_is_ruled_off(self):
         """
-        Schedule, Calendar and Display each open under a separator.
+        Schedule, Calendar and Gantt Chart Display each open under a
+        separator.
 
         Basic Information opens the tab, where the top of the panel already
         does the dividing.
@@ -981,7 +982,7 @@ class TestWhereTheFieldsSit(DialogTestCase):
                   for child in grid.grid_slaves()
                   if isinstance(child, ctk.CTkLabel)}
 
-        for section in ("Schedule", "Calendar", "Display"):
+        for section in ("Schedule", "Calendar", "Gantt Chart Display"):
             self.assertIn(titles[section] - 1, rules, section)
         self.assertNotIn(titles["Basic Information"] - 1, rules)
 

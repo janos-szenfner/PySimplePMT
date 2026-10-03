@@ -352,6 +352,23 @@ def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
     ]
 
 
+def _bar_radius(bar: Dict[str, Any]) -> float:
+    """
+    How rounded a bar's corners are, in chart pixels.
+
+    Rectangle asks for square ends and Rounded for a pill. Anything else -
+    Default, or a shape a newer file knows and this version does not - gets
+    the slight round every bar has always carried (issue #69: the editor's
+    box set a shape nothing read until now).
+    """
+    shape = bar.get('shape')
+    if shape == 'Rectangle':
+        return 0.0
+    if shape == 'Rounded':
+        return (bar['y1'] - bar['y0']) / 2
+    return 2.0
+
+
 #: What one day cell needs, in pixels: the widest day number plus padding.
 #:
 #: A cell is delimited by rules on either side, so it needs padding rather
@@ -709,6 +726,10 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
             'color': colour,
             'progress': max(0, min(100, task.progress)),
             'label': task.name,
+            # What the editor's Bar shape box asked for - Rectangle,
+            # Rounded, or the chart's own Default. Stored so the renderers
+            # below can honour it; see _bar_radius (issue #69).
+            'shape': task.shape or 'Default',
             # A finish past its deadline, or a constraint that clashes with
             # the network, gets a red outline; see REQ-UI-041.
             'slipped': slipped or task.id in at_risk,
@@ -978,16 +999,19 @@ def render_svg(project: Project, settings: Optional[Dict[str, Any]] = None,
     for bar in layout.bars:
         w = bar['x1'] - bar['x0']
         h = bar['y1'] - bar['y0']
+        rx = _bar_radius(bar)
         parts.append(
             f'<rect x="{bar["x0"]:.1f}" y="{bar["y0"]:.1f}" width="{w:.1f}" '
             f'height="{h:.1f}" fill="{bar["color"]}" stroke="#000000" '
-            f'stroke-width="1" rx="2"/>'
+            f'stroke-width="1" rx="{rx:.1f}"/>'
         )
         if bar['progress']:
+            # The fill keeps the bar's corners, so a pill's part-done read
+            # is a shorter pill rather than square teeth on a round end.
             parts.append(
                 f'<rect x="{bar["x0"]:.1f}" y="{bar["y0"]:.1f}" '
                 f'width="{w * bar["progress"] / 100:.1f}" height="{h:.1f}" '
-                f'fill="#000000" opacity="0.25" rx="2"/>'
+                f'fill="#000000" opacity="0.25" rx="{rx:.1f}"/>'
             )
         parts.append(
             f'<text x="{bar["x1"] + 6:.1f}" y="{(bar["y0"] + h / 2 + font_size / 3):.1f}" '
@@ -1316,14 +1340,34 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
         # A finish past its deadline is outlined red and a touch heavier, so
         # the slipped bar stands out from its neighbours; see REQ-UI-041.
         slipped = bar.get('slipped')
-        draw.rectangle(
-            box, fill=bar['color'],
-            outline=DEADLINE_SLIPPED if slipped else '#000000',
-            width=max(1, int(scale * (1.5 if slipped else 1))))
+        outline = DEADLINE_SLIPPED if slipped else '#000000'
+        width = max(1, int(scale * (1.5 if slipped else 1)))
+        # The pill is half the drawn height, which the baseline offset can
+        # move - so it is worked out from the box rather than the layout.
+        radius = ((box[3] - box[1]) / 2 if bar.get('shape') == 'Rounded'
+                  else 0.0 if bar.get('shape') == 'Rectangle'
+                  else sx(2))
+        if radius:
+            draw.rounded_rectangle(
+                box, radius=radius, fill=bar['color'],
+                outline=outline, width=width)
+        else:
+            draw.rectangle(box, fill=bar['color'], outline=outline,
+                           width=width)
         if bar['progress']:
             filled = box[0] + (box[2] - box[0]) * bar['progress'] / 100
-            draw.rectangle([box[0], box[1], filled, box[3]],
-                           fill=(0, 0, 0, 64))
+            if radius:
+                # Round the left end only: the right edge is where the
+                # fill stops mid-bar, and a round cap there would read as
+                # the bar's own end.
+                draw.rounded_rectangle(
+                    [box[0], box[1], filled, box[3]],
+                    radius=min(radius, (filled - box[0]) / 2),
+                    corners=(True, False, False, True),
+                    fill=(0, 0, 0, 64))
+            else:
+                draw.rectangle([box[0], box[1], filled, box[3]],
+                               fill=(0, 0, 0, 64))
         labels_to_draw.append((
             box[2] + sx(6), (box[1] + box[3]) / 2, _shorten(bar['label'], 40)))
 

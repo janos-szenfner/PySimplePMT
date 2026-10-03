@@ -151,6 +151,26 @@ def the_editors_offer_a_percentage(ctx, csv):
             f"{task_id} has no progress box"
 
 
+@then(parsers.parse('the editors for "{csv}" offer a greyed percentage box'))
+def the_editors_offer_a_greyed_percentage(ctx, csv):
+    """A box that shows the figure but will not take a new one."""
+    for task_id in csv.split(","):
+        editor = _editor_for(ctx, task_id)
+        assert editor.progress_entry is not None
+        assert str(editor.progress_entry.cget('state')) == 'disabled', \
+            f"{task_id}'s progress box still takes typing"
+
+
+@then(parsers.parse('the editors for "{csv}" offer a typeable percentage box'))
+def the_editors_offer_a_typeable_percentage(ctx, csv):
+    """A leaf's box still takes a number."""
+    for task_id in csv.split(","):
+        editor = _editor_for(ctx, task_id)
+        assert editor.progress_entry is not None
+        assert str(editor.progress_entry.cget('state')) == 'normal', \
+            f"{task_id}'s progress box is greyed and should not be"
+
+
 @then(parsers.parse('the editors for "{csv}" offer no tick'))
 def the_editors_offer_no_tick(ctx, csv):
     for task_id in csv.split(","):

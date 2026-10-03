@@ -385,8 +385,10 @@ class EditTaskDialog(TaskFormDialog):
 class CreateTaskDialog(TaskFormDialog):
     """Dialog for creating a task, sub-task or milestone."""
 
-    #: How long a new task runs by default, in days.
-    DEFAULT_LENGTH = 7
+    #: How long a new task runs by default, in days. One day - the
+    #: reference tool's own default - not a week nobody asked for
+    #: (issue #74).
+    DEFAULT_LENGTH = 1
     SUBTASK_LENGTH = 1
 
     def __init__(self, master, project: Project,
@@ -422,8 +424,8 @@ class CreateTaskDialog(TaskFormDialog):
         defaults on the form and the ones the tab reasons about cannot drift
         apart.
 
-        A sub-task starts with its parent and runs a day; anything else
-        starts today and runs seven days.
+        A sub-task starts with its parent and anything else starts today;
+        either way the run is a day (issue #74).
 
         The lengths are working days and go through the project's calendar, so
         a form opened on a Friday offers a task ending the following Thursday

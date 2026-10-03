@@ -297,7 +297,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     def _should_show_progress(self) -> bool:
         """Whether progress field should be shown and editable."""
         template = self.form_template()
-        return template.can_edit_progress
+        if not template.can_edit_progress:
+            return False
+        # A row holding children takes its figure from them whatever its
+        # type - a task group is not a Phase, but the roll-up would still
+        # overwrite a number typed here (issue #65). The grid's own cell
+        # editor asks the same question; see DragDropTaskList.
+        return not self.project.get_subtasks(template.id)
 
     def seed_has_end(self) -> bool:
         """Whether an end date box is shown at all."""
@@ -680,7 +686,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         # heading
         self._build_working_calendar(frame)
 
-        self._heading(frame, "Display", rule=True)
+        self._heading(frame, "Gantt Chart Display", rule=True)
         self._build_show_in_timeline(frame)
         self._build_shape(frame)
         self._build_color(frame)
@@ -790,7 +796,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
     def _build_color(self, frame):
         """The color picker with Choose and Default buttons."""
         self.color_entry = ColorEntry(frame, color=self.template.color)
-        self._field(frame, "Colors:", self.color_entry,
+        self._field(frame, "Bar color:", self.color_entry,
                     sticky=tk.W, label_sticky=tk.NW)
 
     def _update_field_states(self):
@@ -830,6 +836,12 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                 enabled = self._should_show_duration()
 
             self._set_field_enabled(widget, enabled)
+
+        # And the percentage beside them: a leaf retyped to Phase rolls
+        # its figure up from below, so the box has to grey with the rest.
+        progress = getattr(self, 'progress_entry', None)
+        if progress is not None:
+            self._set_field_enabled(progress, self._should_show_progress())
 
     # ------------------------------------------------------------------
     # The schedule fields
@@ -1315,7 +1327,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             frame, variable=self.shape_var,
             values=["Default", "Rectangle", "Rounded"]
         )
-        self._field(frame, "Shape:", self.shape_menu, where=self.HALF)
+        self._field(frame, "Bar shape:", self.shape_menu, where=self.HALF)
 
     def _build_progress(self, frame):
         """

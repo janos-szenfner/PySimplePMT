@@ -20,3 +20,9 @@ Feature: A new task starts off the timeline
   Scenario: A loaded task keeps the model's default
     When a task is built the way importers and file loads build one
     Then the task is on the timeline
+
+  Scenario: A new task runs one day
+    # Issue #74: the create dialog used to seed a week; the reference
+    # tool's default - and the ask - is one working day.
+    When a create-dialog template is built for a "Task"
+    Then the template runs one working day

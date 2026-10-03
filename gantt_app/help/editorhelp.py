@@ -371,7 +371,7 @@ HELP_SECTIONS = (
         ],
     ),
     (
-        "Show in timeline, Shape and Colour",
+        "Gantt Chart display",
         [
             "Show in timeline decides whether this row's bar is drawn on the "
             "chart. A new task starts off the timeline, so the chart stays "
@@ -380,7 +380,9 @@ HELP_SECTIONS = (
             "towards its parent's, and anything depending on it still follows "
             "it.",
 
-            "Shape changes how the bar is drawn. Colour carries no meaning "
+            "Bar shape changes how the bar's ends are drawn - Rectangle "
+            "for square ends, Rounded for a pill, Default for the chart's "
+            "own slight round. Bar color carries no meaning "
             "to the application: nothing is scheduled, grouped or exported "
             "differently because of it. It is there to let a reader tell "
             "work streams apart - one colour per team, per phase, or per "

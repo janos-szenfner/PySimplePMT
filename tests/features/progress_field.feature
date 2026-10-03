@@ -40,6 +40,15 @@ Feature: The completion a row carries and the one it takes from below
     Given a plan with a phase, tasks, a subtask and a milestone
     Then the editors for "001,003" offer a percentage box
 
+  Scenario: A group row's box is shown but takes no typing
+    # Issue #65: the box on a summary took a number, the save kept it
+    # and the roll-up quietly put the old figure back - it looked
+    # editable on a row whose figure comes from what is under it.
+    # A phase was already greyed; a task group was not.
+    Given a plan with a phase, tasks, a subtask and a milestone
+    Then the editors for "001,003" offer a greyed percentage box
+    And the editors for "002,004,005" offer a typeable percentage box
+
   Scenario: A milestone is offered a percentage
     Given a plan with a phase, tasks, a subtask and a milestone
     Then the editor for "005" offers a percentage box

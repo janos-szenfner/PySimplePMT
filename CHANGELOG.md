@@ -44,6 +44,25 @@
   label says, and the project press still needs nothing selected
   (issue #60).
 
+- **A group row's Progress box no longer pretends to be editable.** A
+  phase's percentage box was greyed, but a task or sub-task holding
+  children was not - so the box took a number, the save kept it, and
+  the roll-up quietly put the old figure back (issue #65). Any row
+  with children now greys the box, as a phase always did; marking the
+  work beneath it stays the percentage buttons' job.
+
+- **The task editor says what its display settings set.** The Display
+  section is now headed Gantt Chart Display, and its fields are named
+  Bar color and Bar shape so it is plain they paint the chart's bars
+  and nothing else. Bar shape finally does something, too: the choice
+  was stored on the task but no renderer read it. Rectangle draws
+  square-ended bars, Rounded draws pills, and Default keeps the chart's
+  own slight round, on screen and in the static exports (issue #69).
+
+- **A new task runs one day, not a week.** The create dialog used to
+  seed a seven-day task; it now offers the reference tool's own one
+  working day, through the plan's calendar as before (issue #74).
+
 - **The stray "Source..." menu on macOS is gone.** A Tk application that
   builds no menubar of its own is handed a default one, and its File
   menu carries an item that opens a file dialog waiting for a Tcl script
