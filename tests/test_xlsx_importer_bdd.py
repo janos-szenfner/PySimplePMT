@@ -279,12 +279,12 @@ def the_task_is_named(ctx, task_id, name):
     assert ctx.project.get_task_by_id(task_id).name == name
 
 
-@then(parsers.parse('the imported task "{task_id}" is a milestone with no '
-                    'end date'))
+@then(parsers.parse('the imported task "{task_id}" is a milestone ending '
+                    'on its start date'))
 def the_task_is_a_milestone(ctx, task_id):
     task = ctx.project.get_task_by_id(task_id)
     assert task.is_milestone
-    assert task.end_date is None
+    assert task.end_date == task.start_date
 
 
 @then(parsers.parse('the imported task "{task_id}" has parent "{parent}" '

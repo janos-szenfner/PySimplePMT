@@ -70,7 +70,7 @@ Feature: The XLSX importer reads a spreadsheet into a plan
     When this worksheet is imported
       | ID | Task    | Duration | Start      |
       | 1  | Go-Live | 0        | 2024-01-10 |
-    Then the imported task "1" is a milestone with no end date
+    Then the imported task "1" is a milestone ending on its start date
 
   # -- Dependencies -------------------------------------------------------------
 

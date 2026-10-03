@@ -58,8 +58,9 @@ HELP_SECTIONS = (
             "under another is a sub-task; that is the indent talking, not a "
             "type.",
 
-            "Milestone - a moment rather than a stretch of work. No duration "
-            "and no finish; it marks a date.",
+            "Milestone - not a type but a switch on a task: a length of "
+            "nought days marking a moment. Its finish is its start, and it "
+            "draws as a diamond.",
 
             "Any row can be retyped here, nested or not. The menu used to "
             "be greyed out for a row with a parent, which left a sub-task "
@@ -107,9 +108,16 @@ HELP_SECTIONS = (
         "Milestones",
         [
             "A milestone marks a moment rather than a span of work: design "
-            "approved, MVP released, client sign-off. It takes no time, so it "
-            "has no end date, and turning Is Milestone on empties that "
-            "box and greys it out. Turning it off again gives it back.",
+            "approved, MVP released, client sign-off. It takes no time, so "
+            "its end date is its start date and its duration is nought. "
+            "Turning Is Milestone on writes those in; turning it off gives "
+            "the row a day again.",
+
+            "The switch and the duration box say the same thing: typing a "
+            "nought into Duration switches the flag on, and typing a real "
+            "length on a milestone switches it back off - the row is a task "
+            "again. That is also the way back from a milestone made by "
+            "mistake.",
 
             "Because a milestone occupies no day, a task that follows one on "
             "the 15th starts on the 15th, not the 16th.",

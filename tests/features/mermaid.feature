@@ -33,7 +33,7 @@ Feature: Mermaid Gantt charts import and export
           milestone Milestone 2 :m2, 2024-01-20
       """
     Then it holds 2 tasks
-    And both are milestones with no end date
+    And both are milestones ending on their start dates
 
   Scenario: "after" rows become dependencies
     When this Mermaid chart is imported

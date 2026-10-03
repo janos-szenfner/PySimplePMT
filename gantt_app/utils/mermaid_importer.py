@@ -712,9 +712,18 @@ class MermaidImporter:
                 except (TypeError, ValueError):
                     pass
 
-            task.is_milestone = task.task_type == 'Milestone'
+            # A milestone is a flag, not a type (issue #73): the chart
+            # syntax already put it on the task, the carried entry repeats
+            # it where it knows, and an older export's 'Milestone' type is
+            # the same thing wearing the old name.
+            raw_type = str(entry.get('type') or task.task_type)
+            if raw_type == 'Milestone':
+                task.task_type = 'Task'
+            task.is_milestone = (task.is_milestone
+                                 or bool(entry.get('is_milestone'))
+                                 or raw_type == 'Milestone')
             if task.is_milestone:
-                task.end_date = None
+                task.end_date = task.start_date
 
             rebuilt.append(task)
 

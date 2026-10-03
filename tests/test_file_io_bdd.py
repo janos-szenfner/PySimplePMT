@@ -332,12 +332,12 @@ def the_loaded_project_has_tasks(ctx, count):
     assert len(ctx.loaded.tasks) == count
 
 
-@then(parsers.parse('the milestone is "{name}" with no end date'))
+@then(parsers.parse('the milestone is "{name}" ending on its start date'))
 def the_milestone_is(ctx, name):
     milestone = [t for t in ctx.loaded.tasks if t.is_milestone][0]
     assert milestone.name == name
     assert milestone.is_milestone
-    assert milestone.end_date is None
+    assert milestone.end_date == milestone.start_date
 
 
 @then("the loaded task has no end date")

@@ -69,10 +69,22 @@
   was really just a parent link in disguise. Indenting now keeps a
   task a Task - only the parent link changes - and every place that
   offered Subtask (the New Task menu, the editor's type list, the
-  toolbar and context menus) offers the three real types: Phase,
-  Task and Milestone. Saved plans and imports carrying the old type
-  load unchanged, their Subtask rows reading in as Tasks under their
-  parents (issue #63).
+  toolbar and context menus) offers the real types instead. Saved
+  plans and imports carrying the old type load unchanged, their
+  Subtask rows reading in as Tasks under their parents (issue #63).
+
+- **A milestone is a switch on a task, not a type of its own.** The
+  Milestone entry is gone from the Type lists - what remains is the
+  Is Milestone switch, kept exactly where it was. A milestone now has
+  a finish: the same day it starts, where a type-based one carried no
+  end date and read N/A in the grid and the exports. Its duration box
+  is editable again, and the two say the same thing - a nought typed
+  into Duration switches the flag on, a real length typed on a
+  milestone switches it back off and makes it a task, and un-ticking
+  the switch hands the row a day again. Every conversion is one
+  undoable step, saved plans and imports carrying the old type read
+  in as flagged Tasks, and filters asking type = Milestone still find
+  them (issue #73).
 
 - **The welcome screen can open an existing project.** The startup
   dialog offered a new plan, the sample and the recent list, but no

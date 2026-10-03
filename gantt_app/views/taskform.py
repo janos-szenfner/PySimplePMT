@@ -276,22 +276,15 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         chosen = variable.get() if variable is not None else ''
         return chosen or self.form_template().task_type
 
-    def _chosen_milestone(self) -> bool:
-        """Whether the form is currently describing a milestone."""
-        variable = getattr(self, 'is_milestone_var', None)
-        if variable is not None:
-            return bool(variable.get())
-        return self.form_template().effective_milestone
-
     def _should_show_dates(self) -> bool:
         """Whether date fields should be shown and editable."""
         return self._chosen_task_type() not in CONTAINER_TYPES
 
     def _should_show_duration(self) -> bool:
         """Whether duration field should be shown and editable."""
-        if self._chosen_task_type() in CONTAINER_TYPES:
-            return False
-        return not self._chosen_milestone()
+        # A milestone's is 0, and typing one is how the flag comes off
+        # (issue #73) - so it stays editable on a milestone.
+        return self._chosen_task_type() not in CONTAINER_TYPES
 
     def _should_show_progress(self) -> bool:
         """Whether progress field should be shown and editable."""
@@ -750,10 +743,11 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.end_date_entry = DateEntry(frame, date=self.template.end_date)
         self._field(frame, "End Date:", self.end_date_entry,
                     where=self.RIGHT)
-        
-        # A milestone takes no time, and a container is bracketed by
-        # whatever is under it
-        if self.template.effective_milestone or not dates_editable:
+
+        # A container is bracketed by whatever is under it. A milestone's
+        # end is its start, but the box stays live - typing a later date
+        # is how the flag comes off (issue #73).
+        if not dates_editable:
             self._set_field_enabled(self.end_date_entry, False)
 
     def _build_milestone(self, frame):
@@ -808,8 +802,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         scheduling-options mode is gone (issue #31): changing any one settles
         the other two on Save, by the rules in Project.reconcile_schedule.
         What stays greyed is what the type forbids - a row with children takes
-        its dates and its length from the work beneath it, and a milestone has
-        neither an end nor a length.
+        its dates and its length from the work beneath it. A milestone's
+        boxes stay live: the end is its start and the duration is 0, but
+        typing into either is how the flag comes off (issue #73).
 
         Each field is worked out as one answer and set once, rather than being
         enabled and then disabled again - which flickered, and left the shading
@@ -819,7 +814,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             return                      # the form is still being built
 
         dates_editable = self._should_show_dates()
-        milestone = self.is_milestone_var.get()
 
         for widget in (self.start_date_entry, self.end_date_entry,
                        self.duration_entry):
@@ -829,8 +823,6 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             enabled = True
             if widget in (self.start_date_entry, self.end_date_entry):
                 enabled = dates_editable
-            if widget is self.end_date_entry and milestone:
-                enabled = False
             if widget is self.duration_entry:
                 enabled = self._should_show_duration()
 
@@ -1006,10 +998,38 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if getattr(self, 'duration_entry', None) is None:
             return                      # the form is still being built
 
-        if not self.is_milestone_var.get():
-            calendar = self.working_calendar
-            self._recalculating = True
+        milestone = self.is_milestone_var.get()
+
+        # A length and the flag say the same thing (issue #73): a nought
+        # typed on a task flicks the switch on, and a length typed on a
+        # milestone flicks it back off - the row is a task again.
+        if field == 'duration':
             try:
+                length = self._typed_duration()
+            except ValueError:
+                length = None
+            if length is not None:
+                if length > 0 and milestone:
+                    self.is_milestone_var.set(False)
+                    self.milestone_check.deselect()
+                    milestone = False
+                    self._update_field_states()
+                elif length == 0 and not milestone:
+                    self.is_milestone_var.set(True)
+                    self.milestone_check.select()
+                    milestone = True
+                    self._update_field_states()
+
+        self._recalculating = True
+        try:
+            if milestone:
+                # A moment ends where it starts; the end box just shows it
+                if field == 'start_date':
+                    start = self._read_date(self.start_date_entry)
+                    if start is not None:
+                        self._write_date(self.end_date_entry, start)
+            else:
+                calendar = self.working_calendar
                 if field == 'duration':
                     start = self._read_date(self.start_date_entry)
                     length = self._typed_duration()
@@ -1030,10 +1050,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                         length = calendar.working_days_between(start, end)
                         if length >= 1:
                             self.duration_var.set(str(length))
-            except (tk.TclError, ValueError, OverflowError):
-                logger.debug("Nothing to settle the schedule from yet")
-            finally:
-                self._recalculating = False
+        except (tk.TclError, ValueError, OverflowError):
+            logger.debug("Nothing to settle the schedule from yet")
+        finally:
+            self._recalculating = False
 
         self._check_fields()
 
@@ -1067,8 +1087,8 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             raise ValueError(
                 "Write the duration as a whole number of days."
             ) from None
-        if days < 1:
-            raise ValueError("A task lasts at least one day.")
+        if days < 0:
+            raise ValueError("A task cannot last less than nought days.")
         return days
 
     def _typed_progress(self) -> int:
@@ -1133,11 +1153,14 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
             raise ValueError("Enter a start date.")
 
         if self.is_milestone_var.get():
-            return start, None, 0
+            return start, start, 0
 
         end = self._typed_date(self.end_date_entry, "end date")
         length = self._typed_duration()
 
+        if length == 0:
+            # Nought days is a moment, not a length (issue #73)
+            return start, start, 0
         if end is None and length is not None:
             end = self.working_calendar.add_working_days(start, length)
         if end is None:
@@ -1176,7 +1199,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if start is None:
             raise ValueError("Enter a start date.")
         if self.is_milestone_var.get():
-            return start, None, None
+            return start, start, 0
         end = self._typed_date(self.end_date_entry, "end date")
         duration = self._typed_duration()
         return start, end, duration
@@ -1212,7 +1235,10 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if duration is None:
             # Calculate from dates if not manually set
             duration = self.template.duration_days
-        if not duration and self.template.end_date is not None:
+        if self.template.effective_milestone:
+            # A moment has a length of nought, whatever its two dates span
+            duration = 0
+        elif not duration and self.template.end_date is not None:
             # duration_days answers 0 for a row with children, whose
             # length is the work inside them. Nothing is inside one yet when
             # it is being created, and showing a length of nought days for a
@@ -1592,6 +1618,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
 
         DEVELOPMENT NOTES:
         ------------------
+        The flag and the length say the same thing (issue #73): switching
+        on writes a nought into the duration box and mirrors the start into
+        the end, and a nought typed into the box would switch the flag on
+        the same way. Switching back off gives the row a day again - a
+        zero-length task is a milestone, so leaving the nought would put
+        the flag straight back on at the next save.
+
         Un-ticking counts as having been in the end date box: the user has
         just asked for a task that needs one, so an empty box is worth
         pointing at right away rather than waiting for them to click into it.
@@ -1605,8 +1638,16 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         """
         if not self.end_date_entry:
             return
-        if not self.is_milestone_var.get():
+        milestone = self.is_milestone_var.get()
+        if milestone:
+            start = self._read_date(self.start_date_entry)
+            if start is not None:
+                self._write_date(self.end_date_entry, start)
+            self.duration_var.set('0')
+        else:
             self._touched.add('end_date')
+            if self.duration_var.get().strip() == '0':
+                self.duration_var.set('1')
 
         self._update_field_states()
         self._recalculate_schedule()

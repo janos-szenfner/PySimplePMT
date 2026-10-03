@@ -345,9 +345,11 @@ def _task_type(is_milestone: bool, is_summary: bool, level: int) -> str:
     level is a Phase and anything below it a Task. child_type_for then moves
     it to whatever its parent can actually hold - which is a Task at any
     depth now that sub-task is a parent link rather than a type (issue #63).
+    A milestone is a flag on a Task, not a type (issue #73): the flag comes
+    in through Task(is_milestone=...) and the type stays Task.
     """
     if is_milestone:
-        return 'Milestone'
+        return 'Task'
     if is_summary:
         return 'Phase' if level <= 1 else 'Task'
     return 'Task'
@@ -465,7 +467,7 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
         is_milestone = (_child_text(element, 'Milestone') == '1'
                         or (duration_days == 0 and not is_summary))
 
-        end = None if is_milestone else _inclusive_end(start, finish)
+        end = start if is_milestone else _inclusive_end(start, finish)
         if end is None and not is_milestone and duration_days:
             calendar = base_calendar
             end = calendar.add_working_days(start, max(duration_days - 1, 0))
@@ -488,6 +490,7 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
             dependencies=[],
             color=MILESTONE_COLOR if is_milestone else DEFAULT_COLOR,
             task_type=_task_type(is_milestone, is_summary, level),
+            is_milestone=is_milestone,
             parent_task_id=parent.id if parent else None,
             priority=_parse_priority(_child_text(element, 'Priority')),
             status=_parse_status(_child_text(element, 'Status')),

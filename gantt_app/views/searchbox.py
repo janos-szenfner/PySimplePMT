@@ -106,7 +106,7 @@ def task_haystack(task, project=None) -> str:
         parts.append(str(task.duration))
     parts.append(str(task.progress))
 
-    if task.is_milestone or task.task_type == 'Milestone':
+    if task.is_milestone:
         parts.append('milestone')
 
     # The link's own fields, and the id it points at - but deliberately not

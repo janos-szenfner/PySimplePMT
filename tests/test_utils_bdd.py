@@ -311,7 +311,7 @@ def serialize_deserialize_milestone(milestone_with_all_fields):
 def check_milestone_roundtrip(restored_milestone):
     assert restored_milestone.name == "Important Milestone"
     assert restored_milestone.start_date == datetime(2024, 6, 15)
-    assert restored_milestone.end_date is None
+    assert restored_milestone.end_date == datetime(2024, 6, 15)
     assert restored_milestone.is_milestone is True
     assert restored_milestone.color == "#ff0000"
     assert restored_milestone.dependency_ids == ["task1"]

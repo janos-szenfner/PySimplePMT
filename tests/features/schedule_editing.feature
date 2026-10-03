@@ -66,7 +66,7 @@ Feature: Editing the start, end and duration (issues #23 and #31)
     Given a milestone on 2026-10-05
     When the milestone is reconciled to start 2026-10-09
     Then the reconciled start is 2026-10-09
-    And the reconciled end is empty
+    And the reconciled end is 2026-10-09
     And the reconciled duration is 0
     And the floor is 2026-10-09
 

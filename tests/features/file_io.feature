@@ -55,7 +55,7 @@ Feature: Saving and loading a project as JSON
     When the project is saved to "milestone_project.json"
     And the file is loaded
     Then the loaded project has 2 tasks
-    And the milestone is "Review" with no end date
+    And the milestone is "Review" ending on its start date
 
   Scenario: A task with no end date survives a round trip
     Given a project with a task that has no end date

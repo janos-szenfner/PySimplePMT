@@ -800,15 +800,13 @@ class DragDropTaskList(ctk.CTkFrame):
         are not the user's to type; the double-click opens the editor instead.
         Any row with children counts, not only a Phase - a Task that has
         grown children rolls its dates up too (see issue #25). A
-        milestone has neither an end nor a length, so only its start is
-        editable in the grid (issues #23 and #31).
+        milestone's are editable too: its end is its start, and typing a
+        length on a moment is how the flag comes off (issue #73).
         """
         task = self.project.get_task_by_id(task_id)
         if task is None or task.is_container:
             return False
         if task_id in self.project.get_summary_task_ids():
-            return False
-        if task.effective_milestone and cell in ('Duration', 'End'):
             return False
         return True
 
@@ -1184,13 +1182,6 @@ class DragDropTaskList(ctk.CTkFrame):
 
         DEVELOPMENT NOTES:
         ------------------
-        The milestone flag is written with the type, in both directions.
-        The two say the same thing - Task.effective_milestone is true for
-        either - so a row typed Milestone here and opened in the editor has
-        to show the milestone switch on, and one typed back to a Task has to
-        show it off. Setting only the type left the flag behind, and a Task
-        still carrying it drew as a diamond and lost its end date.
-
         Through the tracker, so it is one step in the undo history and the
         editor reads what the column stored.
         """
@@ -1200,13 +1191,10 @@ class DragDropTaskList(ctk.CTkFrame):
         if task.task_type == task_type:
             return
 
-        milestone = task_type == 'Milestone'
         if self.project_tracker:
-            self.project_tracker.update_task(task_id, task_type=task_type,
-                                             is_milestone=milestone)
+            self.project_tracker.update_task(task_id, task_type=task_type)
         else:
             task.task_type = task_type
-            task.is_milestone = milestone
 
         logger.info("Task %s is now a %s", task_id, task_type)
         self.project.reschedule()
@@ -1508,7 +1496,7 @@ class DragDropTaskList(ctk.CTkFrame):
         try:
             if cell == 'Duration':
                 duration = int(text)
-                if duration < 1:
+                if duration < 0:
                     raise ValueError
             elif cell == 'Start':
                 start = datetime.strptime(text, '%Y-%m-%d')
@@ -1540,13 +1528,15 @@ class DragDropTaskList(ctk.CTkFrame):
         if task is None:
             return
 
-        fields = dict(start_date=start, end_date=end, duration=duration)
+        fields = dict(start_date=start, end_date=end, duration=duration,
+                      is_milestone=(duration == 0))
         if snet_date is not None:
             fields['constraint_type'] = 'SNET'
             fields['constraint_date'] = snet_date
 
         unchanged = (task.start_date == start and task.end_date == end
                      and task.duration == duration
+                     and task.is_milestone == fields['is_milestone']
                      and (snet_date is None
                           or (task.constraint_type == 'SNET'
                               and task.constraint_date == snet_date)))
@@ -3114,7 +3104,9 @@ class DragDropTaskList(ctk.CTkFrame):
         PARAMETERS:
         -----------
         task_type : str
-            'Phase', 'Task' or 'Milestone'.
+            'Phase' or 'Task' - or 'Milestone' as a creation mode that
+            opens the form with the milestone switch on; the created row
+            is a flagged Task, not a type of its own (issue #73).
         anchor_id : Optional[str]
             The row the context menu was opened on, or None when it was
             opened over the empty space below the rows.
@@ -3206,9 +3198,9 @@ class DragDropTaskList(ctk.CTkFrame):
         def apply() -> bool:
             """Place the new row, then renew the numbering it changed."""
             task.parent_task_id = parent_id
-            # A phase or milestone stays what it was; anything else takes
-            # the type the level it lands at calls for
-            if parent_id and task.task_type not in ("Phase", "Milestone"):
+            # A phase stays what it was; anything else takes the type the
+            # level it lands at calls for
+            if parent_id and task.task_type != "Phase":
                 parent = self.project.get_task_by_id(parent_id)
                 task.task_type = child_type_for(parent, task)
 

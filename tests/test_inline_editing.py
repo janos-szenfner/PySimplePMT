@@ -588,6 +588,15 @@ class TestChoosingTheTypeInTheGrid(InlineEditingTestCase):
 
         self.assertEqual(list(chooser.cget('values')), list(TASK_TYPES))
 
+    def test_milestone_is_not_one_of_them(self):
+        """
+        Issue #73: a milestone is a flag, not a type.
+
+        Choosing it here used to write both the type and the flag; the
+        switch on the form and a nought in the Duration cell say it now.
+        """
+        self.assertNotIn('Milestone', self.open_chooser().cget('values'))
+
     def test_it_opens_showing_what_the_row_is(self):
         """Or picking the current type would look like a change."""
         self.assertEqual(self.open_chooser().get(), 'Task')
@@ -730,52 +739,61 @@ class TestTheTypeChooserFocusDecision(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
-class TestTheMilestoneFlagFollowsTheType(InlineEditingTestCase):
+class TestTheMilestoneFlagFollowsTheDuration(InlineEditingTestCase):
     """
-    Typing a row Milestone in the grid ticks the editor's milestone box.
+    A nought typed into the Duration cell is how a row becomes a milestone.
 
     WHY THESE EXIST:
     ================
-    Task.effective_milestone is true for either the type or the flag, so the
-    two say the same thing and have to be written together. Setting only the
-    type left the flag behind: a row typed back from Milestone to Task still
-    carried it, drew as a diamond and had no end date.
+    Milestone stopped being a type in issue #73 - it is a flag saying a
+    task takes no time, and the length typed into the grid is what writes
+    it. A nought sets the flag, a real length on a milestone brings the
+    row back to a task, and both travel as one undoable step.
     """
 
     def task(self, task_id='u1'):
         """The row itself."""
         return self.project.get_task_by_id(task_id)
 
-    def test_choosing_milestone_sets_the_flag(self):
-        """So the editor opens with the switch on."""
-        self.task_list.set_task_type('u1', 'Milestone')
+    def set_duration(self, days):
+        """The write a Duration-cell commit ends in."""
+        task = self.task()
+        start, end, _d, snet = self.project.reconcile_schedule(
+            task, task.start_date, task.end_date, days)
+        self.task_list.set_schedule('u1', start, end, _d, snet)
+
+    def test_typing_nought_sets_the_flag(self):
+        """So the row draws as a diamond and the editor's switch is on."""
+        self.set_duration(0)
 
         self.assertTrue(self.task().is_milestone)
         self.assertTrue(self.task().effective_milestone)
+        self.assertEqual(self.task().end_date, self.task().start_date)
 
-    def test_choosing_anything_else_clears_it(self):
-        """Or a Task would go on drawing as a diamond."""
-        self.task_list.set_task_type('u1', 'Milestone')
+    def test_a_real_length_clears_it(self):
+        """Or a milestone typed back to a length would go on drawing as one."""
+        self.set_duration(0)
 
-        self.task_list.set_task_type('u1', 'Task')
+        self.set_duration(3)
 
         self.assertFalse(self.task().is_milestone)
         self.assertFalse(self.task().effective_milestone)
+        self.assertNotEqual(self.task().end_date, self.task().start_date)
 
-    def test_undo_takes_the_flag_back_with_the_type(self):
+    def test_undo_takes_the_flag_back_with_the_length(self):
         """Both were written in one step, so both come back in one."""
-        self.task_list.set_task_type('u1', 'Milestone')
+        self.set_duration(0)
 
         self.manager.undo()
 
-        self.assertEqual(self.task().task_type, 'Task')
         self.assertFalse(self.task().is_milestone)
+        self.assertNotEqual(self.task().end_date, self.task().start_date)
 
     def test_the_editor_opens_with_the_box_ticked(self):
         """Which is what the request asked to be able to see."""
         from gantt_app.views.taskdialogs import EditTaskDialog
 
-        self.task_list.set_task_type('u1', 'Milestone')
+        self.set_duration(0)
 
         dialog = EditTaskDialog(self.root, self.task(), self.project,
                                 on_save=lambda t: None,
@@ -783,7 +801,7 @@ class TestTheMilestoneFlagFollowsTheType(InlineEditingTestCase):
         dialog.withdraw()
         try:
             self.assertTrue(dialog.is_milestone_var.get())
-            self.assertEqual(dialog.task_type_var.get(), 'Milestone')
+            self.assertEqual(dialog.task_type_var.get(), 'Task')
         finally:
             dialog.destroy()
 

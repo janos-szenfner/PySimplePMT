@@ -110,7 +110,11 @@ def column_value(task, column: str, project, context: Dict = None):
     if column == 'Label':
         return getattr(task, 'label', '') or ''
     if column == 'Type':
-        return task.task_type or ''
+        # A milestone is a flagged Task (issue #73): the grid's Type cell
+        # shows Task, but a filter asking for milestones by type should
+        # still find them - as saved queries already do.
+        return 'Milestone' if task.effective_milestone \
+            else (task.task_type or '')
     if column == 'Status':
         return task.status or ''
     if column == 'Milestone':

@@ -55,9 +55,9 @@ Feature: The pages of the exported PDF
     # no time, which is the one thing it does not mean.
     Then the cell for "001" shows a non-zero duration
 
-  Scenario: A milestone has no finish to show
-    # It marks a moment, so the column says so rather than lying.
-    Then the cell for "004" shows an em-dash end
+  Scenario: A milestone's finish is its start
+    # It marks a moment: start and end name the same day.
+    Then the cell for "004" ends on its start date
 
   Scenario: A name too long for its column is trimmed
     # Measured, not counted: twenty narrow letters fit where twenty

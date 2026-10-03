@@ -158,6 +158,12 @@ class EditTaskDialog(TaskFormDialog):
                 start, end, duration, snet = self.project.reconcile_schedule(
                     self.task, raw_start, raw_end, raw_duration)
 
+            # The flag is a length of nought days (issue #73): the switch
+            # writes a 0 into the box, a 0 typed into the box switches the
+            # flag on, and a real length typed on a milestone brings the row
+            # back to a task - the reconciled figure is the one true answer.
+            is_milestone = (duration == 0)
+
             # The Advanced tab is the explicit constraint editor; a start
             # edited here sets its Start No Earlier Than unless the reader has
             # changed the constraint on that tab this time, in which case that
@@ -501,8 +507,12 @@ class CreateTaskDialog(TaskFormDialog):
             start, end, duration = self._read_schedule()
             progress = self._typed_progress()
 
+            # A nought typed into the box is a milestone too, switch or no
+            # switch - the flag and the length say the same thing (issue #73)
+            is_milestone = is_milestone or duration == 0
+
             parent_task_id = self._resolve_parent_id()
-            task_type = "Milestone" if is_milestone else self.task_type_var.get()
+            task_type = self.task_type_var.get()
             if parent_task_id:
                 # The level the chosen parent can hold, which is the task's
                 # own type wherever the parent can hold it - a Task created

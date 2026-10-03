@@ -893,12 +893,13 @@ class TestMilestoneRules(unittest.TestCase):
                                    task_type="Subtask", parent_task_id="M"))
 
     def test_an_end_date_is_cleared(self):
-        """A milestone carries no end date."""
-        self.project.get_task_by_id("M").end_date = datetime(2026, 2, 2)
+        """A milestone's end is its start - a moment, not a span."""
+        milestone = self.project.get_task_by_id("M")
+        milestone.end_date = datetime(2026, 2, 2)
 
         self.project.reschedule()
 
-        self.assertIsNone(self.project.get_task_by_id("M").end_date)
+        self.assertEqual(milestone.end_date, milestone.start_date)
 
     def test_a_child_is_promoted_off_a_milestone(self):
         """

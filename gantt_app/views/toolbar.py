@@ -1595,7 +1595,9 @@ class Toolbar(ctk.CTkFrame):
         PARAMETERS:
         -----------
         task_type : str
-            One of models.TASK_TYPES.
+            One of models.TASK_TYPES, or 'Milestone' - a creation mode that
+            opens the form with the milestone switch on, not a type the
+            created row carries (issue #73).
         """
         from gantt_app.views.taskdialogs import CreateTaskDialog
 

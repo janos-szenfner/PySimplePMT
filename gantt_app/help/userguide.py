@@ -69,8 +69,10 @@ GUIDE_SECTIONS = (
             "another task is a sub-task; that is the indent talking, not a "
             "type - the hierarchy itself says which rows sit inside which.",
 
-            "Milestone - a moment rather than a stretch of work. It has no "
-            "duration and no finish; it marks a date. Drawn as a diamond.",
+            "Milestone - a moment rather than a stretch of work, and not a "
+            "type but a switch on a task. It has a duration of nought days "
+            "and its finish is its start; it marks a date. Drawn as a "
+            "diamond.",
 
             "Only the levels that hold work have durations you set. A row "
             "with children showing a duration is reporting what they span, "
@@ -109,9 +111,9 @@ GUIDE_SECTIONS = (
             "ID - assigned by the application and shown for reference. It is "
             "what dependencies and calendars point at internally.",
 
-            "Type - Phase, Task or Milestone. See the levels "
-            "above. Any row can be retyped, wherever it sits, and choosing "
-            "Milestone here or in the Type column marks it as one.",
+            "Type - Phase or Task. See the levels above. Any row can be "
+            "retyped, wherever it sits. A milestone is not a type: switch "
+            "Is Milestone on, or give the row a duration of nought days.",
 
             "Status - an Estimated checkbox and an Inactive one, both clear "
             "by default for the ordinary Active row (there is no Active box; "
@@ -748,11 +750,12 @@ GUIDE_SECTIONS = (
             "Neither gesture folds a branch away. The arrow beside a row "
             "does that, as it always did.",
 
-            "Double-click the Type cell to change what a row is. The four "
-            "types are offered in a list, and picking one stores it - there "
+            "Double-click the Type cell to change what a row is. The types "
+            "are offered in a list, and picking one stores it - there "
             "is nothing to confirm about choosing from a list of the only "
-            "valid answers. It is one step in the undo history, the editor "
-            "shows it, and choosing Milestone marks the row as one.",
+            "valid answers. It is one step in the undo history, and the "
+            "editor shows it. A milestone is marked differently - a nought "
+            "typed into its Duration cell.",
 
             "Double-click the Duration, Start or End cell to type into it in "
             "place (issues #23 and #31). Changing one settles the other two "

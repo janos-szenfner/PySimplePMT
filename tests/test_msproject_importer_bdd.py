@@ -278,13 +278,13 @@ def the_task_is_a_type(ctx, name, task_type):
     assert ctx.by_name[name].task_type == task_type
 
 
-@then(parsers.parse('the imported "{name}" is a "{task_type}" with no end '
-                    'date'))
-def the_task_is_a_milestone(ctx, name, task_type):
+@then(parsers.parse('the imported "{name}" is a milestone ending on its '
+                    'start date'))
+def the_task_is_a_milestone(ctx, name):
     milestone = ctx.by_name[name]
-    assert milestone.task_type == task_type
+    assert milestone.task_type == 'Task'
     assert milestone.effective_milestone
-    assert milestone.end_date is None
+    assert milestone.end_date == milestone.start_date
 
 
 @then(parsers.parse('the imported "{name}" waits on "{other}" as an '

@@ -95,9 +95,9 @@ Feature: The GAN importer reads a GanttProject file into a plan
     And the imported task "2" waits on "1"
     And the imported task "3" waits on "2"
 
-  Scenario: A meeting marks a milestone with no end date
+  Scenario: A meeting marks a milestone ending on its start date
     When the sample GAN file is imported
-    Then the imported task "2" is a milestone with no end date
+    Then the imported task "2" is a milestone ending on its start date
     And the imported task "2" starts on "2024-01-08"
 
   Scenario: A task with a duration is not a milestone

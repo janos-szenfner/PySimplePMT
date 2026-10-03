@@ -144,6 +144,23 @@ class TestTaskTypeCompatibility(unittest.TestCase):
                             task_type=retired)
                 self.assertEqual(task.task_type, "Task")
 
+    def test_a_saved_milestone_type_loads_as_a_flagged_task(self):
+        """
+        Issue #73: the retired type still reads, as the flag it became.
+
+        Files written before the type went carry 'Milestone' rows; taking
+        no time is what made them milestones, so they open as Tasks with
+        the switch on - and an end that is their start, since a moment
+        finishes where it begins.
+        """
+        task = Task(id="m", name="M", start_date=self.start,
+                    end_date=None, task_type="Milestone")
+
+        self.assertEqual(task.task_type, "Task")
+        self.assertTrue(task.is_milestone)
+        self.assertTrue(task.effective_milestone)
+        self.assertEqual(task.end_date, task.start_date)
+
 
 class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
     """
@@ -227,7 +244,7 @@ class TestTypeWhenMovingBetweenLevels(unittest.TestCase):
         project.indent_task("M")
 
         milestone = project.get_task_by_id("M")
-        self.assertEqual(milestone.task_type, "Milestone")
+        self.assertEqual(milestone.task_type, "Task")
         self.assertTrue(milestone.is_milestone)
 
     def test_a_subtask_lifted_into_a_phase_stays_a_task(self):

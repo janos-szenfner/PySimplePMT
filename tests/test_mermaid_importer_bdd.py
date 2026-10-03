@@ -342,11 +342,11 @@ def nothing_comes_back(ctx):
     assert ctx.project is None
 
 
-@then("both are milestones with no end date")
+@then("both are milestones ending on their start dates")
 def both_are_milestones(ctx):
     for task in ctx.project.tasks:
         assert task.is_milestone
-        assert task.end_date is None
+        assert task.end_date == task.start_date
 
 
 @then(parsers.parse('the imported task "{task_id}" is named "{name}"'))

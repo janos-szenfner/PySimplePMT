@@ -165,9 +165,9 @@ def check_milestone_date(milestone_task):
     assert milestone_task.start_date == base_date
 
 
-@then("the milestone end_date should be None")
-def check_milestone_end_date_none(milestone_task):
-    assert milestone_task.end_date is None
+@then("the milestone end_date should be its start date")
+def check_milestone_end_date_is_start(milestone_task):
+    assert milestone_task.end_date == milestone_task.start_date
 
 
 @then("the milestone should have the specified milestone color")
@@ -229,9 +229,10 @@ def milestone_with_end_date():
     return milestone
 
 
-@then("the end_date should be None after creation")
-def check_milestone_end_date_none_after_creation(milestone_with_end_date):
-    assert milestone_with_end_date.end_date is None
+@then("the end_date should be the start date after creation")
+def check_milestone_end_date_after_creation(milestone_with_end_date):
+    assert milestone_with_end_date.end_date == \
+        milestone_with_end_date.start_date
 
 
 # DURATION CALCULATION TESTS

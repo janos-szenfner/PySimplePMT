@@ -33,7 +33,7 @@ Feature: Task and Project model functionality
     Then the milestone should have an auto-generated milestone id
     And the milestone should have the specified milestone name
     And the milestone should have the specified milestone date as start_date
-    And the milestone end_date should be None
+    And the milestone end_date should be its start date
     And the milestone should have the specified milestone color
     And the milestone should have the specified milestone dependencies
     And the milestone should be marked as a milestone
@@ -56,7 +56,7 @@ Feature: Task and Project model functionality
   @models
   Scenario: Milestone end_date handling
     Given a milestone with end_date initially set
-    Then the end_date should be None after creation
+    Then the end_date should be the start date after creation
 
   @models
   Scenario: Task duration calculation within one week

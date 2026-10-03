@@ -692,6 +692,11 @@ class ClipboardService:
 
     def _get_entity_type(self, task: 'Task') -> str:
         """Get the entity type from a Task object."""
+        # Milestone is a flag on a Task rather than a type (issue #73), but
+        # the clipboard kind still says 'milestone' - that is what the
+        # container rules and old payloads both speak.
+        if task.effective_milestone:
+            return 'milestone'
         return task.task_type.lower()
     
     def _place_before(self, pasted: List[str],
@@ -824,7 +829,12 @@ class ClipboardService:
             logger.info("Cannot paste into %s: no such task", container_id)
             return False
 
-        container_type = container.task_type.lower()
+        # A milestone marks a moment and holds nothing; the flag, not the
+        # type, says so now (issue #73)
+        if container.effective_milestone:
+            container_type = 'milestone'
+        else:
+            container_type = container.task_type.lower()
         return all(
             container_type in ALLOWED_PARENT_TYPES.get(
                 entity_type.lower(), CONTAINER_TYPES)

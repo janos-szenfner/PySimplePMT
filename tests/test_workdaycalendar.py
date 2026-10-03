@@ -450,7 +450,7 @@ class TestEnforcingTheCalendar(unittest.TestCase):
 
         self.assertFalse(self.project.enforce_working_calendar())
 
-    def test_a_milestone_moves_off_the_weekend_and_keeps_no_end(self):
+    def test_a_milestone_moves_off_the_weekend_keeping_its_moment(self):
         """A milestone is a date, and it has to be a date somebody works."""
         milestone = self.add("M", datetime(2026, 1, 4), None,
                              is_milestone=True)
@@ -458,7 +458,7 @@ class TestEnforcingTheCalendar(unittest.TestCase):
         self.project.enforce_working_calendar()
 
         self.assertEqual(milestone.start_date, datetime(2026, 1, 5))
-        self.assertIsNone(milestone.end_date)
+        self.assertEqual(milestone.end_date, datetime(2026, 1, 5))
 
     def test_a_container_takes_its_dates_from_its_children(self):
         """
@@ -669,7 +669,8 @@ class TestCountryHolidays(unittest.TestCase):
 
         self.assertEqual(project.get_task_by_id("M").start_date,
                          datetime(2026, 4, 7))
-        self.assertIsNone(project.get_task_by_id("M").end_date)
+        self.assertEqual(project.get_task_by_id("M").end_date,
+                         datetime(2026, 4, 7))
 
 
 class TestWithoutTheHolidaysPackage(unittest.TestCase):

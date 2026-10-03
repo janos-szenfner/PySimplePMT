@@ -138,11 +138,12 @@ def the_container_shows_its_span(ctx, task_id):
     assert phase['duration']
 
 
-@then(parsers.parse('the cell for "{task_id}" shows an em-dash end'))
-def the_milestone_has_no_finish(ctx, task_id):
+@then(parsers.parse('the cell for "{task_id}" ends on its start date'))
+def the_milestone_ends_on_its_start(ctx, task_id):
     from gantt_app.utils.page_render import _cells
-    milestone = _cells(ctx.project, ctx.project.get_task_by_id(task_id))
-    assert milestone['end'] == '—'
+    task = ctx.project.get_task_by_id(task_id)
+    milestone = _cells(ctx.project, task)
+    assert milestone['end'] == task.start_date.strftime('%Y-%m-%d')
 
 
 @then(parsers.parse("a long name is ellipsised inside {pixels:d} pixels"))

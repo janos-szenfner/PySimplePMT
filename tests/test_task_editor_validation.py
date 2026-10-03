@@ -286,8 +286,8 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
 
         self.assertFalse(self.marked(dialog, 'end_date'))
 
-    def test_unticking_milestone_asks_for_the_end_date(self):
-        """A task that is no longer a milestone needs one again."""
+    def test_unticking_milestone_hands_back_a_filled_end(self):
+        """The switch back off gives the row a day, not an empty box."""
         dialog = self.edit_dialog()
         self.let_the_end_date_be_typed(dialog)
 
@@ -298,7 +298,7 @@ class TestWhatTheFormComplainsAbout(EditorTestCase):
         dialog.is_milestone_var.set(False)
         dialog.toggle_milestone()
 
-        self.assertTrue(self.marked(dialog, 'end_date'))
+        self.assertFalse(self.marked(dialog, 'end_date'))
 
     def test_the_milestone_dialog_has_no_end_date_to_check(self):
         """Creating a milestone leaves the box out, and nothing looks for it."""
@@ -739,7 +739,8 @@ class TestTheCalculatedBoxKeepsUp(EditorTestCase):
 
         The end date box was enabled directly rather than through the form's
         own rules, so it came back empty and typable even though the mode was
-        deriving it.
+        deriving it. The flag off is a day-long task now (issue #73): the
+        moment's date is the finish, and the duration box reads 1.
         """
         dialog = self.edit_dialog()
         dialog.is_milestone_var.set(True)
@@ -747,7 +748,8 @@ class TestTheCalculatedBoxKeepsUp(EditorTestCase):
         dialog.is_milestone_var.set(False)
         dialog.toggle_milestone()
 
-        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-07")
+        self.assertEqual(self.shown(dialog.end_date_entry), "2026-01-05")
+        self.assertEqual(self.shown(dialog.duration_entry), "1")
         self.assertEqual(self.callback_errors, [])
 
     def test_choosing_a_container_type_greys_what_it_rolls_up(self):

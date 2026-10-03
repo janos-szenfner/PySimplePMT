@@ -100,6 +100,7 @@ def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
             'ID': task.id,
             'Name': task.name,
             'Type': task.task_type,
+            'Milestone': task.effective_milestone,
             'Status': getattr(task, 'status', 'Active') or 'Active',
             'Duration': task.duration_days or 0,
             'Progress': task.progress or 0,
@@ -170,7 +171,10 @@ def duration_by_type(rows: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
     """
     totals: Dict[str, int] = {}
     for row in rows:
-        totals[row['Type']] = totals.get(row['Type'], 0) + row['Duration']
+        # Milestone stopped being a type in issue #73 - the flag column
+        # is what still gives the donut its (zero-day) slice.
+        kind = 'Milestone' if row.get('Milestone') else row['Type']
+        totals[kind] = totals.get(kind, 0) + row['Duration']
 
     ordered = [kind for kind in TASK_TYPES if kind in totals]
     ordered += sorted(kind for kind in totals if kind not in TASK_TYPES)
@@ -230,8 +234,7 @@ def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         'total_scope': sum(row['Duration'] for row in top),
         'total_items': len(rows),
-        'milestones': len([row for row in rows
-                           if row['Type'] == 'Milestone']),
+        'milestones': len([row for row in rows if row['Milestone']]),
         # Rolled up, so the top-level rows' costs are the plan's whole
         # spend with nothing counted twice
         'total_cost': sum(row.get('Cost', 0.0) for row in top),

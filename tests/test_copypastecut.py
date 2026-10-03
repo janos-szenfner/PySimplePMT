@@ -379,12 +379,13 @@ class TestClipboardService(unittest.TestCase):
         self.assertTrue(self.service._can_accept_types(None, ["task"]))
         self.assertTrue(self.service._can_accept_types(None, ["phase"]))
         
-        # A milestone marks a moment; it holds nothing
-        self.task2.task_type = "Milestone"
+        # A milestone marks a moment; it holds nothing - and the flag,
+        # not a type, says so since issue #73
+        self.task2.is_milestone = True
         self.assertFalse(self.service._can_accept_types("002", ["task"]))
 
-        # A sub-task may be a grouping row - see issue #56
-        self.task2.task_type = "Subtask"
+        # Back to a plain task and it can hold rows again
+        self.task2.is_milestone = False
         self.assertTrue(self.service._can_accept_types("002", ["task"]))
 
     def test_copy_with_nonexistent_task(self):

@@ -83,8 +83,10 @@ DEPENDENCY_HARDNESS_LABELS = {
     'Rubber': 'Rubber',
 }
 
-#: Task types in the new hierarchy
-TASK_TYPES = ('Phase', 'Task', 'Milestone')
+#: Task types in the new hierarchy. Milestone is not one: it is a flag on
+#: a Task - a length of nought days - the way the reference tool does it,
+#: not a kind of row (issue #73).
+TASK_TYPES = ('Phase', 'Task')
 
 #: The scheduling constraints a task may carry, as MS Project names them.
 #: The stored value is the short enum; CONSTRAINT_LABELS gives the title the
@@ -124,7 +126,7 @@ TASK_STATUSES = ('Active', 'Estimated', 'Inactive')
 #: Task Type in the Advanced tab's sense - the effort behaviour, which of
 #: duration, work or assignment units is held fixed when the others change
 #: (Task_Type_FRS §3). Named EFFORT_TYPES, not "task types", because Task
-#: already has a task_type: the row kind (Task/Subtask/Milestone/Phase). The
+#: already has a task_type: the row kind (Phase/Task). The
 #: two are unrelated and must not be conflated. See gantt_app.core.effort for the
 #: scheduling maths this drives.
 EFFORT_FIXED_UNITS = 'Fixed Units'
@@ -186,7 +188,6 @@ def order_grid_columns(order, hidden) -> List[str]:
 TASK_TYPE_LABELS = {
     'Phase': 'Phase',
     'Task': 'Task',
-    'Milestone': 'Milestone',
 }
 
 #: What a type that is no longer offered becomes when a plan carrying it is
@@ -195,13 +196,16 @@ TASK_TYPE_LABELS = {
 #: Deliverable was a level between Phase and Task, and Subtask named a Task
 #: that happened to sit under one - the hierarchy already says which rows
 #: are sub-tasks, so a type for it only duplicated what indenting shows
-#: (issue #63). Plans, saved files and imports still carry both, and a row
-#: whose type is not one this application knows would be a row nothing
-#: could decide anything about - which rule rolls its progress up, whether
-#: it may hold children, what it is called in the Type column. Read as the
-#: nearest thing that is still offered instead, which is a Task: it holds
-#: work, it may have rows beneath it, and a phase full of them reads as it
-#: did.
+#: (issue #63). Milestone was a type where it is a state: a Task that takes
+#: no time (issue #73). Plans, saved files and imports still carry all of
+#: them, and a row whose type is not one this application knows would be a
+#: row nothing could decide anything about - which rule rolls its progress
+#: up, whether it may hold children, what it is called in the Type column.
+#: Read as the nearest thing that is still offered instead, which is a
+#: Task: it holds work, it may have rows beneath it, and a phase full of
+#: them reads as it did. 'Milestone' is not in the map because retiring it
+#: has a side effect - the row it described keeps its milestone flag; see
+#: Task.__post_init__.
 RETIRED_TASK_TYPES = {
     'Deliverable': 'Task',
     'Subtask': 'Task',
@@ -220,18 +224,19 @@ WORK_TYPES = ('Task',)
 #: imported files arrive nested however their own format allowed.
 PARENT_TYPES = ('Phase', 'Task')
 
-#: Types that cannot have children (leaf nodes). A milestone marks a moment
-#: rather than spanning one, so nothing sits inside it.
-LEAF_TYPES = ('Milestone',)
+#: Types that cannot have children (leaf nodes). Empty: a milestone is the
+#: only true leaf, and it is a flag, not a type - Task.can_have_children
+#: answers for it.
+LEAF_TYPES = ()
 
 #: What a task is allowed to be, by the type of the parent it sits under.
 #:
 #: With the Subtask type retired the rule is a plain one - a Task may sit
-#: anywhere work can go - with a Milestone allowed at any level, since a
-#: milestone marks a moment in whatever it is a moment in.
+#: anywhere work can go. A milestone sits anywhere too, being a flagged
+#: Task rather than a type of its own (issue #73).
 ALLOWED_CHILD_TYPES = {
-    'Phase': ('Task', 'Milestone'),
-    'Task': ('Task', 'Milestone'),
+    'Phase': ('Task',),
+    'Task': ('Task',),
 }
 
 #: What a task becomes when its own type is not one the parent can hold.
@@ -244,7 +249,7 @@ DEFAULT_CHILD_TYPE = {
 }
 
 #: What a task is allowed to be at the top of the plan.
-ROOT_TYPES = ('Phase', 'Task', 'Milestone')
+ROOT_TYPES = ('Phase', 'Task')
 
 
 def child_type_for(parent: Optional['Task'], task: 'Task') -> str:
@@ -607,30 +612,31 @@ class Task:
         id: Unique identifier for the task
         name: Display name of the task
         start_date: When the task begins
-        end_date: When the task ends (None for milestones)
+        end_date: When the task ends (a milestone's is its start)
         progress: Completion percentage (0-100)
         dependencies: List of task IDs that must complete before this task
         color: Hex color string for visualization
-        task_type: Type of task - one of TASK_TYPES (Phase, Task, Milestone)
+        task_type: Type of task - one of TASK_TYPES (Phase, Task)
         parent_task_id: ID of parent task (for hierarchical organization)
         duration: Duration in days (can be manually set)
         priority: Task priority level
         shape: Visual shape for the task
         show_in_timeline: Whether to show in timeline view
         details: Additional notes/details about the task
-        is_milestone: Legacy flag, now determined by task_type='Milestone'
+        is_milestone: The flag that marks a task as a moment - nought days,
+          its end its start (issue #73)
         calendar_id: Named calendar this task follows, or None for the plan's own
-    
+
     DEVELOPMENT NOTES:
     ------------------
-    - task_type can be 'Phase', 'Task', or 'Milestone'
+    - task_type can be 'Phase' or 'Task'
     - A Phase is a container type that rolls up dates and progress from its
       children; so does any other row that comes to have them
     - Task is the primary work unit with duration, start/end dates, and
       completion. A task under another is a sub-task in the hierarchy's
       sense - that is a parent link, not a type (issue #63)
-    - Milestone is a zero-duration marker representing key events
-    - is_milestone flag is maintained for backward compatibility but task_type='Milestone' is authoritative
+    - A milestone is a flagged Task taking no time - is_milestone is
+      authoritative, and a saved 'Milestone' type is read as one (issue #73)
     """
     id: str
     name: str
@@ -718,22 +724,26 @@ class Task:
             raise ValueError("Progress must be between 0 and 100")
         
         # A type this application no longer offers is read as the nearest
-        # thing it does; see RETIRED_TASK_TYPES
+        # thing it does; see RETIRED_TASK_TYPES. Milestone is retired too,
+        # but retiring it sets a flag rather than only renaming the type:
+        # a 'Milestone' row is a Task that takes no time (issue #73).
+        if self.task_type == 'Milestone':
+            self.is_milestone = True
         self.task_type = RETIRED_TASK_TYPES.get(self.task_type,
                                                 self.task_type)
+        if self.task_type == 'Milestone':
+            self.task_type = 'Task'
 
         # Priority names from the retired five-step scale map onto the
         # ten-step one; see core/priority.LEGACY_PRIORITIES.
         self.priority = normalize_priority(self.priority)
         
-        # Synchronize is_milestone with task_type for backward compatibility
-        if self.task_type == "Milestone":
-            self.is_milestone = True
-            self.end_date = None  # Milestones have no duration
-        elif self.is_milestone and self.task_type != "Milestone":
-            # Legacy milestone flag: convert to new type
-            self.task_type = "Milestone"
-            self.end_date = None
+        # A milestone marks a moment: it takes no time, so its end is its
+        # start. Older saves carried no end at all, which read in the grid
+        # as N/A - and a red "empty" state - where the reference tool shows
+        # the finish on the same day (issue #73).
+        if self.is_milestone:
+            self.end_date = self.start_date
         
         # For container types, ensure they don't have end_date if they shouldn't
         # Actually, containers CAN have end dates as they roll up from children
@@ -820,12 +830,13 @@ class Task:
     @property
     def can_have_children(self) -> bool:
         """Whether this task type can have child tasks."""
-        return self.task_type in PARENT_TYPES
+        # A milestone marks a moment; nothing can sit inside one (issue #73).
+        return self.task_type in PARENT_TYPES and not self.is_milestone
 
     @property
     def is_leaf(self) -> bool:
         """Whether this task is a leaf node (cannot have children)."""
-        return self.task_type in LEAF_TYPES
+        return self.task_type in LEAF_TYPES or self.is_milestone
 
     @property
     def is_completed(self) -> bool:
@@ -848,7 +859,7 @@ class Task:
     @property
     def effective_milestone(self) -> bool:
         """Whether this task behaves as a milestone (zero duration)."""
-        return self.task_type == "Milestone" or self.is_milestone
+        return self.is_milestone
 
     @property
     def can_edit_dates(self) -> bool:
@@ -868,8 +879,9 @@ class Task:
     @property
     def can_edit_duration(self) -> bool:
         """Whether duration can be edited."""
-        # Milestones and containers have fixed/rolled up duration
-        return not self.effective_milestone and not self.is_container
+        # A container's length is its children's. A milestone's is 0, and
+        # typing one is how a milestone becomes a task again (issue #73).
+        return not self.is_container
 
     def get_dependency(self, task_id: str) -> Optional['Dependency']:
         """Get the link to a given predecessor, or None."""
@@ -955,11 +967,11 @@ class Task:
             id=task_id or str(uuid.uuid4()),
             name=name,
             start_date=date,
-            end_date=None,  # Milestones have no end date (zero duration)
+            end_date=date,  # a moment: the finish is the start (issue #73)
             progress=0,
             dependencies=dependencies or [],
             color=color,
-            task_type="Milestone",
+            task_type="Task",
             is_milestone=True,
             parent_task_id=None
         )
@@ -4438,7 +4450,7 @@ class Project:
                 new_start = calendar.subtract_working_days(new_end, duration)
 
         if task.is_milestone:
-            new_end = None
+            new_end = new_start
 
         if new_start == task.start_date and new_end == task.end_date:
             return False
@@ -4508,7 +4520,7 @@ class Project:
             if pinned == start:
                 return False
             task.start_date = pinned
-            task.end_date = None
+            task.end_date = pinned
             return True
 
         duration = self.working_duration(task)
@@ -4599,7 +4611,7 @@ class Project:
 
         if task.effective_milestone:
             task.start_date = new_end
-            task.end_date = None
+            task.end_date = new_end
             return True
 
         duration = self.working_duration(task)
@@ -4722,7 +4734,7 @@ class Project:
         duration = self.working_duration(task)
         if task.constraint_type == 'SNLT':
             start = calendar.get_previous_working_day(cd)
-            end = (None if task.effective_milestone
+            end = (start if task.effective_milestone
                    else calendar.add_working_days(start, duration))
             return start, end
         end = calendar.get_previous_working_day(cd)
@@ -4776,17 +4788,36 @@ class Project:
         old_end = task.end_date or task.start_date
         old_duration = self.working_duration(task)
 
-        if task.effective_milestone:
-            if as_date(new_start) != as_date(old_start):
-                placed = calendar.get_next_working_day(new_start)
-                return placed, None, 0, placed
-            return old_start, None, 0, None
-
         start_changed = as_date(new_start) != as_date(old_start)
         end_changed = (new_end is not None
                        and as_date(new_end) != as_date(old_end))
         duration_changed = (new_duration is not None
                             and int(new_duration) != int(old_duration))
+
+        if task.effective_milestone:
+            # A milestone is a flag on a Task, not a kind of row: its end is
+            # its start, its length is 0, and its three boxes stay editable
+            # (issue #73). A length typed on a moment turns the flag back
+            # off - the row grows a finish; an end typed beyond the start
+            # does the same. The flag itself is written by the caller from
+            # whether the duration that comes back is 0.
+            if new_duration is not None and int(new_duration) > 0:
+                start = (calendar.get_next_working_day(new_start)
+                         if start_changed else old_start)
+                end = calendar.add_working_days(start, int(new_duration))
+                return (start, end, int(new_duration),
+                        start if start_changed else None)
+            if (end_changed and new_end is not None
+                    and as_date(new_end) > as_date(old_start)):
+                start = old_start
+                end = calendar.get_next_working_day(new_end)
+                duration = max(
+                    calendar.working_days_between(start, end), 1)
+                return start, end, duration, None
+            if start_changed:
+                placed = calendar.get_next_working_day(new_start)
+                return placed, placed, 0, placed
+            return old_start, old_start, 0, None
 
         if start_changed:
             start = calendar.get_next_working_day(new_start)
@@ -4800,8 +4831,13 @@ class Project:
             return start, end, duration, start
 
         if duration_changed:
+            if int(new_duration) <= 0:
+                # Nought days is a moment, not a length: the flag goes on
+                # and the row reads as a milestone (issue #73). The caller
+                # writes is_milestone from the duration that comes back.
+                return old_start, old_start, 0, None
             start = old_start
-            duration = max(int(new_duration), 1)
+            duration = int(new_duration)
             end = calendar.add_working_days(start, duration)
             return start, end, duration, None
 
@@ -4975,7 +5011,7 @@ class Project:
         calendar = self.calendar_for(task)
         new_start = calendar.get_next_working_day(floor)
         if task.effective_milestone:
-            new_end = None
+            new_end = new_start
         else:
             new_end = calendar.add_working_days(
                 new_start, self.working_duration(task))
@@ -5003,13 +5039,14 @@ class Project:
 
         DEVELOPMENT NOTES:
         ------------------
-        A milestone marks a moment, so it carries no end date and takes no
-        time. A milestone with sub-tasks would have to span them, which
-        contradicts that, so anything parented to one is promoted rather
-        than being silently dropped: up exactly one level, onto the level
-        the milestone itself sits on, which is what turning a grouping row
-        into a milestone asks for (issue #58). A promoted row that is itself
-        a grouping row keeps the rows under it - only its own parent moves.
+        A milestone marks a moment, so its end is its start and it takes no
+        time (issue #73: older saves carried no end at all). A milestone
+        with sub-tasks would have to span them, which contradicts that, so
+        anything parented to one is promoted rather than being silently
+        dropped: up exactly one level, onto the level the milestone itself
+        sits on, which is what turning a grouping row into a milestone asks
+        for (issue #58). A promoted row that is itself a grouping row keeps
+        the rows under it - only its own parent moves.
 
         The type follows the level it lands on: lifted to the top of the
         plan a sub-task reads as a Task, while under a task it stays a
@@ -5021,8 +5058,9 @@ class Project:
                              for t in self.tasks if t.effective_milestone}
 
         for task in self.tasks:
-            if task.effective_milestone and task.end_date is not None:
-                task.end_date = None
+            if (task.effective_milestone
+                    and task.end_date != task.start_date):
+                task.end_date = task.start_date
                 changed = True
             if task.parent_task_id in milestone_parents:
                 new_parent_id = milestone_parents[task.parent_task_id]
@@ -5091,7 +5129,9 @@ class Project:
             task_calendar = self.calendar_for(task)
 
             new_start = task_calendar.get_next_working_day(task.start_date)
-            if task.effective_milestone or task.end_date is None:
+            if task.effective_milestone:
+                new_end = new_start
+            elif task.end_date is None:
                 new_end = None
             else:
                 new_end = task_calendar.add_working_days(new_start,
@@ -5306,7 +5346,7 @@ class Project:
             new_start = calendar.get_next_working_day(wanted)
 
             if task.effective_milestone:
-                new_end = None
+                new_end = new_start
             elif task.end_date is None:
                 # Nothing states how long it is, so there is no finish to work
                 # out - only the start to move off the weekend.

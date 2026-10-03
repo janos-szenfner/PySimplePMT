@@ -37,7 +37,7 @@ Feature: The MSPDI import reads a Microsoft Project file into a plan
     And the imported "Business case" is a "Task"
 
   Scenario: A milestone comes back as a milestone
-    Then the imported "Contract signed" is a "Milestone" with no end date
+    Then the imported "Contract signed" is a milestone ending on its start date
 
   Scenario: The link keeps its type and its lag
     Then the imported "Tender" waits on "Business case" as an "SS" link lagged 2 days
