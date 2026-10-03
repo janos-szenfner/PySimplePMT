@@ -286,9 +286,11 @@ def _get_visible_tasks(project: Project) -> List[Task]:
     RETURNS:
     --------
     List[Task]
-        List of tasks with show_in_timeline set to True.
+        List of tasks with show_in_timeline set to True, in the order the
+        task list displays them - the "No." sequence the plan is read by
+        (issue #64), so a rendered file puts the rows where the screen did.
     """
-    return [task for task in project.tasks
+    return [task for task in project.display_order()
             if task.show_in_timeline and not _is_inactive(task)]
 
 

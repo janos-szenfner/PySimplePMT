@@ -131,6 +131,17 @@
   suite now destroy children before their root, ending the
   `ttk::ThemeChanged` floods that surfaced file by file on CI.
 
+- **The stored plan order is the order on screen.** The No. column is
+  what the user edits and what dependencies refer to, but the project's
+  own task list could drift from it: a task added under a parent landed
+  at the flat list's end while the grid drew it under its parent, and
+  cut-and-paste, milestone promotion and project load could do the
+  same. Anything walking the stored list - the exported chart, the
+  saved file, some import paths - then presented a sequence the screen
+  never showed. The flat list is now kept in the grid's order at every
+  mutation point, so the "No." sequence the user sees is the plan
+  itself (issue #64).
+
 ## 1.71.6 - 2026-09-15
 
 - **A deep dependency chain can no longer break a Mermaid export.** The

@@ -330,6 +330,12 @@ class UpdateTaskCommand(Command):
             if task.id == self.task_id:
                 self.project.tasks[i] = self.new_task
                 self.project._id_to_task = None
+                if (self.new_task.parent_task_id
+                        != self.old_task.parent_task_id):
+                    # A parent change moves the row in the grid; the flat
+                    # list is the order that is saved, exported and
+                    # numbered, so it is put back in step (issue #64).
+                    self.project.tasks = self.project.display_order()
                 if self._dates_changed():
                     self.project.reschedule(forward_only=False)
                 else:
@@ -343,6 +349,9 @@ class UpdateTaskCommand(Command):
             if task.id == self.task_id:
                 self.project.tasks[i] = self.old_task
                 self.project._id_to_task = None
+                if (self.new_task.parent_task_id
+                        != self.old_task.parent_task_id):
+                    self.project.tasks = self.project.display_order()
                 if self._dates_changed():
                     self.project.reschedule(forward_only=False)
                 else:

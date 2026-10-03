@@ -42,18 +42,17 @@ class TestMoveTask(unittest.TestCase):
                 task_type="Task", parent_task_id="002",
             ))
 
-    def test_starting_order_is_insertion_order(self):
+    def test_starting_order_is_display_order(self):
         """
-        Tasks start in the order they were added.
+        The stored list is the order the rows are drawn in.
 
-        add_task appends, so sub-tasks added after the root tasks sit at the
-        end of the list rather than behind their parent. The tree nests them
-        correctly either way, and the first move rebuilds the list into
-        hierarchy order. This is pinned so the expectations below read
-        against a known starting point.
+        add_task keeps the flat list in hierarchy order, so a sub-task
+        lands behind its parent even when it is added after later roots.
+        The "No." column counts down this list, so what the file holds is
+        what the screen shows (issue #64).
         """
         self.assertEqual(ids(self.project),
-                         ["001", "002", "003", "004", "005"])
+                         ["001", "002", "004", "005", "003"])
 
     def test_a_move_groups_subtasks_behind_their_parent(self):
         """Rebuilding the list puts each task's children directly after it."""
@@ -116,7 +115,7 @@ class TestMoveTask(unittest.TestCase):
 
         # Refused moves leave the list exactly as it was
         self.assertEqual(ids(self.project),
-                         ["001", "002", "003", "004", "005"])
+                         ["001", "002", "004", "005", "003"])
 
     def test_an_only_child_cannot_move(self):
         """A sub-task with no siblings has nowhere to go."""
@@ -191,7 +190,7 @@ class TestMoveTaskBefore(unittest.TestCase):
         """A sub-task cannot be dropped onto a root task."""
         self.assertFalse(self.project.move_task_before("004", "001"))
 
-        self.assertEqual(ids(self.project), ["001", "002", "003", "004"])
+        self.assertEqual(ids(self.project), ["001", "002", "004", "003"])
 
     def test_dropping_onto_itself_does_nothing(self):
         """A task dropped on its own row stays put."""
@@ -480,6 +479,67 @@ class TestStructureSnapshot(unittest.TestCase):
         self.project.restore_structure(snapshot)
 
         self.assertEqual(ids(self.project), ["A", "B", "C"])
+
+
+class TestPlanOrderIsDisplayOrder(unittest.TestCase):
+    """
+    The stored list is the "No." sequence, not a shadow of it.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The number beside each row counts down display_order(). The list itself
+    is what to_dict saves and the exports walk, so any add or re-parent that
+    leaves it different from the drawn order writes a file whose plan order
+    is not the one on screen (issue #64).
+    """
+
+    def setUp(self):
+        """A phase, then a root task added after it."""
+        self.project = Project(name="Test Project")
+        base = datetime(2026, 1, 1)
+        self.project.add_task(Task(
+            id="001", name="Phase", start_date=base,
+            task_type="Phase", end_date=base + timedelta(days=9)))
+        self.project.add_task(Task(
+            id="002", name="Root", start_date=base,
+            end_date=base + timedelta(days=2)))
+
+    def test_a_child_added_late_lands_under_its_parent(self):
+        """Append-at-end would leave the stored order unlike the shown one."""
+        base = datetime(2026, 1, 1)
+        self.project.add_task(Task(
+            id="003", name="Child", start_date=base,
+            end_date=base + timedelta(days=1),
+            task_type="Task", parent_task_id="001"))
+
+        self.assertEqual(ids(self.project), ["001", "003", "002"])
+        self.assertEqual(ids(self.project),
+                         [t.id for t in self.project.display_order()])
+
+    def test_the_numbers_follow_the_stored_order(self):
+        """The "No." column counts the same list the file holds."""
+        base = datetime(2026, 1, 1)
+        self.project.add_task(Task(
+            id="003", name="Child", start_date=base,
+            end_date=base + timedelta(days=1),
+            task_type="Task", parent_task_id="001"))
+
+        self.assertEqual(self.project.display_ids(),
+                         {"001": 1, "003": 2, "002": 3})
+
+    def test_a_divergent_file_is_normalised_on_load(self):
+        """A plan saved out of hierarchy order opens in display order."""
+        data = self.project.to_dict()
+        child = Task(id="003", name="Child", task_type="Task",
+                     start_date=datetime(2026, 1, 1),
+                     parent_task_id="001").to_dict()
+        data['tasks'].append(child)
+
+        restored = Project.from_dict(data)
+
+        self.assertEqual(ids(restored), ["001", "003", "002"])
+        self.assertEqual(ids(restored),
+                         [t.id for t in restored.display_order()])
 
 
 class TestGetSiblings(unittest.TestCase):

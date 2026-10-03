@@ -526,6 +526,11 @@ class ClipboardService:
                 task.parent_task_id = target_container_id
                 moved.append(task.id)
 
+        # The reparented rows sit at the end of the target's children in
+        # the grid; the flat list is put back into that same order so the
+        # stored plan order stays the shown order (issue #64).
+        self.project.tasks = self.project.display_order()
+
         self.clear_cut_state()
         self.active_payload = None
         return moved

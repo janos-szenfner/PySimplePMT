@@ -1505,8 +1505,13 @@ class Project:
         self._id_to_task: Optional[Dict[str, Task]] = None
 
         if self.tasks:
+            # The flat list is the order the grid shows, saves and numbers
+            # (issue #64): a list handed in with a child sitting after a
+            # later root is drawn under its parent anyway, so it is put in
+            # that order here rather than disagreeing with the grid.
+            self.tasks = self.display_order()
             self._update_dates()
-    
+
     def _update_dates(self):
         """Calculate project start and end dates from tasks."""
         if not self.tasks:
@@ -1617,8 +1622,21 @@ class Project:
         return mapping
 
     def add_task(self, task: Task):
-        """Add a task to the project and update dates."""
+        """
+        Add a task to the project and update dates.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The flat list is kept in display order rather than a plain append:
+        a task arriving with a parent belongs under it, right after the
+        children it already has, which is where the list draws it. Left at
+        the end of the file it would sit under its parent on screen but at
+        the bottom everywhere else the order is read - the saved file, the
+        exports - and the "No." sequence would stop being the plan
+        (issue #64).
+        """
         self.tasks.append(task)
+        self.tasks = self.display_order()
         self._id_to_task = None
         self._update_dates()
 
@@ -4102,6 +4120,11 @@ class Project:
         
         # Add tasks manually
         project.tasks = [Task.from_dict(task_data) for task_data in data.get('tasks', [])]
+        # The file order is the row order the grid shows (issue #64). A
+        # file written before that rule held - or edited by hand - can list
+        # a child after a later root, so the list is flattened back into
+        # display order; the tree was going to draw it that way regardless.
+        project.tasks = project.display_order()
 
         # A deliverable points at its tasks by id; a file can name one that
         # is not in the plan, and a dangling id would count a missing row
@@ -5070,6 +5093,11 @@ class Project:
                 task.task_type = child_type_for(new_parent, task)
                 changed = True
 
+        if changed:
+            # Reparenting happened without a repositioning pass, so the
+            # flat list is put back into display order - the order that is
+            # saved, exported and numbered (issue #64).
+            self.tasks = self._flatten(self._children_by_parent())
         return changed
 
     def apply_calendar(self, calendar: WorkingCalendar,
