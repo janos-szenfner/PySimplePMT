@@ -118,6 +118,12 @@
   does. Closing still runs the save-first prompt; the zoom controls
   now own the right of the status bar (issue #85).
 
+- **The calendar menu entry says Calendar, not Working Week.** The
+  Project ribbon's Calendar group opened Calendar Settings from a
+  button labelled Working Week - one tab's name standing in for the
+  whole dialog. The button is now Calendar, its tip Calendar
+  Settings..., matching the window that opens (issue #94).
+
 - **The test suite finishes its migration to pytest-bdd.** Every
   remaining unittest module under twenty tests became feature files and
   step definitions, one scenario per test, and the CI log names each

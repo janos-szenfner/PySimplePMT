@@ -230,8 +230,8 @@ class RibbonBar(IconToolbar):
                    key='baseline_compare'),
             )),
             ("Calendar", (
-                _L('calendar', 'Working Week', 'edit_holidays',
-                   tip="Working Week & Holidays..."),
+                _L('calendar', 'Calendar', 'edit_holidays',
+                   tip="Calendar Settings..."),
             )),
             ("Resources", (
                 _L('resource', 'Resources', 'open_resource_settings',
