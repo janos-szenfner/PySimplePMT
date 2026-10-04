@@ -1120,6 +1120,10 @@ class Toolbar(ctk.CTkFrame):
         #: toggle_resource_grid asks it to swap faces. See
         #: set_resource_board.
         self.resource_board = None
+        #: The Deliverables board, once the window hands it over;
+        #: Copy/Cut/Paste route to it while its tab is on top and the
+        #: Reports button asks it for the panel. See set_deliverables_board.
+        self.deliverables_board = None
         #: Which highlight filter is painting rows, by its key in
         #: HIGHLIGHT_FILTERS; None while none is on. Kept beside the paint
         #: rather than in it - the list holds the ids, this holds which
@@ -3470,6 +3474,19 @@ class Toolbar(ctk.CTkFrame):
         """The Resource Planning view the Usage Grid toggle switches."""
         self.resource_board = board
 
+    def set_deliverables_board(self, board) -> None:
+        """The Deliverables view the clipboard and Reports act on."""
+        self.deliverables_board = board
+
+    def _deliverables_on_top(self) -> bool:
+        """Whether the footer's Deliverables tab is the front view."""
+        return getattr(self.master, '_active_view', '') == 'Deliverables'
+
+    def open_deliverable_reports(self):
+        """Open the deliverable reports panel - the ribbon's entry point."""
+        if self.deliverables_board is not None:
+            self.deliverables_board.open_reports()
+
     def set_view_context(self, view_name: str) -> None:
         """
         Tell the ribbon which footer-tab view is on top.
@@ -3688,24 +3705,36 @@ class Toolbar(ctk.CTkFrame):
         self.project = project
         
     def copy_tasks(self):
-        """Copy selected tasks to clipboard."""
+        """
+        Copy the front view's selected rows to its clipboard.
+
+        While the Deliverables tab is on top, Copy means deliverables -
+        the button used to reach the task list underneath no matter which
+        view was showing.
+        """
+        if self._deliverables_on_top() and self.deliverables_board:
+            self.deliverables_board.copy_deliverables()
+            return
         if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
             selected_ids = self.task_list.get_selected_task_ids()
             if selected_ids:
                 self.clipboard_manager.copy(selected_ids)
                 logger.info("Copied %d tasks to clipboard", len(selected_ids))
-        
+
     def cut_tasks(self):
-        """Cut selected tasks to clipboard."""
+        """Cut the front view's selected rows, like Copy does."""
+        if self._deliverables_on_top() and self.deliverables_board:
+            self.deliverables_board.cut_deliverables()
+            return
         if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
             selected_ids = self.task_list.get_selected_task_ids()
             if selected_ids:
                 self.clipboard_manager.cut(selected_ids)
                 logger.info("Cut %d tasks to clipboard", len(selected_ids))
-        
+
     def paste_tasks(self):
         """
-        Paste from the clipboard at the row the cursor is on.
+        Paste the front view's clipboard at the row the cursor is on.
 
         DEVELOPMENT NOTES:
         ------------------
@@ -3713,8 +3742,13 @@ class Toolbar(ctk.CTkFrame):
         because the paste has to be one entry in the undo history and has to
         land in the same place it would from any other route. This used to
         pass the selected row as the container, so a paste from the toolbar
-        nested the copy inside the selected task as a sub-task.
+        nested the copy inside the selected task as a sub-task. While the
+        Deliverables tab is on top the same press goes to its own
+        clipboard instead.
         """
+        if self._deliverables_on_top() and self.deliverables_board:
+            self.deliverables_board.paste_deliverables()
+            return
         if hasattr(self.task_list, 'paste_tasks'):
             self.task_list.paste_tasks()
             logger.info("Pasted from the toolbar")

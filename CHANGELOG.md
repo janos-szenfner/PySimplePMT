@@ -2,6 +2,28 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **The Deliverables view works like the task list.** The rows are
+  numbered D-001 so they cannot be read as task numbers, assigned tasks
+  sit under their deliverable in muted text, and the column that owns a
+  deliverable is called Responsible (issue #105, #106, #107). A row's
+  text takes its health colour - grey unstarted, blue on track, red
+  past due, green done - and the header's Overall chip answers for the
+  whole list, amber while a late row can still catch the final deadline
+  and red once it cannot (issue #102). Double-clicking a deliverable
+  opens a full editor - every field plus the description and acceptance
+  criteria, saved as one undoable change and guarded against closing
+  with edits unsaved - and double-clicking an assigned task opens that
+  task's own editor (issues #101, #103, #104). The task picker selects
+  the way every list does - Shift for a range, Ctrl/Cmd to add - and
+  Add/Remove apply to the whole selection at once (issue #100). The
+  right-click menu follows the task list's order and Copy, Cut, Paste
+  and Paste as Sub-deliverable work on branches there - including the
+  ribbon's clipboard buttons and the keyboard shortcuts, which used to
+  reach the task list underneath whatever view was showing - and the
+  View ribbon gains a Deliverables group whose Reports button opens the
+  RAG summary, the status distribution and the Deliverable Status
+  Report (issues #108, #109).
+
 - **A new task lands where the cursor is.** Choosing Task from the New
   Task menu appended the row to the end of the plan no matter what was
   selected, and the keyboard route dropped it below the cursor retyped

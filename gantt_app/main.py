@@ -590,9 +590,11 @@ class GanttApp(ctk.CTk):
             content_frame, self.project,
             on_status=lambda m: self._show_status_for("Deliverables", m),
             on_project_changed=self.update_all,
+            on_task_edit=self.edit_task,
             project_tracker=self.project_tracker)
         self.deliverables_board.grid(
             row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+        self.toolbar.set_deliverables_board(self.deliverables_board)
 
         # What each footer tab lifts. Task Planning is the paned task view;
         # the other two are the boards overlaid on it.
@@ -719,7 +721,12 @@ class GanttApp(ctk.CTk):
         is settled by gantt_app.utils.shortcuts; see setup_keyboard_bindings.
         """
         def on_copy():
-            """Copy the selected rows."""
+            """Copy the selected rows of the view on top."""
+            if self._active_view == "Deliverables":
+                board = getattr(self, 'deliverables_board', None)
+                if board is not None:
+                    board.copy_deliverables()
+                return
             if not self._task_list_ready():
                 return
             selected = self.task_list.get_selected_task_ids()
@@ -727,7 +734,12 @@ class GanttApp(ctk.CTk):
                 self.task_list.copy_tasks(selected)
 
         def on_cut():
-            """Cut the selected rows."""
+            """Cut the selected rows of the view on top."""
+            if self._active_view == "Deliverables":
+                board = getattr(self, 'deliverables_board', None)
+                if board is not None:
+                    board.cut_deliverables()
+                return
             if not self._task_list_ready():
                 return
             selected = self.task_list.get_selected_task_ids()
@@ -735,7 +747,12 @@ class GanttApp(ctk.CTk):
                 self.task_list.cut_tasks(selected)
 
         def on_paste():
-            """Paste at the row the cursor is on."""
+            """Paste at the row the cursor is on, in the view on top."""
+            if self._active_view == "Deliverables":
+                board = getattr(self, 'deliverables_board', None)
+                if board is not None:
+                    board.paste_deliverables()
+                return
             if not self._task_list_ready():
                 return
             self.task_list.paste_tasks()

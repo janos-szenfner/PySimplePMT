@@ -79,6 +79,67 @@ def progress_for_status(status: str, current: int = 0) -> int:
     return current if 0 < current < 100 else 1
 
 
+#: The five health states a deliverable row or a whole list can be in.
+#: 'done' is green, 'on_track' blue, 'not_started' gray, 'at_risk' amber
+#: and 'overdue' red - the colors the Deliverables board paints them in.
+DELIVERABLE_HEALTHS = ('done', 'on_track', 'not_started',
+                     'at_risk', 'overdue')
+
+
+def deliverable_health(deliverable: 'Deliverable',
+                       today=None) -> str:
+    """
+    The health one deliverable row is in.
+
+    Done is green; a row owed before today and not finished is red. Between
+    those, anything with progress is on track (blue) and anything without
+    is not yet started (gray). Deliverables carry no start date, so "not
+    yet due to start" reads as the row nobody has begun - a leaf at 0%
+    whose date is still ahead.
+    """
+    today = today or datetime.now().date()
+    if deliverable.progress >= 100 or deliverable.status == 'Done':
+        return 'done'
+    if (deliverable.due_date
+            and deliverable.due_date.date() < today):
+        return 'overdue'
+    if deliverable.progress > 0 or deliverable.status == 'In Progress':
+        return 'on_track'
+    return 'not_started'
+
+
+def overall_deliverable_health(deliverables, today=None) -> str:
+    """
+    The one answer a whole deliverable list is worth.
+
+    WHAT THE RULE IS:
+    -----------------
+    The worst flag wins, the way the Deliverables view reads it: green
+    only when every row is done; blue while nothing is overdue; amber once
+    a row is late but the list's final deadline - the furthest due date
+    owed - is still ahead; red when the delay has run past that deadline,
+    or when the final deadline has passed and rows are still unfinished.
+    An empty list counts as not started.
+    """
+    today = today or datetime.now().date()
+    items = [d for d in deliverables or () if d is not None]
+    if not items:
+        return 'not_started'
+
+    healths = [deliverable_health(d, today) for d in items]
+    if all(h == 'done' for h in healths):
+        return 'done'
+
+    deadlines = [d.due_date.date() for d in items if d.due_date]
+    final_deadline = max(deadlines) if deadlines else None
+    deadline_passed = final_deadline is not None and final_deadline < today
+    if deadline_passed:
+        return 'overdue'
+    if 'overdue' in healths:
+        return 'at_risk'
+    return 'on_track'
+
+
 def rolled_up_deliverable_progress(children, tasks=()) -> int:
     """
     The completion a deliverable takes from the items under it.

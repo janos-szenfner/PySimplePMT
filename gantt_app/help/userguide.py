@@ -1197,20 +1197,26 @@ GUIDE_SECTIONS = (
             "that row instead. Right and Left arrow keys expand and "
             "collapse a branch.",
 
-            "Double-click a cell to edit it - names, tags, due dates, "
-            "weights and progress take typing, while status and priority "
-            "offer pick lists. The Assignee cell opens a checklist "
-            "instead: a row can belong to several people and to whole "
-            "teams at once, so the picker ticks any number of them. "
-            "Click a column heading to "
+            "Double-click a row to open its editor - the name, status, "
+            "progress, weight, responsible, due date, priority, tags, "
+            "task assignments and the description/acceptance criteria all "
+            "in one window, saved as a single undoable change. Status, "
+            "priority and responsible keep their own quick pickers on "
+            "their cells; a double-click on an assigned task opens that "
+            "task's own editor. Click a column heading to "
             "sort by it within each group; click again to reverse. The "
             "filter box and the status dropdown narrow the rows, keeping "
             "the parents of whatever matched so context is never lost.",
 
-            "A due date in the past colours the row red until it is "
-            "done; a Done row is green. Right-click for Details to open "
-            "the description and acceptance criteria, and for Export to "
-            "write the marked rows - or the whole list - to CSV or JSON. "
+            "A row's text takes its health colour: grey while nobody has "
+            "started it, blue on track, red once its due date has passed "
+            "and green when it is done, with the header's Overall chip "
+            "answering the same question for the whole list. Right-click "
+            "offers the task list's own order - moves, indent and "
+            "outdent, new and edit, copy, cut and paste - and Export "
+            "writes the marked rows, or the whole list, to CSV or JSON. "
+            "The ribbon's Reports button, on the View page while this tab "
+            "is on top, opens the RAG summary and the status report. "
             "Everything the grid changes is undoable with the same "
             "Edit > Undo the task list uses.",
         ],

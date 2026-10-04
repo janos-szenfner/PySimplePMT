@@ -184,6 +184,13 @@ class RibbonBar(IconToolbar):
                        "assigned tasks",
                    check='resource_grid', key='resource_grid'),
             )),
+            # Shown only while the footer's Deliverables tab is on top.
+            ("Deliverables", (
+                _L('dashboard', 'Reports', 'open_deliverable_reports',
+                   tip="Deliverable reports - status, RAG and progress "
+                       "charts",
+                   key='deliverable_reports'),
+            )),
             ("Analysis", (
                 _L('critical_path', 'Critical', 'toggle_critical_path_rows',
                    tip="Highlight the Critical Path",
@@ -296,6 +303,7 @@ class RibbonBar(IconToolbar):
         'show_critical_path', 'show_log', 'show_about', 'show_changelog',
         'show_help', 'open_grid_filter', 'clear_grid_filter',
         'toggle_resource_grid', 'preview_leveling', 'level_all',
+        'open_deliverable_reports',
     )
 
     #: Groups that belong to one footer-tab view and stay hidden while any
@@ -303,6 +311,7 @@ class RibbonBar(IconToolbar):
     #: name in the footer tab bar. set_view_context shows and hides them.
     CONTEXT_GROUPS = {
         ("View", "Resources"): "Resource Planning",
+        ("View", "Deliverables"): "Deliverables",
     }
 
     def __init__(self, master, project, galleries: Dict = None, **kwargs):
