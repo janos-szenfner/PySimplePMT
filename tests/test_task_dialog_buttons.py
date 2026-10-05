@@ -907,7 +907,7 @@ class TestWhereTheFieldsSit(DialogTestCase):
     def sections(self, dialog):
         """The section titles, in order."""
         return [text for text in self.labels(dialog)
-                if text in ("Basic Information", "Schedule", "Calendar",
+                if text in ("Basic Information", "Schedule",
                             "Gantt Chart Display")]
 
     def test_the_start_date_is_first_under_the_schedule_heading(self):
@@ -932,9 +932,14 @@ class TestWhereTheFieldsSit(DialogTestCase):
         self.assertTrue(dialog._field_is_live(dialog.duration_entry))
 
     def test_the_sections_read_in_order(self):
-        """What the row is, when it happens, which week, how it is drawn."""
+        """
+        What the row is, when it happens, how it is drawn.
+
+        The calendar dropdown joined the dates under Schedule rather than
+        heading a section of its own (issue #75).
+        """
         self.assertEqual(self.sections(self.dialog()),
-                         ["Basic Information", "Schedule", "Calendar",
+                         ["Basic Information", "Schedule",
                           "Gantt Chart Display"])
 
     def test_a_title_has_its_row_to_itself(self):
@@ -956,15 +961,14 @@ class TestWhereTheFieldsSit(DialogTestCase):
 
         for row, texts in titled.items():
             for text in texts:
-                if text in ("Basic Information", "Schedule", "Calendar",
+                if text in ("Basic Information", "Schedule",
                             "Gantt Chart Display"):
                     self.assertEqual(len(texts), 1,
                                      f"{text} shares row {row}")
 
     def test_every_section_after_the_first_is_ruled_off(self):
         """
-        Schedule, Calendar and Gantt Chart Display each open under a
-        separator.
+        Schedule and Gantt Chart Display each open under a separator.
 
         Basic Information opens the tab, where the top of the panel already
         does the dividing.
@@ -982,7 +986,7 @@ class TestWhereTheFieldsSit(DialogTestCase):
                   for child in grid.grid_slaves()
                   if isinstance(child, ctk.CTkLabel)}
 
-        for section in ("Schedule", "Calendar", "Gantt Chart Display"):
+        for section in ("Schedule", "Gantt Chart Display"):
             self.assertIn(titles[section] - 1, rules, section)
         self.assertNotIn(titles["Basic Information"] - 1, rules)
 
@@ -1089,19 +1093,21 @@ class TestWhereTheFieldsSit(DialogTestCase):
         self.assertEqual(placed["Start Date:"][1], 0)
         self.assertGreater(placed["Duration:"][0], placed["Start Date:"][0])
 
-    def test_the_calendar_section_is_left_out_with_its_menu(self):
+    def test_the_calendar_row_is_left_out_with_its_menu(self):
         """
-        A heading over nothing is worse than no heading.
+        A label over nothing is worse than no label.
 
         The menu is not built at all in a plan with no named calendars to
-        choose between, so the title it sits under cannot be either.
+        choose between, so the row it sits on cannot be either. The field
+        lives under Schedule since the Calendar section folded into it
+        (issue #75).
         """
         dialog = self.dialog()
         if dialog.calendar_var is not None:
-            self.assertIn("Calendar", self.sections(dialog))
+            self.assertIn("Working calendar:", self.labels(dialog))
             return
 
-        self.assertNotIn("Calendar", self.sections(dialog))
+        self.assertNotIn("Working calendar:", self.labels(dialog))
 
     def test_the_long_dropdowns_are_held_to_one_width(self):
         """

@@ -2,6 +2,17 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **The task form shows everything without scrolling.** The General tab
+  needed seventy pixels more than the window gave it, and the deadline
+  sat at the foot of a scrolled Advanced tab (issue #75). The rows now
+  pack closer - a heading is 13 rather than 15 points, the air between
+  fields is halved, and "Show in timeline" and "Bar shape" share a row -
+  while the calendar dropdown joins the dates under Schedule instead of
+  heading a section of its own. On the Advanced tab the Deadline section
+  is first, the order Microsoft Project opens with, rather than the last
+  thing a scrollbar hid. Every field stays readable and full-sized; only
+  the space around them tightened.
+
 - **Update Project reschedules work behind the status date.** The status
   date was only a marker - reaching it changed nothing on its own. The
   Project tab's new Status group, and Actions > Update Project..., open

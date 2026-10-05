@@ -911,5 +911,81 @@ class TestExportFailureReporting(unittest.TestCase):
         self.assertTrue(box.showerror.called or box.showwarning.called)
 
 
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestTaskFormFits(unittest.TestCase):
+    """
+    Issue #75: every tab of the task form shows its fields without a
+    scrollbar - the deadline could not even be found behind it.
+    """
+
+    def setUp(self):
+        import customtkinter as ctk
+        from gantt_app.core.calendarregistry import NamedCalendar
+        from gantt_app.core.workdaycalendar import WorkingCalendar
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.project = Project(name="Test Project")
+        # A parent and a named calendar: the fullest General tab there is.
+        phase = Task.create_phase("Phase", datetime(2026, 1, 1),
+                                  datetime(2026, 1, 30), task_id="P")
+        self.project.add_task(phase)
+        self.task = Task(
+            id="001", name="Task", start_date=datetime(2026, 1, 5),
+            end_date=datetime(2026, 1, 9), parent_task_id="P")
+        self.project.add_task(self.task)
+        self.project.calendars.add(NamedCalendar(
+            id="six", name="Six-day week", calendar=WorkingCalendar()))
+
+    def tearDown(self):
+        _shut_down(self.root)
+
+    def _tab_fits(self, dialog, tab_name):
+        """The scroll content of a tab is no taller than the viewport."""
+        from gantt_app.views.scrollframe import ScrollFrame
+
+        dialog.tabs.set(tab_name)
+        dialog.update_idletasks()
+        scroller = next(
+            widget for widget in dialog.tabs.tab(tab_name).winfo_children()
+            if isinstance(widget, ScrollFrame))
+        dialog.update_idletasks()
+        return (scroller.content.winfo_reqheight() <= scroller.winfo_height(),
+                scroller.content.winfo_reqheight(), scroller.winfo_height())
+
+    def test_the_general_tab_fits_without_scrolling(self):
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.task, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        fits, needed, given = self._tab_fits(dialog, "General")
+        self.assertTrue(
+            fits, f"General wants {needed}px of {given} - it scrolls")
+
+    def test_the_advanced_tab_fits_without_scrolling(self):
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.task, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        fits, needed, given = self._tab_fits(dialog, "Advanced")
+        self.assertTrue(
+            fits, f"Advanced wants {needed}px of {given} - it scrolls")
+
+    def test_the_deadline_is_the_first_advanced_section(self):
+        """The field the tab is most often opened for sits at the top."""
+        from gantt_app.views.taskdialogs import EditTaskDialog
+
+        dialog = EditTaskDialog(self.root, self.task, self.project,
+                                on_save=lambda t: None,
+                                on_delete=lambda i: None)
+        tab = dialog.advanced_tab
+        deadline_row = tab.deadline_entry.master.grid_info()["row"]
+        constraint_row = tab.constraint_menu.master.grid_info()["row"]
+        self.assertLess(deadline_row, constraint_row)
+
+
 if __name__ == '__main__':
     unittest.main()

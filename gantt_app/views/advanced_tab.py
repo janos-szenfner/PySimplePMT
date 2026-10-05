@@ -112,13 +112,16 @@ class AdvancedTab(ctk.CTkFrame):
         self._last_valid = {}
         self.grid_columnconfigure(1, weight=1)
 
-        # Order follows Task_Type_FRS §7.1: Constraint, then Task Type and
-        # Effort-Driven, then Deadline. (Is Milestone lives on the General
-        # tab.) The same order is the keyboard tab order, §12.1.
+        # Deadline first: it is the field this tab is most often opened
+        # for, and at the foot of the list it was the one a scrollbar hid
+        # (issue #75). Microsoft Project's own Advanced tab opens on it
+        # too. Constraint, then Task Type and Effort-Driven, then the
+        # calendar override follow. (Is Milestone lives on the General
+        # tab.) The same order is the keyboard tab order.
+        self._build_deadline()
         self._build_constraint()
         self._build_task_type()
         self._build_resource_calendars()
-        self._build_deadline()
         self._apply_constraint_state()
         self._apply_effort_state()
 
@@ -130,22 +133,22 @@ class AdvancedTab(ctk.CTkFrame):
         if rule:
             ttk.Separator(self, orient=tk.HORIZONTAL).grid(
                 row=self._row, column=0, columnspan=3, sticky=tk.EW,
-                pady=(16, 0), padx=4)
+                pady=(7, 0), padx=4)
             self._row += 1
         ctk.CTkLabel(self, text=text, anchor=tk.W,
-                     font=ctk.CTkFont(size=15, weight='bold')).grid(
+                     font=ctk.CTkFont(size=13, weight='bold')).grid(
             row=self._row, column=0, columnspan=3, sticky=tk.W,
-            padx=8, pady=(12 if rule else 6, 2))
+            padx=8, pady=(6 if rule else 2, 1))
         self._row += 1
 
     def _row_frame(self, label: str) -> ctk.CTkFrame:
         """A row with a caption on the left; returns a frame for the control."""
         caption = ctk.CTkLabel(self, text=label, anchor=tk.W)
         caption.grid(row=self._row, column=0, sticky=tk.W, padx=(8, 10),
-                     pady=6)
+                     pady=2)
         holder = ctk.CTkFrame(self, fg_color='transparent')
         holder.grid(row=self._row, column=1, columnspan=2, sticky=tk.EW,
-                    pady=6, padx=(0, 8))
+                    pady=2, padx=(0, 8))
         self._captions_for_row = caption
         self._row += 1
         return holder
@@ -156,7 +159,7 @@ class AdvancedTab(ctk.CTkFrame):
                      text_color=theme.MUTED_TEXT,
                      font=ctk.CTkFont(size=11)).grid(
             row=self._row, column=1, columnspan=2, sticky=tk.W, padx=(0, 8),
-            pady=(0, 4))
+            pady=(0, 2))
         self._row += 1
 
     # ------------------------------------------------------------------
@@ -164,7 +167,7 @@ class AdvancedTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _build_deadline(self):
         """The deadline date box, with a button to clear it back to N/A."""
-        self._heading("Deadline", rule=True)
+        self._heading("Deadline")
 
         holder = self._row_frame("Deadline:")
         holder.grid_columnconfigure(0, weight=1)
@@ -192,7 +195,7 @@ class AdvancedTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
     def _build_constraint(self):
         """The constraint type dropdown and the date it may need."""
-        self._heading("Constraint")
+        self._heading("Constraint", rule=True)
 
         holder = self._row_frame("Constraint type:")
         current = self.task.constraint_type

@@ -335,13 +335,13 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         if rule:
             ttk.Separator(parent, orient=tk.HORIZONTAL).grid(
                 row=self._next_row(), column=0,
-                columnspan=self.FIELD_COLUMNS, sticky=tk.EW, pady=(14, 0))
+                columnspan=self.FIELD_COLUMNS, sticky=tk.EW, pady=(7, 0))
 
         title = ctk.CTkLabel(parent, text=text, anchor=tk.W,
-                             font=ctk.CTkFont(size=15, weight='bold'))
+                             font=ctk.CTkFont(size=13, weight='bold'))
         title.grid(row=self._next_row(), column=0,
                    columnspan=self.FIELD_COLUMNS, sticky=tk.W,
-                   pady=(12 if rule else 4, 2))
+                   pady=(6 if rule else 2, 1))
         return title
 
     def _cell(self, where: str):
@@ -419,11 +419,11 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
                 logger.debug("Could not set the width of %s", label)
 
         caption = ctk.CTkLabel(parent, text=label)
-        caption.grid(row=row, column=column, sticky=label_sticky, pady=5,
+        caption.grid(row=row, column=column, sticky=label_sticky, pady=2,
                      padx=(15, 0) if column else 0)
         if widget is not None:
             widget.grid(row=row, column=column + 1, columnspan=span,
-                        sticky=sticky, pady=5)
+                        sticky=sticky, pady=2)
             self._field_labels[widget] = caption
             # Painted as it goes in, so every box on the form is coloured by
             # the same rule rather than only the ones something greys out
@@ -572,7 +572,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self._build_buttons()
 
         # Packed once the form inside it is finished; see below
-        self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(15, 5))
+        self.tabs.pack(fill=tk.BOTH, expand=True, padx=15, pady=(10, 4))
 
         self._watch_fields()
         self._watch_type()
@@ -888,7 +888,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         self.calendar_var = ctk.StringVar(value=active)
         self.calendar_menu = ctk.CTkOptionMenu(frame, variable=self.calendar_var,
                                                values=labels)
-        self._heading(frame, "Calendar", rule=True)
+        # A schedule choice rather than a section of its own: it joins the
+        # dates and duration under Schedule, which is where a reader goes
+        # looking for it (issue #75).
         self._field(frame, "Working calendar:", self.calendar_menu,
                     where=self.HALF)
 
@@ -1336,23 +1338,24 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         return bool(self.estimated_var.get())
 
     def _build_show_in_timeline(self, frame):
-        """The show in timeline checkbox."""
+        """The show in timeline checkbox, opening the display row."""
         self.show_in_timeline_var = ctk.BooleanVar(
             value=self.template.show_in_timeline)
         self.show_in_timeline_check = ctk.CTkCheckBox(
             frame, text="", variable=self.show_in_timeline_var
         )
         self._field(frame, "Show in timeline:", self.show_in_timeline_check,
-                    sticky=tk.W)
+                    sticky=tk.W, where=self.LEFT)
 
     def _build_shape(self, frame):
-        """The shape dropdown."""
+        """The shape dropdown, closing the row the timeline tick opened."""
         self.shape_var = ctk.StringVar(value=self.template.shape)
         self.shape_menu = ctk.CTkOptionMenu(
             frame, variable=self.shape_var,
-            values=["Default", "Rectangle", "Rounded"]
+            values=["Default", "Rectangle", "Rounded"], width=self.MENU_WIDTH
         )
-        self._field(frame, "Bar shape:", self.shape_menu, where=self.HALF)
+        self._field(frame, "Bar shape:", self.shape_menu,
+                    sticky=tk.W, where=self.RIGHT)
 
     def _build_progress(self, frame):
         """
@@ -1492,7 +1495,7 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         cannot take back.
         """
         frame = ctk.CTkFrame(self)
-        frame.pack(fill=tk.X, padx=20, pady=10)
+        frame.pack(fill=tk.X, padx=20, pady=6)
 
         #: The action buttons by label, so their styling can be checked and
         #: so a subclass can reach one without hunting through the frame
