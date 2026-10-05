@@ -177,6 +177,8 @@ def rolled_up_deliverable_progress(children, tasks=()) -> int:
         weights = [max(0.0, float(getattr(child, 'weight', 1.0) or 0.0))
                    for child in children]
     except (TypeError, ValueError):
+        logger.warning("A child weight is not a number; counting every "
+                       "child equally")
         weights = [1.0] * len(children)
 
     for task in tasks or ():
@@ -335,8 +337,14 @@ class Deliverable:
             try:
                 due_date = datetime.fromisoformat(due_date)
             except (TypeError, ValueError):
+                logger.warning("Deliverable %r has an unreadable due date "
+                               "%r; dropping it",
+                               data.get('name', 'unknown'), due_date)
                 due_date = None
         elif not isinstance(due_date, datetime) and due_date is not None:
+            logger.warning("Deliverable %r has a due date that is not a "
+                           "date %r; dropping it",
+                           data.get('name', 'unknown'), due_date)
             due_date = None
 
         # Files from before assignees became a list carry a single

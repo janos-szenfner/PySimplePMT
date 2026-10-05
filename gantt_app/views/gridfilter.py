@@ -529,7 +529,10 @@ def definition_matching_ids(project, definition: Dict,
         try:
             return filterlang.query_matching_ids(
                 project, definition['query'], variances)
-        except filterlang.QueryError:
+        except filterlang.QueryError as error:
+            logger.warning("Saved filter query %r does not parse: %s; it "
+                           "matches nothing",
+                           definition['query'], error)
             return set()
     rules = definition.get('rules') or []
     if not rules:

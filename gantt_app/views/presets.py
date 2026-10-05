@@ -341,7 +341,10 @@ class PresetManager:
                 loaded = json.load(handle)
                 if isinstance(loaded, dict):
                     existing = loaded
-        except (OSError, ValueError):
+        except ValueError:
+            logger.warning("Settings file %s is not readable JSON; the "
+                           "other keys it held will be lost on save", path)
+        except OSError:
             pass
 
         existing[self.SETTINGS_KEY] = [p.to_dict() for p in self._custom]

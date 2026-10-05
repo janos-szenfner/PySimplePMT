@@ -291,6 +291,8 @@ class AboutWindow(ctk.CTkToplevel):
 
     def _download_failed(self, message, integrity):
         """A download that could not be trusted or completed."""
+        logger.warning("Update download failed%s: %s",
+                       " on integrity" if integrity else "", message)
         self._downloading = False
         try:
             self._install_button.configure(state="normal")

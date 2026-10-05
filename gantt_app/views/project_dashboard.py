@@ -194,21 +194,27 @@ class ProjectDashboardFrame(ctk.CTkFrame):
             if len(self.enabled) >= MAX_PANELS:
                 var.set(False)
                 self._note_cap()
+                logger.info("Panel %r refused: the dashboard already shows "
+                            "%d", pid, MAX_PANELS)
                 return
             # Registry order, so the grid does not reshuffle on a tick:
             # the panels list - not the clicking order - decides where
             # each one lands.
             self.enabled = [p for p in boardrender.all_panel_ids()
                             if p in self.enabled or p == pid]
+            logger.info("Panel %r enabled; showing %s", pid, self.enabled)
         else:
             if pid not in self.enabled:
                 return
             if len(self.enabled) <= 1:
                 var.set(True)
+                logger.info("Panel %r stays: the dashboard keeps at least "
+                            "one panel", pid)
                 return
             self.enabled = [p for p in self.enabled if p != pid]
             if self.maximized == pid:
                 self.maximized = None
+            logger.info("Panel %r disabled; showing %s", pid, self.enabled)
         self._panels_told()
         self.refresh()
 
@@ -234,6 +240,9 @@ class ProjectDashboardFrame(ctk.CTkFrame):
         if pid == self.maximized:
             return
         self.maximized = pid if pid in self.enabled else None
+        logger.info("Dashboard %s",
+                    f"maximized {self.maximized!r}" if self.maximized
+                    else "restored to the grid")
         if self.maximized and not self.restore_btn.winfo_ismapped():
             self.restore_btn.pack(side='left', padx=4, pady=4)
         elif not self.maximized:
@@ -369,10 +378,16 @@ class ProjectDashboardFrame(ctk.CTkFrame):
             self._glyph_rects = {}
             return
 
-        rows = dashboard_rows(self._get_project())
-        landed = boardrender.render_dashboard(
-            pen, rows, palette, self.enabled, self.maximized,
-            width=width, height=height)
+        try:
+            rows = dashboard_rows(self._get_project())
+            landed = boardrender.render_dashboard(
+                pen, rows, palette, self.enabled, self.maximized,
+                width=width, height=height)
+        except Exception:
+            logger.exception("Could not draw the dashboard")
+            self._panel_rects = {}
+            self._glyph_rects = {}
+            return
 
         self._panel_rects = {p['id']: p['rect'] for p in landed}
         self._glyph_rects = {}

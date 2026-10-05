@@ -1263,6 +1263,9 @@ class Task:
             try:
                 start_date = datetime.fromisoformat(start_date)
             except (ValueError, TypeError):
+                logger.warning("Task %r has an unreadable start date %r; "
+                               "using today",
+                               data.get('name', 'unknown'), start_date)
                 start_date = datetime.now()
         
         # Handle end_date (could be string, datetime, or None)
@@ -1271,6 +1274,9 @@ class Task:
             try:
                 end_date = datetime.fromisoformat(end_date)
             except (ValueError, TypeError):
+                logger.warning("Task %r has an unreadable end date %r; "
+                               "dropping it",
+                               data.get('name', 'unknown'), end_date)
                 end_date = None
         
         # Advanced tab: deadline and constraint. All absent in plans written
@@ -1280,6 +1286,9 @@ class Task:
             try:
                 deadline = datetime.fromisoformat(deadline)
             except (ValueError, TypeError):
+                logger.warning("Task %r has an unreadable deadline %r; "
+                               "dropping it",
+                               data.get('name', 'unknown'), deadline)
                 deadline = None
         constraint_type = data.get('constraint_type', 'NA')
         if constraint_type not in CONSTRAINT_TYPES:
@@ -1291,6 +1300,9 @@ class Task:
             try:
                 constraint_date = datetime.fromisoformat(constraint_date)
             except (ValueError, TypeError):
+                logger.warning("Task %r has an unreadable constraint date %r; "
+                               "dropping it",
+                               data.get('name', 'unknown'), constraint_date)
                 constraint_date = None
         # A constraint that carries no date cannot keep one - an older file
         # or a hand-edit that left a stray date is tidied here.
@@ -1307,6 +1319,9 @@ class Task:
             try:
                 legacy_floor = datetime.fromisoformat(legacy_floor)
             except (ValueError, TypeError):
+                logger.warning("Task %r has an unreadable earliest-begin %r; "
+                               "dropping it",
+                               data.get('name', 'unknown'), legacy_floor)
                 legacy_floor = None
         if (legacy_floor is not None and constraint_type == 'NA'):
             constraint_type = 'SNET'
@@ -1593,6 +1608,8 @@ class Project:
         try:
             number = int(float(value))
         except (TypeError, ValueError):
+            logger.warning("Unreadable priority %r; using the default",
+                           value)
             return DEFAULT_PROJECT_PRIORITY
         return max(MIN_PROJECT_PRIORITY, min(MAX_PROJECT_PRIORITY, number))
 
@@ -4088,8 +4105,15 @@ class Project:
         try:
             hours = float(value)
         except (TypeError, ValueError):
+            if value is not None:
+                logger.warning("Unreadable hours-per-day %r; using %.1f",
+                               value, DEFAULT_HOURS_PER_DAY)
             return DEFAULT_HOURS_PER_DAY
-        return hours if hours > 0 else DEFAULT_HOURS_PER_DAY
+        if hours <= 0:
+            logger.warning("Hours-per-day %r is not positive; using %.1f",
+                           value, DEFAULT_HOURS_PER_DAY)
+            return DEFAULT_HOURS_PER_DAY
+        return hours
 
     @staticmethod
     def _read_grid_column_order(value) -> List[str]:
@@ -4233,12 +4257,18 @@ class Project:
             try:
                 start_date = datetime.fromisoformat(data['start_date'])
             except (ValueError, TypeError):
+                logger.warning("Project %r has an unreadable start date %r; "
+                               "dropping it",
+                               data.get('name', 'unknown'), data['start_date'])
                 start_date = None
         
         if data.get('end_date'):
             try:
                 end_date = datetime.fromisoformat(data['end_date'])
             except (ValueError, TypeError):
+                logger.warning("Project %r has an unreadable end date %r; "
+                               "dropping it",
+                               data.get('name', 'unknown'), data['end_date'])
                 end_date = None
         
         # Create empty project first. A file saved before projects carried a

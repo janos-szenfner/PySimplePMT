@@ -43,8 +43,20 @@ def _read_settings() -> Dict:
     try:
         with open(path, 'r', encoding='utf-8') as handle:
             loaded = json.load(handle)
-            return loaded if isinstance(loaded, dict) else {}
-    except (OSError, ValueError):
+            if not isinstance(loaded, dict):
+                logger.warning("Settings file %s does not hold an object; "
+                               "reading it as empty", path)
+                return {}
+            return loaded
+    except ValueError:
+        logger.warning("Settings file %s is not readable JSON; reading it "
+                       "as empty", path)
+        return {}
+    except OSError:
+        # A missing file is normal on a first run; anything else worth
+        # reporting is the unreadable file the reader will notice anyway.
+        if path.exists():
+            logger.warning("Could not read settings file %s", path)
         return {}
 
 

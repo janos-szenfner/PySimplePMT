@@ -716,7 +716,9 @@ class MermaidImporter:
                 try:
                     task.progress = max(0, min(100, int(entry['progress'])))
                 except (TypeError, ValueError):
-                    pass
+                    logger.warning("Task %r has an unreadable progress %r in "
+                                   "the chart; leaving it alone",
+                                   task.name, entry['progress'])
 
             # A milestone is a flag, not a type (issue #73): the chart
             # syntax already put it on the task, the carried entry repeats

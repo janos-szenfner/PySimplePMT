@@ -2488,6 +2488,8 @@ class DeliverablesBoard(ctk.CTkFrame):
             try:
                 values = form_values()
             except Exception:
+                logger.exception("Could not read the deliverable form; "
+                                 "treating it as changed")
                 return True
             current = current_values()
             return any(values.get(key) != current.get(key)

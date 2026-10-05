@@ -1325,11 +1325,14 @@ class ProjectStateTracker:
         # Find the task and its index
         task = self.project.get_task_by_id(task_id)
         if not task:
+            logger.warning("Cannot remove task %s: no such task", task_id)
             return False
         
         try:
             index = self.project.tasks.index(task)
         except ValueError:
+            logger.warning("Cannot remove task %s: it is not in the task "
+                           "list", task_id)
             return False
         
         command = create_remove_task_command(self.project, task_id, task, index)

@@ -468,6 +468,12 @@ def sanitize_panel_ids(ids) -> List[str]:
     a settings file holding more simply stops at the fourth.
     """
     known = all_panel_ids()
+    unknown = [pid for pid in (ids or []) if pid not in known]
+    if unknown:
+        logger.warning("Ignoring unknown dashboard panel(s) %s", unknown)
+    if ids and len([pid for pid in ids if pid in known]) > MAX_PANELS:
+        logger.warning("More than %d panels saved; keeping the first %d",
+                       MAX_PANELS, MAX_PANELS)
     return [pid for pid in (ids or []) if pid in known][:MAX_PANELS]
 
 
@@ -1182,6 +1188,10 @@ def render_timeline(pen, project, style_id: str, palette,
                  fill=palette['tick'], size=12)
         return
     style = next((draw for sid, _l, draw in TIMELINE_STYLES
-                  if sid == style_id), draw_timeline_lanes)
+                  if sid == style_id), None)
+    if style is None:
+        logger.warning("Unknown timeline style %r; drawing the lanes "
+                       "style instead", style_id)
+        style = draw_timeline_lanes
     pad = 14
     style(pen, items, palette, (pad, pad, width - pad, height - pad))

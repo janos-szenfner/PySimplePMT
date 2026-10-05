@@ -156,6 +156,8 @@ def _parse_duration_days(text: Optional[str]) -> Optional[int]:
         try:
             value = float(number) if number else 0.0
         except ValueError:
+            logger.debug("Duration %r holds a malformed number %r; "
+                         "reading it as 0", text, number)
             value = 0.0
         number = ''
         if character == 'H':
@@ -360,6 +362,9 @@ def _parse_priority(text: Optional[str]) -> str:
     try:
         score = int(float(text))
     except (TypeError, ValueError):
+        if text is not None:
+            logger.info("Unreadable priority %r in the MS Project file; "
+                        "reading it as Medium", text)
         return 'Medium'
     return PRIORITY_SCORES[min(PRIORITY_SCORES, key=lambda k: abs(k - score))]
 
@@ -400,9 +405,12 @@ def _parse_dependencies(element: ET.Element,
                            "the link is dropped", predecessor_uid)
             continue
 
+        raw_lag = _child_text(link, 'LinkLag', '0')
         try:
-            lag_tenths = float(_child_text(link, 'LinkLag', '0'))
+            lag_tenths = float(raw_lag)
         except (TypeError, ValueError):
+            logger.warning("A link to task UID %r has an unreadable lag %r; "
+                           "reading it as 0 days", predecessor_uid, raw_lag)
             lag_tenths = 0.0
 
         links.append({
@@ -447,9 +455,13 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
         if _child_text(element, 'OutlineLevel') == '0':
             continue
 
+        raw_level = _child_text(element, 'OutlineLevel', '1')
         try:
-            level = max(int(_child_text(element, 'OutlineLevel', '1')), 1)
+            level = max(int(raw_level), 1)
         except (TypeError, ValueError):
+            logger.warning("Task %r has an unreadable outline level %r; "
+                           "reading it as top level",
+                           _child_text(element, 'Name', 'unnamed'), raw_level)
             level = 1
 
         uid = _child_text(element, 'UID')
@@ -475,10 +487,12 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
         del stack[level - 1:]
         parent = stack[-1] if stack else None
 
+        raw_progress = _child_text(element, 'PercentComplete', '0')
         try:
-            progress = max(0, min(100, int(float(
-                _child_text(element, 'PercentComplete', '0')))))
+            progress = max(0, min(100, int(float(raw_progress))))
         except (TypeError, ValueError):
+            logger.warning("Task %r has an unreadable percent complete %r; "
+                           "reading it as 0%%", name, raw_progress)
             progress = 0
 
         task = Task(

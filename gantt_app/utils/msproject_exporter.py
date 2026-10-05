@@ -516,4 +516,5 @@ def export_project_to_msproject(project: Project, filepath: str) -> bool:
         try:
             temp_path.unlink(missing_ok=True)
         except Exception:
-            pass
+            logger.debug("Could not remove the temporary export file %s",
+                         temp_path)

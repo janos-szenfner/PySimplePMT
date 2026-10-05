@@ -108,6 +108,8 @@ def default_ssl_context() -> ssl.SSLContext:
         import certifi
         return ssl.create_default_context(cafile=certifi.where())
     except Exception:
+        logger.info("certifi is not available; falling back to the system "
+                    "certificate store for the update check")
         return ssl.create_default_context()
 
 

@@ -188,6 +188,8 @@ class CanvasPen(BasePen):
         except Exception:
             # No interpreter or no font - an estimate is better than a
             # failure for something that is only used to clip labels.
+            logger.debug("Could not measure %r at size %s; estimating its "
+                         "width", content, size)
             return len(str(content)) * size * 0.6
 
 
@@ -380,4 +382,6 @@ class ImagePen(BasePen):
         try:
             return font.getlength(str(content)) / self.scale
         except AttributeError:
+            logger.debug("Could not measure %r at size %s; estimating its "
+                         "width", content, size)
             return len(str(content)) * size * 0.6

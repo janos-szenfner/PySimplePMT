@@ -700,6 +700,7 @@ def export_project_to_mermaid(project: Project, filepath: str,
             os.replace(path, Path(f"{filepath}.bak"))
         os.replace(temp_path, path)
         
+        logger.info("Exported %r to %s", project.name, filepath)
         return True
         
     except Exception as e:
@@ -711,4 +712,5 @@ def export_project_to_mermaid(project: Project, filepath: str,
         try:
             temp_path.unlink(missing_ok=True)
         except Exception:
-            pass
+            logger.debug("Could not remove the temporary export file %s",
+                         temp_path)

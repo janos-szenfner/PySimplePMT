@@ -92,7 +92,8 @@ class JSONFileIO:
                 try:
                     os.replace(path, bak_path)
                 except OSError:
-                    pass
+                    logger.warning("Could not roll %s to the backup name; "
+                                   "the save continues without one", path)
 
             os.replace(temp_path, path)
             return True
@@ -104,7 +105,8 @@ class JSONFileIO:
                 try:
                     temp_path.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    logger.debug("Could not remove the temporary save "
+                                 "file %s", temp_path)
     
     @classmethod
     def load_project(cls, filepath: str) -> Optional[Project]:

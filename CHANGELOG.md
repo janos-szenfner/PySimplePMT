@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Logging covers the gaps the recent features left.** The dashboard's
+  panel ticks and maximize, the timeline's style picker, clearing the
+  grid's sort and filters, and a sort that fails mid-rebuild all write
+  to the log now. So do the quiet corners that ate trouble before: a
+  date or weight a saved file holds but the reader cannot parse warns
+  rather than silently defaulting, a corrupt settings.json is said
+  rather than read as empty, a backup that could not be made on save is
+  noted, and import fields that arrive malformed (a completion, a
+  duration, a link's lag, an outline level) warn with the task they
+  belong to instead of landing as zero unexplained.
+
 ## 1.72.0 - 2026-09-30
 
 - **The task list sorts, and its headings can carry filters.** A click

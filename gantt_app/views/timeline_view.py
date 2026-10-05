@@ -156,6 +156,7 @@ class TimelineFrame(ctk.CTkFrame):
         if style_id == self.style_id:
             return
         self.style_id = style_id
+        logger.info("Timeline style changed to %r", style_id)
         self._name_the_style()
         if self._on_style_changed:
             try:
@@ -214,9 +215,13 @@ class TimelineFrame(ctk.CTkFrame):
             logger.debug("Timeline not drawn at %sx%s; too small",
                          width, height)
             return
-        boardrender.render_timeline(
-            CanvasPen(self.canvas), self._get_project(), self.style_id,
-            theme.view_palette(), width=width, height=height)
+        try:
+            boardrender.render_timeline(
+                CanvasPen(self.canvas), self._get_project(), self.style_id,
+                theme.view_palette(), width=width, height=height)
+        except Exception:
+            logger.exception("Could not draw the %r timeline",
+                             self.style_id)
 
     def set_project(self, project):
         """Point the timeline at a different plan - same API as the rest."""

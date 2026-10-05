@@ -3683,11 +3683,15 @@ class DragDropTaskList(ctk.CTkFrame):
 
     def clear_grid_filters(self):
         """Put every row back, whether a filter was set or not."""
+        had_filter = (self._filter_visible is not None
+                      or self._autofilter_allowed)
         self._filter_visible = None
         self._filter_matches = set()
         self._autofilter_allowed = {}
         self._autofilter_visible = None
         self.update_task_list()
+        if had_filter:
+            logger.info("Grid filters cleared; every row is shown")
 
     def grid_filters_active(self) -> bool:
         """Whether any column filter is ruling rows out."""
@@ -3786,6 +3790,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self._sort_keys = []
         self._refresh_headings()
         self.update_task_list()
+        logger.info("Sort cleared; rows are in plan order")
 
     def _refresh_headings(self):
         """
@@ -3861,6 +3866,8 @@ class DragDropTaskList(ctk.CTkFrame):
         }
         direction = next(
             (d for c, d in self._sort_keys if c == column), None)
+        logger.debug("AutoFilter opened for %s (direction=%s)",
+                     column, direction)
         popup = AutoFilterPopup(
             self.tree, column,
             values=autofilter_values(self.project, column, context),
@@ -4082,11 +4089,16 @@ class DragDropTaskList(ctk.CTkFrame):
                 'numbers': self._display_ids,
                 'conflicts': None,
             }
-            roots = gridsort.sort_tasks(roots, self._sort_keys,
-                                        self.project, sort_context)
-            for siblings in children.values():
-                siblings[:] = gridsort.sort_tasks(
-                    siblings, self._sort_keys, self.project, sort_context)
+            try:
+                roots = gridsort.sort_tasks(roots, self._sort_keys,
+                                            self.project, sort_context)
+                for siblings in children.values():
+                    siblings[:] = gridsort.sort_tasks(
+                        siblings, self._sort_keys, self.project,
+                        sort_context)
+            except Exception:
+                logger.exception("Sorting by %s failed; rows stay in "
+                                 "plan order", self._sort_keys)
 
         # Roots first, then each subtree depth-first through an explicit
         # stack, so a row lands under its parent the moment the parent is

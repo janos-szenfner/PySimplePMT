@@ -1430,7 +1430,9 @@ class TaskFormDialog(FormChecks, ctk.CTkToplevel):
         try:
             is_summary = bool(self.project.get_subtasks(self.template.id))
         except Exception:
-            is_summary = False
+            logger.debug("Could not ask whether %r has children; the "
+                         "Advanced tab shows editable",
+                         getattr(self.template, 'id', 'unknown'))
 
         scroller = ScrollFrame(tab)
         self.advanced_tab = AdvancedTab(scroller.content, self.template,

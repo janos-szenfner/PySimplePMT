@@ -27,6 +27,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+from gantt_app.utils.log import get_logger
+
+logger = get_logger(__name__)
+
 #: The designed logo, shipped beside this module and bundled into the package
 #: (see packaging/pysimplepmt.spec, which adds it to the frozen build's
 #: gantt_app/resources so Path(__file__) still finds it when frozen).
@@ -115,6 +119,8 @@ def draw_icon(size: int = 256) -> Image.Image:
     try:
         source = _square_crop(load_logo())
     except Exception:
+        logger.warning("Could not read the logo at %s; drawing a blank "
+                       "icon tile", LOGO_PATH)
         return Image.new('RGBA', (size, size), (0, 0, 0, 0))
 
     tile = source.resize((canvas, canvas), Image.LANCZOS)
@@ -170,6 +176,7 @@ def icon_photo(master, size: int = 64):
     try:
         image = draw_icon(size)
     except Exception:
+        logger.warning("Could not draw the application icon")
         return None
 
     for image_format, options in (('PNG', {}), ('GIF', {'transparency': 0})):
@@ -179,6 +186,9 @@ def icon_photo(master, size: int = 64):
             encoded = base64.b64encode(buffer.getvalue()).decode('ascii')
             return tk.PhotoImage(master=master, data=encoded)
         except Exception:
+            logger.debug("Tk would not take the icon as %s; trying the "
+                         "next format", image_format)
             continue
 
+    logger.warning("Tk took the icon in no format; the window gets none")
     return None

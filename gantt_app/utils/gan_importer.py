@@ -326,6 +326,10 @@ class GANImporter:
         try:
             return max(0, min(100, int(float(raw))))
         except (TypeError, ValueError):
+            if raw is not None:
+                logger.warning("Task %r has an unreadable completion %r; "
+                               "reading it as 0%%",
+                               task_elem.get('name', 'unnamed'), raw)
             return 0
 
     def _task_duration(self, task_elem: ET.Element) -> int:
@@ -339,6 +343,10 @@ class GANImporter:
         try:
             return max(0, int(float(raw)))
         except (TypeError, ValueError):
+            if raw is not None:
+                logger.warning("Task %r has an unreadable duration %r; "
+                               "reading it as 0 days",
+                               task_elem.get('name', 'unnamed'), raw)
             return 0
 
     def _is_milestone(self, task_elem: ET.Element, duration: int,
@@ -473,9 +481,13 @@ class GANImporter:
                 successor_id = depend_elem.get('id')
                 if successor_id is None:
                     continue
+                raw_lag = depend_elem.get('difference')
                 try:
-                    lag = int(float(depend_elem.get('difference', 0)))
+                    lag = int(float(raw_lag or 0))
                 except (TypeError, ValueError):
+                    logger.warning("A link out of task %r has an unreadable "
+                                   "lag %r; reading it as 0 days",
+                                   predecessor_id, raw_lag)
                     lag = 0
 
                 # GanttProject writes hardness="Strong" or "Rubber", which
