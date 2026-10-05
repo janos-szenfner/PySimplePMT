@@ -588,7 +588,7 @@ GUIDE_SECTIONS = (
             "detaches from the desktop. Sync with system appears beside it "
             "only while that manual choice is in force, and puts it back.",
 
-            "The same choice lives under File > Project Settings, on the "
+            "The same choice lives under File > Project Info, on the "
             "System UI tab: a Night mode toggle for day or night, and a Sync "
             "with System button to hand the choice back to the desktop. The "
             "choice is remembered between runs.",
@@ -1294,7 +1294,7 @@ GUIDE_SECTIONS = (
             "it says - see Marking rows up above.",
 
             "The pencil edits the selected task. Renaming the plan itself is "
-            "File > Project Settings.",
+            "File > Project Info.",
 
             "Creating work items is on Edit > Create, and opening or "
             "starting a plan is on the File menu.",

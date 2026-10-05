@@ -1566,7 +1566,7 @@ class Toolbar(ctk.CTkFrame):
                     {"text": "Save Project...", "command": self.save_project},
                     {"text": "Save Project As...", "command": self.save_project_as},
                     {"text": "Close Project", "command": self.close_project},
-                    {"text": "Project Settings...", "command": self.open_settings},
+                    {"text": "Project Info...", "command": self.open_settings},
                 ],
             },
             {
@@ -3949,7 +3949,7 @@ class Toolbar(ctk.CTkFrame):
         """
         Put the application into one of the three theme modes.
 
-        The appearance controls moved to Project Settings > System UI (see
+        The appearance controls moved to Settings > System UI (see
         SettingsWindow), but these named methods stay as the toolbar's theme
         API - the day/night button and the tests reach the ThemeController
         through them.
@@ -4475,7 +4475,7 @@ class Toolbar(ctk.CTkFrame):
         ------------------
         The plan's status date when it has one, and today when it has not.
         A status date is what a plan is frozen against for a reporting
-        meeting - see Project Settings - and "on track" measured against a
+        meeting - see Project Info - and "on track" measured against a
         different day than the rest of the report is worse than useless.
 
         Which date was used is said in the log and in the message either

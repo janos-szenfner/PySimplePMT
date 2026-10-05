@@ -78,11 +78,11 @@ class TestMenuContents(unittest.TestCase):
         self.tree = menu_tree()
 
     def test_file_menu(self):
-        """File holds the file lifecycle actions and Project Settings."""
+        """File holds the file lifecycle actions and Project Info."""
         self.assertEqual(
             labels(find(self.tree, 'File')['items']),
             ['New Project...', 'Open Project...', 'Save Project...',
-             'Save Project As...', 'Close Project', 'Project Settings...'])
+             'Save Project As...', 'Close Project', 'Project Info...'])
 
     def test_actions_menu_nests_import_and_export(self):
         """Actions carries Update Project, then Baseline, Import and
@@ -114,10 +114,10 @@ class TestMenuContents(unittest.TestCase):
                           'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
 
     def test_project_settings_opens_the_unified_tabbed_hub(self):
-        """Project Settings, now under File, opens the tabbed settings hub."""
+        """Project Info, under File, opens the tabbed settings hub (#91)."""
         items = find(self.tree, 'File')['items']
         project_settings = next(i for i in items
-                                if i['text'] == 'Project Settings...')
+                                if i['text'] == 'Project Info...')
 
         self.assertNotIn('submenu', project_settings)
         self.assertTrue(callable(project_settings['command']))
@@ -160,7 +160,7 @@ class TestMenuContents(unittest.TestCase):
         self.assertNotIn('Help', view)
 
     def test_the_appearance_controls_left_the_view_menu(self):
-        """System UI mode moved to Project Settings > System UI tab."""
+        """System UI mode moved to Settings > System UI tab."""
         view = labels(find(self.tree, 'View')['items'])
         self.assertNotIn('System UI mode', view)
 

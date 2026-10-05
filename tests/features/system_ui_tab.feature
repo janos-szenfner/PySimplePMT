@@ -1,4 +1,4 @@
-Feature: The System UI tab in Project Settings
+Feature: The System UI tab in Settings
   The old View > System UI mode submenu became a day/night toggle and a
   Sync with System button on a Settings tab, wired to the same
   ThemeController. Display-gated, like the other Settings-window tests.

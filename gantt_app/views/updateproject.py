@@ -4,7 +4,7 @@ The Update Project window: reschedule uncompleted work to start after a date.
 WHY THIS MODULE EXISTS:
 =======================
 A plan ages between the day it was drawn and the day it is looked at, and
-the status date in Project Settings is only a marker - nothing moves for
+the status date in Project Info is only a marker - nothing moves for
 it on its own. Microsoft Project's answer is the Update Project window,
 whose 'Reschedule uncompleted work to start after' line is the one worth
 having here: everything nobody has started yet stops pretending it began

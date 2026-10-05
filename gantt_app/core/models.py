@@ -1405,7 +1405,7 @@ class Project:
     """
     name: str
     #: Whether the user deliberately named the plan - typed a name into
-    #: New Project or changed it in Project Settings - rather than it
+    #: New Project or changed it in Project Info - rather than it
     #: still carrying the placeholder. While it is False, a file name
     #: chosen in Save As is adopted as the project name (issue #91).
     name_was_set: bool = False
@@ -1415,7 +1415,7 @@ class Project:
     calendar: WorkingCalendar = field(default_factory=WorkingCalendar)
     calendars: CalendarRegistry = field(default_factory=default_registry)
     #: The named calendar the plan itself follows, when it names one - the
-    #: Calendar choice in Project Settings (issue #93). None leaves the
+    #: Calendar choice in Project Info (issue #93). None leaves the
     #: plan on its own `calendar`, which is what every plan meant before
     #: the field existed and what an unknown id falls back to.
     calendar_id: Optional[str] = None
@@ -1466,7 +1466,7 @@ class Project:
         """
         The calendar the plan itself follows.
 
-        The named calendar picked for the plan in Project Settings, or the
+        The named calendar picked for the plan in Project Info, or the
         plan's own `calendar` when it names none - including when it names
         one that has since been deleted, which is resolve()'s answer. What
         "the plan's days" means for the working-day axes and for tasks that
@@ -1491,7 +1491,7 @@ class Project:
         here rather than reading `self.calendar`, which is what makes a
         per-task calendar work at all. A task that names nothing follows
         the plan's - `plan_calendar`, which is the named calendar the plan
-        itself was put on in Project Settings, or the plan's own
+        itself was put on in Project Info, or the plan's own
         `calendar` when it names none (issue #93).
 
         The calendar the task follows is then crossed with the calendars of

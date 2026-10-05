@@ -224,8 +224,8 @@ class RibbonBar(IconToolbar):
         )),
         ("Project", (
             ("Properties", (
-                _L('settings', 'Settings', 'open_settings',
-                   tip="Project Settings..."),
+                _L('settings', 'Info', 'open_settings',
+                   tip="Project Info..."),
             )),
             ("Status", (
                 _S('sync', 'Update Project...', 'update_project',
@@ -286,7 +286,7 @@ class RibbonBar(IconToolbar):
         )),
         ("Recent", 'recent'),
         ("Options", (
-            {'icon': 'settings', 'label': "Project Settings...",
+            {'icon': 'settings', 'label': "Project Info...",
              'action': 'open_settings'},
         )),
         ("Info", (

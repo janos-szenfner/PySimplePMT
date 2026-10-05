@@ -223,7 +223,7 @@ class TestMenuStructure(unittest.TestCase):
         self.assertIn('View', converted)
         self.assertIn('About', converted)
         self.assertNotIn('Project', converted)
-        # Settings folded into File as Project Settings; no standalone menu.
+        # Settings folded into File as Project Info; no standalone menu.
         self.assertNotIn('Settings', converted)
         
         # Check that Edit menu has all items

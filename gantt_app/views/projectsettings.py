@@ -1,5 +1,5 @@
 """
-Project Settings: the dates and rules a whole plan is built from.
+Project Info: the dates and rules a whole plan is built from.
 
 WHY THIS WINDOW EXISTS:
 ======================
@@ -63,7 +63,7 @@ PLAN_CALENDAR_LABEL = "Project calendar"
 
 class ProjectSettingsDialog(ctk.CTkToplevel):
     """
-    The panel behind Actions > Project Settings.
+    The panel behind File > Project Info.
 
     PARAMETERS:
     -----------

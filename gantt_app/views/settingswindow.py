@@ -603,7 +603,7 @@ class SettingsWindow(ctk.CTkToplevel):
         The old View > System UI mode submenu (Sync with system / Always Day /
         Always Night) becomes a day-or-night toggle and a Sync with System
         button, wired to the same ThemeController, so the workflow is the same
-        while the controls live under Project Settings.
+        while the controls live under Settings.
         """
         logger.debug("Building System UI settings tab")
         self._suppress_theme_switch = False

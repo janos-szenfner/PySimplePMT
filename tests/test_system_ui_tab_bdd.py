@@ -1,5 +1,5 @@
 """
-pytest-bdd tests for the System UI tab in Project Settings.
+pytest-bdd tests for the System UI tab in Settings.
 
 Run with:
     python3 -m pytest tests/test_system_ui_tab_bdd.py -q
