@@ -33,3 +33,8 @@ Feature: The colours a deliverable's health takes
 
   Scenario: The list is blue while nothing is late
     Then deliverables "40 due tomorrow | 0 due tomorrow" read "on_track"
+
+  Scenario: An empty list counts as not started
+    # Nothing owed means nothing late - the grey of a plan that has not
+    # begun, not a colour at all.
+    Then no deliverables read "not_started"

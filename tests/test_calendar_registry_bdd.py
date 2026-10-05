@@ -483,3 +483,43 @@ def a_follower_lagging(ctx, calendar, lag):
 def the_follower_starts_on(ctx, day):
     follower = ctx.project.get_task_by_id("b")
     assert follower.start_date.date() == _day(day).date()
+
+
+# ------------------------------------------------------------------
+# the container itself
+# ------------------------------------------------------------------
+
+@given('an empty registry')
+def an_empty_registry(ctx):
+    ctx.registry = CalendarRegistry()
+
+
+@then('the registry answers empty')
+def the_registry_answers_empty(ctx):
+    assert not ctx.registry
+
+
+@then('the registry is not a string')
+def the_registry_is_not_a_string(ctx):
+    assert not (ctx.registry == 'a string')
+    assert ctx.registry != 'a string'
+
+
+@given('a second registry made the same way')
+def a_second_registry(ctx):
+    ctx.other = default_registry()
+
+
+@then('the two registries are equal')
+def the_two_registries_are_equal(ctx):
+    assert ctx.registry == ctx.other
+
+
+@then(parsers.parse('renaming "{calendar_id}" to "{name}" says no'))
+def renaming_a_ghost_says_no(ctx, calendar_id, name):
+    assert ctx.registry.rename(calendar_id, name) is False
+
+
+@then(parsers.parse('a saved registry of {value:d} loads empty'))
+def an_unreadable_registry_loads_empty(value):
+    assert CalendarRegistry.from_dict(value).ids() == []

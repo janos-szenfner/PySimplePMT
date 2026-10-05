@@ -9,6 +9,7 @@ Nothing here needs a display.
 """
 import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -490,3 +491,61 @@ def the_log_directory_mentions(ctx, text):
 @then("nothing came back")
 def nothing_came_back(ctx):
     assert ctx.result is None
+
+
+# ------------------------------------------------------------------
+# configuration branches
+# ------------------------------------------------------------------
+
+@when('logging is set up to echo')
+def logging_is_set_up_to_echo(ctx):
+    ctx.logger = setup_logging(to_file=False, to_stderr=True)
+
+
+@then('the logger has a stream handler')
+def the_logger_has_a_stream_handler(ctx):
+    assert any(type(h) is logging.StreamHandler
+               for h in ctx.logger.handlers)
+
+
+@then('the log text is empty')
+def the_log_text_is_empty():
+    assert get_log_text() == 'Logging has not been initialised.'
+
+
+@then(parsers.parse('the log counts {count:d} records'))
+def the_log_counts_records(count):
+    assert count_records() == count
+    assert get_log_records() == []
+
+
+@when('a KeyboardInterrupt reaches the hook')
+def a_keyboard_interrupt_reaches_the_hook(ctx):
+    import sys
+    ctx.forwarded = []
+    ctx.previous = ctx.original_hook
+    sys.excepthook = lambda *a: ctx.forwarded.append(a)
+    install_exception_hook()
+    sys.excepthook(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+
+@then('the previous hook saw it')
+def the_previous_hook_saw_it(ctx):
+    assert ctx.forwarded
+
+
+@then('the original hook is restored')
+def the_original_hook_is_restored(ctx):
+    import sys
+    sys.excepthook = ctx.previous
+
+
+@given('linux with no XDG state home')
+def linux_with_no_xdg_state_home(monkeypatch):
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    monkeypatch.delenv('XDG_STATE_HOME', raising=False)
+
+
+@then('the log directory is the default state directory')
+def the_log_directory_is_the_default_state_directory():
+    assert get_log_directory() == Path.home() / '.local' / 'state' / 'pysimplepmt'

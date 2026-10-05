@@ -578,3 +578,85 @@ def deleted_as_a_command(ctx, task_id):
     ctx.manager.execute(RemoveTaskCommand(
         ctx.project, task_id,
         ctx.project.get_task_by_id(task_id), 0))
+
+
+# ------------------------------------------------------------------
+# coercion - a saved file can carry anything
+# ------------------------------------------------------------------
+
+@when(parsers.parse('a deliverable is made with progress "{progress}"'))
+def made_with_progress(ctx, progress):
+    ctx.item = Deliverable.create(name="A")
+    ctx.item.progress = progress
+    Deliverable.__post_init__(ctx.item)
+
+
+@when(parsers.parse('a deliverable is made with weight "{weight}"'))
+def made_with_weight(ctx, weight):
+    ctx.item = Deliverable.create(name="A", weight=weight)
+
+
+@when(parsers.parse('a deliverable is made with assignees "{names}"'))
+def made_with_assignees(ctx, names):
+    ctx.item = Deliverable.create(name="A", assignees=names)
+
+
+@then(parsers.parse('its weight is {weight:g}'))
+def its_weight_is(ctx, weight):
+    assert ctx.item.weight == weight
+
+
+@then(parsers.parse('its assignees are "{names}"'))
+def its_assignees_are(ctx, names):
+    assert ctx.item.assignees == _ids(names)
+
+
+@then('it is not done')
+def it_is_not_done(ctx):
+    assert not ctx.item.is_done
+
+
+@when(parsers.parse('its progress becomes {progress:d}'))
+def its_progress_becomes(ctx, progress):
+    ctx.item.progress = progress
+
+
+@then('it is done')
+def it_is_done(ctx):
+    assert ctx.item.is_done
+
+
+@then(parsers.parse('a saved due date of "{text}" loads as none'))
+def a_bad_due_date_loads_as_none(text):
+    item = Deliverable.from_dict({'name': 'D', 'due_date': text})
+    assert item.due_date is None
+
+
+@given(parsers.parse('a plan of deliverables "{ids}"'))
+def a_plan_of_deliverables(ctx, ids):
+    ctx.project = Project(name="Plan")
+    for deliverable_id in _ids(ids):
+        ctx.project.deliverables.append(
+            Deliverable.create(name=deliverable_id,
+                               deliverable_id=deliverable_id))
+
+
+@given(parsers.parse('"{parent}" takes child "{child}" weighing '
+                     '"{weight}" at {progress:d} percent'))
+def a_typed_child(ctx, parent, child, weight, progress):
+    ctx.child_progress = getattr(ctx, 'child_progress', [])
+    ctx.children = getattr(ctx, 'children', [])
+    w = weight if weight == 'banana' else float(weight)
+    row = Deliverable.create(name=child, deliverable_id=child)
+    row.progress = progress
+    row.weight = w
+    # create() already coerced a good weight; put the bad one back the
+    # way a corrupted file would.
+    if weight == 'banana':
+        row.weight = 'banana'
+    ctx.children.append(row)
+
+
+@then(parsers.parse('"{deliverable_id}" rolls up to {progress:d} percent'))
+def it_rolls_up(ctx, deliverable_id, progress):
+    assert rolled_up_deliverable_progress(ctx.children) == progress

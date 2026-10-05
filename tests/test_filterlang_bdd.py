@@ -494,3 +494,10 @@ def the_chart_is_reported_showing(ctx):
 @then("a foreign widget is not")
 def a_foreign_widget_is_not(ctx):
     assert not ctx.bar._showing(object())
+
+
+@then(parsers.parse("suggestions after '{typed}' offer nothing"))
+def suggestions_after_offer_nothing(ctx, typed):
+    found = filterlang.suggestions(typed, len(typed), ctx.project)
+    assert found == [] or not any(
+        item in found for item in ('and', 'or')), found

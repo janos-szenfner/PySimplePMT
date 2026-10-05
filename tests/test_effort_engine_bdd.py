@@ -18,7 +18,9 @@ from gantt_app.core.effort import (
     classify_changes,
     days_to_hours,
     edit_duration,
+    edit_units,
     edit_work,
+    hours_to_days,
     effort_driven_effective,
     logic_applies,
     recalculate,
@@ -892,3 +894,251 @@ def the_assignment_carries(ctx, rid, hours):
     by_id = {a['resource_id']: a['estimated_hours']
              for a in ctx.task.resource_assignments}
     assert by_id[rid] == hours
+
+
+# ---- the direct units edit and the remaining refusals --------------------------------
+
+
+@when(parsers.parse('the "{rid}" units are edited to {units:g}'))
+def the_units_are_edited(ctx, rid, units):
+    index = next(i for i, a in enumerate(ctx.state.assignments)
+                 if a.resource_id == rid)
+    ctx.result = edit_units(ctx.state, index, units)
+
+
+@when(parsers.parse('the units of assignment {index:d} are edited to '
+                    '{units:g}'))
+def the_indexed_units_are_edited(ctx, index, units):
+    ctx.result = edit_units(ctx.state, index, units)
+
+
+@when(parsers.parse('the assignment at index {index:d} is removed'))
+def the_indexed_assignment_is_removed(ctx, index):
+    ctx.result = remove_resource(ctx.state, index)
+
+
+@given(parsers.parse('a "{type}" effort-driven state running {hours:d} '
+                     'hours of {work:d} work holding "{rid}" at {units:g} '
+                     'and "{rid2}" at {units2:g}'))
+def an_ed_state_running_two(ctx, type, hours, work, rid, units, rid2,
+                            units2):
+    ctx.state = _state(effort_type=TYPES[type], effort_driven=True,
+                       duration_hours=hours, work=work,
+                       assignments=[Assignment(rid, units),
+                                    Assignment(rid2, units2)])
+
+
+@given(parsers.parse('a "{type}" effort-driven state running {hours:d} '
+                     'hours of {work:d} work holding "{rid}" at {units:g}'))
+def an_ed_state_running_one(ctx, type, hours, work, rid, units):
+    ctx.state = _state(effort_type=TYPES[type], effort_driven=True,
+                       duration_hours=hours, work=work,
+                       assignments=[Assignment(rid, units)])
+
+
+@given(parsers.parse('a "{type}" state running {hours:d} hours '
+                     'of {work:d} work'))
+def a_state_running_bare(ctx, type, hours, work):
+    ctx.state = _state(effort_type=TYPES[type], duration_hours=hours,
+                       work=work)
+
+
+@given(parsers.parse('a "{type}" state running {hours:d} hours '
+                     'holding "{rid}" at {units:g}'))
+def a_state_running_holding(ctx, type, hours, rid, units):
+    ctx.state = _state(effort_type=TYPES[type], duration_hours=hours,
+                       assignments=[Assignment(rid, units)])
+
+
+@given(parsers.parse('a "{type}" state running {hours:d} hours on a '
+                     'zero-length day'))
+def a_state_on_a_zero_day(ctx, type, hours):
+    ctx.state = _state(effort_type=TYPES[type], duration_hours=hours,
+                       hours_per_day=0.0)
+
+
+@then(parsers.parse('it measures {days:g} days'))
+def it_measures_days(ctx, days):
+    assert ctx.state.duration_days == days
+
+
+@then(parsers.parse('{hours:d} hours at {rate:d} a day is {days:g} days'))
+def hours_are_days(hours, rate, days):
+    assert hours_to_days(hours, rate) == days
+
+
+@when(parsers.parse('it switches to the unknown type "{name}"'))
+def it_switches_to_unknown(ctx, name):
+    ctx.result = change_effort_type(ctx.state, name)
+
+
+@given(parsers.parse('a task of {days:d} days with "{rid}" for gibberish '
+                     'hours at gibberish percent'))
+def a_task_with_gibberish(ctx, days, rid):
+    ctx.task = Task(id='T', name='A task',
+                    start_date=datetime(2026, 9, 9), duration=days,
+                    resource_assignments=[
+                        {'resource_id': rid,
+                         'estimated_hours': 'banana',
+                         'resource_split': 'not a number'}])
+
+
+@given(parsers.parse('the new state swaps "{gone}" for "{rid}" at {units:g} '
+                     'for {wh:d} hours'))
+def the_new_state_swaps(ctx, gone, rid, units, wh):
+    ctx.new.assignments = [a for a in ctx.new.assignments
+                           if a.resource_id != gone]
+    ctx.new.assignments.append(Assignment(rid, units, float(wh)))
+
+
+@scenario('features/effort_engine.feature',
+          'A direct units edit on Fixed Work moves the duration')
+def test_direct_units_edit_fixed_work():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A direct units edit on Fixed Duration moves the work')
+def test_direct_units_edit_fixed_duration():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A direct units edit on Fixed Units moves the work')
+def test_direct_units_edit_fixed_units():
+    pass
+
+
+@scenario('features/effort_engine.feature', 'Units cannot be negative')
+def test_units_cannot_be_negative():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Units for a resource that is not there are refused')
+def test_units_bad_index_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A Fixed Work edit to zero total units is refused')
+def test_fixed_work_zero_units_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Removing a resource that is not there is refused')
+def test_remove_missing_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Duration, effort-driven - removing shares the units out')
+def test_fixed_duration_removal_redistributes():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A negative-units add is refused')
+def test_negative_units_add_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Work refuses an add that still leaves nobody working')
+def test_fixed_work_add_zero_units_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Duration accepts an add with no duration to divide')
+def test_fixed_duration_degenerate_add():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A negative duration edit is refused')
+def test_negative_duration_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature', 'A negative work edit is refused')
+def test_negative_work_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Work refuses a zero-duration edit')
+def test_fixed_work_zero_duration_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Work with no roster answers a duration edit politely')
+def test_fixed_work_no_roster_duration_edit():
+    pass
+
+
+@scenario('features/effort_engine.feature', 'A type nobody makes is refused')
+def test_unknown_type_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Duration refuses a switch into no duration')
+def test_fixed_duration_no_duration_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Units refuses a switch into work with no hands')
+def test_fixed_units_work_no_resource_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Work refuses a switch into no work')
+def test_fixed_work_no_work_refused():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A negative assignment does not validate')
+def test_negative_assignment_invalid():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Fixed Work, a duration move scales the units instead')
+def test_fixed_work_duration_move_scales_units():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          "A roster change that alters nothing else is not a planner's edit")
+def test_roster_swap_no_other_change():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A zero-length day measures no days')
+def test_zero_length_day():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'Hours to days on a zero-length day is zero')
+def test_hours_to_days_zero_rate():
+    pass
+
+
+@scenario('features/effort_engine.feature',
+          'A gibberish split and gibberish hours read as zero')
+def test_gibberish_assignment_reads_zero():
+    pass
+
+
+@then(parsers.parse('the new state\'s "{rid}" is at {units:g}'))
+def the_new_state_units_check_rid(ctx, rid, units):
+    units_by_id = {a.resource_id: a.units for a in ctx.new.assignments}
+    assert units_by_id[rid] == pytest.approx(units)

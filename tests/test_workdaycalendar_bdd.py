@@ -1480,3 +1480,19 @@ def sits_where(a, b):
 def every_eu_member_sits_in(region):
     for code in EU_COUNTRIES:
         assert region_of(code) == region, code
+
+
+# ------------------------------------------------------------------
+# description and identity
+# ------------------------------------------------------------------
+
+@then('it is not a string')
+def it_is_not_a_string(ctx):
+    assert ctx.calendar != 'not a calendar'
+
+
+@then('its description lists its resting days')
+def its_description_lists_its_resting_days(ctx):
+    text = repr(ctx.calendar)
+    assert 'WorkingCalendar' in text
+    assert '[5, 6]' in text

@@ -431,3 +431,165 @@ Feature: The Task Type / Effort-Driven engine
     And the state is written back
     Then the assignments carry 80 hours
     And "R1" carries 40 hours
+
+  # ---- the direct units edit, and the refusals the engine guards --------------------------------------------------
+
+  Scenario: A direct units edit on Fixed Work moves the duration
+    # 16h of work over 4.0 units is 4h.
+    Given a "Fixed Work" state running 8 hours of 16 work holding "R1" at 1.0
+    When the "R1" units are edited to 4.0
+    Then the answer was accepted
+    And the state runs 4 hours
+
+  Scenario: A direct units edit on Fixed Duration moves the work
+    # Duration is locked, so halving the hands halves the work: 8h x 0.5.
+    Given a "Fixed Duration" state running 8 hours of 16 work holding "R1" at 1.0
+    When the "R1" units are edited to 0.5
+    Then the answer was accepted
+    And the state carries 4 work
+
+  Scenario: A direct units edit on Fixed Units moves the work
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When the "R1" units are edited to 0.5
+    Then the answer was accepted
+    And the state carries 4 work
+
+  Scenario: Units cannot be negative
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When the "R1" units are edited to -0.5
+    Then the answer was refused
+
+  Scenario: Units for a resource that is not there are refused
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When the units of assignment 5 are edited to 1.0
+    Then the answer was refused
+
+  Scenario: A Fixed Work edit to zero total units is refused
+    # It would ask for an infinite duration.
+    Given a "Fixed Work" state running 8 hours of 16 work holding "R1" at 1.0
+    When the "R1" units are edited to 0.0
+    Then the answer was refused
+
+  Scenario: Removing a resource that is not there is refused
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When the assignment at index 7 is removed
+    Then the answer was refused
+
+  Scenario: Fixed Duration, effort-driven - removing shares the units out
+    # The work is conserved inside the same duration, so the one left
+    # standing takes both shares: 1.0 + 1.0 -> 2.0.
+    Given a "Fixed Duration" effort-driven state running 8 hours of 16 work holding "R1" at 1.0 and "R2" at 1.0
+    When "R2" is removed
+    Then the answer was accepted
+    And each resource is at 2.0
+    And the state runs 8 hours
+
+  Scenario: A negative-units add is refused
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When "R2" at -1.0 is added
+    Then the answer was refused
+
+  Scenario: Fixed Work refuses an add that still leaves nobody working
+    # Work with a roster of zeros cannot take a duration.
+    Given a "Fixed Work" state running 8 hours of 16 work holding "R1" at 0.0
+    When "R2" at 0.0 is added
+    Then the answer was refused
+
+  Scenario: Fixed Duration accepts an add with no duration to divide
+    # A degenerate state answers the message rather than dividing by it.
+    Given a "Fixed Duration" effort-driven state running 0 hours of 16 work holding "R1" at 1.0
+    When "R2" at 1.0 is added
+    Then the answer was accepted
+
+  Scenario: A negative duration edit is refused
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When the duration is edited to -4 hours
+    Then the answer was refused
+
+  Scenario: A negative work edit is refused
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When the work is edited to -4
+    Then the answer was refused
+
+  Scenario: Fixed Work refuses a zero-duration edit
+    Given a "Fixed Work" state running 8 hours of 16 work holding "R1" at 1.0
+    When the duration is edited to 0 hours
+    Then the answer was refused
+
+  Scenario: Fixed Work with no roster answers a duration edit politely
+    # There is nobody to redistribute the units over, so the message is
+    # all there is - no error, no division.
+    Given a "Fixed Work" state running 8 hours of 16 work
+    When the duration is edited to 4 hours
+    Then the answer was accepted
+
+  # ---- switching type: the entry rules refuse what they cannot hold ----------------------------------------------
+
+  Scenario: A type nobody makes is refused
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at 1.0
+    When it switches to the unknown type "Sideways"
+    Then the answer was refused
+
+  Scenario: Fixed Duration refuses a switch into no duration
+    Given a "Fixed Units" state running 0 hours holding "R1" at 1.0
+    When it switches to "Fixed Duration"
+    Then the answer was refused
+
+  Scenario: Fixed Units refuses a switch into work with no hands
+    Given a "Fixed Duration" state carrying 16 work
+    When it switches to "Fixed Units"
+    Then the answer was refused
+
+  Scenario: Fixed Work refuses a switch into no work
+    Given a "Fixed Units" state running 8 hours holding "R1" at 1.0
+    When it switches to "Fixed Work"
+    Then the answer was refused
+
+  # ---- validate: a negative assignment is not a state -------------------------------------------------------------
+
+  Scenario: A negative assignment does not validate
+    Given a "Fixed Units" state running 8 hours of 16 work holding "R1" at -0.5
+    Then it does not validate
+
+  # ---- reconcile: Fixed Work holding duration scales the units ----------------------------------------------------
+
+  Scenario: Fixed Work, a duration move scales the units instead
+    # Work is held by the type; holding the edited duration too leaves
+    # units to take the strain: 16h of work over 4h is 4.0 units.
+    Given a 8-hour "Fixed Work" effort-driven pair holding "R1" at 1.0 for 16 hours
+    And the new state runs 4 hours
+    When the pair is reconciled
+    Then there is no conflict
+    And the new state runs 4 hours
+    And the new state's "R1" is at 4.0
+
+  Scenario: A roster change that alters nothing else is not a planner's edit
+    # Swapping one pair of hands for another at the same total, with
+    # Effort-Driven off, leaves every number alone - the diff is empty,
+    # so the toggle picks the conserved quantity by itself.
+    Given a 16-hour "Fixed Units" not-effort-driven pair holding "R1" at 1.0 for 16 hours
+    And the new state swaps "R1" for "R2" at 1.0 for 16 hours
+    When the pair is reconciled
+    Then there is no conflict
+    And the new state runs 16 hours
+    And the new state carries 16 work
+
+  # ---- a day is not always eight hours ----------------------------------------------------------------------------
+
+  Scenario: A zero-length day measures no days
+    # A calendar reporting no hours in a day reads as zero, not as a
+    # division error.
+    Given a "Fixed Units" state running 8 hours on a zero-length day
+    Then it measures 0 days
+
+  Scenario: Hours to days on a zero-length day is zero
+    Then 8 hours at 0 a day is 0 days
+
+  # ---- the task adapter takes what the file gives it ---------------------------------------------------------------
+
+  Scenario: A gibberish split and gibberish hours read as zero
+    # A saved file can carry anything; a bad split is no units and bad
+    # hours are no hours, not an import error.
+    Given a task of 5 days with "R1" for gibberish hours at gibberish percent
+    When it is lifted into a state
+    Then the state's total units are 0.0

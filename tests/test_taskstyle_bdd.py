@@ -347,3 +347,10 @@ def its_formatting_came_back(ctx):
 def its_style_and_calendar_survived(ctx):
     assert ctx.task.style == TaskStyle(bold=True)
     assert ctx.task.calendar_id == 'weekend'
+
+
+@then(parsers.parse('"{name}" has a badge'))
+def a_name_has_a_badge(name):
+    from gantt_app.core.taskstyle import DEFAULT_BADGE, preset_badge
+    glyph, colour = preset_badge(name)
+    assert (glyph, colour) == DEFAULT_BADGE

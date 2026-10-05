@@ -353,3 +353,73 @@ def the_box_is_enabled(ctx):
 @then("the saved values ignore resource calendars")
 def the_saved_values_ignore(ctx):
     assert ctx.tab.read_values()["ignores_resource_calendars"]
+
+
+# ------------------------------------------------------------------
+# THEN - the intersection walked backwards and measured
+# ------------------------------------------------------------------
+
+def _task_calendar(ctx, task):
+    return ctx.project.calendar_for(ctx.tasks[task])
+
+
+@then(parsers.parse('the "{task}" calendar looks back from "{date}" to '
+                    '"{expected}"'))
+def the_calendar_looks_back(ctx, task, date, expected):
+    assert _task_calendar(ctx, task) \
+        .get_previous_working_day(_day(date)) == _day(expected)
+
+
+@then(parsers.parse('{count:d} working days back from "{date}" lands '
+                    '"{task}" on "{expected}"'))
+def working_days_back(ctx, count, date, task, expected):
+    assert _task_calendar(ctx, task) \
+        .subtract_working_days(_day(date), count) == _day(expected)
+
+
+@then(parsers.parse('{count:d} working days forward from "{date}" lands '
+                    '"{task}" on "{expected}"'))
+def working_days_forward(ctx, count, date, task, expected):
+    assert _task_calendar(ctx, task) \
+        .add_working_days(_day(date), count) == _day(expected)
+
+
+@then(parsers.parse('"{task}" counts {count:d} days worked between "{a}" '
+                    'and "{b}"'))
+def days_worked_between(ctx, task, count, a, b):
+    assert _task_calendar(ctx, task) \
+        .working_days_between(_day(a), _day(b)) == count
+
+
+@then(parsers.parse('"{task}" measures {count:d} elapsed days between '
+                    '"{a}" and "{b}"'))
+def elapsed_days_between(ctx, task, count, a, b):
+    assert _task_calendar(ctx, task) \
+        .elapsed_days(_day(a), _day(b)) == count
+
+
+@then(parsers.parse('"{task}" follows the plan\'s own calendar, not an '
+                    'empty one'))
+def the_never_worker_is_left_out(ctx, task):
+    from gantt_app.core.workdaycalendar import IntersectingCalendar
+    assert not isinstance(_task_calendar(ctx, task), IntersectingCalendar)
+
+
+@then(parsers.parse('an intersection over "{name}" finds no working day '
+                    'on or after "{date}"'))
+def intersection_finds_none_after(ctx, name, date):
+    from gantt_app.core.workdaycalendar import (
+        IntersectingCalendar, WorkingCalendar)
+    intersection = IntersectingCalendar(WorkingCalendar(),
+                                        [ctx.resources[name]])
+    assert intersection.get_next_working_day(_day(date)) == _day(date)
+
+
+@then(parsers.parse('an intersection over "{name}" finds no working day '
+                    'on or before "{date}"'))
+def intersection_finds_none_before(ctx, name, date):
+    from gantt_app.core.workdaycalendar import (
+        IntersectingCalendar, WorkingCalendar)
+    intersection = IntersectingCalendar(WorkingCalendar(),
+                                        [ctx.resources[name]])
+    assert intersection.get_previous_working_day(_day(date)) == _day(date)

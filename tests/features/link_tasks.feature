@@ -285,3 +285,11 @@ Feature: Link Tasks and Unlink Tasks
     When the whole plan is linked
     Then "003" waits for "001"
     And "009" waits for "003"
+    And "010" waits on both "003" and "009"
+
+  Scenario: A subset chains just that span
+    # Picking the inside of a branch chains its siblings, and nothing
+    # outside the pick is touched.
+    Given the plan from issue 18
+    When "004, 005, 006, 007, 008" are linked
+    Then the pairs joined are "004 > 005, 006 > 007, 007 > 008"

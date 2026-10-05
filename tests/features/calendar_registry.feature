@@ -262,3 +262,28 @@ Feature: The named calendars a plan holds, and which one a task follows
       | the plan's own | 2026-09-16 |
       | continuous     | 2026-09-16 |
       | weekend-shift  | 2026-09-19 |
+
+  # ---- the container itself ------------------------------------------------------------
+
+  Scenario: An empty registry answers empty
+    Given an empty registry
+    Then the registry answers empty
+
+  Scenario: A registry is not equal to what it is not
+    # == against a string is a plain False, not an error.
+    Given a registry
+    Then the registry is not a string
+
+  Scenario: Two registries over the same list are equal
+    Given a registry
+    And a second registry made the same way
+    Then the two registries are equal
+
+  Scenario: Renaming a calendar the registry does not hold says no
+    Given a registry
+    Then renaming "ghost" to "New Name" says no
+
+  Scenario: A saved registry that is not a registry opens empty
+    # A damaged file's registry entry - a bare number, say - reads as
+    # no calendars rather than failing the open, with a line in the log.
+    Then a saved registry of 5 loads empty

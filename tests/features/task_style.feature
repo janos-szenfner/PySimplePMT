@@ -188,3 +188,8 @@ Feature: The formatting a row carries, and the defaults folded into it
     Given a task with a calendar and a style
     When it is renamed through the undo tracker
     Then its style and calendar survived
+
+  Scenario: A preset nobody knows still has a badge
+    # The badge is decoration; a missing one must never stop a menu
+    # being drawn, so it falls back to the hollow circle.
+    Then "Sideways" has a badge

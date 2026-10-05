@@ -214,3 +214,61 @@ Feature: A task is scheduled where its calendar and its resources' agree
     And the ignores-calendars box is ticked
     When the ignores-calendars box is disabled
     Then the ignores-calendars box is unticked
+
+  # ---- the intersecting calendar, in both directions ------------------------------
+  # Scheduling leans on the intersection for forward walking; a link that
+  # fixes a finish walks it backwards, and the measuring methods are what
+  # the chart draws.
+
+  Scenario: The intersection looks back over days off
+    # Bob is off Monday to Wednesday; looking back from Wednesday, the
+    # last day both sides work is the Friday before.
+    Given a plan
+    And the resource "Bob" works a standard week
+    And "Bob" is off from "2026-01-05" to "2026-01-07"
+    And a task "Build" running "2026-01-05" to "2026-01-09"
+    And "Build" is assigned to "Bob"
+    Then the "Build" calendar looks back from "2026-01-07" to "2026-01-02"
+
+  Scenario: Working days can be subtracted as well as added
+    # Two days back from Friday spends one on Thursday; Wednesday is off.
+    Given a plan
+    And the resource "Bob" works a standard week
+    And "Bob" is off from "2026-01-05" to "2026-01-07"
+    And a task "Build" running "2026-01-05" to "2026-01-09"
+    And "Build" is assigned to "Bob"
+    Then 2 working days back from "2026-01-09" lands "Build" on "2026-01-08"
+    And 0 working days back from "2026-01-09" lands "Build" on "2026-01-09"
+    And 0 working days forward from "2026-01-08" lands "Build" on "2026-01-08"
+
+  Scenario: The intersection counts the days both sides work
+    # Bob is off three of the five weekdays, so two of the five count.
+    Given a plan
+    And the resource "Bob" works a standard week
+    And "Bob" is off from "2026-01-05" to "2026-01-07"
+    And a task "Build" running "2026-01-05" to "2026-01-09"
+    And "Build" is assigned to "Bob"
+    Then "Build" counts 2 days worked between "2026-01-05" and "2026-01-09"
+    And "Build" counts 0 days worked between "2026-01-09" and "2026-01-05"
+
+  Scenario: Elapsed days are calendar days either way
+    # The measure WorkingCalendar gives, on the intersection too: the
+    # weekends are in the number.
+    Given a plan
+    And the resource "Bob" works a standard week
+    And a task "Build" running "2026-01-05" to "2026-01-09"
+    And "Build" is assigned to "Bob"
+    Then "Build" measures 5 elapsed days between "2026-01-05" and "2026-01-09"
+
+  Scenario: A resource that never works leaves every date alone
+    # A zero-capacity resource cannot be intersected into a schedule, so
+    # calendar_for leaves it out - but an intersection built with one
+    # still gives up after the step limit rather than running forever,
+    # leaving the date where it was, with a line in the log.
+    Given a plan
+    And the resource "Nobody" never works
+    And a task "Build" running "2026-01-05" to "2026-01-09"
+    And "Build" is assigned to "Nobody"
+    Then "Build" follows the plan's own calendar, not an empty one
+    And an intersection over "Nobody" finds no working day on or after "2026-01-05"
+    And an intersection over "Nobody" finds no working day on or before "2026-01-05"

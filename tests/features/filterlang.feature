@@ -334,3 +334,73 @@ Feature: The query language behind the Filter window's Advanced tab
     Given a shell with the list and the chart paned
     Then the chart is reported showing
     And a foreign widget is not
+
+  # ---- the rest of the comparison set ----------------------------------------------------
+
+  Scenario: Greater-than and less-than-or-equal compare
+    Given the sample plan
+    Then the query 'progress > 50' matches "B"
+    And the query 'progress <= 50' matches "P, A, C, M"
+
+  Scenario: An open bracket is closed for it to work
+    # The group never ends, and the position the reader needs is where
+    # the bracket ran out.
+    Then parsing '(progress = 1' fails
+
+  Scenario: A stray token where a field should be is an error
+    Then parsing 'progress = 1 )' fails
+
+  Scenario: A field with no operator is an error
+    Then parsing 'name 5' fails
+
+  Scenario: An in without its bracket is an error
+    Then parsing 'type in Task' fails
+
+  Scenario: An in list that never ends is an error
+    Then parsing 'type in (Task' fails
+
+  Scenario: A comma where a value should be is an error
+    Then parsing 'type in (, Task)' fails
+
+  Scenario: Two values running together are an error
+    Then parsing 'type in (Task Milestone)' fails
+
+  Scenario: A between with no second value is an error
+    Then parsing 'progress between 1,' fails
+    And parsing 'progress between 1 and' fails
+
+  Scenario: A character the language does not know is an error
+    Then parsing 'progress & 5' fails
+
+  # ---- the rest of what the cursor can mean -----------------------------------------------
+
+  Scenario: After a number comes and or or
+    Given the sample plan
+    Then suggestions after 'progress = 50' offer "and, or"
+
+  Scenario: After an operator on a free field comes nothing
+    Given the sample plan
+    Then suggestions after 'name = ' offer nothing
+
+  Scenario: After an open bracket comes a field or a not
+    Given the sample plan
+    Then suggestions after 'progress = 1 and (' offer "name, not"
+
+  Scenario: After a closed bracket comes and or or
+    Given the sample plan
+    Then suggestions after '(progress = 1) ' offer "and, or"
+
+  Scenario: Inside a not-in list come more values too
+    Given the sample plan
+    Then suggestions after 'type not in (Task, ' offer "Milestone, )"
+
+  Scenario: After a comma inside a between comes a second value
+    Given the sample plan
+    Then suggestions after 'progress between 1, ' offer nothing
+
+  Scenario: A query half-typed inside a quote still answers
+    # The unclosed quote fails to tokenize, so the suggestion falls
+    # back to what scanned before it - a fixed-set field and its
+    # operator still offer the field's values.
+    Given the sample plan
+    Then suggestions after 'type ~ "Ta' offer "Task"

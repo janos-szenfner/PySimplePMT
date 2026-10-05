@@ -125,6 +125,12 @@ def waits_for(ctx, task_id, pred_id):
     assert _links(ctx, task_id) == [pred_id]
 
 
+@then(parsers.parse('"{task_id}" waits on both "{first_id}" and '
+                    '"{second_id}"'))
+def waits_on_both(ctx, task_id, first_id, second_id):
+    assert sorted(_links(ctx, task_id)) == sorted([first_id, second_id])
+
+
 @then(parsers.parse('the link into "{task_id}" from "{pred_id}" is a '
                     'hard finish-to-start'))
 def the_link_is_hard_fs(ctx, task_id, pred_id):

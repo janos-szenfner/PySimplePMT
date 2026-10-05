@@ -442,3 +442,42 @@ Feature: The Deliverables tab's data - entity, roll-up and hierarchy
     Then "a" holds no tasks
     When undo is run
     Then "a" holds tasks "t1"
+
+  # ---- coercion: a saved file can carry anything -----------------------------------------
+
+  Scenario: A gibberish progress coerces to zero
+    # Rather than failing the row.
+    When a deliverable is made with progress "banana"
+    Then it reads 0 percent
+
+  Scenario: A gibberish weight coerces to one
+    When a deliverable is made with weight "banana"
+    Then its weight is 1.0
+
+  Scenario: A negative weight clamps to zero
+    # A row that counts for nothing cannot be negative about it.
+    When a deliverable is made with weight "-2"
+    Then its weight is 0.0
+
+  Scenario: Assignees given as one string split on commas
+    When a deliverable is made with assignees "Ann, Bob"
+    Then its assignees are "Ann, Bob"
+
+  Scenario: Done means a hundred
+    When a deliverable is made with progress "99"
+    Then it is not done
+    When its progress becomes 100
+    Then it is done
+
+  Scenario: An unreadable due date is dropped, not fatal
+    # A hand-edited file's due date reads as none, with a line in the log.
+    Then a saved due date of "not a date" loads as none
+    And a saved due date of "42" loads as none
+
+  Scenario: An unreadable roll-up weight counts every child alike
+    # One bad weight drops the whole weighting to shares rather than
+    # losing the roll-up.
+    Given a plan of deliverables "a"
+    And "a" takes child "b" weighing "banana" at 80 percent
+    And "a" takes child "c" weighing "2" at 40 percent
+    Then "a" rolls up to 60 percent

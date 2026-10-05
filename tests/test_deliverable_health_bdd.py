@@ -81,3 +81,9 @@ def the_list_reads(spec, health):
 @then(parsers.parse('deliverables "{spec}" are not "{health}"'))
 def the_list_is_not(spec, health):
     assert overall_deliverable_health(_rows(spec)) != health
+
+
+@then(parsers.parse('no deliverables read "{health}"'))
+def no_deliverables_read(health):
+    assert overall_deliverable_health([]) == health
+    assert overall_deliverable_health(None) == health

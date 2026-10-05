@@ -204,3 +204,32 @@ Feature: The application log keeps a bounded, inspectable record
     Then nothing came back
     And the log counts at least 1 record at ERROR
     And the log text at ERROR holds "Traceback"
+
+  # ---- the branches only a configuration reaches -------------------------------------------
+
+  Scenario: Set up to echo, the logger gains a stream handler
+    # The stderr half of "to_file and to_stderr"; the tests elsewhere
+    # turn both off so the suite stays quiet.
+    When logging is set up to echo
+    Then the logger has a stream handler
+
+  Scenario: Nothing configured answers empty
+    # A caller asking for the log before logging exists gets nothing,
+    # not a crash - the Log window can open before setup_logging runs.
+    Then the log text is empty
+    And the log counts 0 records
+
+  Scenario: Interrupt defers to the previous hook without logging
+    # Ctrl-C is not an error to record; it is passed straight through
+    # so a terminal still behaves like a terminal.
+    Given logging is set up in memory only
+    When the exception hook is installed
+    And a KeyboardInterrupt reaches the hook
+    Then the previous hook saw it
+    And the log text does not hold "Uncaught exception"
+    And the original hook is restored
+
+  Scenario: A Linux box with no XDG home uses the default state directory
+    # The fallback for plain Linux: ~/.local/state/pysimplepmt.
+    Given linux with no XDG state home
+    Then the log directory is the default state directory

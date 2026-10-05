@@ -804,3 +804,17 @@ Feature: The working-day calendar and the rules built on it
   Scenario: The EU members are all in Europe
     # A cheap check on the largest group anyone will look at.
     Then every EU member sits in "Europe Region"
+
+  # ---- measuring edge cases and the calendar's own description -------------------------------
+
+  Scenario: Asking for no days back keeps the day asked
+    Given the standard week
+    Then 0 working days back from "2026-01-09" land on "2026-01-09"
+
+  Scenario: A calendar is not equal to what it is not
+    Given the standard week
+    Then it is not a string
+
+  Scenario: The calendar describes itself
+    Given the standard week
+    Then its description lists its resting days
