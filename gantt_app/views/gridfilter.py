@@ -2062,13 +2062,15 @@ class AutoFilterPopup(ctk.CTkToplevel):
 
         box = ScrollFrame(body, height=min(220, 24 * (len(values) + 1)))
         box.pack(fill='both', expand=True)
+        # The rows live in the ScrollFrame's content frame: the frame
+        # itself is spoken for by its canvas and scrollbar, which grid.
         ctk.CTkCheckBox(
-            box, text='(Select All)', variable=self._all_var,
+            box.content, text='(Select All)', variable=self._all_var,
             command=self._toggle_all, text_color=MENU_TEXT,
         ).pack(anchor='w', pady=1)
         for text in values:
             ctk.CTkCheckBox(
-                box, text=text, variable=self._vars[text],
+                box.content, text=text, variable=self._vars[text],
                 text_color=MENU_TEXT,
             ).pack(anchor='w', pady=1)
 
