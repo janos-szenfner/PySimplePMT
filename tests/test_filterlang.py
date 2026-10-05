@@ -248,6 +248,70 @@ class TestMatching(unittest.TestCase):
             set())
 
 
+class TestSqlSpellings(unittest.TestCase):
+    """Issue #82: the language takes SQL's spellings, not invented ones."""
+
+    def setUp(self):
+        self.project = _plan()
+
+    def test_like_matches_sql_wildcards(self):
+        # % is any run and _ one character, exactly as SQL says.
+        self.assertEqual(
+            _ids(self.project, "name like 'Draft%'"), {"A"})
+        self.assertEqual(
+            _ids(self.project, 'name like "%art%"'), {"A", "B"})
+        self.assertEqual(
+            _ids(self.project, "name like 'Clean u_'"), {"C"})
+        self.assertEqual(
+            _ids(self.project, "name like 'Draft artwork'"), {"A"})
+
+    def test_like_reads_an_unquoted_pattern(self):
+        self.assertEqual(_ids(self.project, "name like Draft%"), {"A"})
+
+    def test_not_like_rules_out(self):
+        self.assertEqual(
+            _ids(self.project, "name not like '%art%'"), {"P", "C", "M"})
+
+    def test_not_equals_takes_the_sql_angle_brackets(self):
+        self.assertEqual(
+            _ids(self.project, 'status <> "Active"'),
+            _ids(self.project, 'status != "Active"'))
+
+    def test_is_null_reads_is_empty(self):
+        self.assertEqual(
+            _ids(self.project, 'label is null'), {"P", "C", "M"})
+        self.assertEqual(
+            _ids(self.project, 'label is not null'), {"A", "B"})
+
+    def test_between_takes_the_sql_and(self):
+        self.assertEqual(
+            _ids(self.project,
+                 'start between 2026-01-10 and 2026-01-31'), {"B", "C"})
+        self.assertEqual(
+            _ids(self.project,
+                 'progress not between 1 and 99'), {"P", "B", "C", "M"})
+
+    def test_single_quotes_are_strings(self):
+        self.assertEqual(
+            _ids(self.project, "name = 'Draft artwork'"), {"A"})
+
+    def test_the_first_spellings_still_parse(self):
+        """Saved queries carrying ~, !~ and within keep working."""
+        self.assertEqual(_ids(self.project, 'name ~ "art"'),
+                         {"A", "B"})
+        self.assertEqual(_ids(self.project, 'name !~ "art"'),
+                         {"P", "C", "M"})
+        self.assertEqual(
+            _ids(self.project,
+                 'start within 2026-01-10, 2026-01-31'), {"B", "C"})
+
+    def test_sql_compose_with_and_or_and_not(self):
+        self.assertEqual(
+            _ids(self.project,
+                 "type = Task and (name like 'B%' or progress < 50)"),
+            {"B", "C"})
+
+
 class TestConversions(unittest.TestCase):
     """The Basic tab's specs and a query say the same thing both ways."""
 
@@ -363,8 +427,15 @@ class TestSuggestions(unittest.TestCase):
     def test_after_a_field_come_its_operators(self):
         found = filterlang.suggestions('progress ', 9, self.project)
         self.assertIn('>=', found)
-        self.assertIn('within', found)
+        self.assertIn('between', found)
+        self.assertNotIn('within', found)  # the SQL spelling leads (issue #82)
         self.assertNotIn('~', found)   # a number field has no contains
+
+    def test_a_text_field_suggests_like_not_the_tilde(self):
+        found = filterlang.suggestions('name ', 5, self.project)
+        self.assertIn('like', found)
+        self.assertNotIn('~', found)
+        self.assertNotIn('is empty', found)  # 'is null' is suggested
 
     def test_after_a_comparison_come_and_or(self):
         found = filterlang.suggestions('progress = 50 ', 14,

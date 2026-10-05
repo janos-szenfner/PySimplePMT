@@ -4,11 +4,13 @@ The query language behind the Filter window's Advanced tab.
 WHY THIS MODULE EXISTS:
 ======================
 The Basic tab's per-column controls answer the common questions; this is
-the way to ask the rest - "name ~ \"art\" AND progress < 50", "type in
-(Task, Milestone) or milestone = Yes", anything with a NOT or a bracket
-in it. The text a reader types parses to a small tree and compiles to a
-predicate over a task, so the grid filters a query the same way it
-filters a saved definition.
+the way to ask the rest - "name like \"art%\" AND progress < 50",
+"type in (Task, Milestone) or milestone = Yes", anything with a NOT or
+a bracket in it. The spellings follow SQL - LIKE, IN, BETWEEN, AND, OR,
+NOT and <> - with the older '~' and 'within' kept as synonyms so
+queries saved before still parse (issue #82). The text a reader types
+parses to a small tree and compiles to a predicate over a task, so the
+grid filters a query the same way it filters a saved definition.
 
 DEVELOPMENT NOTES:
 ------------------
@@ -74,20 +76,30 @@ FIELD_ALIASES = {
 
 #: The operator spellings, longest first so '!~' is read before '!'.
 #: Each maps to a test id: the same set the definition rules use, plus
-#: is_empty/is_not_empty which only the language offers.
+#: is_empty/is_not_empty and like, which only the language offers. The
+#: SQL spellings - like, in, between, is null, <> - lead; the ~ and
+#: within of the first version still parse as synonyms (issue #82).
 OPERATORS = (
-    ('not within', 'not_within'), ('not in', 'not_in'),
-    ('is not empty', 'is_not_empty'), ('is empty', 'is_empty'),
-    ('within', 'within'), ('in', 'in'),
+    ('not between', 'not_within'), ('not within', 'not_within'),
+    ('not like', 'not_like'), ('not in', 'not_in'),
+    ('is not empty', 'is_not_empty'), ('is not null', 'is_not_empty'),
+    ('is empty', 'is_empty'), ('is null', 'is_empty'),
+    ('between', 'within'), ('within', 'within'), ('like', 'like'),
+    ('in', 'in'),
     ('!~', 'not_contains'), ('~', 'contains'),
-    ('!=', 'not_equals'), ('>=', 'gte'), ('<=', 'lte'),
-    ('>', 'gt'), ('<', 'lt'), ('=', 'equals'),
+    ('<>', 'not_equals'), ('!=', 'not_equals'), ('>=', 'gte'),
+    ('<=', 'lte'), ('>', 'gt'), ('<', 'lt'), ('=', 'equals'),
 )
+
+#: Spellings old saved queries still parse but suggestions no longer
+#: offer - the SQL form says the same thing and is the one to learn.
+LEGACY_OPERATOR_SPELLINGS = {
+    '~', '!~', 'within', 'not within', 'is empty', 'is not empty'}
 
 #: Which tests each field kind allows, in the order suggestions list them.
 OPERATORS_BY_KIND = {
-    'text': ('contains', 'not_contains', 'equals', 'not_equals',
-             'is_empty', 'is_not_empty'),
+    'text': ('like', 'not_like', 'contains', 'not_contains',
+             'equals', 'not_equals', 'is_empty', 'is_not_empty'),
     'number': ('equals', 'not_equals', 'lt', 'lte', 'gt', 'gte',
                'within', 'not_within', 'is_empty', 'is_not_empty'),
     'date': ('equals', 'not_equals', 'lt', 'lte', 'gt', 'gte',
@@ -155,8 +167,8 @@ def _tokenize(text: str) -> List[_Token]:
         if char.isspace():
             i += 1
             continue
-        if char == '"':
-            end = text.find('"', i + 1)
+        if char in '"\'':
+            end = text.find(char, i + 1)
             if end == -1:
                 raise QueryError("Unclosed quote", i)
             tokens.append(_Token('string', text[i + 1:end], i))
@@ -177,10 +189,12 @@ def _tokenize(text: str) -> List[_Token]:
                 break
         if matched:
             continue
-        if char.isalnum() or char in '._-/':
-            # '/' joins a word so a slashed date needs no quotes.
+        if char.isalnum() or char in '._-/*?%':
+            # '/' joins a word so a slashed date needs no quotes, and the
+            # wildcards ride in it so "like art%" and "name = art*"
+            # read without them.
             start = i
-            while i < n and (text[i].isalnum() or text[i] in '._-/'):
+            while i < n and (text[i].isalnum() or text[i] in '._-/*?%'):
                 i += 1
             word = text[start:i]
             kind = 'number' if word.replace('.', '', 1).replace(
@@ -356,11 +370,16 @@ def _parse_values(tokens, index, field, test, field_pos):
     index += 1
 
     if test in ('within', 'not_within'):
+        # SQL writes the range "BETWEEN a AND b"; the comma spelling the
+        # language started with parses the same way.
         comma = _peek(tokens, index)
-        if comma is None or comma.kind != 'comma':
-            raise QueryError("Expected a second value after ,",
+        if comma is not None and comma.kind == 'comma':
+            index += 1
+        elif _is_keyword(comma, 'and'):
+            index += 1
+        else:
+            raise QueryError("Expected a second value after , or AND",
                              comma.pos if comma else field_pos)
-        index += 1
         token = _peek(tokens, index)
         if token is None or token.kind not in ('word', 'string', 'number'):
             raise QueryError("Expected a second value",
@@ -447,6 +466,13 @@ def _compile(node, project, context: Dict):
                 return wanted.lower() in text.lower()
             if test == 'not_contains':
                 return wanted.lower() not in text.lower()
+            if test in ('like', 'not_like'):
+                # SQL wildcards: % any run, _ one character - said in the
+                # fnmatch tongue the equals test already speaks.
+                pattern = wanted.replace('%', '*').replace('_', '?')
+                matched = fnmatch.fnmatchcase(text.lower(),
+                                              pattern.lower())
+                return matched if test == 'like' else not matched
             matched = fnmatch.fnmatchcase(text.lower(), wanted.lower())
             return matched if test == 'equals' else not matched
         if kind == 'choice':
@@ -614,7 +640,8 @@ def suggestions(text: str, cursor: int, project=None) -> List[str]:
         if field is not None and last.kind == 'word':
             kind = COLUMN_KIND[field]
             return [s for s, t in OPERATORS
-                    if t in OPERATORS_BY_KIND[kind]]
+                    if t in OPERATORS_BY_KIND[kind]
+                    and s not in LEGACY_OPERATOR_SPELLINGS]
         prev = tokens[-2] if len(tokens) > 1 else None
         if prev is not None and prev.kind == 'word' and \
                 resolve_field(prev.text) is not None:
@@ -625,11 +652,13 @@ def suggestions(text: str, cursor: int, project=None) -> List[str]:
                 if offered:
                     return offered
             return [s for s, t in OPERATORS
-                    if t in OPERATORS_BY_KIND[kind]]
+                    if t in OPERATORS_BY_KIND[kind]
+                    and s not in LEGACY_OPERATOR_SPELLINGS]
         if _is_keyword(last, 'is'):
-            return ['is empty', 'is not empty']
+            return ['is empty', 'is not empty', 'is null', 'is not null']
         if _is_keyword(last, 'not'):
-            return ['not in', 'not within'] + sorted(FIELD_ALIASES)
+            return (['not in', 'not between', 'not like']
+                    + sorted(FIELD_ALIASES))
         if _is_keyword(last, 'and', 'or'):
             return sorted(FIELD_ALIASES) + ['not', '(']
         # Mid-word on a field name: offer the fields it prefixes.

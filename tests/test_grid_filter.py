@@ -126,9 +126,19 @@ class TestTheKinds(unittest.TestCase):
         self.assertEqual(self._matching('Task Name', {'text': 'DRAFT'}),
                          {"A"})
 
-    def test_short_text_asks_nothing(self):
-        """Two letters match everything and so filter nothing."""
-        spec = {'text': 'ar'}
+    def test_a_typed_letter_filters(self):
+        """Issue #82: no three-letter minimum - 'a' filters like any text,
+        the way SQL's LIKE '%a%' does."""
+        spec = {'text': 'a'}
+        self.assertTrue(filter_is_active('Task Name', spec, self.project))
+        # 'a' lives in the two task names and both phase names; only
+        # the milestone's name goes without it.
+        self.assertEqual(self._matching('Task Name', spec),
+                         {"P", "A", "B", "Q"})
+
+    def test_empty_text_asks_nothing(self):
+        """An untouched box is the only text spec that filters nothing."""
+        spec = {'text': ''}
         self.assertFalse(filter_is_active('Task Name', spec, self.project))
         self.assertEqual(len(self._matching('Task Name', spec)),
                          len(self.project.tasks))
@@ -182,7 +192,7 @@ class TestTheSet(unittest.TestCase):
 
     def test_specs_that_ask_nothing_mean_no_filter(self):
         self.assertIsNone(filtered_task_ids(
-            self.project, {'Task Name': {'text': 'a'}}))
+            self.project, {'Task Name': {'text': '   '}}))
 
     def test_columns_combine_with_and(self):
         """Progress <60 AND a 'phase' in the name keeps only the phase row
@@ -544,7 +554,7 @@ class TestSpecsToRules(unittest.TestCase):
         self.assertEqual(rules[0]['value'], ['Milestone', 'Task'])
 
     def test_specs_that_ask_nothing_save_nothing(self):
-        self.assertEqual(specs_to_rules({'Task Name': {'text': 'ar'}},
+        self.assertEqual(specs_to_rules({'Task Name': {'text': '  '}},
                                         self.project), [])
 
 

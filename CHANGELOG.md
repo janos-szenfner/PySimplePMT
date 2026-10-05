@@ -2,6 +2,20 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **The Advanced filter speaks SQL.** The query language takes the
+  spellings a reader already knows - like and not like with the % and _
+  wildcards, <>, in and not in, between a and b, is null and is not
+  null, and strings quoted single or double - while ~, !~, within and
+  is empty keep parsing so saved queries still run (issue #82). The
+  autocomplete offers the SQL forms. And the Basic tab's text boxes
+  filter on whatever is typed: the three-letter minimum is gone, so a
+  single character narrows the list the way LIKE '%a%' would.
+
+- **Set and Clear Baseline act on the whole project.** The Scope
+  section - Entire Project or Selected Tasks Only - is off both
+  dialogs, the way the feature underneath already worked: every
+  baseline captures and clears the entire plan (issue #84).
+
 - **Two more built-in highlight filters.** "Tasks With a Named
   Calendar" paints every row carrying its own calendar override rather
   than the project's default, and "Tasks With No Resources" paints the

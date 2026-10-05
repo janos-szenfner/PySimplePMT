@@ -1770,12 +1770,8 @@ class Toolbar(ctk.CTkFrame):
         """Open the Set Baseline dialog."""
         from gantt_app.views.baselinedialog import BaselineSetDialog
         logger.info("Opening the Set Baseline dialog")
-        selected = []
-        if self.task_list is not None:
-            selected = self.task_list.get_selected_task_ids()
         BaselineSetDialog(
             self.winfo_toplevel(), self.project, self.baseline_manager,
-            selected_task_ids=selected,
             on_set=self._refresh_baseline_views,
         )
 
@@ -1783,12 +1779,8 @@ class Toolbar(ctk.CTkFrame):
         """Open the Clear Baseline dialog."""
         from gantt_app.views.baselinedialog import BaselineClearDialog
         logger.info("Opening the Clear Baseline dialog")
-        selected = []
-        if self.task_list is not None:
-            selected = self.task_list.get_selected_task_ids()
         BaselineClearDialog(
             self.winfo_toplevel(), self.project, self.baseline_manager,
-            selected_task_ids=selected,
             on_clear=self._refresh_baseline_views,
         )
 

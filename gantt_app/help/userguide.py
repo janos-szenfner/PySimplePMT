@@ -852,18 +852,21 @@ GUIDE_SECTIONS = (
             "rule passes - each match keeping its ancestors, so the "
             "outline still reads as a plan.",
 
-            "The Advanced tab asks the same question in words, the way "
-            "Jira's JQL does: type in (Task, Milestone) and progress < "
-            "50, or name ~ \"art\" and not status = \"In Progress\". A "
+            "The Advanced tab asks the same question in words, with "
+            "SQL's spellings: type in (Task, Milestone) and progress < "
+            "50, or name like 'art%' and not status = \"In Progress\". A "
             "field is typed the way it is read - name, start, "
             "taskcalendar, baselinefinish and \"Task Name\" all resolve "
-            "- and the tests are = and !=, ~ for contains and !~ for "
-            "does not contain, the comparisons < <= > >=, in and not "
-            "in for a bracketed list, within and not within for a pair "
-            "of dates, and is empty or is not empty for a field that "
-            "may hold nothing. and, or and not combine the tests and "
-            "brackets group them; dates take the dashed, dotted or "
-            "slashed spellings the date boxes do.",
+            "- and the tests are = and != or <>, like and not like "
+            "with the % and _ wildcards (so like 'art%' starts with, "
+            "like '%art' ends with and like '%art%' contains), the "
+            "comparisons < <= > >=, in and not in for a bracketed "
+            "list, between a and b and not between for a pair of "
+            "dates, and is null, is not null, is empty or is not "
+            "empty for a field that may hold nothing. and, or and not "
+            "combine the tests and brackets group them; dates take "
+            "the dashed, dotted or slashed spellings the date boxes "
+            "do, and strings quote single or double.",
 
             "The box is helped as it is typed. A list under it offers "
             "the fields, tests and values that make sense at the "

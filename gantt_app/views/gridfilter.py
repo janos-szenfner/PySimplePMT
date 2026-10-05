@@ -71,10 +71,10 @@ COLUMN_KIND = {
     'Baseline Start': 'date', 'Baseline Finish': 'date',
 }
 
-#: How much text a text filter wants before it means anything. A letter or
-#: two matches half the plan and costs a rebuild for nothing, so "art"
-#: filters and "a" does not.
-TEXT_MIN = 3
+#: How much text a text filter wants before it means anything. A typed
+#: letter filters, the way SQL's LIKE '%x%' does - the minimum only
+#: keeps an empty box from pretending to be a rule (issue #82).
+TEXT_MIN = 1
 
 #: What an unticked-or-ticked Alert choice says, for a column whose real
 #: values are a warning sign and nothing.

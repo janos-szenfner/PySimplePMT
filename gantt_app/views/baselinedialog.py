@@ -1,6 +1,6 @@
 """Dialogs for setting and clearing project schedule baselines."""
 import tkinter as tk
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import customtkinter as ctk
 
@@ -50,21 +50,26 @@ class _BaselineDialogBase(ctk.CTkToplevel):
 
 
 class BaselineSetDialog(_BaselineDialogBase):
-    """Modal dialog for capturing a baseline for the whole or selected tasks."""
+    """
+    Modal dialog for capturing a baseline of the whole project.
+
+    MS Project's Scope section - entire project or selected tasks only -
+    is not offered: the app captures the entire project, every time
+    (issue #84, following #19). The roll-up option still applies to the
+    whole plan, so it stays.
+    """
 
     def __init__(self, master, project: Project,
                  baseline_manager: BaselineManager,
-                 selected_task_ids: List[str] = None,
                  on_set: Callable[[], None] = None):
         self.project = project
         self.baseline_manager = baseline_manager
-        self.selected_task_ids = selected_task_ids or []
         self.on_set = on_set
         super().__init__(master, "Set Baseline")
 
     def _build(self):
         super()._build()
-        self.geometry("460x360")
+        self.geometry("460x260")
 
         # Baseline slot selector
         ctk.CTkLabel(self._body, text="Baseline slot", anchor=tk.W).grid(
@@ -80,36 +85,12 @@ class BaselineSetDialog(_BaselineDialogBase):
         else:
             self._slot_var.set(slot_labels[0])
 
-        # Scope radio buttons
-        ctk.CTkLabel(self._body, text="Scope", anchor=tk.W).grid(
-            row=2, column=0, sticky=tk.W, pady=(0, 4))
-        self._scope_var = tk.StringVar(value="entire")
-        self._entire_rb = ctk.CTkRadioButton(
-            self._body, text="Entire Project", variable=self._scope_var,
-            value="entire", command=self._on_scope_changed)
-        self._entire_rb.grid(row=3, column=0, sticky=tk.W)
-        self._selected_rb = ctk.CTkRadioButton(
-            self._body, text="Selected Tasks Only", variable=self._scope_var,
-            value="selected", command=self._on_scope_changed)
-        self._selected_rb.grid(row=4, column=0, sticky=tk.W)
-
         # Roll-up checkbox
         self._rollup_var = tk.BooleanVar(value=False)
         self._rollup_cb = ctk.CTkCheckBox(
             self._body, text="Roll up baseline data to parent summary tasks",
             variable=self._rollup_var)
-        self._rollup_cb.grid(row=5, column=0, sticky=tk.W, pady=(8, 0))
-
-        if not self.selected_task_ids:
-            self._selected_rb.configure(state="disabled")
-            self._scope_var.set("entire")
-        self._on_scope_changed()
-
-    def _on_scope_changed(self):
-        enabled = self._scope_var.get() == "selected" and bool(self.selected_task_ids)
-        self._rollup_cb.configure(state="normal" if enabled else "disabled")
-        if not enabled:
-            self._rollup_var.set(False)
+        self._rollup_cb.grid(row=2, column=0, sticky=tk.W, pady=(8, 0))
 
     def _on_ok(self):
         label = self._slot_var.get()
@@ -121,35 +102,33 @@ class BaselineSetDialog(_BaselineDialogBase):
             self.destroy()
             return
 
-        if self._scope_var.get() == "entire":
-            task_ids = None
-        else:
-            task_ids = self.selected_task_ids or None
-
         # Saving a baseline stores it without turning comparison on: a fresh
         # baseline should not appear on the Gantt chart until the reader asks
         # for it through Compare Baseline. set_active would otherwise make
         # the slot the one the chart draws the moment it is captured.
         self.baseline_manager.set_baseline(
-            self.project, number, task_ids=task_ids,
+            self.project, number, task_ids=None,
             rollup=self._rollup_var.get(), set_active=False)
-        logger.info("Baseline %d captured for %s", number,
-                    "entire project" if task_ids is None else "selected tasks")
+        logger.info("Baseline %d captured for the entire project", number)
         if self.on_set:
             self.on_set()
         self.destroy()
 
 
 class BaselineClearDialog(_BaselineDialogBase):
-    """Modal dialog for clearing an entire baseline or selected tasks."""
+    """
+    Modal dialog for clearing a baseline off the whole project.
+
+    As on the Set side there is no Scope section: clearing is done for
+    the entire project only (issue #84, following #19), and every clear
+    asks the reader to confirm.
+    """
 
     def __init__(self, master, project: Project,
                  baseline_manager: BaselineManager,
-                 selected_task_ids: List[str] = None,
                  on_clear: Callable[[], None] = None):
         self.project = project
         self.baseline_manager = baseline_manager
-        self.selected_task_ids = selected_task_ids or []
         self.on_clear = on_clear
         super().__init__(master, "Clear Baseline")
 
@@ -170,19 +149,6 @@ class BaselineClearDialog(_BaselineDialogBase):
             first_set = next((s for s in self.baseline_manager.slots if s.is_set), None)
             self._slot_var.set(slot_labels[(first_set.number - 1) if first_set else 0])
 
-        ctk.CTkLabel(self._body, text="Scope", anchor=tk.W).grid(
-            row=2, column=0, sticky=tk.W, pady=(0, 4))
-        self._scope_var = tk.StringVar(value="entire")
-        ctk.CTkRadioButton(
-            self._body, text="Entire Project", variable=self._scope_var,
-            value="entire").grid(row=3, column=0, sticky=tk.W)
-        self._selected_rb = ctk.CTkRadioButton(
-            self._body, text="Selected Tasks Only", variable=self._scope_var,
-            value="selected")
-        self._selected_rb.grid(row=4, column=0, sticky=tk.W)
-        if not self.selected_task_ids:
-            self._selected_rb.configure(state="disabled")
-
     def _on_ok(self):
         label = self._slot_var.get()
         try:
@@ -200,16 +166,12 @@ class BaselineClearDialog(_BaselineDialogBase):
             self.destroy()
             return
 
-        if self._scope_var.get() == "entire":
-            if not messagebox.askyesno(
-                "Clear Baseline",
-                f"Permanently clear Baseline {number}? This cannot be undone."):
-                return
-            task_ids = None
-        else:
-            task_ids = self.selected_task_ids or None
+        if not messagebox.askyesno(
+            "Clear Baseline",
+            f"Permanently clear Baseline {number}? This cannot be undone."):
+            return
 
-        self.baseline_manager.clear_baseline(number, task_ids=task_ids)
+        self.baseline_manager.clear_baseline(number, task_ids=None)
         logger.info("Baseline %d cleared", number)
         if self.on_clear:
             self.on_clear()
