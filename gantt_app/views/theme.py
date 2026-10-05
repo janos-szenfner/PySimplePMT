@@ -1020,6 +1020,14 @@ class ThemeController:
         for listener, owner in self._listeners:
             if self._owner_is_gone(owner):
                 continue
+            # The owner living does not mean the listener does: it may be a
+            # bound method of a different widget that has been destroyed.
+            # Dropped rather than called, the same as a dead owner - calling
+            # it would only ever log a TclError.
+            bound = getattr(listener, '__self__', None)
+            if bound is not None and self._owner_is_gone(
+                    self._owner_ref(bound)):
+                continue
             alive.append((listener, owner))
             try:
                 listener(self._mode, self._appearance)
