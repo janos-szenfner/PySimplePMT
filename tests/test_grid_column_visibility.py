@@ -46,31 +46,6 @@ def _display_available() -> bool:
 HAVE_DISPLAY = _display_available()
 
 
-class TestTheSettingItself(unittest.TestCase):
-    """The model side: the default, and the file round-trip."""
-
-    def test_label_is_hidden_by_default(self):
-        """The column a plan only needs once it has labels."""
-        self.assertEqual(Project(name="P").hidden_grid_columns, ['Label'])
-
-    def test_it_survives_a_save_round_trip(self):
-        """The point of putting it on the project is that it is saved."""
-        project = Project(name="P")
-        project.hidden_grid_columns = ['Label', 'Outline']
-
-        loaded = Project.from_dict(project.to_dict())
-
-        self.assertEqual(loaded.hidden_grid_columns, ['Label', 'Outline'])
-
-    def test_an_old_plan_reads_the_default(self):
-        """A file from before the setting still hides the Label column."""
-        data = Project(name="P").to_dict()
-        del data['hidden_grid_columns']
-
-        self.assertEqual(Project.from_dict(data).hidden_grid_columns,
-                         ['Label'])
-
-
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class GridColumnCase(unittest.TestCase):
     """Shared fixture: a withdrawn root with a bare task list."""

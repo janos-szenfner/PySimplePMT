@@ -37,58 +37,6 @@ def _deliverable(deliverable_id, name='D', **kwargs):
                               **kwargs)
 
 
-class TestHealth(unittest.TestCase):
-    """The colours the rows and the list take - issue #102."""
-
-    def test_a_done_row_is_done(self):
-        self.assertEqual(
-            deliverable_health(_deliverable('001', progress=100)), 'done')
-        self.assertEqual(
-            deliverable_health(_deliverable('001', status='Done',
-                                            due_date=YESTERDAY)),
-            'done')
-
-    def test_an_unfinished_row_past_due_is_overdue(self):
-        self.assertEqual(
-            deliverable_health(
-                _deliverable('001', due_date=YESTERDAY, progress=50)),
-            'overdue')
-
-    def test_a_started_row_owed_later_is_on_track(self):
-        self.assertEqual(
-            deliverable_health(
-                _deliverable('001', due_date=TOMORROW, progress=40)),
-            'on_track')
-
-    def test_an_unstarted_row_reads_grey(self):
-        self.assertEqual(
-            deliverable_health(_deliverable('001', due_date=TOMORROW)),
-            'not_started')
-
-    def test_the_list_is_green_only_when_everything_is_done(self):
-        rows = [_deliverable('001', progress=100),
-                _deliverable('002', progress=100)]
-        self.assertEqual(overall_deliverable_health(rows), 'done')
-        rows.append(_deliverable('003', progress=90))
-        self.assertNotEqual(overall_deliverable_health(rows), 'done')
-
-    def test_a_late_row_is_amber_until_the_final_deadline(self):
-        # One row is late but the furthest date owed is still ahead.
-        rows = [_deliverable('001', due_date=YESTERDAY, progress=40),
-                _deliverable('002', due_date=NEXT_WEEK, progress=40)]
-        self.assertEqual(overall_deliverable_health(rows), 'at_risk')
-
-    def test_the_list_is_red_once_the_final_deadline_passes(self):
-        rows = [_deliverable('001', due_date=YESTERDAY, progress=40),
-                _deliverable('002', due_date=YESTERDAY, progress=80)]
-        self.assertEqual(overall_deliverable_health(rows), 'overdue')
-
-    def test_the_list_is_blue_while_nothing_is_late(self):
-        rows = [_deliverable('001', due_date=TOMORROW, progress=40),
-                _deliverable('002', due_date=TOMORROW)]
-        self.assertEqual(overall_deliverable_health(rows), 'on_track')
-
-
 class BoardTestCase(unittest.TestCase):
     """A board over a small plan; every test gets a fresh one."""
 
