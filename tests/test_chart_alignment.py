@@ -388,6 +388,25 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
         else:
             self.skipTest("the window never became viewable")
 
+        # Viewable is not settled. On a desktop under load - a CI runner
+        # mid-build - the panes keep moving for a while after the window
+        # maps, and an offset read mid-move is a wrong answer the test
+        # quite rightly refuses. So the panes are asked where they are
+        # until they stop moving - two matching reads - before any test
+        # asks where the rows are. The same deadline stands; a desktop
+        # that never settles is skipped by the tests' own not-settled
+        # guards rather than hung on here.
+        previous = None
+        deadline = time.monotonic() + self.SETTLE_SECONDS
+        while time.monotonic() < deadline:
+            self.app.update_idletasks()
+            time.sleep(0.05)
+            positions = (self.app.gantt_chart.chart_frame.winfo_rooty(),
+                         self.app.task_list.tree.winfo_rooty())
+            if positions == previous:
+                break
+            previous = positions
+
         self.app.update_idletasks()
 
     def _destroy(self):
