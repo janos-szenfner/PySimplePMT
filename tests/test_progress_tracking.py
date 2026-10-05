@@ -26,9 +26,6 @@ from datetime import datetime, timedelta
 
 from gantt_app.core.models import Project, Task
 
-#: Monday 17 August 2026, so the weekday of every date below is known.
-MONDAY = datetime(2026, 8, 17)
-
 
 def _shut_down(root) -> None:
     """
