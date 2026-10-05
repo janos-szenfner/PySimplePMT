@@ -407,6 +407,15 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
                 break
             previous = positions
 
+        # And the answer is asked again, because a draw that ran while
+        # the panes were still moving kept what it measured - the offset
+        # is cached from the first settled-looking read, and a desktop
+        # that finished moving afterwards does not unsettle it. The
+        # running application forgets its answer whenever the panes
+        # genuinely move (on_resize); here the same is done once the
+        # test knows they have stopped.
+        self.app.gantt_chart._row_offset = None
+
         self.app.update_idletasks()
 
     def _destroy(self):
