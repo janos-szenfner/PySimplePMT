@@ -84,6 +84,18 @@ Feature: The update check reads the release feed (issue #41)
     When the running "1.68.2" checks for an update
     Then the status is "unknown"
 
+  Scenario: A list with a draft first skips to the real release
+    # The fallback takes the first non-draft entry, not the first entry.
+    Given the latest call 404s and the list leads with a draft then "v1.69.0"
+    When the running "1.68.2" checks for an update
+    Then the status is "update"
+    And the latest version is "1.69.0"
+
+  Scenario: A list answer that is not a list stays unknown
+    Given the latest call 404s and the list answers a mapping
+    When the running "1.68.2" checks for an update
+    Then the status is "unknown"
+
   Scenario: A latest 404 with no releases at all stays unknown
     Given the latest call 404s and the list is empty
     When the running "1.68.2" checks for an update
@@ -94,6 +106,15 @@ Feature: The update check reads the release feed (issue #41)
     When the running "1.68.2" checks for an update
     Then the status is "unknown"
     And the info carries an error
+
+  Scenario: The release's downloadable assets come through
+    # The About window hands the download step these assets; an asset
+    # with no download URL is dropped rather than carried unusably.
+    Given the release feed answers tag "v1.69.0" at "https://example/rel" carrying assets
+    When the running "1.68.2" checks for an update
+    Then the status is "update"
+    And the info carries 1 downloadable asset
+    And the asset is named "pysimplepmt-1.69.0-macos-arm64.dmg" from "https://example/dmg"
 
   # ---- the certificate store ------------------------------------------
   # The packaged build has no system CA store - the frozen macOS

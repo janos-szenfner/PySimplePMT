@@ -97,6 +97,35 @@ def the_list_has_only_drafts(ctx):
         [{"tag_name": "v9.9.9", "draft": True}])
 
 
+@given(parsers.parse('the latest call 404s and the list leads with a '
+                     'draft then "{tag}"'))
+def the_list_leads_with_a_draft(ctx, tag):
+    ctx.fetch = _fetch_latest_404s(
+        [{"tag_name": "v9.9.9", "draft": True},
+         {"tag_name": tag, "html_url": "https://example/rel"}])
+
+
+@given("the latest call 404s and the list answers a mapping")
+def the_list_answers_a_mapping(ctx):
+    ctx.fetch = _fetch_latest_404s({"tag_name": "v1.69.0"})
+
+
+@given(parsers.parse('the release feed answers tag "{tag}" at "{url}" '
+                     'carrying assets'))
+def the_feed_answers_with_assets(ctx, tag, url):
+    def fetch(_url, _timeout):
+        return {
+            "tag_name": tag, "html_url": url,
+            "assets": [
+                {"name": "pysimplepmt-1.69.0-macos-arm64.dmg",
+                 "browser_download_url": "https://example/dmg",
+                 "size": 10},
+                {"name": "no-download-url.txt", "size": 1},
+            ],
+        }
+    ctx.fetch = fetch
+
+
 @given("the latest call 404s and the list is empty")
 def the_list_is_empty(ctx):
     ctx.fetch = _fetch_latest_404s([])
@@ -214,6 +243,19 @@ def the_download_page_mentions(ctx, word):
 @then("the info carries an error")
 def the_info_carries_an_error(ctx):
     assert ctx.info.error is not None
+
+
+@then(parsers.parse('the info carries {count:d} downloadable asset'))
+@then(parsers.parse('the info carries {count:d} downloadable assets'))
+def the_info_carries_assets(ctx, count):
+    assert len(ctx.info.assets) == count
+
+
+@then(parsers.parse('the asset is named "{name}" from "{url}"'))
+def the_asset_is_named(ctx, name, url):
+    asset = ctx.info.assets[0]
+    assert asset["name"] == name
+    assert asset["url"] == url
 
 
 @then("the SSL context it used trusts the shipped certifi bundle")

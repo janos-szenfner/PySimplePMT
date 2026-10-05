@@ -37,6 +37,12 @@ Feature: An assisted update brings down only what it can verify
     When an installer is picked for "darwin"
     Then nothing is picked
 
+  Scenario: Asset names match regardless of case
+    # A release naming its file .DMG still installs on macOS.
+    Given the release offers "dmg_upper,sums"
+    When an installer is picked for "darwin"
+    Then the picked asset is the "dmg_upper"
+
   # ---- reading the SHA256SUMS listing -------------------------------
 
   Scenario: The digest of a listed file is found
@@ -102,6 +108,28 @@ Feature: An assisted update brings down only what it can verify
     Then an update error is raised
     And the folder is empty
 
+  Scenario: An asset with no URL at all is refused
+    Given a scratch folder
+    And a checksums listing digesting the payload for the "dmg" asset
+    When the "dmg" asset with no URL is downloaded and verified
+    Then an update error is raised
+
+  Scenario: A capital digest in the listing still verifies
+    # sha256sum writes lower-case; the compare is case-insensitive, so a
+    # listing that was not can still pass.
+    Given a scratch folder
+    And the download serves "the installer bytes"
+    And a checksums listing digesting the payload for the "dmg" asset in capitals
+    When the "dmg" asset is downloaded and verified
+    Then the verified file is in the folder
+
+  Scenario: Progress is reported as bytes received and total
+    Given a scratch folder
+    And the download serves "the installer bytes"
+    And a checksums listing digesting the payload for the "dmg" asset
+    When the "dmg" asset is downloaded and verified with progress
+    Then progress was reported with the payload's length as both counts
+
   # ---- the whole fetch ----------------------------------------------
 
   Scenario: The verified installer comes down end to end
@@ -128,6 +156,39 @@ Feature: An assisted update brings down only what it can verify
     Given a scratch folder
     And an update offering "dmg" with checksums fetched from "ftp://example/sums"
     When a verified installer is fetched for "darwin"
+    Then an update error is raised
+
+  Scenario: A checksums asset with no URL refuses
+    # Present but not fetchable is still "nothing to verify against".
+    Given a scratch folder
+    And an update offering "dmg" with checksums that have no URL
+    When a verified installer is fetched for "darwin"
+    Then an integrity error is raised
+
+  Scenario: A checksums fetch that fails is an update error
+    Given a scratch folder
+    And an update offering "dmg,sums"
+    And the checksums fetch fails with "offline"
+    When a verified installer is fetched for "darwin"
+    Then an update error is raised
+
+  # ---- handing the verified file to the OS ------------------------------
+
+  Scenario Outline: The OS opens the verified installer
+    When the installer "setup.dmg" is opened on "<platform>"
+    Then the OS was asked to open it with "<command>"
+
+    Examples:
+      | platform | command  |
+      | darwin   | open     |
+      | linux    | xdg-open |
+
+  Scenario: Windows opens the installer with its default handler
+    When the installer "setup.msi" is opened on "win32"
+    Then Windows was asked to start it
+
+  Scenario: An unknown platform cannot open the installer
+    When the installer "setup.dmg" is opened on "sunos"
     Then an update error is raised
 
   Scenario: Assistance needs both a platform installer and the checksums

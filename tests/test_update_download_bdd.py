@@ -12,7 +12,9 @@ opened.
 """
 import hashlib
 import os
+import sys
 from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -37,6 +39,8 @@ ASSETS = {
     "exe": {"name": "PySimplePMT-setup.exe", "url": "u", "size": 1},
     "sums": {"name": "SHA256SUMS", "url": "https://example/sums",
              "size": 1},
+    "dmg_upper": {"name": "PYSIMPLEPMT-1.69.0-MACOS-ARM64.DMG",
+                  "url": "https://example/dmg", "size": 10},
 }
 
 STANDARD_SUMS = (
@@ -104,6 +108,19 @@ def an_update_with_sums_url(ctx, kinds, url):
     ctx.info = _update_info(assets)
 
 
+@given(parsers.parse('an update offering "{kinds}" with checksums '
+                     'that have no URL'))
+def an_update_with_urlless_sums(ctx, kinds):
+    assets = _assets(kinds)
+    assets.append({"name": "SHA256SUMS", "size": 1})
+    ctx.info = _update_info(assets)
+
+
+@given(parsers.parse('the checksums fetch fails with "{message}"'))
+def the_checksums_fetch_fails(ctx, message):
+    ctx.sums_error = OSError(message)
+
+
 @given("the standard checksums listing")
 def the_standard_checksums_listing(ctx):
     ctx.sums_text = STANDARD_SUMS
@@ -125,6 +142,13 @@ def a_checksums_listing(ctx, name, digest):
                      'the "{kind}" asset'))
 def a_checksums_digesting_the_payload(ctx, kind):
     digest = hashlib.sha256(ctx.payload).hexdigest()
+    ctx.sums_text = f"{digest}  {ASSETS[kind]['name']}\n"
+
+
+@given(parsers.parse('a checksums listing digesting the payload for '
+                     'the "{kind}" asset in capitals'))
+def a_checksums_digesting_the_payload_in_capitals(ctx, kind):
+    digest = hashlib.sha256(ctx.payload).hexdigest().upper()
     ctx.sums_text = f"{digest}  {ASSETS[kind]['name']}\n"
 
 
@@ -168,10 +192,13 @@ def the_digest_is_looked_up(ctx, filename):
     ctx.digest = ud.parse_sha256sums(ctx.sums_text, filename)
 
 
-def _download_and_verify(ctx, asset):
+def _download_and_verify(ctx, asset, progress=None):
+    if not hasattr(ctx, "download"):
+        ctx.download = _serving(ctx)
     try:
         ctx.path = ud.download_and_verify(asset, ctx.sums_text,
                                           dest_dir=ctx.dir,
+                                          progress=progress,
                                           download=ctx.download)
     except ud.UpdateError as error:
         ctx.error = error
@@ -182,10 +209,46 @@ def the_asset_is_downloaded(ctx, kind):
     _download_and_verify(ctx, ASSETS[kind])
 
 
+@when(parsers.parse('the "{kind}" asset is downloaded and verified '
+                    'with progress'))
+def the_asset_is_downloaded_with_progress(ctx, kind):
+    ctx.progress_calls = []
+    _download_and_verify(ctx, ASSETS[kind],
+                         progress=lambda r, t: ctx.progress_calls
+                         .append((r, t)))
+
+
 @when(parsers.parse('the "{kind}" asset at "{url}" is downloaded '
                     'and verified'))
 def the_asset_at_url_is_downloaded(ctx, kind, url):
     _download_and_verify(ctx, {**ASSETS[kind], "url": url})
+
+
+@when(parsers.parse('the "{kind}" asset with no URL is downloaded '
+                    'and verified'))
+def the_urlless_asset_is_downloaded(ctx, kind):
+    _download_and_verify(ctx, {"name": ASSETS[kind]["name"], "size": 1})
+
+
+@when(parsers.parse('the installer "{name}" is opened on "{platform}"'))
+def the_installer_is_opened(ctx, name, platform):
+    ctx.calls = {"run": [], "startfile": []}
+    ctx.path = name
+
+    def fake_run(argv, **kwargs):
+        ctx.calls["run"].append(argv)
+
+    def fake_startfile(path):
+        ctx.calls["startfile"].append(path)
+
+    with mock.patch.object(sys, "platform", platform), \
+            mock.patch("subprocess.run", fake_run), \
+            mock.patch.object(os, "startfile", fake_startfile,
+                              create=True):
+        try:
+            ud.open_installer(name)
+        except ud.UpdateError as error:
+            ctx.error = error
 
 
 @when(parsers.parse('a verified installer is fetched for "{platform}"'))
@@ -194,6 +257,8 @@ def a_verified_installer_is_fetched(ctx, platform):
         ctx.download = _serving(ctx)
 
     def fetch_text(url, timeout):
+        if getattr(ctx, "sums_error", None) is not None:
+            raise ctx.sums_error
         return ctx.sums_text
 
     try:
@@ -267,3 +332,19 @@ def a_release_can_assist(kinds, platform):
 @then(parsers.parse('a release of "{kinds}" cannot assist "{platform}"'))
 def a_release_cannot_assist(kinds, platform):
     assert not ud.can_assist(_update_info(_assets(kinds)), platform)
+
+
+@then("progress was reported with the payload's length as both counts")
+def progress_was_reported(ctx):
+    assert ctx.progress_calls
+    assert ctx.progress_calls[-1] == (len(ctx.payload), len(ctx.payload))
+
+
+@then(parsers.parse('the OS was asked to open it with "{command}"'))
+def the_os_was_asked(ctx, command):
+    assert ctx.calls["run"] == [[command, ctx.path]]
+
+
+@then("Windows was asked to start it")
+def windows_was_asked(ctx):
+    assert ctx.calls["startfile"] == [ctx.path]

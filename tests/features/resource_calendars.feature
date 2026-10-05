@@ -85,6 +85,44 @@ Feature: A task is scheduled where its calendar and its resources' agree
     And "Build" ignores resource calendars
     Then "2026-01-07" is a working day for "Build"
 
+  # ---- the calendar the task names ------------------------------------
+
+  Scenario: A task follows its own named calendar
+    # The task's calendar, not the plan's, is what crosses the
+    # resources' - a Saturday its calendar works is a day it can spend.
+    Given a plan
+    And a calendar "Saturday Shift" that works "2026-01-10"
+    And a task "Shift" running "2026-01-05" to "2026-01-09" of 5 days
+    And "Shift" follows the "Saturday Shift" calendar
+    Then "2026-01-10" is a working day for "Shift"
+
+  Scenario: A calendar id that resolves nowhere falls back
+    # A deleted calendar must not strand the task - it quietly follows
+    # the plan's own.
+    Given a plan
+    And a task "Build" running "2026-01-05" to "2026-01-09" of 5 days
+    And "Build" follows the "ghost" calendar
+    Then "2026-01-07" is a working day for "Build"
+    And "2026-01-10" is not a working day for "Build"
+
+  Scenario: A material assignment leaves the calendar alone
+    # Materials are used up, not worked - there is no calendar to cross.
+    Given a plan
+    And the material "Bricks" exists
+    And a task "Build" running "2026-01-05" to "2026-01-09" of 5 days
+    And "Build" is assigned to the material "Bricks"
+    Then "2026-01-07" is a working day for "Build"
+
+  Scenario: A weekend-only resource empties the working week
+    # Intersection is honest: Mon-Fri crossed with Sat-Sun works no day
+    # at all, and the task becomes unschedulable rather than pretend.
+    Given a plan
+    And the resource "Crew" works weekends only
+    And a task "Build" running "2026-01-05" to "2026-01-09" of 5 days
+    And "Build" is assigned to "Crew"
+    Then "2026-01-05" is not a working day for "Build"
+    And "2026-01-10" is not a working day for "Build"
+
   # ---- the stretch the issue describes --------------------------------
   # Finish moves when work cannot.
 
@@ -117,6 +155,20 @@ Feature: A task is scheduled where its calendar and its resources' agree
     And "Kick" is assigned to "Ann"
     When the work is scheduled
     Then "Kick" starts on "2026-01-09"
+
+  Scenario: A successor waits across the resource's days off
+    # The predecessor's stretch drags the row linked to it: Build lands
+    # Tue the 13th, so three days follow on from Wednesday the 14th.
+    Given a plan
+    And the resource "Ann" works a standard week
+    And "Ann" is off from "2026-01-07" to "2026-01-08"
+    And a task "Build" running "2026-01-05" to "2026-01-09" of 5 days
+    And "Build" is assigned to "Ann"
+    And a task "Follow" running "2026-01-12" to "2026-01-14" of 3 days
+    And "Follow" runs after "Build"
+    When the work is scheduled
+    Then "Build" ends on "2026-01-13"
+    And "Follow" starts on "2026-01-14"
 
   # ---- the flag itself --------------------------------------------------
 

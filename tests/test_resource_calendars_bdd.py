@@ -17,9 +17,10 @@ from types import SimpleNamespace
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from gantt_app.core.models import Project, Task
+from gantt_app.core.models import Dependency, Project, Task
 from gantt_app.core.resource_model import (
-    DaysOffRange, Resource, ResourceType, SchedulePattern,
+    DaysOffRange, MaterialResource, Resource, ResourceType,
+    SchedulePattern,
 )
 
 pytestmark = [
@@ -72,7 +73,8 @@ def _day(text):
 @pytest.fixture
 def ctx():
     context = SimpleNamespace(
-        project=None, tasks={}, resources={}, tab=None, root=None)
+        project=None, tasks={}, resources={}, calendar_ids={},
+        tab=None, root=None)
     yield context
     if context.root is not None:
         _shut_down(context.root)
@@ -172,6 +174,48 @@ def task_is_assigned_to_two(ctx, task, first, second):
 @given(parsers.parse('"{task}" is assigned to a resource nobody has'))
 def task_is_assigned_to_a_ghost(ctx, task):
     ctx.tasks[task].resource_assignments = [{"resource_id": "ghost"}]
+
+
+@given(parsers.parse('"{task}" is assigned to the material "{name}"'))
+def task_is_assigned_a_material(ctx, task, name):
+    ctx.tasks[task].resource_assignments = [
+        {"resource_id": ctx.materials[name].id}]
+
+
+@given(parsers.parse('"{task}" runs after "{predecessor}"'))
+def task_runs_after(ctx, task, predecessor):
+    ctx.tasks[task].dependencies.append(
+        Dependency(task_id=ctx.tasks[predecessor].id))
+
+
+@given(parsers.parse('the resource "{name}" works weekends only'))
+def a_weekend_only_resource(ctx, name):
+    _resource(ctx, name, schedule_pattern=SchedulePattern.WEEKEND_ONLY)
+
+
+@given(parsers.parse('the material "{name}" exists'))
+def a_material(ctx, name):
+    if not hasattr(ctx, "materials"):
+        ctx.materials = {}
+    material = MaterialResource(id=f"m{len(ctx.materials) + 1}",
+                                name=name)
+    ctx.project.resource_repository.add_material(material)
+    ctx.materials[name] = material
+
+
+@given(parsers.parse('a calendar "{name}" that works "{date}"'))
+def a_calendar_that_works(ctx, name, date):
+    named = ctx.project.calendars.create(name)
+    named.calendar.add_override(_day(date), is_working_day=True)
+    ctx.calendar_ids[name] = named.id
+
+
+@given(parsers.parse('"{task}" follows the "{calendar}" calendar'))
+def task_follows_calendar(ctx, task, calendar):
+    # A name the registry does not know is set as-is, so the dangling-id
+    # fallback is exercised rather than sidestepped.
+    ctx.tasks[task].calendar_id = ctx.calendar_ids.get(calendar,
+                                                     calendar)
 
 
 @given(parsers.parse('"{task}" ignores resource calendars'))

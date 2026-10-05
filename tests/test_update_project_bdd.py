@@ -81,6 +81,31 @@ def a_pinned_task(ctx, name, start, end, date):
 
 
 @given(parsers.parse('a task "{name}" running "{start}" to "{end}" '
+                     'must finish on "{date}"'))
+def a_finish_pinned_task(ctx, name, start, end, date):
+    ctx.counter += 1
+    _add(ctx, Task(id=f"T{ctx.counter}", name=name, task_type="Task",
+                   start_date=_day(start), end_date=_day(end),
+                   constraint_type='MFO', constraint_date=_day(date)))
+
+
+@given(parsers.parse('a task "{name}" starting "{start}" at '
+                     '{progress:d}%'))
+def an_open_ended_task(ctx, name, start, progress):
+    ctx.counter += 1
+    _add(ctx, Task(id=f"T{ctx.counter}", name=name, task_type="Task",
+                   start_date=_day(start), end_date=None,
+                   progress=progress))
+
+
+@given(parsers.parse('a task "{name}" with no dates'))
+def a_task_with_no_dates(ctx, name):
+    ctx.counter += 1
+    _add(ctx, Task(id=f"T{ctx.counter}", name=name, task_type="Task",
+                   start_date=None, end_date=None))
+
+
+@given(parsers.parse('a task "{name}" running "{start}" to "{end}" '
                      'inside "{parent}"'))
 def a_task_inside(ctx, name, start, end, parent):
     ctx.counter += 1
@@ -120,6 +145,11 @@ def a_phase(ctx, name, start, end):
 @when(parsers.parse('uncompleted work is rescheduled behind "{date}"'))
 def reschedule_behind(ctx, date):
     ctx.moved = ctx.project.reschedule_uncompleted_work(_day(date))
+
+
+@when("uncompleted work is rescheduled behind no line")
+def reschedule_behind_nothing(ctx):
+    ctx.moved = ctx.project.reschedule_uncompleted_work(None)
 
 
 # ------------------------------------------------------------------

@@ -81,3 +81,56 @@ Feature: Update Project reschedules uncompleted work behind a line
     Given a task "Later" running "2026-02-02" to "2026-02-06"
     When uncompleted work is rescheduled behind "2026-01-15"
     Then the moved count is 0
+
+  # ---- the edges the cases above leave open -----------------------------
+
+  Scenario: No line at all moves nothing
+    # The window can be called without a date; nothing happens.
+    Given a task "Planned" running "2026-01-05" to "2026-01-09"
+    When uncompleted work is rescheduled behind no line
+    Then the moved count is 0
+    And the task "Planned" starts on "2026-01-05"
+
+  Scenario: A task with no dates is skipped
+    Given a task "Undated" with no dates
+    When uncompleted work is rescheduled behind "2026-01-15"
+    Then the moved count is 0
+
+  Scenario: A task starting exactly on the line stays
+    # start >= line is not "behind" - the line is where it resumes, not a
+    # day it must clear.
+    Given a task "OnLine" running "2026-01-15" to "2026-01-16"
+    When uncompleted work is rescheduled behind "2026-01-15"
+    Then the moved count is 0
+    And the task "OnLine" starts on "2026-01-15"
+
+  Scenario: An underway task finishing exactly on the line stays
+    # finish < line is strict: ending on the line is not behind it.
+    Given a task "Tight" running "2026-01-12" to "2026-01-15" at 50%
+    When uncompleted work is rescheduled behind "2026-01-15"
+    Then the moved count is 0
+    And the task "Tight" ends on "2026-01-15"
+
+  Scenario: An underway task with no finish date pushes its remainder
+    # With no end date the start stands in for the finish, and the row is
+    # behind the line - so its remaining day resumes on it.
+    Given a task "Open" starting "2026-01-05" at 50%
+    When uncompleted work is rescheduled behind "2026-01-15"
+    Then the moved count is 1
+    And the task "Open" starts on "2026-01-05"
+    And the task "Open" ends on "2026-01-15"
+
+  Scenario: A must-finish-on pin stays too
+    # MSO is pinned in the scenario above; MFO is the other hard kind.
+    Given a task "Pinned" running "2026-01-05" to "2026-01-09" must finish on "2026-01-09"
+    When uncompleted work is rescheduled behind "2026-01-15"
+    Then the moved count is 0
+    And the task "Pinned" ends on "2026-01-09"
+
+  Scenario: The remainder never rounds down to nothing
+    # 99% of five days rounds to zero working days; the floor is one, so
+    # the row still gets a day on the line rather than no answer.
+    Given a task "Nearly" running "2026-01-05" to "2026-01-09" at 99%
+    When uncompleted work is rescheduled behind "2026-01-15"
+    Then the moved count is 1
+    And the task "Nearly" ends on "2026-01-15"
