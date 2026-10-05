@@ -563,7 +563,7 @@ class TestTheToolbarOffersIt(unittest.TestCase):
         is asked while reading the plan, and reading it off a table in a
         window covering that plan was the long way round.
         """
-        from tests.test_toolbar_menus import menu_tree, find, labels
+        from tests.menuhelp import menu_tree, find, labels
 
         items = find(menu_tree(), 'View')['items']
 

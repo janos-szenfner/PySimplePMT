@@ -20,31 +20,13 @@ from gantt_app.utils.shortcuts import (
     accelerator, any_key_with, is_key,
 )
 from gantt_app.views.toolbar import Toolbar
+from tests.menuhelp import find, labels, menu_tree
 
 pytestmark = [
     pytest.mark.toolbar_menus,
 ]
 
 scenarios("features/toolbar_menus.feature")
-
-
-def menu_tree():
-    """Get the toolbar's menu definitions without a widget."""
-    stub = SimpleNamespace(**{
-        name: getattr(Toolbar, name)
-        for name in dir(Toolbar)
-        if callable(getattr(Toolbar, name, None))
-        and not name.startswith('__')
-    })
-    return Toolbar._menu_definitions(stub)
-
-
-def labels(items):
-    return [item['text'] for item in items]
-
-
-def find(tree, text):
-    return next(menu for menu in tree if menu['text'] == text)
 
 
 @pytest.fixture
