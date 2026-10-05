@@ -2,6 +2,22 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **A dashboard you arrange, and a timeline you choose.** View > Charts
+  now holds three views - Gantt Chart, Dashboard and the new Timeline -
+  and both boards export to PNG and PDF through the Actions > Export and
+  Share gallery entries, in the appearance the screen is showing (issues
+  #66, #83). The dashboard gains a Panels checklist on its header strip:
+  untick a chart to hide it and tick it back, four at most, laid out two
+  to a row; double-click a panel - or its title glyph - to enlarge it to
+  the whole board, and Escape or "All panels" brings the grid back. The
+  selection is kept in the application settings, so it is your dashboard
+  rather than something a project file carries. The timeline draws the
+  rows whose "Show in timeline" switch is on - the checkbox finally means
+  what its name says - in one of five clickable styles taken from the
+  issue's examples: Lanes, Roadmap, Callouts, Chevrons or Phases. The
+  Style button on its header swaps them, exports write the one on show,
+  and the pick is remembered in settings. The MS Project style the issue
+  called useless is deliberately not among them.
 - **The project name and the file name keep up with each other.** Save
   As suggests the project name as the file name - spaces and unsafe
   characters written as underscores - and while the name is still

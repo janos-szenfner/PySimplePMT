@@ -609,8 +609,9 @@ class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
         charts = [item for item in view['items']
                   if item['text'] == 'Charts'][0]
 
+        # Three chart views since issue #83 added the timeline.
         self.assertEqual([item['text'] for item in charts['submenu']],
-                         ['Gantt Chart', 'Dashboard'])
+                         ['Gantt Chart', 'Dashboard', 'Timeline'])
 
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")

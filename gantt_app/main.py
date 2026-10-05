@@ -489,6 +489,7 @@ class GanttApp(ctk.CTk):
         theme.restyle_grids()
 
         for name in ('task_list', 'gantt_chart', 'dashboard_frame',
+                     'timeline_frame',
                      'resource_board', 'deliverables_board'):
             pane = getattr(self, name, None)
             if pane is None:
@@ -557,9 +558,10 @@ class GanttApp(ctk.CTk):
         )
         self.content_panes.add(self.gantt_chart, weight=3)
 
-        # The other thing the right-hand pane can hold. Not built here: see
-        # _create_dashboard_frame
+        # The other things the right-hand pane can hold. Neither is built
+        # here: see _create_dashboard_frame and _create_timeline_frame
         self.dashboard_frame = None
+        self.timeline_frame = None
 
         # Place the divider once the window has its real size
         self.after(120, self._set_initial_sash)
@@ -567,10 +569,11 @@ class GanttApp(ctk.CTk):
         # Set Gantt chart reference in toolbar for export functionality
         self.toolbar.set_gantt_chart(self.gantt_chart)
 
-        # What View > Charts switches between, and how to build the half
-        # that does not exist yet
+        # What View > Charts switches between, and how to build the two
+        # halves that do not exist yet
         self.toolbar.set_content_panes(self.content_panes)
         self.toolbar.set_dashboard_factory(self._create_dashboard_frame)
+        self.toolbar.set_timeline_factory(self._create_timeline_frame)
 
         # The chart draws the rows the task list is showing, so the two line
         # up. Both have to exist first: this went in beside the toolbar's
@@ -686,11 +689,61 @@ class GanttApp(ctk.CTk):
         """
         if self.dashboard_frame is None:
             self.dashboard_frame = ProjectDashboardFrame(
-                self.content_panes, self.project
+                self.content_panes,
+                get_project=lambda: self.project,
+                enabled_ids=self._saved_dashboard_panels(),
+                on_panels_changed=self._dashboard_panels_changed,
             )
             self.toolbar.set_dashboard(self.dashboard_frame)
             logger.info("Built the dashboard")
         return self.dashboard_frame
+
+    def _create_timeline_frame(self):
+        """
+        Build the timeline the first time somebody asks for it (issue #83).
+
+        Same lazy pattern as the dashboard: built into the paned window
+        but not added to it - showing it is the toolbar's business.
+        """
+        if self.timeline_frame is None:
+            from gantt_app.views.timeline_view import TimelineFrame
+            self.timeline_frame = TimelineFrame(
+                self.content_panes,
+                get_project=lambda: self.project,
+                style_id=self._saved_timeline_style(),
+                on_style_changed=self._timeline_style_changed,
+            )
+            self.toolbar.set_timeline(self.timeline_frame)
+            logger.info("Built the timeline")
+        return self.timeline_frame
+
+    # -- the boards' remembered choices ------------------------------------
+
+    @staticmethod
+    def _saved_dashboard_panels():
+        """The panel selection the settings kept, or all of them (#66)."""
+        from gantt_app.views import preferences
+        saved = preferences._read_settings().get('dashboard_panels')
+        return saved if isinstance(saved, list) else None
+
+    @staticmethod
+    def _dashboard_panels_changed(enabled):
+        """Keep the panel selection in the application settings (#66)."""
+        from gantt_app.views import preferences
+        preferences._write_key('dashboard_panels', list(enabled))
+
+    @staticmethod
+    def _saved_timeline_style():
+        """The timeline style the settings kept, or the default (#83)."""
+        from gantt_app.views import preferences
+        saved = preferences._read_settings().get('timeline_style')
+        return saved if isinstance(saved, str) else None
+
+    @staticmethod
+    def _timeline_style_changed(style_id):
+        """Keep the picked timeline style in the settings (#83)."""
+        from gantt_app.views import preferences
+        preferences._write_key('timeline_style', style_id)
     
     def _configure_sash_style(self):
         """
@@ -1054,14 +1107,19 @@ class GanttApp(ctk.CTk):
                 logger.debug("The deliverables board has gone; "
                              "not refreshing it")
 
-        # Only when it has been built. It reads the same plan the other two
-        # do, so a change that reaches them and not it leaves the summary
-        # describing a plan that no longer exists
+        # Only when they have been built. They read the same plan the
+        # other two do, so a change that reaches the chart and not them
+        # leaves a board describing a plan that no longer exists
         if self.dashboard_frame is not None:
             try:
                 self.dashboard_frame.refresh()
             except tk.TclError:
                 logger.debug("The dashboard has gone; not refreshing it")
+        if self.timeline_frame is not None:
+            try:
+                self.timeline_frame.refresh()
+            except tk.TclError:
+                logger.debug("The timeline has gone; not refreshing it")
         
         # Refresh the title to reflect the current project and dirty state
         self._update_title()

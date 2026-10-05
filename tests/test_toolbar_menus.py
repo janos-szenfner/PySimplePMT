@@ -111,7 +111,10 @@ class TestMenuContents(unittest.TestCase):
 
         self.assertEqual(labels(exports['submenu']),
                          ['GAN...', 'MS Project...', 'Mermaid...', 'HTML...',
-                          'SVG...', 'PNG...', 'PDF...', 'XLSX...'])
+                          'SVG...', 'PNG...', 'PDF...', 'XLSX...',
+                          # The two boards' own exports (issues #66, #83)
+                          'Dashboard PNG...', 'Dashboard PDF...',
+                          'Timeline PNG...', 'Timeline PDF...'])
 
     def test_project_settings_opens_the_unified_tabbed_hub(self):
         """Project Info, under File, opens the tabbed settings hub (#91)."""

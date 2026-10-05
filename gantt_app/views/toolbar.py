@@ -1163,14 +1163,19 @@ class Toolbar(ctk.CTkFrame):
         #: the name was still derived. See save_project.
         self._file_name_locked = False
         
-        #: The right-hand pane's two views and the paned window they sit
-        #: in; see show_gantt_chart and show_dashboard. Set by the
-        #: application once both exist.
+        #: The right-hand pane's three views and the paned window they
+        #: sit in; see show_gantt_chart, show_dashboard and
+        #: show_timeline. Set by the application once each exists.
         self.dashboard_frame = None
+        #: The timeline view, built lazily the first time it is asked
+        #: for - see _timeline_factory and show_timeline (issue #83).
+        self.timeline_frame = None
         self.content_panes = None
         #: How to build the dashboard when it is first asked for; see
         #: set_dashboard_factory
         self._dashboard_factory = None
+        #: The same for the timeline; see set_timeline_factory.
+        self._timeline_factory = None
         #: Tracks View > Grid View Only; toggled from the menu.
         self.grid_view_only_var = ctk.BooleanVar(value=False)
         #: Tracks the Resources group's Usage Grid toggle, on the View
@@ -1412,6 +1417,17 @@ class Toolbar(ctk.CTkFrame):
                 {"label": "PNG...", "command": self.export_png},
                 {"label": "PDF...", "command": self.export_pdf},
                 {"label": "XLSX...", "command": self.export_xlsx},
+                # The two boards export what they are showing: the
+                # dashboard its current panels (or the maximized one),
+                # the timeline its picked style (issues #66, #83).
+                {"label": "Dashboard PNG...",
+                 "command": self.export_dashboard_png},
+                {"label": "Dashboard PDF...",
+                 "command": self.export_dashboard_pdf},
+                {"label": "Timeline PNG...",
+                 "command": self.export_timeline_png},
+                {"label": "Timeline PDF...",
+                 "command": self.export_timeline_pdf},
             ],
             'compare': self._compare_gallery_items,
             'recent': self._recent_gallery_items,
@@ -1605,6 +1621,14 @@ class Toolbar(ctk.CTkFrame):
                         {"text": "PNG...", "command": self.export_png},
                         {"text": "PDF...", "command": self.export_pdf},
                         {"text": "XLSX...", "command": self.export_xlsx},
+                        {"text": "Dashboard PNG...",
+                         "command": self.export_dashboard_png},
+                        {"text": "Dashboard PDF...",
+                         "command": self.export_dashboard_pdf},
+                        {"text": "Timeline PNG...",
+                         "command": self.export_timeline_png},
+                        {"text": "Timeline PDF...",
+                         "command": self.export_timeline_pdf},
                     ]},
                 ],
             },
@@ -1643,6 +1667,9 @@ class Toolbar(ctk.CTkFrame):
                     {"text": "Charts", "submenu": [
                         {"text": "Gantt Chart", "command": self.show_gantt_chart},
                         {"text": "Dashboard", "command": self.show_dashboard},
+                        # The timeline - the flagged rows in a picked
+                        # style - is the third chart view (issue #83).
+                        {"text": "Timeline", "command": self.show_timeline},
                     ]},
                     # The full report. The icon on the bar paints the
                     # critical rows in the list instead; see
@@ -3625,7 +3652,102 @@ class Toolbar(ctk.CTkFrame):
                 "Failed to export project to XLSX.\n\n"
                 "Check that openpyxl is installed."
             )
-    
+
+    # -- the boards' own exports (issues #66, #83) ------------------------------
+
+    def _board_choices(self):
+        """
+        What the dashboard and timeline are showing, for their exports.
+
+        The live frames answer when they are built; before the first ask
+        the saved settings answer instead, so an export before the view
+        has ever been opened still matches what it would have shown.
+        """
+        from gantt_app.views import preferences
+
+        saved = {}
+        try:
+            saved = preferences._read_settings() or {}
+        except Exception:
+            pass
+
+        if self.dashboard_frame is not None:
+            enabled = list(self.dashboard_frame.enabled)
+            maximized = self.dashboard_frame.maximized
+        else:
+            enabled = saved.get('dashboard_panels')
+            maximized = None
+        timeline = getattr(self, 'timeline_frame', None)
+        if timeline is not None:
+            style = timeline.style_id
+        else:
+            style = saved.get('timeline_style', 'lanes')
+        return enabled, maximized, style
+
+    def _export_board(self, board_name, extension, filetypes, exporter,
+                      *extra):
+        """
+        The shared save-and-write for the four board exports: ask where,
+        hand the drawing the same palette the screen is using, say how
+        it went.
+        """
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=extension, filetypes=filetypes,
+            title=f"Export {board_name} to {extension[1:].upper()}")
+        if not file_path:
+            logger.info("%s export cancelled", board_name)
+            return
+
+        palette = theme.view_palette()
+        logger.info("Exporting the %s to %s", board_name, file_path)
+        if exporter(self.project, file_path, *extra, palette=palette):
+            messagebox.showinfo(
+                "Success",
+                f"{board_name} exported to "
+                f"{extension[1:].upper()} successfully!")
+        else:
+            messagebox.showerror(
+                "Error",
+                f"Failed to export the {board_name} to "
+                f"{extension[1:].upper()}.\n\n"
+                "See the Log window for details.")
+
+    def export_dashboard_png(self):
+        """The dashboard as a PNG - the panels it is showing (#66)."""
+        from gantt_app.utils.image_export import export_dashboard_to_png
+        enabled, maximized, _style = self._board_choices()
+        self._export_board(
+            "dashboard", ".png",
+            [("PNG Files", "*.png"), ("All Files", "*.*")],
+            export_dashboard_to_png, enabled, maximized)
+
+    def export_dashboard_pdf(self):
+        """The dashboard as a PDF - the panels it is showing (#66)."""
+        from gantt_app.utils.image_export import export_dashboard_to_pdf
+        enabled, maximized, _style = self._board_choices()
+        self._export_board(
+            "dashboard", ".pdf",
+            [("PDF Files", "*.pdf"), ("All Files", "*.*")],
+            export_dashboard_to_pdf, enabled, maximized)
+
+    def export_timeline_png(self):
+        """The timeline as a PNG, in the style its picker shows (#83)."""
+        from gantt_app.utils.image_export import export_timeline_to_png
+        _enabled, _maximized, style = self._board_choices()
+        self._export_board(
+            "timeline", ".png",
+            [("PNG Files", "*.png"), ("All Files", "*.*")],
+            export_timeline_to_png, style)
+
+    def export_timeline_pdf(self):
+        """The timeline as a PDF, in the style its picker shows (#83)."""
+        from gantt_app.utils.image_export import export_timeline_to_pdf
+        _enabled, _maximized, style = self._board_choices()
+        self._export_board(
+            "timeline", ".pdf",
+            [("PDF Files", "*.pdf"), ("All Files", "*.*")],
+            export_timeline_to_pdf, style)
+
     def set_gantt_chart(self, gantt_chart):
         """Set the Gantt chart reference for export functionality."""
         self.gantt_chart = gantt_chart
@@ -3633,6 +3755,24 @@ class Toolbar(ctk.CTkFrame):
     def set_dashboard(self, dashboard_frame):
         """Set the dashboard frame reference for chart switching."""
         self.dashboard_frame = dashboard_frame
+
+    def set_timeline(self, timeline_frame):
+        """Set the timeline frame reference for chart switching."""
+        self.timeline_frame = timeline_frame
+
+    def set_timeline_factory(self, factory):
+        """
+        How to build the timeline the first time it is asked for.
+
+        PARAMETERS:
+        -----------
+        factory : callable
+            Called with no arguments, returns the timeline frame. The
+            same lazy pattern the dashboard uses: the view is a panel
+            most readers never open, so it is made on first ask (issue
+            #83).
+        """
+        self._timeline_factory = factory
 
     def set_content_panes(self, content_panes):
         """Set the content panes reference for chart switching."""
@@ -3698,6 +3838,7 @@ class Toolbar(ctk.CTkFrame):
             return
 
         self._hide_pane(self.dashboard_frame)
+        self._hide_pane(getattr(self, 'timeline_frame', None))
         if not self._showing(self.gantt_chart):
             self.content_panes.add(self.gantt_chart, weight=3)
             logger.info("Showing the Gantt chart")
@@ -3718,11 +3859,42 @@ class Toolbar(ctk.CTkFrame):
                 return
 
         self._hide_pane(self.gantt_chart)
+        self._hide_pane(getattr(self, 'timeline_frame', None))
         if not self._showing(self.dashboard_frame):
             self.content_panes.add(self.dashboard_frame, weight=3)
             logger.info("Showing the dashboard")
 
         self.dashboard_frame.refresh()
+        self.grid_view_only_var.set(False)
+
+    def show_timeline(self):
+        """
+        Put the timeline in the right-hand pane instead of the chart.
+
+        The third of the chart views (issue #83): the rows whose Show in
+        timeline switch is on, drawn in whichever style the view's own
+        picker last chose. Built the first time it is asked for, like
+        the dashboard.
+        """
+        if self.content_panes is None:
+            return
+
+        if self.timeline_frame is None:
+            factory = getattr(self, '_timeline_factory', None)
+            if factory is None:
+                logger.debug("No timeline to show")
+                return
+            self.timeline_frame = factory()
+            if self.timeline_frame is None:
+                return
+
+        self._hide_pane(self.gantt_chart)
+        self._hide_pane(self.dashboard_frame)
+        if not self._showing(self.timeline_frame):
+            self.content_panes.add(self.timeline_frame, weight=3)
+            logger.info("Showing the timeline")
+
+        self.timeline_frame.refresh()
         self.grid_view_only_var.set(False)
 
     def toggle_grid_view_only(self, _state=None):
@@ -3741,10 +3913,12 @@ class Toolbar(ctk.CTkFrame):
             enabled = bool(_state)
         else:
             enabled = self._showing(self.gantt_chart) or \
-                self._showing(self.dashboard_frame)
+                self._showing(self.dashboard_frame) or \
+                self._showing(getattr(self, 'timeline_frame', None))
         if enabled:
             self._hide_pane(self.gantt_chart)
             self._hide_pane(self.dashboard_frame)
+            self._hide_pane(getattr(self, 'timeline_frame', None))
             self.grid_view_only_var.set(True)
             logger.info("Grid view only enabled")
         else:

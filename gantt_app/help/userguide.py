@@ -553,7 +553,9 @@ GUIDE_SECTIONS = (
             "A Milestone is a diamond. Dependencies are drawn as arrows "
             "between the rows they link.",
 
-            "Show in timeline decides whether a row's bar is drawn. A new "
+            "Show in timeline decides whether a row's bar is drawn - on "
+            "the chart, and on the Timeline view, which reads exactly the "
+            "rows the switch is on for. A new "
             "task starts off the timeline, so the chart shows only the tasks "
             "you add to it; the row stays in the plan either way. To put "
             "several on at once, select them and choose Add to Timeline from "
@@ -575,6 +577,42 @@ GUIDE_SECTIONS = (
             "Too long a plan for that and it falls back to one cell per "
             "week, then to the month band alone. Days nobody works are "
             "shaded down the chart and today's column is tinted.",
+        ],
+    ),
+    (
+        "The dashboard and the timeline",
+        [
+            "View > Charts holds three views of the plan: the Gantt "
+            "chart, the Dashboard, and the Timeline. The last two are "
+            "drawings rather than editors - they read the plan, and every "
+            "edit repaints them.",
+
+            "The dashboard is four charts - progress per top-level row, "
+            "duration split by task type, duration per item, and a summary "
+            "box of eight figures. Its Panels button opens a checklist "
+            "that takes any of them off or puts them back, four at most "
+            "and two to a row; the choice is remembered between sessions. "
+            "Double-click a panel - or the small window icon on its "
+            "title - to give it the whole board, and press Escape or "
+            "\"All panels\" to bring the grid back.",
+
+            "The timeline draws the rows whose Show in timeline switch "
+            "is on, in one of five styles its Style button swaps "
+            "between: Lanes groups them under their top-level rows over "
+            "a month grid; Roadmap lines them under coloured lane pills "
+            "with a dark period header; Callouts hangs each off a "
+            "central spine, alternating above and below; Chevrons draws "
+            "each as an arrow bar one to a row; Phases heads the chart "
+            "with the top-level spans as dark super-periods over month "
+            "columns. Milestones draw as diamonds, a bar's fill shows "
+            "its progress, and the picked style is remembered between "
+            "sessions.",
+
+            "Both boards export as they stand: Actions > Export - and "
+            "the Share gallery - write Dashboard PNG/PDF and Timeline "
+            "PNG/PDF, the dashboard as the panels on show (or the one "
+            "enlarged panel) and the timeline in the picked style, in "
+            "the appearance the window is in.",
         ],
     ),
     (

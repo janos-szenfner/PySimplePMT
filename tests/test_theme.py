@@ -465,6 +465,8 @@ class TestThePaletteIsAlwaysAPair(unittest.TestCase):
         'DASH_AXIS', 'DASH_GRID', 'DASH_PROGRESS_BAR', 'DASH_DURATION_BAR',
         'DASH_SERIES_1', 'DASH_SERIES_2', 'DASH_SERIES_3', 'DASH_SERIES_4',
         'DASH_KPI_BG', 'DASH_KPI_BORDER',
+        'TL_BAND_BG', 'TL_BAND_TEXT', 'TL_HEADER_BG', 'TL_LANE_BG',
+        'TL_SPINE', 'TL_TODAY', 'TL_PROGRESS_UNDER',
     )
 
     def test_the_list_covers_every_pair_in_the_module(self):

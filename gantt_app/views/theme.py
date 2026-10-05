@@ -242,6 +242,18 @@ DASH_SERIES_4: Tuple[str, str] = ('#dc2626', '#ef4444')
 DASH_KPI_BG: Tuple[str, str] = ('#eef1f5', '#2d3748')
 DASH_KPI_BORDER: Tuple[str, str] = ('#c8cdd2', '#4a5568')
 
+#: The timeline's own colours (issue #83): the dark band the Roadmap
+#: and Phases styles head themselves with, the lane-label column, the
+#: callouts' spine, the today marker, and the darker band a bar's
+#: progress draws as underneath itself.
+TL_BAND_BG: Tuple[str, str] = ('#3f4753', '#31363f')
+TL_BAND_TEXT: Tuple[str, str] = ('#ffffff', '#e8eaed')
+TL_HEADER_BG: Tuple[str, str] = ('#eef1f5', '#2b2d31')
+TL_LANE_BG: Tuple[str, str] = ('#f4f5f7', '#26282c')
+TL_SPINE: Tuple[str, str] = ('#2f3552', '#8a93b8')
+TL_TODAY: Tuple[str, str] = ('#2e7d32', '#4ade80')
+TL_PROGRESS_UNDER: Tuple[str, str] = ('#1c2b3a', '#0f1720')
+
 
 #: What a toolbar icon is drawn in, as RGB rather than hex - Pillow draws
 #: the strokes and knows nothing about appearance modes, so each appearance
@@ -296,6 +308,44 @@ def now(colour: Tuple[str, str]) -> str:
     if isinstance(colour, str):
         return colour
     return resolve(colour, current_appearance())
+
+
+def view_palette() -> dict:
+    """
+    The colours the dashboard and the timeline draw in, for now.
+
+    The boards' drawing lives in utils.boardrender, which knows no theme:
+    the palette it reads is built here, resolved for the appearance in
+    force. Exports ask for the same palette, so a PNG of either board
+    looks like the screen it was taken from (issues #66, #83).
+
+    The keys are boardrender.PALETTE_KEYS; 'series' is the four chart
+    colours as a list rather than a name each.
+    """
+    return {
+        'bg': now(DASH_BOARD_BG),
+        'panel_bg': now(DASH_PLOT_BG),
+        'title': now(DASH_TITLE_TEXT),
+        'tick': now(DASH_TICK_TEXT),
+        'axis': now(DASH_AXIS),
+        'grid': now(DASH_GRID),
+        'progress_bar': now(DASH_PROGRESS_BAR),
+        'progress_under': now(TL_PROGRESS_UNDER),
+        'duration_bar': now(DASH_DURATION_BAR),
+        'series': [now(pair_) for pair_ in
+                   (DASH_SERIES_1, DASH_SERIES_2,
+                    DASH_SERIES_3, DASH_SERIES_4)],
+        'kpi_bg': now(DASH_KPI_BG),
+        'kpi_border': now(DASH_KPI_BORDER),
+        'header_bg': now(TL_HEADER_BG),
+        'header_text': now(HEADER_MONTH_TEXT),
+        'band_bg': now(TL_BAND_BG),
+        'band_text': now(TL_BAND_TEXT),
+        'lane_bg': now(TL_LANE_BG),
+        'lane_text': now(TEXT),
+        'spine': now(TL_SPINE),
+        'today': now(TL_TODAY),
+    }
 
 
 def style_chrome() -> None:

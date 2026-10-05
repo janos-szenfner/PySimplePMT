@@ -206,3 +206,161 @@ def export_gantt_to_html(project: Project, filepath: str,
     except Exception:
         logger.exception("Error exporting the chart to HTML")
         return False
+
+
+# ---------------------------------------------------------------------------
+# The dashboard and the timeline (issues #66, #83)
+# ---------------------------------------------------------------------------
+
+#: How big the board exports draw, in logical pixels; the file carries
+#: them at `scale` times that and is downsampled once on the way out,
+#: the same antialiasing trick render_image uses.
+BOARD_EXPORT_SIZE = (1600, 1000)
+TIMELINE_EXPORT_SIZE = (1600, 900)
+
+#: The pixels-per-inch a board page is written at, so a PDF comes out a
+#: printable size rather than however many inches the pixels happened to
+#: stretch to.
+BOARD_EXPORT_DPI = 150
+
+
+def _fallback_palette() -> Dict[str, Any]:
+    """
+    The light appearance, as literals.
+
+    The drawing is theme-aware but this module sits under the views - a
+    palette is handed in by the caller that has one, and this is what a
+    caller without one gets so an export never fails for want of colours.
+    """
+    return {
+        'bg': '#f5f6f8', 'panel_bg': '#ffffff', 'title': '#1f2328',
+        'tick': '#4a5568', 'axis': '#8a9199', 'grid': '#e2e5e9',
+        'progress_bar': '#3b82f6', 'progress_under': '#1c2b3a',
+        'duration_bar': '#10b981',
+        'series': ['#4f46e5', '#059669', '#d97706', '#dc2626'],
+        'kpi_bg': '#eef1f5', 'kpi_border': '#c8cdd2',
+        'header_bg': '#eef1f5', 'header_text': '#4a5568',
+        'band_bg': '#3f4753', 'band_text': '#ffffff',
+        'lane_bg': '#f4f5f7', 'lane_text': '#1f2328',
+        'spine': '#2f3552', 'today': '#2e7d32',
+    }
+
+
+def _board_image(draw_fn, width: int, height: int, scale: float):
+    """The image a board export is made of - drawn big, shrunk once."""
+    from PIL import Image
+    from gantt_app.utils.drawpen import ImagePen
+
+    image = Image.new('RGB', (int(width * scale), int(height * scale)),
+                      'white')
+    draw_fn(ImagePen(image, scale), width, height)
+    if scale != 1.0:
+        image = image.resize((width, height), Image.LANCZOS)
+    return image
+
+
+def export_dashboard_to_png(project: Project, filepath: str,
+                            enabled_ids=None, maximized_id=None,
+                            palette=None, scale: float = 2.0) -> bool:
+    """
+    The dashboard as it stands - the panels it shows, and one alone when
+    it is maximized - as a PNG file (issue #66).
+    """
+    from gantt_app.utils import boardrender
+
+    try:
+        path = _prepare(filepath)
+        width, height = BOARD_EXPORT_SIZE
+        palette = palette or _fallback_palette()
+        rows = boardrender.dashboard_rows(project)
+
+        def draw(pen, w, h):
+            pen.rect(0, 0, w, h, fill=palette['bg'])
+            boardrender.render_dashboard(
+                pen, rows, palette, enabled_ids, maximized_id,
+                width=w, height=h)
+
+        image = _board_image(draw, width, height, scale)
+        image.save(path, 'PNG')
+        logger.info("Exported the dashboard to PNG %s", path)
+        return True
+    except Exception:
+        logger.exception("Error exporting the dashboard to PNG")
+        return False
+
+
+def export_timeline_to_png(project: Project, filepath: str,
+                           style_id: str = 'lanes', palette=None,
+                           scale: float = 2.0) -> bool:
+    """The timeline in the style the user picked, as a PNG (issue #83)."""
+    from gantt_app.utils import boardrender
+
+    try:
+        path = _prepare(filepath)
+        width, height = TIMELINE_EXPORT_SIZE
+        palette = palette or _fallback_palette()
+
+        def draw(pen, w, h):
+            boardrender.render_timeline(pen, project, style_id,
+                                        palette, w, h)
+
+        image = _board_image(draw, width, height, scale)
+        image.save(path, 'PNG')
+        logger.info("Exported the '%s' timeline to PNG %s",
+                    style_id, path)
+        return True
+    except Exception:
+        logger.exception("Error exporting the timeline to PNG")
+        return False
+
+
+def export_dashboard_to_pdf(project: Project, filepath: str,
+                            enabled_ids=None, maximized_id=None,
+                            palette=None, scale: float = 2.0) -> bool:
+    """The dashboard as a one page landscape PDF (issue #66)."""
+    from gantt_app.utils import boardrender
+
+    try:
+        path = _prepare(filepath)
+        width, height = BOARD_EXPORT_SIZE
+        palette = palette or _fallback_palette()
+        rows = boardrender.dashboard_rows(project)
+
+        def draw(pen, w, h):
+            pen.rect(0, 0, w, h, fill=palette['bg'])
+            boardrender.render_dashboard(
+                pen, rows, palette, enabled_ids, maximized_id,
+                width=w, height=h)
+
+        image = _board_image(draw, width, height, scale)
+        image.save(path, 'PDF', resolution=float(BOARD_EXPORT_DPI))
+        logger.info("Exported the dashboard to PDF %s", path)
+        return True
+    except Exception:
+        logger.exception("Error exporting the dashboard to PDF")
+        return False
+
+
+def export_timeline_to_pdf(project: Project, filepath: str,
+                           style_id: str = 'lanes', palette=None,
+                           scale: float = 2.0) -> bool:
+    """The timeline in the picked style as a one page PDF (issue #83)."""
+    from gantt_app.utils import boardrender
+
+    try:
+        path = _prepare(filepath)
+        width, height = TIMELINE_EXPORT_SIZE
+        palette = palette or _fallback_palette()
+
+        def draw(pen, w, h):
+            boardrender.render_timeline(pen, project, style_id,
+                                        palette, w, h)
+
+        image = _board_image(draw, width, height, scale)
+        image.save(path, 'PDF', resolution=float(BOARD_EXPORT_DPI))
+        logger.info("Exported the '%s' timeline to PDF %s",
+                    style_id, path)
+        return True
+    except Exception:
+        logger.exception("Error exporting the timeline to PDF")
+        return False

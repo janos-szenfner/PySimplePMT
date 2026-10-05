@@ -1,333 +1,327 @@
 """
-The project dashboard: what the plan adds up to, in four charts.
+The dashboard as a window frame - a shell around what is drawn in it.
 
-WHY THIS MODULE EXISTS:
-======================
-A Gantt chart says when everything happens and almost nothing about how the
-plan is doing. How far along is it, where is the work concentrated, how much
-of the plan is milestones rather than effort - those are read off a plan by
-counting, and nobody counts. The dashboard answers them in one panel, beside
-the same task list, and View > Charts switches between the two.
+WHAT THIS FILE IS:
+==================
+The dashboard's drawing - the rows it reads, the four panels, the grid
+they are laid out in - lives in utils.boardrender, because the drawing
+has to run twice: onto this canvas, and into a Pillow image for PNG/PDF
+export. What is left here is the shell: the header strip with the
+Panels checklist, the canvas the drawing lands on, the clicks that
+maximize a panel, and apply_theme.
 
-WHY IT IS DRAWN BY HAND:
-=======================
-Every mark here is put on a Tk canvas in plain Python. That is not a stylistic
-preference, it is the only thing that works: the first version of this
-dashboard built Plotly figures and loaded them into a tkinterweb HtmlFrame,
-which renders no JavaScript, so it drew four charts' worth of nothing. The
-Gantt view learned the same lesson before it - see GanttChartView.draw_chart -
-and there is no reason to learn it twice.
-
-Drawing it here also means it needs nothing fetched at runtime. A Plotly page
-either carries a megabyte of plotly.js or links one from a CDN, and an
-application that goes to the network to draw its own window is an application
-that shows a blank panel on a train.
-
-WHAT THE FOUR CHARTS SAY:
-========================
-Task Progress
-    One bar per top-level row, the percentage it reports. What is moving.
-
-Duration Allocation
-    A donut of total duration split by task type. Where the effort sits, and
-    how much of the plan is milestones - which hold none.
-
-Duration per Item
-    One bar per row, its own length. Which pieces are big.
-
-Summary
-    The eight numbers underneath all of it; see kpi_metrics.
+The four metric functions and the panel draws are re-exported from
+boardrender so every test and caller that already imports them here
+keeps working.
 
 DEVELOPMENT NOTES:
 ------------------
-The arithmetic is four module-level functions taking plain lists of
-dictionaries, so what the dashboard claims can be tested without opening a
-window. The widget draws; it does not calculate.
+Which panels show is the dashboard's only state. It is handed in as a
+list of boardrender panel ids and told back through on_panels_changed
+when the checklist changes it; main.py persists it in settings.json,
+so the layout is "my dashboard", not something a project file carries
+(issue #66).
 
-Durations are the ones the task list shows - working days, from
-Task.duration_days - rather than the calendar span between the two dates. The
-dashboard sits beside the grid, and a panel disagreeing with the column next
-to it about how long a task is would be read as a fault in one of them.
+Maximizing is a mode, not a layout: the same one draw is told to give
+one panel the whole canvas, and the clicks that turn it on - the title
+glyph and a double-click - are honoured by hit-testing the rectangles
+the draw reported.
 """
 
 import tkinter as tk
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
-from gantt_app.views import theme
-from gantt_app.core.baselines import rolled_task_costs
-from gantt_app.core.models import Project, TASK_TYPES
+from gantt_app.utils import boardrender
+from gantt_app.utils.boardrender import (
+    DASHBOARD_PANELS, MAX_PANELS,
+    dashboard_rows, duration_by_type, kpi_metrics, weighted_progress,
+)
+from gantt_app.utils.drawpen import CanvasPen
 from gantt_app.utils.log import get_logger
+from gantt_app.views import theme
 
 logger = get_logger(__name__)
 
+__all__ = [
+    'dashboard_rows', 'duration_by_type', 'kpi_metrics',
+    'weighted_progress', 'ProjectDashboardFrame',
+    'DASHBOARD_PANELS', 'MAX_PANELS',
+]
 
-# ---------------------------------------------------------------------------
-# What the plan adds up to
-# ---------------------------------------------------------------------------
-
-def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
-    """
-    The plan as flat rows, with everything the charts need on each one.
-
-    PARAMETERS:
-    -----------
-    project : Optional[Project]
-        The plan. None, or one with no tasks, gives an empty list.
-
-    RETURNS:
-    --------
-    List[Dict[str, Any]]
-        One dictionary per task: id, name, type, status, duration, progress
-        and level.
-
-    DEVELOPMENT NOTES:
-    ------------------
-    An empty plan gives no rows, and the dashboard says so. It used to hand
-    back eight invented tasks - Project Planning, Design Phase, Implementation
-    at 30% - so a reader who opened the dashboard before typing anything was
-    shown a stranger's plan with their own project's name over it, and every
-    number in the summary was fiction presented as measurement.
-    """
-    if project is None:
-        return []
-
-    rows = []
-    costs = rolled_task_costs(project)
-    for task in project.tasks:
-        rows.append({
-            'ID': task.id,
-            'Name': task.name,
-            'Type': task.task_type,
-            'Milestone': task.effective_milestone,
-            'Status': getattr(task, 'status', 'Active') or 'Active',
-            'Duration': task.duration_days or 0,
-            'Progress': task.progress or 0,
-            'Level': _level_of(task, project),
-            'Cost': costs.get(task.id, 0.0),
-        })
-    return rows
-
-
-def _level_of(task, project: Project) -> int:
-    """
-    How deep a row sits, counting the top level as one.
-
-    DEVELOPMENT NOTES:
-    ------------------
-    Walked with a loop and a seen-set rather than by recursion. A plan whose
-    parent links form a ring is not supposed to exist, but a dashboard is
-    not the place to find out: recursion answers that with a blown stack and
-    a window that will not open.
-    """
-    level = 1
-    seen = {task.id}
-    parent_id = task.parent_task_id
-    while parent_id is not None and parent_id not in seen:
-        parent = project.get_task_by_id(parent_id)
-        if parent is None:
-            break
-        seen.add(parent_id)
-        level += 1
-        parent_id = parent.parent_task_id
-    return level
-
-
-def weighted_progress(rows: List[Dict[str, Any]]) -> float:
-    """
-    How far the plan has got, as one percentage.
-
-    RETURNS:
-    --------
-    float
-        SUM(duration * progress) / SUM(duration) over the top-level rows,
-        and 0.0 when they hold no duration between them.
-
-    DEVELOPMENT NOTES:
-    ------------------
-    Weighted by duration and taken over the top level only, so a plan is not
-    reported as half done because half of its one-day rows are finished
-    while the eight-day one has not started. Sub-tasks are left out because
-    their work is already counted inside the row that brackets them.
-    """
-    top = [row for row in rows if row['Level'] == 1]
-    total = sum(row['Duration'] for row in top)
-    if not total:
-        return 0.0
-    return sum(row['Duration'] * row['Progress'] for row in top) / total
-
-
-def duration_by_type(rows: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
-    """
-    Total duration per task type, for the donut.
-
-    RETURNS:
-    --------
-    List[Tuple[str, int]]
-        (type, days) for every type present, in the order the model
-        declares them so the colours do not move between two readings of
-        the same plan.
-    """
-    totals: Dict[str, int] = {}
-    for row in rows:
-        # Milestone stopped being a type in issue #73 - the flag column
-        # is what still gives the donut its (zero-day) slice.
-        kind = 'Milestone' if row.get('Milestone') else row['Type']
-        totals[kind] = totals.get(kind, 0) + row['Duration']
-
-    ordered = [kind for kind in TASK_TYPES if kind in totals]
-    ordered += sorted(kind for kind in totals if kind not in TASK_TYPES)
-    return [(kind, totals[kind]) for kind in ordered]
-
-
-def kpi_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    The eight numbers in the summary box.
-
-    RETURNS:
-    --------
-    Dict[str, Any]
-        total_scope      - days held by the top-level rows
-        total_items      - how many rows there are
-        milestones       - how many of them are milestones
-        total_cost       - the plan's whole spend: rolled-up Cost summed
-                           over the top-level rows
-        completion       - weighted_progress over the same rows
-        active_share     - percentage of rows marked Active
-        estimated_share  - percentage marked Estimated
-        inactive_share   - percentage marked Inactive
-
-    DEVELOPMENT NOTES:
-    ------------------
-    Completion is the plan's overall completion, weighted by how long each
-    row is - not the average of the percentages on them. The box called it
-    an average while showing the weighted figure, which is the sort of
-    caption that gets believed rather than checked: the two only agree when
-    every row is the same length, and a plan where they are is a plan that
-    did not need weighting.
-
-    The three shares are the Status field a row carries - the letters the
-    task list's own Status column uses, an empty cell for Active and the E
-    and I for Estimated and Inactive - and not how far the work has got. A
-    row whose status is anything else, an older file's 'Draft' among them,
-    is read as Active, which is where the readers coerce it too. Each share
-    is counted on its own rather than taken as the remainder of the others:
-    with three of them the remainder trick no longer closes, and a direct
-    count is the honest figure even when rounding leaves the three a point
-    short of a hundred.
-    """
-    top = [row for row in rows if row['Level'] == 1]
-
-    def share(status: str) -> float:
-        if not rows:
-            return 0.0
-        n = len([row for row in rows if row.get('Status', 'Active') == status])
-        return n / len(rows) * 100
-
-    estimated_share = share('Estimated')
-    inactive_share = share('Inactive')
-    # Active is the default the column leaves blank, so every row that is not
-    # explicitly Estimated or Inactive counts towards it - which is what the
-    # blank cell means and how the coercion above already treats 'Draft'.
-    active_share = (100.0 - estimated_share - inactive_share) if rows else 0.0
-    return {
-        'total_scope': sum(row['Duration'] for row in top),
-        'total_items': len(rows),
-        'milestones': len([row for row in rows if row['Milestone']]),
-        # Rolled up, so the top-level rows' costs are the plan's whole
-        # spend with nothing counted twice
-        'total_cost': sum(row.get('Cost', 0.0) for row in top),
-        'completion': weighted_progress(rows),
-        'active_share': active_share,
-        'estimated_share': estimated_share,
-        'inactive_share': inactive_share,
-    }
-
-
-# ---------------------------------------------------------------------------
-# The panel
-# ---------------------------------------------------------------------------
 
 class ProjectDashboardFrame(ctk.CTkFrame):
     """
-    The four charts, on one canvas, beside the task list.
+    The dashboard shell: a header, a canvas, and which panels are on.
 
     PARAMETERS:
     -----------
     master : widget
-        Usually the paned window the Gantt chart also lives in.
-    project : Optional[Project]
-        The plan to summarise. refresh() re-reads it.
-
-    DEVELOPMENT NOTES:
-    ------------------
-    One canvas rather than four, because the four quarters are drawn from
-    one set of numbers and resized by one event. Everything is redrawn from
-    scratch on every change; there is no incremental update to get wrong,
-    and a dashboard redraw is a few hundred canvas items.
+        The pane the dashboard sits in.
+    get_project : callable or Project
+        Hands the drawing the plan to read. A plain Project is what the
+        tests hand in; main.py hands a callable so the frame follows the
+        plan the window is currently showing rather than the one it was
+        born with.
+    enabled_ids : list[str], optional
+        The panels to start with; None is all of them. Ids the registry
+        does not know are dropped, and the list stops at the four-panel
+        cap - the settings a file kept are honoured exactly that far.
+    on_panels_changed : callable, optional
+        Called with the enabled ids whenever the checklist changes
+        them - main.py writes that to the application settings.
     """
 
-    #: How much of the canvas the axis box leaves for the labels around it.
-    PAD = 18
-    TITLE_H = 26
-    LEFT_LABEL_W = 130
-    BOTTOM_LABEL_H = 62
-
-    #: A redraw is skipped until the canvas is at least this big, which it
-    #: is not while the pane is still being laid out.
+    HEADER_H = 34
+    #: Below this the canvas is too small for a chart to say anything;
+    #: the Configure that follows a real layout draws it then.
     MIN_USEFUL_PX = 240
 
-    #: How thick the donut's ring is drawn, as a share of its radius.
-    RING_SHARE = 0.42
+    def __init__(self, master, get_project: Callable = None,
+                 enabled_ids: Optional[List[str]] = None,
+                 on_panels_changed: Optional[Callable] = None,
+                 **kwargs):
+        super().__init__(master, corner_radius=0,
+                         fg_color="transparent", **kwargs)
 
-    def __init__(self, master, project: Optional[Project] = None, **kwargs):
-        # The paned window this sits in is a ttk widget, whose colour
-        # CustomTkinter cannot detect and would fall back to black for.
-        kwargs.setdefault('bg_color', theme.pair(theme.SASH_BG))
-        super().__init__(master, **kwargs)
+        if callable(get_project):
+            self._get_project = get_project
+        else:
+            self._get_project = (lambda p=get_project: p)
+        self._on_panels_changed = on_panels_changed
+        self.enabled = boardrender.sanitize_panel_ids(
+            enabled_ids if enabled_ids is not None
+            else boardrender.all_panel_ids())
+        if not self.enabled:
+            self.enabled = boardrender.all_panel_ids()
+        #: The one panel with the whole board, or None in grid mode.
+        self.maximized: Optional[str] = None
 
-        self.project = project
+        # Where the last draw put each panel and its maximize glyph, so
+        # a click can be answered by hit-testing rather than re-laying.
+        self._panel_rects: Dict[str, tuple] = {}
+        self._glyph_rects: Dict[str, tuple] = {}
+        self._escape_bound = False
+        self._redraw_pending = False
+        #: The size the last Configure reported - see _size for why a
+        #: canvas that was never mapped still needs a size to draw at.
         self._last_size = (0, 0)
 
-        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.canvas.bind('<Configure>', self._on_resize)
+        self._build_header()
 
-        self._redraw()
+        self.canvas = tk.Canvas(self, bd=0, highlightthickness=0)
+        self.canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
+        self.canvas.pack(fill='both', expand=True)
+        self.canvas.bind('<Configure>', self._on_configure)
+        self.canvas.bind('<Button-1>', self._on_click)
+        self.canvas.bind('<Double-Button-1>', self._on_double_click)
+        self.canvas.bind('<Motion>', self._on_motion)
 
-    # -- what the outside calls ------------------------------------------
+    # -- the header ----------------------------------------------------------
+
+    def _build_header(self):
+        """The thin strip above the canvas: name, Panels list, restore."""
+        self.header = ctk.CTkFrame(self, height=self.HEADER_H,
+                                   corner_radius=0,
+                                   fg_color=theme.pair(theme.HEADER_MONTH_BG))
+        self.header.pack(fill='x')
+        self.header.pack_propagate(False)
+
+        ctk.CTkLabel(
+            self.header, text="Dashboard",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side='left', padx=(12, 4), pady=4)
+
+        # The Panels checklist - the toggle list issue #66 asks for.
+        self.panels_btn = ctk.CTkButton(
+            self.header, text="Panels ▾", width=86, height=24,
+            font=ctk.CTkFont(size=11), corner_radius=6,
+            command=self._panels_menu)
+        self.panels_btn.pack(side='left', padx=6, pady=4)
+
+        # While a panel owns the board this brings the grid back; it is
+        # only drawn then, because the rest of the time it says nothing.
+        self.restore_btn = ctk.CTkButton(
+            self.header, text="◱ All panels", width=86, height=24,
+            font=ctk.CTkFont(size=11), corner_radius=6,
+            command=self.restore)
+        # packed lazily in set_maximized
+
+        # The hint that a panel can grow - the affordance nobody finds
+        # on their own.
+        self.hint_label = ctk.CTkLabel(
+            self.header, text="double-click a panel to enlarge it",
+            font=ctk.CTkFont(size=10),
+            text_color=theme.pair(theme.MUTED_TEXT))
+        self.hint_label.pack(side='right', padx=10, pady=4)
+
+    def _panels_menu(self):
+        """The checklist of panels, ticked where they show."""
+        from gantt_app.views.toolbar import CTkDropdownMenu
+
+        items = []
+        for pid, title, _draw in DASHBOARD_PANELS:
+            var = ctk.BooleanVar(value=pid in self.enabled)
+            items.append({'type': 'toggle', 'text': title,
+                          'variable': var,
+                          'command': lambda _v, p=pid, vv=var:
+                          self._toggle_panel(p, vv)})
+
+        menu = CTkDropdownMenu(self, items=items, opener=self.panels_btn)
+        x = self.panels_btn.winfo_rootx()
+        y = (self.panels_btn.winfo_rooty()
+             + self.panels_btn.winfo_height() + 2)
+        menu.geometry(f"+{x}+{y}")
+        try:
+            menu.lift()
+        except tk.TclError:
+            pass
+
+    # -- which panels are on --------------------------------------------------
+
+    def _toggle_panel(self, pid: str, var):
+        """
+        A checklist tick: the panel joins or leaves the board.
+
+        The cap is four and at least one stays - an untick that would
+        empty the board or a tick on a full one is answered by ticking
+        the row back, which the caller sees as the click not taking.
+        """
+        if var.get():
+            if pid in self.enabled:
+                return
+            if len(self.enabled) >= MAX_PANELS:
+                var.set(False)
+                self._note_cap()
+                return
+            # Registry order, so the grid does not reshuffle on a tick:
+            # the panels list - not the clicking order - decides where
+            # each one lands.
+            self.enabled = [p for p in boardrender.all_panel_ids()
+                            if p in self.enabled or p == pid]
+        else:
+            if pid not in self.enabled:
+                return
+            if len(self.enabled) <= 1:
+                var.set(True)
+                return
+            self.enabled = [p for p in self.enabled if p != pid]
+            if self.maximized == pid:
+                self.maximized = None
+        self._panels_told()
+        self.refresh()
+
+    def _note_cap(self):
+        """The four-panel cap being reached, said quietly in the header."""
+        self.hint_label.configure(
+            text=f"a dashboard shows {MAX_PANELS} panels at most")
+        self.after(3000, lambda: self.hint_label.configure(
+            text="double-click a panel to enlarge it"))
+
+    def _panels_told(self):
+        """Hand the new selection to whoever keeps the settings."""
+        if self._on_panels_changed:
+            try:
+                self._on_panels_changed(list(self.enabled))
+            except Exception:
+                logger.exception("Could not save the panel selection")
+
+    # -- maximize --------------------------------------------------------------
+
+    def set_maximized(self, pid: Optional[str]):
+        """One panel owns the board; None gives every panel its cell back."""
+        if pid == self.maximized:
+            return
+        self.maximized = pid if pid in self.enabled else None
+        if self.maximized and not self.restore_btn.winfo_ismapped():
+            self.restore_btn.pack(side='left', padx=4, pady=4)
+        elif not self.maximized:
+            self.restore_btn.pack_forget()
+        self._bind_escape(bool(self.maximized))
+        self.refresh()
+
+    def restore(self):
+        """Back to the grid - the restore button's click lands here."""
+        self.set_maximized(None)
+
+    def _bind_escape(self, on: bool):
+        """Escape leaves a maximized panel; only bound while one is."""
+        try:
+            top = self.winfo_toplevel()
+            if on and not self._escape_bound:
+                top.bind('<Escape>', self._on_escape)
+                self._escape_bound = True
+            elif not on and self._escape_bound:
+                top.unbind('<Escape>')
+                self._escape_bound = False
+        except tk.TclError:
+            pass
+
+    def _on_escape(self, _event=None):
+        if self.maximized:
+            self.restore()
+            return 'break'
+        return None
+
+    # -- clicks -----------------------------------------------------------------
+
+    def _on_configure(self, event=None):
+        """A resize redraws - debounced, and not for a stray pixel."""
+        if event is not None:
+            if (abs(event.width - self._last_size[0]) < 4
+                    and abs(event.height - self._last_size[1]) < 4):
+                return
+            self._last_size = (event.width, event.height)
+        if self._redraw_pending:
+            return
+        self._redraw_pending = True
+        self.after_idle(self._redraw_now)
+
+    def _on_motion(self, event):
+        """The pointer over a maximize glyph says so by becoming a hand."""
+        for rect in self._glyph_rects.values():
+            if rect[0] <= event.x <= rect[2] and rect[1] <= event.y <= rect[3]:
+                self.canvas.configure(cursor='hand2')
+                return
+        self.canvas.configure(cursor='')
+
+    def _panel_at(self, x, y) -> Optional[str]:
+        """Which panel's rectangle the point is in, if any."""
+        for pid, rect in self._panel_rects.items():
+            if rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]:
+                return pid
+        return None
+
+    def _glyph_at(self, x, y) -> Optional[str]:
+        """Which panel's maximize glyph the point is on, if any."""
+        for pid, rect in self._glyph_rects.items():
+            if rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]:
+                return pid
+        return None
+
+    def _on_click(self, event):
+        """A click on a title glyph grows or restores its panel."""
+        pid = self._glyph_at(event.x, event.y)
+        if pid is not None:
+            self.set_maximized(None if pid == self.maximized else pid)
+
+    def _on_double_click(self, event):
+        """A double-click on a panel toggles its maximized state (#66)."""
+        pid = self._panel_at(event.x, event.y)
+        if pid is not None:
+            self.set_maximized(None if pid == self.maximized else pid)
+            return 'break'
+        return None
+
+    # -- drawing ------------------------------------------------------------------
 
     def refresh(self):
-        """Read the plan again and redraw. Called when anything changes."""
-        self._redraw()
+        """Repaint now - the plan changed, or the panels did."""
+        self._redraw_pending = False
+        self._redraw_now()
 
-    def apply_theme(self):
-        """
-        Redraw for the appearance now in force.
-
-        Every colour on a canvas is written into the item that carries it,
-        so nothing here follows a theme change until it is drawn again -
-        the same reason the chart and the task grid have this method.
-        """
-        self._redraw()
-
-    def set_project(self, project: Optional[Project]):
-        """Point the dashboard at a different plan."""
-        self.project = project
-        self._redraw()
-
-    # -- drawing ----------------------------------------------------------
-
-    def _on_resize(self, event):
-        """Redraw when the pane changes size, and not for a stray pixel."""
-        if (abs(event.width - self._last_size[0]) < 4
-                and abs(event.height - self._last_size[1]) < 4):
-            return
-        self._last_size = (event.width, event.height)
-        self._redraw()
-
-    def _size(self) -> Tuple[int, int]:
+    def _size(self):
         """
         How big the canvas is to draw into.
 
@@ -336,341 +330,88 @@ class ProjectDashboardFrame(ctk.CTkFrame):
         winfo_width answers 1 until Tk has laid the widget out, so two
         things stand in for it: the size the last Configure reported, and
         then the size the canvas was asked for. In the application the
-        first of those is the real answer - Configure is where a pane's
-        size arrives - and the second is what lets the drawing be checked
-        without putting a window on somebody's screen, since Tk delivers no
-        Configure to a widget that was never mapped.
+        first of those is the real answer, and the second is what lets
+        the drawing be checked without putting a window on somebody's
+        screen, since Tk delivers no Configure to a widget that was
+        never mapped.
         """
-        width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
+        width, height = (self.canvas.winfo_width(),
+                         self.canvas.winfo_height())
         if width > 1 and height > 1:
             return width, height
         if self._last_size[0] > 1 and self._last_size[1] > 1:
             return self._last_size
-        return self.canvas.winfo_reqwidth(), self.canvas.winfo_reqheight()
+        return (self.canvas.winfo_reqwidth(),
+                self.canvas.winfo_reqheight())
 
-    def _redraw(self):
-        """Put the whole dashboard on the canvas again."""
+    def _redraw_now(self):
+        self._redraw_pending = False
+        canvas = self.canvas
         try:
-            if not self.canvas.winfo_exists():
+            if not canvas.winfo_exists():
                 return
         except tk.TclError:
             return
-
-        self.canvas.delete('all')
+        canvas.delete('all')
         width, height = self._size()
-        self.canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
+
+        canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
+        palette = theme.view_palette()
+        pen = CanvasPen(canvas)
+        pen.rect(0, 0, width, height, fill=palette['bg'])
 
         if width < self.MIN_USEFUL_PX or height < self.MIN_USEFUL_PX:
-            # Still being laid out, or dragged too narrow to say anything.
-            # The Configure that follows draws it; logged because a blank
-            # dashboard is otherwise indistinguishable from a broken one
-            logger.debug("Dashboard not drawn at %sx%s; too small to read",
+            # Still being laid out, or dragged too narrow to read; the
+            # Configure that follows draws it.
+            logger.debug("Dashboard not drawn at %sx%s; too small",
                          width, height)
+            self._panel_rects = {}
+            self._glyph_rects = {}
             return
 
-        rows = dashboard_rows(self.project)
-        if not rows:
-            self._draw_empty(width, height)
-            return
+        rows = dashboard_rows(self._get_project())
+        landed = boardrender.render_dashboard(
+            pen, rows, palette, self.enabled, self.maximized,
+            width=width, height=height)
 
-        half_w = width // 2
-        half_h = height // 2
-        self._draw_progress(rows, 0, 0, half_w, half_h)
-        self._draw_donut(rows, half_w, 0, width - half_w, half_h)
-        self._draw_workload(rows, 0, half_h, half_w, height - half_h)
-        self._draw_summary(rows, half_w, half_h,
-                           width - half_w, height - half_h)
+        self._panel_rects = {p['id']: p['rect'] for p in landed}
+        self._glyph_rects = {}
+        for panel in landed:
+            self._draw_glyph(panel)
 
-    def _draw_empty(self, width: int, height: int):
+    def set_project(self, project):
+        """Point the dashboard at a different plan - the old API, kept."""
+        self._get_project = (lambda p=project: p)
+        self.refresh()
+
+    def _draw_glyph(self, panel):
         """
-        What an empty plan gets: a sentence, not invented tasks.
+        The small window icon on a panel's title - the visible way to
+        maximize it (double-click is the other, and invisible). Drawn as
+        a window outline with a filled title bar; while the panel owns
+        the board the same glyph reads as restore.
         """
-        self.canvas.create_text(
-            width // 2, height // 2,
-            text="Nothing to summarise yet.\n"
-                 "Add a task to the plan and it will appear here.",
-            fill=theme.now(theme.DASH_TICK_TEXT), justify=tk.CENTER,
-            font=self._font(13))
+        x0, y0, x1, y1 = panel['rect']
+        gx, gy = x1 - 20, y0 + 6
+        colour = theme.now(theme.DASH_TITLE_TEXT)
+        # A window: outline with its title bar filled in.
+        self.canvas.create_rectangle(gx, gy, gx + 13, gy + 12,
+                                     outline=colour, width=1)
+        self.canvas.create_rectangle(gx, gy, gx + 13, gy + 3.5,
+                                     fill=colour, outline='')
+        # A padded hit box - the drawn 13px is small to aim at.
+        self._glyph_rects[panel['id']] = (gx - 4, gy - 4,
+                                          gx + 17, gy + 16)
 
-    def _panel(self, x: int, y: int, width: int, height: int, title: str):
-        """
-        The paper one chart is drawn on, and its title.
+    # -- theme -------------------------------------------------------------------
 
-        RETURNS:
-        --------
-        tuple[int, int, int, int]
-            The area left inside it: left, top, right, bottom.
-        """
-        left, top = x + self.PAD // 2, y + self.PAD // 2
-        right, bottom = x + width - self.PAD // 2, y + height - self.PAD // 2
-        self.canvas.create_rectangle(
-            left, top, right, bottom, width=0,
-            fill=theme.now(theme.DASH_PLOT_BG))
-        self.canvas.create_text(
-            (left + right) // 2, top + self.TITLE_H // 2, text=title,
-            fill=theme.now(theme.DASH_TITLE_TEXT), font=self._font(12, True))
-        return left + self.PAD, top + self.TITLE_H, right - self.PAD, bottom
-
-    def _font(self, size: int, bold: bool = False):
-        """A canvas font, in the family Tk has everywhere."""
-        return ('TkDefaultFont', size, 'bold') if bold \
-            else ('TkDefaultFont', size)
-
-    # -- 1: progress across the top-level rows ----------------------------
-
-    def _draw_progress(self, rows, x, y, width, height):
-        """One horizontal bar per top-level row, 0 to 100 per cent."""
-        left, top, right, bottom = self._panel(
-            x, y, width, height, "Task Progress (%)")
-
-        top_rows = [row for row in rows if row['Level'] == 1]
-        if not top_rows:
-            self._say(left, top, right, bottom, "No top-level rows")
-            return
-
-        plot_left = left + self.LEFT_LABEL_W
-        plot_bottom = bottom - 28
-        if plot_left >= right - 40 or plot_bottom <= top + 10:
-            return
-
-        axis = theme.now(theme.DASH_AXIS)
-        self.canvas.create_rectangle(plot_left, top, right, plot_bottom,
-                                     outline=axis, width=1)
-
-        # The scale, every twenty per cent
-        for percent in range(0, 101, 20):
-            at = plot_left + (right - plot_left) * percent / 100
-            if percent:
-                self.canvas.create_line(at, top, at, plot_bottom,
-                                        fill=theme.now(theme.DASH_GRID),
-                                        dash=(2, 3))
-            self.canvas.create_text(at, plot_bottom + 10, text=f"{percent}%",
-                                    fill=theme.now(theme.DASH_TICK_TEXT),
-                                    font=self._font(9))
-
-        band = (plot_bottom - top) / len(top_rows)
-        thickness = max(4, min(22, band * 0.55))
-        for index, row in enumerate(top_rows):
-            middle = top + band * (index + 0.5)
-            self.canvas.create_text(
-                plot_left - 8, middle, text=self._clip(row['Name'], 20),
-                anchor=tk.E, fill=theme.now(theme.DASH_TICK_TEXT),
-                font=self._font(10))
-
-            share = max(0.0, min(100.0, float(row['Progress']))) / 100
-            end = plot_left + (right - plot_left) * share
-            if end > plot_left + 1:
-                self.canvas.create_rectangle(
-                    plot_left + 1, middle - thickness / 2,
-                    end, middle + thickness / 2,
-                    fill=theme.now(theme.DASH_PROGRESS_BAR), width=0)
-            self.canvas.create_text(
-                end + 6, middle, text=f"{int(row['Progress'])}%", anchor=tk.W,
-                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(9))
-
-    # -- 2: where the duration sits ---------------------------------------
-
-    def _draw_donut(self, rows, x, y, width, height):
-        """Total duration split by task type, as a ring with a legend."""
-        left, top, right, bottom = self._panel(
-            x, y, width, height, "Duration Allocation by Task Type (Days)")
-
-        shares = duration_by_type(rows)
-        total = sum(days for _kind, days in shares)
-        colours = self._series_colours()
-
-        legend_h = min(len(shares) * 18 + 6, max(0, (bottom - top) // 2))
-        ring_bottom = bottom - legend_h
-        size = min(right - left, ring_bottom - top) - 10
-
-        if total <= 0:
-            self._say(left, top, right, bottom,
-                      "No duration to divide up yet")
-        elif size > 40:
-            radius = size / 2
-            cx = (left + right) / 2
-            cy = (top + ring_bottom) / 2
-            thickness = radius * self.RING_SHARE
-            inset = thickness / 2
-            box = (cx - radius + inset, cy - radius + inset,
-                   cx + radius - inset, cy + radius - inset)
-
-            start = 90.0
-            for index, (_kind, days) in enumerate(shares):
-                if not days:
-                    continue
-                extent = -360.0 * days / total
-                if extent > -0.05:
-                    continue
-                self.canvas.create_arc(
-                    *box, start=start, extent=extent, style=tk.ARC,
-                    outline=colours[index % len(colours)],
-                    width=int(max(2, thickness)))
-                start += extent
-
-        # The legend carries the numbers, including the types holding none
-        row_y = bottom - legend_h + 10
-        for index, (kind, days) in enumerate(shares):
-            if row_y > bottom - 4:
-                break
-            share = (days / total * 100) if total else 0.0
-            self.canvas.create_rectangle(
-                left, row_y - 5, left + 10, row_y + 5, width=0,
-                fill=colours[index % len(colours)])
-            self.canvas.create_text(
-                left + 18, row_y, anchor=tk.W,
-                text=f"{kind}  {days}d  ({share:.1f}%)",
-                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
-            row_y += 18
-
-    def _series_colours(self) -> List[str]:
-        """The donut's colours, resolved for the appearance in force."""
-        return [theme.now(pair) for pair in (
-            theme.DASH_SERIES_1, theme.DASH_SERIES_2,
-            theme.DASH_SERIES_3, theme.DASH_SERIES_4)]
-
-    # -- 3: how long each row is ------------------------------------------
-
-    def _draw_workload(self, rows, x, y, width, height):
-        """One vertical bar per row, its own duration in days."""
-        left, top, right, bottom = self._panel(
-            x, y, width, height, "Duration per Item (Days)")
-
-        longest = max((row['Duration'] for row in rows), default=0)
-        if longest <= 0:
-            self._say(left, top, right, bottom, "Every row is zero days long")
-            return
-
-        plot_left = left + 30
-        plot_bottom = bottom - self.BOTTOM_LABEL_H
-        if plot_left >= right - 20 or plot_bottom <= top + 20:
-            return
-
-        axis = theme.now(theme.DASH_AXIS)
-        self.canvas.create_rectangle(plot_left, top, right, plot_bottom,
-                                     outline=axis, width=1)
-
-        # A gridline every step days, at a step that keeps the count small
-        step = max(1, -(-longest // 5))
-        value = step
-        while value <= longest:
-            at = plot_bottom - (plot_bottom - top) * value / longest
-            self.canvas.create_line(plot_left, at, right, at,
-                                    fill=theme.now(theme.DASH_GRID),
-                                    dash=(2, 3))
-            self.canvas.create_text(plot_left - 6, at, text=str(value),
-                                    anchor=tk.E, font=self._font(9),
-                                    fill=theme.now(theme.DASH_TICK_TEXT))
-            value += step
-
-        band = (right - plot_left) / len(rows)
-        thickness = max(3, min(34, band * 0.6))
-        for index, row in enumerate(rows):
-            middle = plot_left + band * (index + 0.5)
-            if row['Duration'] > 0:
-                bar_top = plot_bottom - ((plot_bottom - top)
-                                         * row['Duration'] / longest)
-                self.canvas.create_rectangle(
-                    middle - thickness / 2, bar_top,
-                    middle + thickness / 2, plot_bottom - 1,
-                    fill=theme.now(theme.DASH_DURATION_BAR), width=0)
-                self.canvas.create_text(
-                    middle, bar_top - 7, text=f"{row['Duration']}d",
-                    fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(8))
-            self._angled(middle, plot_bottom + 6, row['Name'])
-
-    def _angled(self, x: float, y: float, text: str):
-        """
-        A label under a bar, turned out of the way of its neighbours.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        Tk grew the angle option for canvas text in 8.6, and the Tk that
-        ships with macOS is 8.5. So the turn is attempted and the flat
-        label is what a Tk without it gets - shorter, because a flat label
-        has a bar's width to fit in rather than a diagonal.
-        """
+    def apply_theme(self):
+        """Re-paint for the appearance that is now in force."""
+        self.header.configure(fg_color=theme.pair(theme.HEADER_MONTH_BG))
+        self.hint_label.configure(
+            text_color=theme.pair(theme.MUTED_TEXT))
         try:
-            self.canvas.create_text(
-                x, y, text=self._clip(text, 18), angle=35, anchor=tk.NE,
-                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(9))
+            self.canvas.configure(bg=theme.now(theme.DASH_BOARD_BG))
         except tk.TclError:
-            self.canvas.create_text(
-                x, y, text=self._clip(text, 8), anchor=tk.N,
-                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(8))
-
-    # -- 4: the numbers underneath ----------------------------------------
-
-    def _draw_summary(self, rows, x, y, width, height):
-        """
-        The eight figures, in a box of their own.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        The three status lines are the Status field the task list's own
-        column shows: Active, which that column leaves blank, and Estimated
-        and Inactive, which it marks E and I. They are written as a set that
-        comes to a hundred, so the reader can weigh how much of the plan is
-        firm against how much is still an estimate or set aside.
-        """
-        left, top, right, bottom = self._panel(
-            x, y, width, height, "Summary")
-
-        metrics = kpi_metrics(rows)
-        lines = (
-            ("Total Project Scope",
-             f"{metrics['total_scope']} "
-             f"{self._plural('Day', metrics['total_scope'])}"),
-            ("Total Items Tracked",
-             f"{metrics['total_items']} "
-             f"{self._plural('Item', metrics['total_items'])}"),
-            ("Milestones Count",
-             f"{metrics['milestones']} "
-             f"{self._plural('Milestone', metrics['milestones'])}"),
-            ("Total Committed Cost", f"${metrics['total_cost']:g}"),
-            ("Overall Completion", f"{metrics['completion']:.2f}%"),
-            ("Active Status", f"{metrics['active_share']:.0f}% Active"),
-            ("Estimated Status",
-             f"{metrics['estimated_share']:.0f}% Estimated (E)"),
-            ("Inactive Status",
-             f"{metrics['inactive_share']:.0f}% Inactive (I)"),
-        )
-
-        box_h = min(len(lines) * 24 + 28, bottom - top)
-        box_top = top + max(0, (bottom - top - box_h) // 2)
-        self.canvas.create_rectangle(
-            left, box_top, right, box_top + box_h,
-            fill=theme.now(theme.DASH_KPI_BG),
-            outline=theme.now(theme.DASH_KPI_BORDER), width=1)
-
-        row_y = box_top + 22
-        for caption, value in lines:
-            if row_y > box_top + box_h - 6:
-                break
-            self.canvas.create_text(
-                left + 16, row_y, text=caption, anchor=tk.W,
-                fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
-            self.canvas.create_text(
-                right - 16, row_y, text=value, anchor=tk.E,
-                fill=theme.now(theme.DASH_TITLE_TEXT),
-                font=self._font(11, True))
-            row_y += 24
-
-    # -- odds and ends -----------------------------------------------------
-
-    def _say(self, left, top, right, bottom, text: str):
-        """A sentence in the middle of a panel that has nothing to draw."""
-        self.canvas.create_text(
-            (left + right) // 2, (top + bottom) // 2, text=text,
-            fill=theme.now(theme.DASH_TICK_TEXT), font=self._font(10))
-
-    @staticmethod
-    def _plural(word: str, count) -> str:
-        """The word, with an s on it unless there is exactly one."""
-        return word if count == 1 else word + 's'
-
-    @staticmethod
-    def _clip(text: str, longest: int) -> str:
-        """A name cut to fit, with an ellipsis to say it was cut."""
-        text = str(text or '')
-        return text if len(text) <= longest else text[:longest - 1] + '…'
+            pass
+        self.refresh()
