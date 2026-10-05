@@ -4,6 +4,7 @@ Test runner for the Gantt Project Management Tool.
 
 Run all tests with: python3 run_tests.py
 Run them loudly with: python3 run_tests.py -v
+Run them with a coverage report: python3 run_tests.py --cov
 Run specific tests with: python3 run_tests.py test_module
 """
 
@@ -168,20 +169,76 @@ def run_specific_test(test_module: str, verbose=False):
         return False
 
 
+def run_with_coverage(verbose=False):
+    """
+    Run the whole suite under coverage and print the report.
+
+    coverage wraps run_all_tests rather than pytest alone, so the
+    unittest half is measured too - pytest-cov would only see the
+    modules pytest collects. Branch coverage is on: a suite is not
+    covered because its lines ran once.
+
+    PARAMETERS:
+    -----------
+    verbose : bool
+        Passed through to run_all_tests.
+
+    RETURNS:
+    --------
+    bool
+        True when all the tests passed. False is also returned when
+        coverage is not installed, so a measurement that silently did
+        not happen cannot pass as a green run.
+    """
+    if sys.platform == 'darwin':
+        # The C tracer dies with a bus error the first time a test
+        # pumps a real Tk event loop (Tcl callbacks into traced Python),
+        # so on macOS coverage is asked for its Python tracer instead.
+        # Linux CI keeps the fast one; set the variable first because
+        # coverage reads it when it picks a tracer at import.
+        os.environ.setdefault('COVERAGE_CORE', 'pytrace')
+
+    try:
+        import coverage
+    except ImportError:
+        print("=" * 50)
+        print("--cov needs the development requirements:")
+        print("    pip install -r requirements-dev.txt")
+        return False
+
+    cov = coverage.Coverage(
+        source=[str(Path(project_root) / 'gantt_app')], branch=True)
+    cov.start()
+    try:
+        return run_all_tests(verbose)
+    finally:
+        cov.stop()
+        cov.save()
+        print("=" * 50)
+        print("Coverage (branch):")
+        cov.report(show_missing=True)
+
+
 def main():
     """Main entry point for test runner."""
     print("Gantt Project Management Tool - Test Runner")
     print("=" * 50)
-    
+
     args = [arg for arg in sys.argv[1:]]
     verbose = '-v' in args or '--verbose' in args
-    args = [arg for arg in args if arg not in ('-v', '--verbose')]
+    with_coverage = '--cov' in args
+    args = [arg for arg in args
+            if arg not in ('-v', '--verbose', '--cov')]
 
     if args:
         # Run specific test module
         test_module = args[0]
         print(f"Running tests from: {test_module}")
         success = run_specific_test(test_module, verbose)
+    elif with_coverage:
+        # Run all tests under coverage
+        print("Running all tests under coverage...")
+        success = run_with_coverage(verbose)
     else:
         # Run all tests
         print("Running all tests...")

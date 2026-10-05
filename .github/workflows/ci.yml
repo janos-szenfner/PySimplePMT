@@ -48,7 +48,19 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run the test suite
-        run: xvfb-run -a python run_tests.py -v
+        # --cov reports branch coverage for both halves of the suite:
+        # coverage wraps run_tests.py, so the unittest modules count
+        # too. The run does not fail on a percentage - the number is
+        # read, not gated on.
+        run: xvfb-run -a python run_tests.py -v --cov
+
+      - name: Upload the coverage data
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-data
+          path: .coverage
+          if-no-files-found: ignore
 
   build-check:
     name: Package build check
