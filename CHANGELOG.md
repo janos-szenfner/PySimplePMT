@@ -21,7 +21,6 @@
   of five copies of the same temp-file dance, and the dashboard and the
   timeline share their resize-and-redraw skeleton through a small mixin
   rather than two copies free to drift.
-
 - **The task list sorts, and its headings can carry filters.** A click
   on a column heading sorts the rows by that column - ascending, then
   descending, then back to plan order, with the arrow the sorted column
@@ -308,11 +307,15 @@
   Settings..., matching the window that opens (issue #94).
 
 - **The test suite finishes its migration to pytest-bdd.** Every
-  remaining unittest module under twenty tests became feature files and
-  step definitions, one scenario per test, and the CI log names each
-  scenario instead of counting percentages. Tk teardowns across the
-  suite now destroy children before their root, ending the
-  `ttk::ThemeChanged` floods that surfaced file by file on CI.
+  pure-logic and domain unittest module is now a feature file and step
+  definitions, one scenario per test; modules that mixed both were
+  split so the parts that drive a real window stay in unittest and the
+  rest moved across. The CI log names each scenario instead of
+  counting percentages, and the test job measures branch coverage over
+  the whole suite - both halves, not only the one pytest sees. Tk
+  teardowns across the suite destroy children before their root,
+  ending the `ttk::ThemeChanged` floods that surfaced file by file on
+  CI.
 
 - **The stored plan order is the order on screen.** The No. column is
   what the user edits and what dependencies refer to, but the project's
