@@ -2,6 +2,23 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **The Highlight filters behave like a managed set.** An active
+  highlight recomputes on every change, so a task edited out of
+  "Unstarted Tasks" loses its yellow without the filter being picked
+  again (issue #67). Late Tasks now also paints work whose finish is
+  already behind the status date - or behind today where the plan
+  carries none - rather than only constraint and deadline conflicts,
+  and Summary Tasks catches every row that holds children, not only
+  phases (issues #76, #68). The dropdown marks its two halves Built-in
+  and Custom (issue #78), and the More Filters window is larger, marks
+  its built-in rows, opens with the active filter already selected,
+  lets built-ins be copied into editable rules, refuses duplicate
+  names, and shows copies and deletions the moment they happen
+  (issue #79). Filter definitions gain the Summary, Late and Deadline
+  fields - "is empty"/"is not empty" included - and the Type choice
+  offers every type the vocabulary knows, Phase included, whether or
+  not the plan currently uses it (issue #77).
+
 - **The Deliverables view works like the task list.** The rows are
   numbered D-001 so they cannot be read as task numbers, assigned tasks
   sit under their deliverable in muted text, and the column that owns a

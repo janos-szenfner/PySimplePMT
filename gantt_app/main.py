@@ -1028,6 +1028,14 @@ class GanttApp(ctk.CTk):
             logger.debug("Deliverable progress re-rolled after a change")
 
         self.task_list.update_task_list()
+
+        # A highlight paints membership, not a remembered set of ids - a
+        # row edited out of the filter leaves the yellow on its own,
+        # without waiting for the filter to be picked again (issue #67).
+        toolbar = getattr(self, 'toolbar', None)
+        if toolbar is not None:
+            toolbar.refresh_highlight()
+
         self.gantt_chart.update_chart()
 
         # The Deliverables tab reads the same plan; an edit on the task side

@@ -278,6 +278,9 @@ class _ToolbarShell:
             Toolbar._find_custom_filter.__get__(self))
         self._more_filters_delete = (
             Toolbar._more_filters_delete.__get__(self))
+        self._reload_more_filters = (
+            Toolbar._reload_more_filters.__get__(self))
+        self._more_filters_dialog = None
         self.clear_highlight = Toolbar.clear_highlight.__get__(self)
         self._refresh_toggle_states = (
             Toolbar._refresh_toggle_states.__get__(self))
@@ -852,6 +855,78 @@ class TestTheManager(unittest.TestCase):
         dialog._run('edit')
         dialog._run('delete')
         self.assertEqual(calls, [])
+        dialog.destroy()
+
+    def test_built_ins_can_be_copied(self):
+        """Issue #79: Copy is the one write the fixed set allows."""
+        from gantt_app.views.gridfilter import MoreFiltersDialog
+        calls = []
+        dialog = MoreFiltersDialog(
+            self.root, [('late', 'Late Tasks', 'standard')],
+            callbacks={'copy': lambda k: calls.append(k)})
+        dialog._select('late')
+        dialog._run('copy')
+        self.assertEqual(calls, ['late'])
+        dialog.destroy()
+
+    def test_built_ins_are_marked_and_customs_have_their_own_section(self):
+        """Issue #79: (Built-in) marks; issue #78: separate sections."""
+        from gantt_app.views.gridfilter import MoreFiltersDialog
+        dialog = MoreFiltersDialog(
+            self.root,
+            [('incomplete', 'Incomplete Tasks', 'standard'),
+             ('mine', 'Mine', 'custom')],
+            callbacks={})
+        texts = [w.cget('text') for w in
+                 dialog._listing.content.winfo_children()
+                 if hasattr(w, 'cget')]
+        self.assertIn('Built-in', texts)
+        self.assertIn('Custom', texts)
+        self.assertIn('Incomplete Tasks (Built-in)', texts)
+        self.assertIn('Mine', texts)
+        self.assertLess(texts.index('Incomplete Tasks (Built-in)'),
+                        texts.index('Custom'))
+        dialog.destroy()
+
+    def test_the_active_filter_opens_selected(self):
+        """Issue #79: the filter painting rows is already picked."""
+        from gantt_app.views.gridfilter import MoreFiltersDialog
+        dialog = MoreFiltersDialog(
+            self.root,
+            [('incomplete', 'Incomplete Tasks', 'standard'),
+             ('mine', 'Mine', 'custom')],
+            callbacks={}, selected='mine')
+        self.assertEqual(dialog._selected, 'mine')
+        dialog.destroy()
+
+    def test_the_listing_refreshes_with_new_entries(self):
+        """Issue #79: a copy or save shows up without reopening."""
+        from gantt_app.views.gridfilter import MoreFiltersDialog
+        entries = [('incomplete', 'Incomplete Tasks', 'standard')]
+        dialog = MoreFiltersDialog(
+            self.root, entries, callbacks={},
+            entries_for=lambda: entries)
+        entries.append(('copy1', 'Incomplete Tasks - Copy', 'custom'))
+        dialog.reload_entries()
+        self.assertIn('copy1', dialog._rows)
+        dialog.destroy()
+
+    def test_a_callback_returning_a_key_selects_the_new_row(self):
+        """A copy lands already chosen, so Copy pressed twice numbers."""
+        from gantt_app.views.gridfilter import MoreFiltersDialog
+        entries = [('mine', 'Mine', 'custom')]
+
+        def copy(_key):
+            entries.append(('copy1', 'Mine - Copy', 'custom'))
+            return 'copy1'
+
+        dialog = MoreFiltersDialog(
+            self.root, list(entries),
+            callbacks={'copy': copy},
+            entries_for=lambda: entries)
+        dialog._select('mine')
+        dialog._run('copy')
+        self.assertEqual(dialog._selected, 'copy1')
         dialog.destroy()
 
 

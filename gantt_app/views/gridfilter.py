@@ -39,6 +39,7 @@ import fnmatch
 from gantt_app.views import theme
 from gantt_app.core.calendarregistry import PROJECT_DEFAULT_LABEL
 from gantt_app.core.dependencysyntax import format_links
+from gantt_app.core.models import TASK_TYPES
 from gantt_app.core.workdaycalendar import as_date
 from gantt_app.views.datepicker import DateEntry, DATE_FORMAT, parse_date
 from gantt_app.views.modal import grab_when_visible
@@ -59,7 +60,8 @@ MENU_HOVER = theme.MENU_HOVER
 COLUMN_KIND = {
     'Task Name': 'text', 'Label': 'text', 'Dependencies': 'text',
     'Alert': 'choice', 'Type': 'choice', 'Status': 'choice',
-    'Milestone': 'choice', 'Task Calendar': 'choice',
+    'Milestone': 'choice', 'Summary': 'choice', 'Late': 'choice',
+    'Deadline': 'date', 'Task Calendar': 'choice',
     'Duration': 'number', 'Progress': 'number', 'Outline': 'number',
     'Start Variance': 'number', 'Finish Variance': 'number',
     'Baseline Duration': 'number', 'Duration Variance': 'number',
@@ -119,6 +121,26 @@ def column_value(task, column: str, project, context: Dict = None):
         return task.status or ''
     if column == 'Milestone':
         return 'Yes' if task.effective_milestone else 'No'
+    if column == 'Summary':
+        # A row holding children is a summary whatever its type says; a
+        # Phase qualifies even before it has any, the way the task list
+        # draws it as a container.
+        summaries = context.get('summaries')
+        if summaries is None and project is not None:
+            summaries = project.get_summary_task_ids()
+            context['summaries'] = summaries
+        return ('Yes' if task.is_container or task.id in (summaries or ())
+                else 'No')
+    if column == 'Late':
+        # The same set the Highlight menu's Late Tasks paints: constraint
+        # and deadline trouble, plus work whose finish is already past.
+        late = context.get('late')
+        if late is None and project is not None:
+            late = project.late_task_ids()
+            context['late'] = late
+        return 'Yes' if task.id in (late or ()) else 'No'
+    if column == 'Deadline':
+        return getattr(task, 'deadline', None)
     if column == 'Alert':
         conflicts = context.get('conflicts')
         if conflicts is None and project is not None:
@@ -184,6 +206,14 @@ def choice_values(project, column: str, context: Dict = None) -> list:
               for task in project.tasks}
     if column == 'Alert':
         return sorted(ALERT_NONE if v == '' else v for v in values)
+    if column == 'Type':
+        # Type is a closed vocabulary, not just what the plan happens to
+        # hold - a plan without a Phase still wants to filter for one,
+        # which is why Milestone rides along: the flag a Task carries is
+        # offered as the type it reads as (issues #73 and #77).
+        values |= set(TASK_TYPES) | {'Milestone'}
+    elif column in ('Summary', 'Late', 'Milestone'):
+        values |= {'Yes', 'No'}
     return sorted(v for v in values if v not in (None, ''))
 
 
@@ -345,11 +375,12 @@ def matching_task_ids(project, filters: Dict,
 #: The tests each kind of field offers, by identifier. The labels the
 #: dialog shows for them sit in TEST_LABELS.
 TESTS_BY_KIND = {
-    'text': ('equals', 'does_not_equal', 'contains', 'does_not_contain'),
+    'text': ('equals', 'does_not_equal', 'contains', 'does_not_contain',
+             'is_empty', 'is_not_empty'),
     'number': ('equals', 'does_not_equal', 'lt', 'lte', 'gt', 'gte',
                'within', 'not_within'),
     'date': ('equals', 'does_not_equal', 'lt', 'lte', 'gt', 'gte',
-             'within', 'not_within'),
+             'within', 'not_within', 'is_empty', 'is_not_empty'),
     'choice': ('equals', 'does_not_equal', 'is_one_of', 'not_one_of'),
 }
 
@@ -366,7 +397,13 @@ TEST_LABELS = {
     'not_within': "is not within",
     'is_one_of': "is one of",
     'not_one_of': "is not one of",
+    'is_empty': "is empty",
+    'is_not_empty': "is not empty",
 }
+
+#: The tests that ask no value at all - "Deadline is not empty" answers
+#: whether a row carries one, which no comparison can say.
+NO_VALUE_TESTS = ('is_empty', 'is_not_empty')
 
 #: The tests that take two values; every other test takes one.
 TWO_VALUE_TESTS = ('within', 'not_within')
@@ -400,6 +437,10 @@ def rule_matches(task, rule: Dict, project,
     if kind is None or test not in TESTS_BY_KIND.get(kind, ()):
         return False
     value = column_value(task, field, project, context)
+
+    if test in NO_VALUE_TESTS:
+        empty = value is None or str(value).strip() == ''
+        return empty if test == 'is_empty' else not empty
 
     if kind == 'text':
         text = str(value or '')
@@ -1557,6 +1598,13 @@ class FilterDefinitionDialog(ctk.CTkToplevel):
             saved = ", ".join(str(v) for v in rule['value'])
         saved2 = str(rule.get('value2', '')) if rule.get('value2') is not None else ''
 
+        if test in NO_VALUE_TESTS:
+            # "is empty" asks nothing after the test itself - no box to
+            # type into, so _collect reads the row by test alone.
+            row['rule'] = None
+            self._fit_width()
+            return
+
         holder = row['frame']
         if kind == 'date':
             value = DateEntry(holder)
@@ -1613,10 +1661,13 @@ class FilterDefinitionDialog(ctk.CTkToplevel):
         for index, row in enumerate(self._rows):
             test = row['by_label'].get(row['test_var'].get(), 'equals')
             field = row['field_var'].get()
-            value = row['value'].get()
             rule = {'join': ('and' if index == 0 else
                              row['join_var'].get().lower()),
                     'field': field, 'test': test}
+            if test in NO_VALUE_TESTS:
+                rules.append(rule)
+                continue
+            value = row['value'].get()
             if (COLUMN_KIND.get(field) == 'choice'
                     and test in ('is_one_of', 'not_one_of')):
                 rule['value'] = [v.strip() for v in value.split(',')
@@ -1637,7 +1688,8 @@ class FilterDefinitionDialog(ctk.CTkToplevel):
             self._warning.configure(text="Give the filter a name.")
             return
         rules = [r for r in definition['rules']
-                 if r.get('value') not in (None, '', [])
+                 if r.get('test') in NO_VALUE_TESTS
+                 or r.get('value') not in (None, '', [])
                  or r.get('value2') not in (None, '')]
         if not rules:
             self._warning.configure(
@@ -1645,7 +1697,13 @@ class FilterDefinitionDialog(ctk.CTkToplevel):
             return
         definition['rules'] = rules
         if self._on_save is not None:
-            self._on_save(definition)
+            # A truthy answer is a reason the save was refused - a name
+            # the plan already uses, say - shown in place so the writer
+            # can fix it rather than lose the rows they built.
+            error = self._on_save(definition)
+            if error:
+                self._warning.configure(text=str(error))
+                return
         self.destroy()
 
     def destroy(self):
@@ -1666,11 +1724,21 @@ class MoreFiltersDialog(ctk.CTkToplevel):
     entries : list
         (key, label, kind) triples - 'standard' or 'custom' - in the order
         they are listed. Custom entries can be edited, copied and deleted;
-        standard ones cannot, the way the built-in set is fixed.
+        standard ones can be copied but not changed, the way the built-in
+        set is fixed.
     callbacks : Dict
         'apply', 'highlight', 'new', 'edit', 'copy', 'delete' - each
         called with the selected entry's key where that makes sense; the
-        dialog itself only lists and asks.
+        dialog itself only lists and asks. A callback that returns a key
+        selects that entry once the listing refreshes, which is how a
+        copy lands already chosen.
+    selected : str, optional
+        The entry to mark when the dialog opens - the filter currently
+        highlighting rows, where there is one.
+    entries_for : callable, optional
+        Asked for a fresh entry list whenever a callback changes the set
+        - New saving, Copy cloning, Delete removing - so the listing the
+        reader sees is the set the plan actually holds (issue #79).
 
     DEVELOPMENT NOTES:
     ------------------
@@ -1679,14 +1747,19 @@ class MoreFiltersDialog(ctk.CTkToplevel):
     either so a filter can be tried and swapped without reopening.
     """
 
-    def __init__(self, master, entries, callbacks):
+    def __init__(self, master, entries, callbacks, selected=None,
+                 entries_for=None):
         super().__init__(master)
         self.title("More Filters")
-        self.resizable(False, False)
+        self.geometry("620x430")
+        self.minsize(480, 320)
         self.transient(master)
         self._callbacks = callbacks or {}
+        self._entries_for = entries_for
+        self._entries = list(entries or ())
         self._selected = None
         self._rows = {}
+        self._listing = None
 
         ctk.CTkLabel(self, text="Filters", anchor="w",
                      font=ctk.CTkFont(size=12, weight="bold"),
@@ -1695,16 +1768,9 @@ class MoreFiltersDialog(ctk.CTkToplevel):
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=12, pady=4)
 
-        listing = ScrollFrame(body, height=240, width=320)
-        listing.pack(side="left", fill="both", expand=True)
-        for key, label, kind in entries:
-            row = ctk.CTkButton(
-                listing.content, text=label, anchor="w",
-                fg_color="transparent", text_color=MENU_TEXT,
-                hover_color=MENU_HOVER,
-                command=lambda k=key: self._select(k))
-            row.pack(fill="x", pady=1)
-            self._rows[key] = (row, kind)
+        self._listing = ScrollFrame(body, height=300, width=380)
+        self._listing.pack(side="left", fill="both", expand=True)
+        self._rebuild_list()
 
         side = ctk.CTkFrame(body, fg_color="transparent")
         side.pack(side="left", padx=(10, 0))
@@ -1717,8 +1783,62 @@ class MoreFiltersDialog(ctk.CTkToplevel):
         secondary_button(self, "Close", self.destroy,
                          width=90).pack(pady=(4, 12))
 
+        if selected is not None and selected in self._rows:
+            self._select(selected)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         grab_when_visible(self)
+
+    def _rebuild_list(self):
+        """Draw the current entries, built-ins over customs, by section."""
+        for child in self._listing.content.winfo_children():
+            child.destroy()
+        self._rows = {}
+
+        sections = [
+            ("Built-in", [e for e in self._entries
+                          if e[2] == 'standard']),
+            ("Custom", [e for e in self._entries if e[2] != 'standard']),
+        ]
+        for heading, entries in sections:
+            if not entries:
+                continue
+            ctk.CTkLabel(
+                self._listing.content, text=heading, anchor="w",
+                text_color=theme.MUTED_TEXT,
+                font=ctk.CTkFont(size=11, weight="bold"),
+            ).pack(fill="x", pady=(6, 1))
+            for key, label, kind in entries:
+                # Built-ins are marked, not just grouped: a reader who
+                # scrolls past the heading still knows which set each row
+                # belongs to (issue #79).
+                text = f"{label} (Built-in)" if kind == 'standard' \
+                    else label
+                row = ctk.CTkButton(
+                    self._listing.content, text=text, anchor="w",
+                    fg_color="transparent", text_color=MENU_TEXT,
+                    hover_color=MENU_HOVER,
+                    command=lambda k=key: self._select(k))
+                row.pack(fill="x", pady=1)
+                self._rows[key] = (row, kind)
+
+    def reload_entries(self):
+        """
+        Re-ask for the entry list and redraw, keeping the selection.
+
+        A save, copy or delete changes the set while this dialog stays
+        open; without the reload the row keeps standing for a filter that
+        no longer exists, or a copy is saved but never shown - the exact
+        "nothing happens" this window used to give.
+        """
+        if self._entries_for is not None:
+            self._entries = list(self._entries_for())
+        selected = self._selected
+        self._rebuild_list()
+        self._selected = None
+        if selected in self._rows:
+            self._select(selected)
+        else:
+            self._select(None)
 
     def _select(self, key):
         """Mark a row as the one the side buttons act on."""
@@ -1734,16 +1854,21 @@ class MoreFiltersDialog(ctk.CTkToplevel):
             return
         if action in ('new',):
             callback()
+            self.reload_entries()
             return
         if self._selected is None:
             return
         kind = self._rows.get(self._selected, (None, None))[1]
-        if kind != 'custom' and action in ('edit', 'copy', 'delete'):
-            # The built-in set is fixed; a copy starts from New.
+        if kind != 'custom' and action in ('edit', 'delete'):
+            # The built-in set is fixed; only copying one is allowed, its
+            # rules becoming the start of a saved custom filter.
             return
-        callback(self._selected)
+        chosen = callback(self._selected)
         if action in ('delete',):
             self._selected = None
+        self.reload_entries()
+        if isinstance(chosen, str) and chosen in self._rows:
+            self._select(chosen)
 
     def destroy(self):
         try:

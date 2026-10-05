@@ -1232,16 +1232,44 @@ class Toolbar(ctk.CTkFrame):
         ('milestones', "Milestones",
          lambda p: (t.id for t in p.tasks if t.effective_milestone)),
         ('summary', "Summary Tasks",
-         lambda p: (t.id for t in p.tasks if t.is_container)),
+         lambda p: ({t.id for t in p.tasks if t.is_container}
+                    | p.get_summary_task_ids())),
         ('deadlines', "Tasks With Deadlines",
          lambda p: (t.id for t in p.tasks if t.deadline is not None)),
         ('late', "Late Tasks",
-         lambda p: p.tasks_in_conflict()),
+         lambda p: p.late_task_ids()),
         ('estimated', "Estimated Tasks",
          lambda p: (t.id for t in p.tasks if t.status == 'Estimated')),
         ('inactive', "Inactive Tasks",
          lambda p: (t.id for t in p.tasks if t.status == 'Inactive')),
     )
+
+    #: Each built-in filter said in the rule language a saved filter
+    #: speaks - what the More Filters dialog's Copy carries into the new
+    #: definition, the way MS Project's built-ins are themselves saved
+    #: rules. The table is checked against the selectors above, so a copy
+    #: of "Late Tasks" paints exactly what Late Tasks paints.
+    HIGHLIGHT_FILTER_RULES = {
+        'incomplete': [{'field': 'Progress', 'test': 'lt',
+                        'value': '100'}],
+        'unstarted': [{'field': 'Progress', 'test': 'equals',
+                       'value': '0'}],
+        'in_progress': [{'field': 'Progress', 'test': 'gt', 'value': '0'},
+                        {'join': 'and', 'field': 'Progress', 'test': 'lt',
+                         'value': '100'}],
+        'complete': [{'field': 'Progress', 'test': 'gte',
+                      'value': '100'}],
+        'milestones': [{'field': 'Milestone', 'test': 'equals',
+                        'value': 'Yes'}],
+        'summary': [{'field': 'Summary', 'test': 'equals',
+                     'value': 'Yes'}],
+        'deadlines': [{'field': 'Deadline', 'test': 'is_not_empty'}],
+        'late': [{'field': 'Late', 'test': 'equals', 'value': 'Yes'}],
+        'estimated': [{'field': 'Status', 'test': 'equals',
+                       'value': 'Estimated'}],
+        'inactive': [{'field': 'Status', 'test': 'equals',
+                      'value': 'Inactive'}],
+    }
 
     def _connect_icon_toolbar(self):
         """
@@ -1978,12 +2006,18 @@ class Toolbar(ctk.CTkFrame):
         Custom filters marked Show in menu list after the standard set, and
         New/More open the definition builder and the filter manager.
         """
-        items = []
+        items = [{"type": "header", "label": "Built-in"}]
         for key, label, _selector in self.HIGHLIGHT_FILTERS:
             active = "✓ " if self._active_highlight == key else ""
             items.append({"label": f"{active}{label}",
                           "command": partial(self.apply_highlight, key)})
-        for definition in self._custom_filters_in_menu():
+        custom = self._custom_filters_in_menu()
+        if custom:
+            # The saved set is a separate section, not more of the
+            # built-in list - the distinction the manager window draws
+            # with its (Built-in) marks, drawn here too (issue #78).
+            items.append({"type": "header", "label": "Custom"})
+        for definition in custom:
             key = f"custom:{definition['name']}"
             active = "✓ " if self._active_highlight == key else ""
             items.append({"label": f"{active}{definition['name']}",
@@ -2044,39 +2078,80 @@ class Toolbar(ctk.CTkFrame):
             self.clear_highlight()
             return
 
+        label = None
         if which.startswith('custom:'):
-            # A saved filter paints the rows it matches - the More Filters
-            # dialog's Highlight button asks for the same thing.
             name = which[len('custom:'):]
             definition = self._find_custom_filter(name)
             if definition is None:
                 return
             label = name
-
-            if self.project.apply_schedule() and self.on_project_changed:
-                self.on_project_changed()
-
-            from gantt_app.views.gridfilter import definition_matching_ids
-            ids = definition_matching_ids(
-                self.project, definition,
-                getattr(task_list, '_task_variances', None))
-            painted = task_list.show_highlighted_rows(iter(ids))
         else:
             entry = next((e for e in self.HIGHLIGHT_FILTERS
                           if e[0] == which), None)
             if entry is None:
                 return
-            _key, label, selector = entry
+            _key, label, _selector = entry
 
-            if self.project.apply_schedule() and self.on_project_changed:
-                self.on_project_changed()
+        if self.project.apply_schedule() and self.on_project_changed:
+            self.on_project_changed()
 
-            painted = task_list.show_highlighted_rows(selector(self.project))
+        ids = self._highlight_matching_ids(which)
+        painted = task_list.show_highlighted_rows(ids)
         self._active_highlight = which
         self._refresh_toggle_states()
 
         logger.info("Highlight %s: %d row(s) painted", label, painted)
         self._report(f"Highlight: {label} - {painted} row(s) painted.")
+
+    def _highlight_matching_ids(self, which: str):
+        """
+        The rows a filter key matches against the plan as it stands.
+
+        The same question apply_highlight asks when a filter is picked and
+        refresh_highlight asks on every rebuild: a built-in runs its
+        selector, a 'custom:' name runs its saved definition. None when
+        the key names nothing - a custom filter deleted while it was on.
+        """
+        if which.startswith('custom:'):
+            definition = self._find_custom_filter(which[len('custom:'):])
+            if definition is None:
+                return None
+            from gantt_app.views.gridfilter import definition_matching_ids
+            task_list = getattr(self, 'task_list', None)
+            return definition_matching_ids(
+                self.project, definition,
+                getattr(task_list, '_task_variances', None))
+        entry = next((e for e in self.HIGHLIGHT_FILTERS
+                      if e[0] == which), None)
+        if entry is None:
+            return None
+        return set(entry[2](self.project))
+
+    def refresh_highlight(self):
+        """
+        Repaint the active highlight against the plan as it now stands.
+
+        The painted set is recomputed, not remembered: a task that stops
+        qualifying - progress typed onto a row under Unstarted Tasks - is
+        out of the yellow the moment the plan settles, and one that starts
+        qualifying is in. Called by the main window's refresh, after the
+        task list has rebuilt its rows (issue #67).
+        """
+        which = getattr(self, '_active_highlight', None)
+        if which is None:
+            return
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list,
+                                          'show_highlighted_rows'):
+            return
+        ids = self._highlight_matching_ids(which)
+        if ids is None:
+            # The filter is gone - a custom definition deleted under it,
+            # or undone back out of the plan. Nothing to paint is a
+            # clearer answer than paint that no longer means anything.
+            self.clear_highlight()
+            return
+        task_list.show_highlighted_rows(ids)
 
     def clear_highlight(self):
         """Take the highlight off, if one is on; a no-op pick otherwise."""
@@ -2106,6 +2181,15 @@ class Toolbar(ctk.CTkFrame):
         filters = getattr(self.project, 'custom_filters', None)
         if filters is None:
             self.project.custom_filters = filters = []
+        name = definition.get('name')
+        taken = ({d.get('name') for d in filters
+                  if d.get('name') != old_name}
+                 | {label for _k, label, _s in self.HIGHLIGHT_FILTERS})
+        if name in taken:
+            # Two filters of a name would show up as one row in the menu -
+            # the first found would answer for both - so the write is
+            # refused back to whoever asked for it (issue #79).
+            return f"A filter named '{name}' already exists."
         if old_name is not None:
             for index, existing in enumerate(filters):
                 if existing.get('name') == old_name:
@@ -2120,6 +2204,37 @@ class Toolbar(ctk.CTkFrame):
         logger.info("Saved filter %r (%d rule(s))",
                     definition.get('name'),
                     len(definition.get('rules') or ()))
+        self._reload_more_filters()
+        return None
+
+    def _unique_filter_name(self, base: str) -> str:
+        """
+        A copy's name: 'X - Copy', then 'X - Copy 1', 'X - Copy 2', ...
+
+        Free means unused by a saved filter and unused by a built-in - a
+        copy named 'Incomplete Tasks' would sit in the menu beside the
+        real one, two rows one name, answering differently.
+        """
+        taken = ({d.get('name') for d in
+                  getattr(self.project, 'custom_filters', [])}
+                 | {label for _k, label, _s in self.HIGHLIGHT_FILTERS})
+        candidate = f"{base} - Copy"
+        counter = 1
+        while candidate in taken:
+            candidate = f"{base} - Copy {counter}"
+            counter += 1
+        return candidate
+
+    def _reload_more_filters(self):
+        """Refresh the filter manager's list if it is open."""
+        dialog = getattr(self, '_more_filters_dialog', None)
+        if dialog is None:
+            return
+        try:
+            if dialog.winfo_exists():
+                dialog.reload_entries()
+        except tk.TclError:
+            pass
 
     def _open_filter_definition(self, definition: dict = None,
                                 old_name: str = None):
@@ -2137,6 +2252,14 @@ class Toolbar(ctk.CTkFrame):
             on_save=lambda d: self._save_custom_filter(d, old_name))
         logger.info("Opening the filter definition for %s",
                     old_name or "a new filter")
+
+    def _more_filters_entries(self):
+        """The manager's listing: the built-ins, then the saved set."""
+        entries = [(key, label, 'standard')
+                   for key, label, _s in self.HIGHLIGHT_FILTERS]
+        entries += [(d['name'], d['name'], 'custom')
+                    for d in getattr(self.project, 'custom_filters', [])]
+        return entries
 
     def _open_query_editor(self, definition: dict, old_name: str):
         """
@@ -2213,12 +2336,15 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.gridfilter import MoreFiltersDialog
 
-        entries = [(key, label, 'standard')
-                   for key, label, _s in self.HIGHLIGHT_FILTERS]
-        entries += [(d['name'], d['name'], 'custom')
-                    for d in getattr(self.project, 'custom_filters', [])]
+        entries = self._more_filters_entries()
+        # The filter painting rows is marked selected the way MS Project
+        # marks the current one - the row the reader came to manage is the
+        # one already on (issue #79).
+        active = self._active_highlight
+        if active and active.startswith('custom:'):
+            active = active[len('custom:'):]
 
-        MoreFiltersDialog(
+        self._more_filters_dialog = MoreFiltersDialog(
             self.winfo_toplevel(), entries,
             callbacks={
                 'apply': self._more_filters_apply,
@@ -2227,7 +2353,9 @@ class Toolbar(ctk.CTkFrame):
                 'edit': self._more_filters_edit,
                 'copy': self._more_filters_copy,
                 'delete': self._more_filters_delete,
-            })
+            },
+            selected=active,
+            entries_for=self._more_filters_entries)
         logger.info("Opening the filter manager (%d entries)",
                     len(entries))
 
@@ -2273,15 +2401,37 @@ class Toolbar(ctk.CTkFrame):
             return
         self._open_filter_definition(definition, old_name=name)
 
-    def _more_filters_copy(self, name: str):
-        """The manager's Copy: a second saved filter under a new name."""
+    def _more_filters_copy(self, key: str):
+        """
+        The manager's Copy: a saved twin of the selected filter.
+
+        A custom entry clones its definition; a built-in copies as the
+        rules it is written in under the hood - HIGHLIGHT_FILTER_RULES -
+        so 'Late Tasks - Copy' opens in the builder saying what Late Tasks
+        says. Either way the clone lands under a free 'X - Copy' name and
+        its key is answered back, so the manager can select it (issue
+        #79).
+        """
         import copy as _copy
-        definition = self._find_custom_filter(name)
-        if definition is None:
-            return
-        clone = _copy.deepcopy(definition)
-        clone['name'] = f"{name} copy"
+        entry = next((e for e in self.HIGHLIGHT_FILTERS
+                      if e[0] == key), None)
+        if entry is not None:
+            rules = self.HIGHLIGHT_FILTER_RULES.get(key)
+            if not rules:
+                return None
+            clone = {'name': '', 'show_in_menu': False,
+                     'rules': _copy.deepcopy(rules)}
+            base = entry[1]
+        else:
+            definition = self._find_custom_filter(key)
+            if definition is None:
+                return None
+            clone = _copy.deepcopy(definition)
+            base = key
+        clone['name'] = self._unique_filter_name(base)
         self._save_custom_filter(clone)
+        logger.info("Copied filter %r to %r", key, clone['name'])
+        return clone['name']
 
     def _more_filters_delete(self, name: str):
         """The manager's Delete: take the selected saved filter out."""
@@ -2300,6 +2450,7 @@ class Toolbar(ctk.CTkFrame):
         if self.on_project_changed:
             self.on_project_changed()
         self._refresh_toggle_states()
+        self._reload_more_filters()
         logger.info("Deleted filter %r", name)
         self._report(f"Filter '{name}' deleted.")
 
@@ -2432,7 +2583,12 @@ class Toolbar(ctk.CTkFrame):
                 "edit it from More Filters instead.")
             return
         definition['name'] = name
-        self._save_custom_filter(definition)
+        error = self._save_custom_filter(definition)
+        if error:
+            messagebox.showinfo("Save Filter", error,
+                                parent=self._grid_filter_dialog
+                                or self.winfo_toplevel())
+            return
         self._report(f"Filter '{name}' saved.")
 
     def _apply_grid_filters(self, payload: dict):

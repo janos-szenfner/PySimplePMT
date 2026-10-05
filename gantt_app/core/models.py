@@ -4914,6 +4914,28 @@ class Project:
                     at_risk.add(task.id)
         return at_risk
 
+    def late_task_ids(self) -> set:
+        """
+        Every task the schedule itself says has fallen behind.
+
+        MS Project's Late Tasks reads two ways of being behind: the
+        constraint or deadline trouble tasks_in_conflict flags, and the
+        plainer one - a finish already past the status date, or past today
+        where the plan carries none, with the work not done. A done row is
+        never late no matter how old its finish is; a summary is late when
+        its rolled-up finish has passed, the children carrying it.
+        """
+        late = self.tasks_in_conflict()
+        horizon = (as_date(self.status_date) if self.status_date
+                   else date.today())
+        for task in self.tasks:
+            if task.id in late or task.progress >= 100:
+                continue
+            finish = task.end_date or task.start_date
+            if finish is not None and as_date(finish) < horizon:
+                late.add(task.id)
+        return late
+
     def _pull_branch_after_its_links(
             self, summary: Task, forward_only: bool = True) -> bool:
         """
