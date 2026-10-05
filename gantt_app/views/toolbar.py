@@ -37,7 +37,6 @@ from gantt_app.utils.shortcuts import accelerator
 from gantt_app.utils.shortcuts import any_key_with, is_key
 from gantt_app.utils.shortcuts import IS_MACOS, modifiers_held
 from gantt_app.utils.shortcuts import bind_all as bind_shortcut
-from gantt_app.views.modal import grab_when_visible
 from gantt_app.views import tooltip as tooltips
 from gantt_app.views.tooltip import attach as attach_tooltip
 from gantt_app.views import theme

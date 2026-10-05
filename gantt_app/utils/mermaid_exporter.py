@@ -83,13 +83,12 @@ print(content)
 """
 
 import json
-import os
 import re
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from gantt_app.core.models import Project, Task
+from gantt_app.utils.file_io import atomic_write
 from gantt_app.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -683,34 +682,16 @@ def export_project_to_mermaid(project: Project, filepath: str,
     can be rendered by any Mermaid-compatible renderer (GitHub, GitLab,
     VS Code with Mermaid plugin, etc.).
     """
-    temp_path = Path(f"{filepath}.tmp")
     try:
-        # Create parent directories if they don't exist
-        path = Path(filepath)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Generate Mermaid content
-        content = generate_mermaid_content(project, include_date_format,
-                                           mermaid_theme, font_size)
-        
-        # Write to file atomically, preserving the previous file as a backup
-        with open(temp_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        if path.exists():
-            os.replace(path, Path(f"{filepath}.bak"))
-        os.replace(temp_path, path)
-        
+        def write(temp_path):
+            content = generate_mermaid_content(
+                project, include_date_format, mermaid_theme, font_size)
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        atomic_write(filepath, write)
         logger.info("Exported %r to %s", project.name, filepath)
         return True
-        
-    except Exception as e:
-        logger.exception(f"Error exporting to Mermaid: {e}")
-        import traceback
-        traceback.print_exc()
+
+    except Exception:
+        logger.exception("Could not export %r to %s", project.name, filepath)
         return False
-    finally:
-        try:
-            temp_path.unlink(missing_ok=True)
-        except Exception:
-            logger.debug("Could not remove the temporary export file %s",
-                         temp_path)

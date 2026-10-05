@@ -3548,31 +3548,6 @@ class DragDropTaskList(ctk.CTkFrame):
             self.on_project_changed()
 
 
-    def _would_create_circle(self, source_id: str, target_id: str) -> bool:
-        """
-        Check if adding a dependency would create a circular reference.
-
-        PARAMETERS:
-        -----------
-        source_id : str
-            The task that would have target_id added as a dependency
-        target_id : str
-            The dependency to be added
-
-        RETURNS:
-        --------
-        bool
-            True if adding this dependency would create a circle
-
-        DEVELOPMENT NOTES:
-        ------------------
-        The walk itself lives on the plan now. It is a fact about the plan
-        rather than about this list, and the Dependencies column needed the
-        same answer - so rather than have two of it, with the two free to
-        disagree, this asks.
-        """
-        return self.project.would_create_dependency_cycle(source_id, target_id)
-
     def apply_search(self, needle: str):
         """
         Show only the rows carrying a piece of text, and their ancestors.
@@ -4230,22 +4205,6 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.item(item_id, tags=tuple(tags))
 
         return item_id
-
-    def _display_label(self, task) -> str:
-        """
-        The number shown in the ID column, zero-padded as the list writes it.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        The identity is never shown, whatever happens. It is a key, not a
-        number a reader has any use for, and one appearing in the column
-        where every other row shows its position would be read as a
-        position - so a row drawn outside a repopulation asks the plan
-        rather than falling back to task.id.
-        """
-        numbers = getattr(self, '_display_ids', None) or self.project.display_ids()
-        number = numbers.get(task.id)
-        return '' if number is None else str(number).zfill(self.project.ID_WIDTH)
 
     def _paint_rows(self):
         """

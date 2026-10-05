@@ -31,12 +31,6 @@ def _resource_load(resource: Resource) -> Tuple[float, float]:
     return used, capacity
 
 
-def _team_load(team: TeamPool, resources: List[Resource]) -> Tuple[float, float]:
-    """Current team capacity: (used placeholder, capacity hours)."""
-    capacity = team.calculate_effective_capacity(resources)
-    return 0.0, capacity
-
-
 def _status_badge(used: float, capacity: float) -> Tuple[str, str, float]:
     """Return (badge, text colour, percentage) for a load."""
     if capacity <= 0:

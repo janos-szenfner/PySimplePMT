@@ -2093,6 +2093,9 @@ class AutoFilterPopup(ctk.CTkToplevel):
             self.lift()
         except (AttributeError, tk.TclError):
             logger.debug('Could not watch for clicks outside the popup')
+            self._watching = False
+        else:
+            self._watching = True
 
     def _dismiss_if_outside(self, event):
         """Close when the click landed on something not this popup."""
@@ -2145,6 +2148,17 @@ class AutoFilterPopup(ctk.CTkToplevel):
         self.destroy()
 
     def destroy(self):
+        # The watcher keeps a reference to this popup's bound method, so
+        # without the unregister the window's list pins the dead popup.
+        if getattr(self, '_watching', False):
+            try:
+                from gantt_app.views.toolbar import (
+                    stop_watching_for_click_elsewhere)
+                stop_watching_for_click_elsewhere(
+                    self.winfo_toplevel(), self._dismiss_if_outside)
+            except tk.TclError:
+                pass
+            self._watching = False
         try:
             if self._on_close is not None:
                 self._on_close()

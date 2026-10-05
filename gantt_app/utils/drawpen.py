@@ -25,7 +25,7 @@ than stepped, the same trick chart_render.render_image uses.
 """
 
 import math
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Tuple
 
 from gantt_app.utils.log import get_logger
 

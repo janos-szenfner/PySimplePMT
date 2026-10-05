@@ -24,7 +24,7 @@ called by the toolbar inside a single undoable command.
 """
 import tkinter as tk
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable
 
 import customtkinter as ctk
 

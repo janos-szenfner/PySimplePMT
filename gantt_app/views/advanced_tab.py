@@ -616,11 +616,6 @@ class AdvancedTab(ctk.CTkFrame):
         self._apply_constraint_state()
 
 
-def constraint_title(enum: str) -> str:
-    """The display title for a constraint enum, for help and tooltips."""
-    return CONSTRAINT_LABELS.get(enum, 'N/A')
-
-
 class ConstraintConflictDialog(ctk.CTkToplevel):
     """
     The Save-time warning when a constraint clashes with the network.

@@ -33,7 +33,6 @@ The timeline draws the rows the planner flagged - a task's Show in
 timeline switch is finally what its name says (issues #72, #83).
 """
 
-import calendar as _calendar
 import math
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -959,7 +958,6 @@ def draw_timeline_callouts(pen, items, palette, rect):
         return x0 + 24 + (d - start).days / days_total * (x1 - x0 - 48)
 
     # Alternating stems, spread to keep neighbouring callouts apart.
-    half = (y1 - y0) / 2
     top_used: List[float] = []
     bottom_used: List[float] = []
     ordered = sorted(items, key=lambda it: it['start'])
@@ -1121,7 +1119,6 @@ def draw_timeline_phases(pen, items, palette, rect):
                  fill=palette['band_text'], size=9, bold=True)
         pen.line((x0, row_y, x1, row_y), fill=palette['axis'], width=1)
 
-        last_chevron_end = None
         for item in sorted(lane_items, key=lambda it: it['start']):
             cy = row_y + lane_h / 2
             bx0 = x_at(item['start'])
@@ -1143,7 +1140,6 @@ def draw_timeline_phases(pen, items, palette, rect):
                          clip_to_width(pen, item['name'], 9,
                                        bx1 - bx0 - 24, bold=True),
                          fill='#ffffff', size=9, bold=True)
-                last_chevron_end = bx1
         row_y += lane_h
         if row_y > y1:
             break

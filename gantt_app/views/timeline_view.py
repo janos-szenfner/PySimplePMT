@@ -34,11 +34,12 @@ from gantt_app.utils import boardrender
 from gantt_app.utils.drawpen import CanvasPen
 from gantt_app.utils.log import get_logger
 from gantt_app.views import theme
+from gantt_app.views.boardframe import BoardRedrawMixin
 
 logger = get_logger(__name__)
 
 
-class TimelineFrame(ctk.CTkFrame):
+class TimelineFrame(BoardRedrawMixin, ctk.CTkFrame):
     """
     The timeline shell: a header, a canvas, and which style is showing.
 
@@ -167,54 +168,9 @@ class TimelineFrame(ctk.CTkFrame):
 
     # -- drawing ------------------------------------------------------------------
 
-    def _on_configure(self, event=None):
-        """A resize redraws - debounced, and not for a stray pixel."""
-        if event is not None:
-            if (abs(event.width - self._last_size[0]) < 4
-                    and abs(event.height - self._last_size[1]) < 4):
-                return
-            self._last_size = (event.width, event.height)
-        if self._redraw_pending:
-            return
-        self._redraw_pending = True
-        self.after_idle(self._redraw_now)
-
-    def refresh(self):
-        """Repaint now - the plan changed, or the style did."""
-        self._redraw_pending = False
-        self._redraw_now()
-
-    def _size(self):
-        """
-        How big the canvas is to draw into.
-
-        winfo_width answers 1 until Tk has laid the widget out, so the
-        last Configure's size stands in, then the size the canvas was
-        asked for - the same answer the dashboard's _size gives.
-        """
-        width, height = (self.canvas.winfo_width(),
-                         self.canvas.winfo_height())
-        if width > 1 and height > 1:
-            return width, height
-        if self._last_size[0] > 1 and self._last_size[1] > 1:
-            return self._last_size
-        return (self.canvas.winfo_reqwidth(),
-                self.canvas.winfo_reqheight())
-
-    def _redraw_now(self):
-        self._redraw_pending = False
-        try:
-            if not self.canvas.winfo_exists():
-                return
-        except tk.TclError:
-            return
-        self.canvas.delete('all')
+    def _draw_content(self, width, height):
+        """The picked style - the board's content; the skeleton is the mixin's."""
         self.canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
-        width, height = self._size()
-        if width < self.MIN_USEFUL_PX or height < self.MIN_USEFUL_PX:
-            logger.debug("Timeline not drawn at %sx%s; too small",
-                         width, height)
-            return
         try:
             boardrender.render_timeline(
                 CanvasPen(self.canvas), self._get_project(), self.style_id,

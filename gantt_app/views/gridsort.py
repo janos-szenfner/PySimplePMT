@@ -17,9 +17,8 @@ The helpers are pure so the ordering can be tested without a display;
 the dialog at the bottom only collects the keys.
 """
 
-import tkinter as tk
 from datetime import date, datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import customtkinter as ctk
 

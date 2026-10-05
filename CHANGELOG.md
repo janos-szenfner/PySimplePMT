@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.72.0 - 2026-09-30
 
 - **Logging covers the gaps the recent features left.** The dashboard's
   panel ticks and maximize, the timeline's style picker, clearing the
@@ -12,8 +12,15 @@
   noted, and import fields that arrive malformed (a completion, a
   duration, a link's lag, an outline level) warn with the task they
   belong to instead of landing as zero unexplained.
-
-## 1.72.0 - 2026-09-30
+- **A leak plugged, dead code out, and copies made one.** An AutoFilter
+  dropdown stayed referenced by the window's click watcher after it
+  closed, pinning the dead popup in memory - it unregisters on destroy
+  now, the way the toolbar's own menus do. Five never-called helpers
+  and their unused imports left the files that carried them, the four
+  exporters and the project save share one atomic-write helper instead
+  of five copies of the same temp-file dance, and the dashboard and the
+  timeline share their resize-and-redraw skeleton through a small mixin
+  rather than two copies free to drift.
 
 - **The task list sorts, and its headings can carry filters.** A click
   on a column heading sorts the rows by that column - ascending, then

@@ -41,6 +41,7 @@ from gantt_app.utils.boardrender import (
 from gantt_app.utils.drawpen import CanvasPen
 from gantt_app.utils.log import get_logger
 from gantt_app.views import theme
+from gantt_app.views.boardframe import BoardRedrawMixin
 
 logger = get_logger(__name__)
 
@@ -51,7 +52,7 @@ __all__ = [
 ]
 
 
-class ProjectDashboardFrame(ctk.CTkFrame):
+class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
     """
     The dashboard shell: a header, a canvas, and which panels are on.
 
@@ -275,18 +276,6 @@ class ProjectDashboardFrame(ctk.CTkFrame):
 
     # -- clicks -----------------------------------------------------------------
 
-    def _on_configure(self, event=None):
-        """A resize redraws - debounced, and not for a stray pixel."""
-        if event is not None:
-            if (abs(event.width - self._last_size[0]) < 4
-                    and abs(event.height - self._last_size[1]) < 4):
-                return
-            self._last_size = (event.width, event.height)
-        if self._redraw_pending:
-            return
-        self._redraw_pending = True
-        self.after_idle(self._redraw_now)
-
     def _on_motion(self, event):
         """The pointer over a maximize glyph says so by becoming a hand."""
         for rect in self._glyph_rects.values():
@@ -325,58 +314,18 @@ class ProjectDashboardFrame(ctk.CTkFrame):
 
     # -- drawing ------------------------------------------------------------------
 
-    def refresh(self):
-        """Repaint now - the plan changed, or the panels did."""
-        self._redraw_pending = False
-        self._redraw_now()
+    def _on_too_small(self):
+        """No picture, no hit-testing: the glyph and panel rects go with it."""
+        self._panel_rects = {}
+        self._glyph_rects = {}
 
-    def _size(self):
-        """
-        How big the canvas is to draw into.
-
-        DEVELOPMENT NOTES:
-        ------------------
-        winfo_width answers 1 until Tk has laid the widget out, so two
-        things stand in for it: the size the last Configure reported, and
-        then the size the canvas was asked for. In the application the
-        first of those is the real answer, and the second is what lets
-        the drawing be checked without putting a window on somebody's
-        screen, since Tk delivers no Configure to a widget that was
-        never mapped.
-        """
-        width, height = (self.canvas.winfo_width(),
-                         self.canvas.winfo_height())
-        if width > 1 and height > 1:
-            return width, height
-        if self._last_size[0] > 1 and self._last_size[1] > 1:
-            return self._last_size
-        return (self.canvas.winfo_reqwidth(),
-                self.canvas.winfo_reqheight())
-
-    def _redraw_now(self):
-        self._redraw_pending = False
+    def _draw_content(self, width, height):
+        """The panels - the board's content; the skeleton lives in the mixin."""
         canvas = self.canvas
-        try:
-            if not canvas.winfo_exists():
-                return
-        except tk.TclError:
-            return
-        canvas.delete('all')
-        width, height = self._size()
-
         canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
         palette = theme.view_palette()
         pen = CanvasPen(canvas)
         pen.rect(0, 0, width, height, fill=palette['bg'])
-
-        if width < self.MIN_USEFUL_PX or height < self.MIN_USEFUL_PX:
-            # Still being laid out, or dragged too narrow to read; the
-            # Configure that follows draws it.
-            logger.debug("Dashboard not drawn at %sx%s; too small",
-                         width, height)
-            self._panel_rects = {}
-            self._glyph_rects = {}
-            return
 
         try:
             rows = dashboard_rows(self._get_project())
@@ -384,10 +333,11 @@ class ProjectDashboardFrame(ctk.CTkFrame):
                 pen, rows, palette, self.enabled, self.maximized,
                 width=width, height=height)
         except Exception:
-            logger.exception("Could not draw the dashboard")
+            # A failed draw must not leave the hit-test rects pointing at
+            # a picture that is not there.
             self._panel_rects = {}
             self._glyph_rects = {}
-            return
+            raise
 
         self._panel_rects = {p['id']: p['rect'] for p in landed}
         self._glyph_rects = {}

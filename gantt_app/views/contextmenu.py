@@ -46,10 +46,6 @@ LEVEL_ACTIONS = (
 #: being indented or pasted as a sub-task, not by being created as one.
 CREATE_TYPES = ("Phase", "Task", "Milestone")
 
-#: Entries following the moves, after a separator.
-TASK_ACTIONS = ("Edit", "Delete")
-
-
 class TaskContextMenu:
     """
     A right-click menu offering the move actions for a task row.

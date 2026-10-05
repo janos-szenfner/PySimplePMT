@@ -40,10 +40,8 @@ Optional Dependency: needs openpyxl, and says so rather than failing
 obscurely when it is missing.
 """
 
-import os
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional
 
 try:
     from openpyxl import Workbook
@@ -55,18 +53,13 @@ except ImportError:
     Workbook = None  # type: ignore
 
 from gantt_app.core.models import Project, Task
+from gantt_app.utils.file_io import atomic_write
 from gantt_app.utils.log import get_logger
 from gantt_app.core.workdaycalendar import (
     DEFAULT_NON_WORKING_DAYS, WorkingCalendar,
 )
 
 logger = get_logger(__name__)
-
-if TYPE_CHECKING:
-    if OPENPYXL_AVAILABLE:
-        from openpyxl import Workbook as WorkbookType
-    else:
-        WorkbookType = Any  # type: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -853,23 +846,11 @@ def export_project_to_xlsx(project: Project, filepath: str) -> bool:
         logger.warning("Install it with: pip install openpyxl")
         return False
 
-    temp_path = Path(f"{filepath}.tmp")
     try:
-        path = Path(filepath)
-        path.parent.mkdir(parents=True, exist_ok=True)
         workbook = _create_tasks_workbook(project)
-        workbook.save(temp_path)
-        if path.exists():
-            os.replace(path, Path(f"{filepath}.bak"))
-        os.replace(temp_path, path)
+        atomic_write(filepath, workbook.save)
         logger.info("Exported %r to %s", project.name, filepath)
         return True
     except Exception:
         logger.exception("Could not export %r to %s", project.name, filepath)
         return False
-    finally:
-        try:
-            temp_path.unlink(missing_ok=True)
-        except Exception:
-            logger.debug("Could not remove the temporary export file %s",
-                         temp_path)
