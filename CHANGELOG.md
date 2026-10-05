@@ -2,6 +2,20 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **The task list sorts, and its headings can carry filters.** A click
+  on a column heading sorts the rows by that column - ascending, then
+  descending, then back to plan order, with the arrow the sorted column
+  wears in its heading (issue #46). View > Sort By... opens the
+  three-level sort dialog for "Duration descending, then Start Date
+  ascending, then Progress ascending" (issue #45). Every sort arranges
+  siblings inside their own level of the outline - a sub-task is never
+  pulled out from under its summary - and the plan's own order is what
+  clearing the sort returns to. View > AutoFilter turns MS Project's
+  heading dropdowns on and off (issue #81): while it is on, a heading
+  opens its column's sort rows plus the checklist of values the cells
+  actually show, where unticking hides the rows carrying them - a match
+  keeping its ancestors, as the other filters do. Switching AutoFilter
+  off clears the checklists with the arrows.
 - **Assigning a resource asks for its share, and a click picks it.**
   "Assign Task" on the Resource Planning board used to land every
   person and team at 100% of their week, with the only way to say less

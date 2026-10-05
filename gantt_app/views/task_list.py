@@ -21,6 +21,7 @@ of the pointer position, which plain Tk reports perfectly well.
 import sys
 import tkinter as tk
 from datetime import datetime
+from functools import partial
 from tkinter import ttk
 # See gantt_app/views/dialogs.py: native on macOS and Windows, drawn
 # to match the application on X11
@@ -512,6 +513,22 @@ class DragDropTaskList(ctk.CTkFrame):
         self._filter_visible = None
         self._filter_matches = set()
 
+        #: The sort the grid is showing, as (column, 'asc' | 'desc') keys
+        #: in priority order - a heading click sets a single one, View >
+        #: Sort By up to three (issues #45 and #46). View state only: the
+        #: plan's own order is untouched and an empty list shows it.
+        self._sort_keys = []
+
+        #: View > AutoFilter: whether the column headings offer their
+        #: dropdowns (issue #81), the cell texts each filtered column
+        #: keeps, and the row ids those ticks leave on screen - None
+        #: while no checklist is ruling anything out.
+        self._autofilter_on = False
+        self._autofilter_allowed = {}
+        self._autofilter_visible = None
+        #: The dropdown a heading opened, so the next press can replace it.
+        self._autofilter_popup = None
+
         #: The baseline slot being compared, if any. Set here rather than
         #: first written by set_active_baseline, because column visibility
         #: asks before that call ever runs.
@@ -595,7 +612,21 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Baseline Cost', text='Base Cost', anchor=tk.W)
         self.tree.heading('Cost Variance', text='Cost Var', anchor=tk.W)
         self.tree.heading('Task Calendar', text='Task Calendar', anchor=tk.W)
-        
+
+        #: The base text of each heading, kept so a sort or the autofilter
+        #: can recompose it - the arrow a sorted column wears and the ▾
+        #: AutoFilter adds are suffixes on this text, not the text itself.
+        #: The tree column is reached as 'Task Name' for sorting and
+        #: filtering, its name everywhere else in the grid.
+        self._heading_labels = {'#0': 'Task Name'}
+        for _column in self.tree['columns']:
+            self._heading_labels[_column] = self.tree.heading(
+                _column, 'text')
+        for _column_id in ('#0',) + tuple(self.tree['columns']):
+            self.tree.heading(
+                _column_id,
+                command=partial(self._heading_pressed, _column_id))
+
         # Column widths. #0 holds only the expander, so it stays narrow.
         #
         # Nothing stretches. Name used to, which is what made it impossible
@@ -3654,18 +3685,218 @@ class DragDropTaskList(ctk.CTkFrame):
         """Put every row back, whether a filter was set or not."""
         self._filter_visible = None
         self._filter_matches = set()
+        self._autofilter_allowed = {}
+        self._autofilter_visible = None
         self.update_task_list()
 
     def grid_filters_active(self) -> bool:
         """Whether any column filter is ruling rows out."""
-        return getattr(self, '_filter_visible', None) is not None
+        return getattr(self, '_filter_visible', None) is not None \
+            or getattr(self, '_autofilter_visible', None) is not None
 
     def _hidden_by_filter(self, task) -> bool:
-        """Whether the column filters leave a row off the list."""
+        """
+        Whether the column filters or the autofilter leave a row off.
+
+        Both answer the same question - which ids stay - so a row hidden
+        by either is hidden, exactly as MS Project ANDs its AutoFilter
+        picks with a column filter.
+        """
         visible = getattr(self, '_filter_visible', None)
-        if visible is None:
-            return False
-        return task.id not in visible
+        if visible is not None and task.id not in visible:
+            return True
+        auto = getattr(self, '_autofilter_visible', None)
+        if auto is not None and task.id not in auto:
+            return True
+        return False
+
+    # ------------------------------------------------------------------
+    # Sorting (issues #45 and #46)
+    # ------------------------------------------------------------------
+
+    def _sort_column_name(self, column_id: str) -> str:
+        """The name a heading answers to; the tree column is Task Name."""
+        return 'Task Name' if column_id == '#0' else column_id
+
+    def _sortable_columns(self) -> list:
+        """Every column a sort may name, Task Name first, in grid order."""
+        return ['Task Name'] + [
+            self._sort_column_name(c) for c in self.tree['columns']]
+
+    def _heading_pressed(self, column_id):
+        """
+        What a click on a column heading asks for.
+
+        With AutoFilter on the heading opens its dropdown - the sort rows
+        and the value checklist for that one column (issue #81). With it
+        off the click is the sort itself: ascending, then descending,
+        then back to plan order (issue #46).
+        """
+        column = self._sort_column_name(column_id)
+        if self._autofilter_on:
+            self._open_autofilter(column)
+        else:
+            self.sort_by_column(column)
+
+    def sort_by_column(self, column: str, direction: str = None):
+        """
+        Sort the list on one column - a heading click or a dropdown pick.
+
+        direction None runs the click cycle (ascending, descending, off);
+        a direction picks it outright, the way the autofilter's Sort rows
+        do. Either way the sort becomes this column alone - a plain click
+        answers a single-column question, so it replaces a multi-level
+        sort rather than quietly amending one.
+        """
+        from gantt_app.views import gridsort
+
+        if direction is None:
+            self._sort_keys = gridsort.next_column_sort(
+                self._sort_keys, column)
+        else:
+            self._sort_keys = [(column, direction)]
+        self._refresh_headings()
+        self.update_task_list()
+        logger.info("Sorted by %s", self._sort_keys or "plan order")
+
+    def set_sort_keys(self, keys):
+        """
+        The Sort By dialog's answer: up to three levels, or none at all.
+
+        An empty list puts the plan's own order back; columns the grid
+        does not carry are dropped rather than failed on, so a stale
+        field can never hide the rows.
+        """
+        from gantt_app.views import gridsort
+
+        known = set(self._sortable_columns())
+        self._sort_keys = [
+            (column, direction) for column, direction in (keys or ())
+            if column in known
+            and direction in (gridsort.ASC, gridsort.DESC)
+        ][:gridsort.MAX_SORT_KEYS]
+        self._refresh_headings()
+        self.update_task_list()
+        logger.info("Sorted by %s", self._sort_keys or "plan order")
+
+    def clear_sort(self):
+        """Back to plan order; the dialog's Reset and a load land here."""
+        if not self._sort_keys:
+            return
+        self._sort_keys = []
+        self._refresh_headings()
+        self.update_task_list()
+
+    def _refresh_headings(self):
+        """
+        Rewrite every heading's text for the state the grid is in.
+
+        The base label is recomposed rather than edited: a sorted column
+        wears its arrow - numbered when more than one level is in force -
+        and AutoFilter adds its dropdown mark to them all, so a second
+        sort or a switch flipped off leaves no stale glyph behind.
+        """
+        from gantt_app.views import gridsort
+
+        labels = getattr(self, '_heading_labels', None)
+        if not labels:
+            return
+        for column_id, base in labels.items():
+            parts = [base]
+            arrow = gridsort.sort_indicator(
+                self._sort_column_name(column_id), self._sort_keys)
+            if arrow:
+                parts.append(arrow)
+            if self._autofilter_on:
+                parts.append('▾')
+            try:
+                self.tree.heading(column_id, text=' '.join(parts))
+            except tk.TclError:
+                pass
+
+    # ------------------------------------------------------------------
+    # AutoFilter (issue #81)
+    # ------------------------------------------------------------------
+
+    def set_autofilter(self, on: bool):
+        """
+        View > AutoFilter: offer or hide the heading dropdowns.
+
+        Switching the arrows off clears the checklists they carried -
+        rows hidden by a control that no longer exists would have no way
+        back into view, so the filter goes with the chrome. Switching it
+        on changes only the headings until a checklist is applied.
+        """
+        self._autofilter_on = bool(on)
+        if not self._autofilter_on:
+            popup, self._autofilter_popup = self._autofilter_popup, None
+            if popup is not None:
+                try:
+                    popup.destroy()
+                except tk.TclError:
+                    pass
+            self._autofilter_allowed = {}
+            self._autofilter_visible = None
+        self._refresh_headings()
+        self.update_task_list()
+        logger.info("AutoFilter %s", "on" if self._autofilter_on else "off")
+
+    def _open_autofilter(self, column: str):
+        """Open the dropdown for one column, beside the heading press."""
+        from gantt_app.views.gridfilter import (
+            AutoFilterPopup, autofilter_values)
+
+        popup, self._autofilter_popup = self._autofilter_popup, None
+        if popup is not None:
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+
+        context = {
+            'variances': getattr(self, '_task_variances', None) or {},
+            'numbers': getattr(self, '_display_ids', None)
+                or self.project.display_ids(),
+            'conflicts': None,
+        }
+        direction = next(
+            (d for c, d in self._sort_keys if c == column), None)
+        popup = AutoFilterPopup(
+            self.tree, column,
+            values=autofilter_values(self.project, column, context),
+            allowed=self._autofilter_allowed.get(column),
+            direction=direction,
+            on_sort=lambda d: self.sort_by_column(column, d),
+            on_apply=lambda ticks: self._apply_autofilter(column, ticks),
+            on_close=self._autofilter_closed)
+        self._autofilter_popup = popup
+        # Under the pointer: ttk reports no heading box, and the press
+        # that opened this is where the pointer still is.
+        x, y = self.winfo_pointerxy()
+        popup.geometry(f'+{x - 24}+{y + 8}')
+
+    def _autofilter_closed(self):
+        """The dropdown went away by its own route; drop the reference."""
+        self._autofilter_popup = None
+
+    def _apply_autofilter(self, column: str, ticked):
+        """
+        The checklist's answer: the cell texts this column keeps.
+
+        None - Clear Filter, or everything ticked - takes the column out
+        of the map rather than storing a set that admits everything.
+        """
+        from gantt_app.views.gridfilter import autofilter_visible_ids
+
+        if ticked is None:
+            self._autofilter_allowed.pop(column, None)
+        else:
+            self._autofilter_allowed[column] = set(ticked)
+        self._autofilter_visible = autofilter_visible_ids(
+            self.project, self._autofilter_allowed)
+        self.update_task_list()
+        logger.info("AutoFilter on %s keeps %d value(s)", column,
+                    len(ticked) if ticked is not None else -1)
 
     def update_task_list(self):
         """
@@ -3701,6 +3932,16 @@ class DragDropTaskList(ctk.CTkFrame):
                 self.project, self._baseline_slot)
             logger.info("Computed variances for %d baseline task(s)",
                         len(self._task_variances))
+
+        # The autofilter re-asks its checklists on every rebuild, so a
+        # cell edited since the ticks were set cannot leave a row wrongly
+        # shown or hidden.
+        if self._autofilter_allowed:
+            from gantt_app.views.gridfilter import autofilter_visible_ids
+            self._autofilter_visible = autofilter_visible_ids(
+                self.project, self._autofilter_allowed)
+        else:
+            self._autofilter_visible = None
 
         self._populate_tree_hierarchical()
         self._paint_rows()
@@ -3825,14 +4066,33 @@ class DragDropTaskList(ctk.CTkFrame):
                 continue
             children.setdefault(task.parent_task_id, []).append(task)
 
+        roots = [task for task in self.project.get_root_tasks()
+                 if not self._hidden_by_search(task)
+                 and not self._hidden_by_filter(task)]
+
+        # An active sort arranges each level of the outline on its own -
+        # roots among roots, a task's children among themselves - so a
+        # row is reordered only among its siblings and the hierarchy
+        # itself never moves (issues #45, #46). With no sort the groups
+        # stay in the plan's own order.
+        if self._sort_keys:
+            from gantt_app.views import gridsort
+            sort_context = {
+                'variances': getattr(self, '_task_variances', None) or {},
+                'numbers': self._display_ids,
+                'conflicts': None,
+            }
+            roots = gridsort.sort_tasks(roots, self._sort_keys,
+                                        self.project, sort_context)
+            for siblings in children.values():
+                siblings[:] = gridsort.sort_tasks(
+                    siblings, self._sort_keys, self.project, sort_context)
+
         # Roots first, then each subtree depth-first through an explicit
         # stack, so a row lands under its parent the moment the parent is
         # in the tree - any depth of nesting in one walk.
         placed = set()
-        stack = [(task, '') for task in reversed([
-            task for task in self.project.get_root_tasks()
-            if not self._hidden_by_search(task)
-            and not self._hidden_by_filter(task)])]
+        stack = [(task, '') for task in reversed(roots)]
         while stack:
             task, parent_item = stack.pop()
             tree_items[task.id] = self._add_task_to_tree(
@@ -3845,11 +4105,16 @@ class DragDropTaskList(ctk.CTkFrame):
         # show at root. A search reaches here too: a match whose parent is
         # filtered out has nowhere to hang, and the alternative to showing
         # it at the top is not showing the match at all.
-        for task in self.project.tasks:
-            if task.parent_task_id and task.id not in placed \
-                    and not self._hidden_by_search(task) \
-                    and not self._hidden_by_filter(task):
-                tree_items[task.id] = self._add_task_to_tree(task)
+        orphans = [task for task in self.project.tasks
+                   if task.parent_task_id and task.id not in placed
+                   and not self._hidden_by_search(task)
+                   and not self._hidden_by_filter(task)]
+        if self._sort_keys and orphans:
+            # They draw as roots, so they order among them.
+            orphans = gridsort.sort_tasks(orphans, self._sort_keys,
+                                          self.project, sort_context)
+        for task in orphans:
+            tree_items[task.id] = self._add_task_to_tree(task)
     
     def _add_task_to_tree(self, task: Task, parent_item: str = ''):
         """

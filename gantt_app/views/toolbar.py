@@ -1178,6 +1178,9 @@ class Toolbar(ctk.CTkFrame):
         self._timeline_factory = None
         #: Tracks View > Grid View Only; toggled from the menu.
         self.grid_view_only_var = ctk.BooleanVar(value=False)
+        #: Tracks View > AutoFilter - the heading dropdowns the task grid
+        #: shows while it is on (issue #81).
+        self.autofilter_var = ctk.BooleanVar(value=False)
         #: Tracks the Resources group's Usage Grid toggle, on the View
         #: page while the Resource Planning tab is on top.
         self.resource_grid_var = ctk.BooleanVar(value=False)
@@ -1671,6 +1674,14 @@ class Toolbar(ctk.CTkFrame):
                         # style - is the third chart view (issue #83).
                         {"text": "Timeline", "command": self.show_timeline},
                     ]},
+                    # Sort By is the multi-level question (issue #45);
+                    # the plain sort a heading click gives - and the
+                    # heading dropdowns AutoFilter turns on - are the
+                    # grid's own (issues #46 and #81).
+                    {"text": "Sort By...", "command": self.open_sort_dialog},
+                    {"text": "AutoFilter", "type": "toggle",
+                     "variable": "autofilter_var",
+                     "command": self.toggle_autofilter},
                     # The full report. The icon on the bar paints the
                     # critical rows in the list instead; see
                     # highlight_critical_path
@@ -3254,6 +3265,12 @@ class Toolbar(ctk.CTkFrame):
         self._grid_filters = {}
         self._active_named_filter = None
         self._active_query = None
+        # A new plan starts in its own order with plain headings - the
+        # sort keys and autofilter ticks asked questions of rows that are
+        # gone, so both are lifted here (issues #45, #46, #81).
+        autofilter_var = getattr(self, 'autofilter_var', None)
+        if autofilter_var is not None:
+            autofilter_var.set(False)
         task_list = getattr(self, 'task_list', None)
         if task_list is not None:
             if hasattr(task_list, 'clear_highlight'):
@@ -3262,6 +3279,10 @@ class Toolbar(ctk.CTkFrame):
                 task_list.clear_critical_path_rows()
             if hasattr(task_list, 'clear_grid_filters'):
                 task_list.clear_grid_filters()
+            if hasattr(task_list, 'set_autofilter'):
+                task_list.set_autofilter(False)
+            if hasattr(task_list, 'clear_sort'):
+                task_list.clear_sort()
         dialog = getattr(self, '_grid_filter_dialog', None)
         if dialog is not None:
             try:
@@ -3924,6 +3945,59 @@ class Toolbar(ctk.CTkFrame):
         else:
             self.show_gantt_chart()
             logger.info("Grid view only disabled")
+
+    def open_sort_dialog(self):
+        """
+        The View menu's Sort By: up to three levels over the columns.
+
+        MS Project's Sort By dialog (issue #45) - each level a field and
+        a direction, applied inside every level of the outline so the
+        hierarchy itself never moves. A heading click answers the
+        one-level question without the dialog (issue #46).
+        """
+        from gantt_app.views.gridsort import SortDialog
+
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'set_sort_keys'):
+            return
+        SortDialog(
+            self.winfo_toplevel(),
+            columns=task_list._sortable_columns(),
+            current=list(getattr(task_list, '_sort_keys', None) or []),
+            on_apply=self._apply_sort_keys)
+        logger.info("Opening the sort dialog")
+
+    def _apply_sort_keys(self, keys):
+        """The dialog's answer, handed to the list and reported."""
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None:
+            return
+        task_list.set_sort_keys(keys)
+        if keys:
+            words = ", ".join(
+                f"{column} {'ascending' if direction == 'asc' else 'descending'}"
+                for column, direction in keys)
+            self._report(f"Sorted by {words}.")
+        else:
+            self._report("Sort cleared; rows are in plan order.")
+
+    def toggle_autofilter(self, _state=None):
+        """
+        View > AutoFilter: show or hide the column heading dropdowns
+        (issue #81). The var is synced rather than read, the same way
+        toggle_grid_view_only answers both menu and button presses.
+        """
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'set_autofilter'):
+            return
+        on = bool(_state) if _state is not None \
+            else not getattr(task_list, '_autofilter_on', False)
+        self.autofilter_var.set(on)
+        task_list.set_autofilter(on)
+        self._report(
+            "AutoFilter on - column headings now open a sort and "
+            "filter dropdown." if on else
+            "AutoFilter off - heading clicks sort the column.")
 
     def set_resource_board(self, board) -> None:
         """The Resource Planning view the Usage Grid toggle switches."""

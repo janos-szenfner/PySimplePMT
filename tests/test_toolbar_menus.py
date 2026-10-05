@@ -157,8 +157,12 @@ class TestMenuContents(unittest.TestCase):
         """
         view = labels(find(self.tree, 'View')['items'])
 
+        # Sort By and AutoFilter joined for the three-level sort dialog
+        # and the heading dropdowns (issues #45 and #81); the one-level
+        # sort lives on the headings themselves (issue #46).
         self.assertEqual(view,
-                         ['Grid View Only', 'Charts', 'Critical Path...'])
+                         ['Grid View Only', 'Charts', 'Sort By...',
+                          'AutoFilter', 'Critical Path...'])
         self.assertNotIn('Project Info', view)
         self.assertNotIn('Help', view)
 

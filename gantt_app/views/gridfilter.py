@@ -1879,3 +1879,272 @@ class MoreFiltersDialog(ctk.CTkToplevel):
             super().destroy()
         except tk.TclError:
             pass
+
+
+# ------------------------------------------------------------------
+# The AutoFilter - a checklist on every column heading
+# ------------------------------------------------------------------
+#
+# MS Project's "Display AutoFilter" switch, and the dropdown each column
+# shows while it is on (issue #81). A heading's dropdown asks two things
+# of the one column: which way to sort it, and which of the values the
+# cells carry to keep. The checklist below answers the second half;
+# sorting is the list's own business, reached through the same popup.
+
+#: What the checklist calls a cell that carries nothing - Excel's
+#: "(Blanks)".
+AUTOFILTER_BLANK = '(Blanks)'
+
+
+def autofilter_text(task, column: str, project,
+                  context: Dict = None) -> str:
+    """
+    The text a cell shows, as the checklist lists it.
+
+    The checklist's unit is what is on screen, so dates are stamped the
+    way the grid stamps them, progress keeps its % and an empty cell is
+    named "(Blanks)" - the entry a tick takes away.
+    """
+    value = column_value(task, column, project, context)
+    if value is None or value == '':
+        return AUTOFILTER_BLANK
+    if isinstance(value, datetime):
+        return as_date(value).strftime(DATE_FORMAT)
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if column == 'Progress':
+        return f'{value}%'
+    return str(value)
+
+
+def autofilter_values(project, column: str, context: Dict = None) -> list:
+    """
+    The distinct cell texts a column carries, in checklist order.
+
+    Numbers and dates line up as themselves, text folds its case, and
+    "(Blanks)" sits at the end - the way the checklist reads naturally.
+    """
+    texts = {autofilter_text(task, column, project, context)
+             for task in project.tasks}
+    return sorted(texts, key=_checklist_key)
+
+
+def _checklist_key(text: str):
+    """
+    The ordering a checklist's entries sort by.
+
+    A date sorts by its day and a number - "10" or "10%" - by its size,
+    so the list reads the way the column does rather than by spelling.
+    """
+    if text == AUTOFILTER_BLANK:
+        return (2, 0.0, '')
+    day = parse_date(text)
+    if day is not None:
+        return (0, float(as_date(day).toordinal()), '')
+    try:
+        return (0, float(str(text).rstrip('%')), '')
+    except (TypeError, ValueError):
+        return (1, 0.0, str(text).casefold())
+
+
+def autofilter_matching_ids(project, allowed: Dict,
+                            context: Dict = None) -> Set[str]:
+    """
+    The rows whose every cell is in its column's ticked set.
+
+    A column with nothing ticked - an empty set - passes no row, which is
+    the answer "untick everything" deserves. A column not in the map is
+    not being asked.
+    """
+    active = {column: values for column, values in (allowed or {}).items()
+              if values is not None}
+    if not active:
+        return set()
+    return {task.id for task in project.tasks
+            if all(autofilter_text(task, column, project, context) in values
+                   for column, values in active.items())}
+
+
+def autofilter_visible_ids(project, allowed: Dict,
+                           context: Dict = None) -> Optional[Set[str]]:
+    """
+    The rows the autofilter leaves on screen: matches and their ancestors.
+
+    None while no column has a checklist in force, the same way
+    filtered_task_ids answers "everything" - a match keeps the chain of
+    summaries above it, as the column filters and the search keep them.
+    """
+    if not any(values is not None for values in (allowed or {}).values()):
+        return None
+    return _with_ancestors(
+        project, autofilter_matching_ids(project, allowed, context))
+
+
+class AutoFilterPopup(ctk.CTkToplevel):
+    """
+    The dropdown a column heading shows while AutoFilter is on.
+
+    PARAMETERS:
+    -----------
+    master : widget
+        The widget the popup floats over - the task grid.
+    column : str
+        The column being asked.
+    values : list
+        The distinct cell texts on offer, from autofilter_values.
+    allowed : set, optional
+        The ticks currently in force for this column; None when it is
+        not filtered, which opens the list with everything ticked.
+    direction : str, optional
+        'asc' or 'desc' when this column is the current sort key, so the
+        matching row can mark itself; None when it is not.
+    on_sort : callable
+        Given 'asc' or 'desc' by the two sort rows; the popup closes.
+    on_apply : callable
+        Given the ticked set by Apply, or None by "Clear Filter" - None
+        meaning this column asks nothing. The popup closes either way.
+    on_close : callable, optional
+        Run however the popup goes away, so the list can drop its
+        reference.
+
+    DEVELOPMENT NOTES:
+    ------------------
+    The window is borderless and dismisses itself on a click outside or
+    Escape, as the menu popups do - Excel's autofilter closes the same
+    way. Applying is deliberate, not live: ticks can be set and unset
+    while the list stays open, then Apply asks once. "(Select All)"
+    ticks or clears the lot in one press.
+    """
+
+    def __init__(self, master, column, values, allowed=None,
+                 direction=None, on_sort=None, on_apply=None,
+                 on_close=None):
+        super().__init__(master)
+        self.overrideredirect(True)
+        self.attributes('-topmost', True)
+        self.configure(fg_color=theme.now(theme.DROPDOWN_BG))
+        self._column = column
+        self._on_sort = on_sort
+        self._on_apply = on_apply
+        self._on_close = on_close
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=8, pady=8)
+
+        for label, direction_key in (("Sort Ascending", 'asc'),
+                                     ("Sort Descending", 'desc')):
+            marker = '● ' if direction == direction_key else ''
+            ctk.CTkButton(
+                body, text=f'{marker}{label}', anchor='w',
+                fg_color='transparent', text_color=MENU_TEXT,
+                hover_color=MENU_HOVER, height=26, corner_radius=6,
+                command=lambda d=direction_key: self._sort(d),
+            ).pack(fill='x', pady=1)
+
+        ctk.CTkFrame(body, height=1, fg_color=theme.SEPARATOR,
+                     corner_radius=0).pack(fill='x', pady=6)
+
+        if allowed is not None:
+            ctk.CTkButton(
+                body, text='    Clear Filter', anchor='w',
+                fg_color='transparent', text_color=MENU_TEXT,
+                hover_color=MENU_HOVER, height=26, corner_radius=6,
+                command=self._clear,
+            ).pack(fill='x', pady=1)
+
+        ticked = set(values) if allowed is None else set(allowed)
+        self._vars = {text: tk.BooleanVar(value=text in ticked)
+                      for text in values}
+        self._all_var = tk.BooleanVar(value=len(ticked) == len(values))
+
+        box = ScrollFrame(body, height=min(220, 24 * (len(values) + 1)))
+        box.pack(fill='both', expand=True)
+        ctk.CTkCheckBox(
+            box, text='(Select All)', variable=self._all_var,
+            command=self._toggle_all, text_color=MENU_TEXT,
+        ).pack(anchor='w', pady=1)
+        for text in values:
+            ctk.CTkCheckBox(
+                box, text=text, variable=self._vars[text],
+                text_color=MENU_TEXT,
+            ).pack(anchor='w', pady=1)
+
+        buttons = ctk.CTkFrame(body, fg_color='transparent')
+        buttons.pack(fill='x', pady=(6, 0))
+        ctk.CTkButton(buttons, text='Apply', width=70,
+                      command=self._apply).pack(side='right', padx=(6, 0))
+        secondary_button(buttons, 'Close', self.destroy,
+                         width=70).pack(side='right')
+
+        self.bind('<Escape>', lambda _e: self.destroy())
+
+        # Posted beside the heading that asked for it; the caller sets the
+        # geometry. A click outside dismisses without applying, like a
+        # menu's click-away does.
+        try:
+            from gantt_app.views.toolbar import watch_for_click_elsewhere
+            watch_for_click_elsewhere(self.winfo_toplevel(),
+                                      self._dismiss_if_outside)
+            self.lift()
+        except (AttributeError, tk.TclError):
+            logger.debug('Could not watch for clicks outside the popup')
+
+    def _dismiss_if_outside(self, event):
+        """Close when the click landed on something not this popup."""
+        widget = getattr(event, 'widget', None)
+        if widget is None:
+            return
+        path = str(widget)
+        if path == str(self) or path.startswith(f'{self}.'):
+            return
+        self.destroy()
+
+    def _toggle_all(self):
+        """(Select All) ticks the whole list, or clears it."""
+        for var in self._vars.values():
+            var.set(self._all_var.get())
+
+    def _sort(self, direction: str):
+        if self._on_sort is not None:
+            try:
+                self._on_sort(direction)
+            except Exception:
+                logger.exception('Sorting from the autofilter failed')
+        self.destroy()
+
+    def _clear(self):
+        """Clear Filter asks this column nothing - the full tick set."""
+        if self._on_apply is not None:
+            try:
+                self._on_apply(None)
+            except Exception:
+                logger.exception('Clearing the autofilter failed')
+        self.destroy()
+
+    def _apply(self):
+        """
+        Hand over the ticked set.
+
+        Every box ticked asks the same as no checklist at all, so it is
+        handed over as None - the column drops out of the filter rather
+        than holding a set that admits everything.
+        """
+        if self._on_apply is not None:
+            ticked = {text for text, var in self._vars.items()
+                      if var.get()}
+            try:
+                self._on_apply(
+                    None if ticked == set(self._vars) else ticked)
+            except Exception:
+                logger.exception('Applying the autofilter failed')
+        self.destroy()
+
+    def destroy(self):
+        try:
+            if self._on_close is not None:
+                self._on_close()
+        finally:
+            try:
+                super().destroy()
+            except tk.TclError:
+                pass

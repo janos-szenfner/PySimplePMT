@@ -939,6 +939,47 @@ GUIDE_SECTIONS = (
         ],
     ),
     (
+        "Sorting the task list",
+        [
+            "Every column heading sorts the list when it is clicked - "
+            "ascending first, descending on a second click, and a "
+            "third puts the plan's own order back. The sorted column "
+            "wears its direction in the heading, and a sort only ever "
+            "arranges siblings: a sub-task is ordered among the rows "
+            "that share its parent and is never pulled out from under "
+            "its summary, so the outline still reads as the plan. A "
+            "row with nothing in the sorted column sits at the bottom "
+            "either way round.",
+
+            "View > Sort By... asks the multi-level question, up to "
+            "three of them - Sort by Duration descending, Then by "
+            "Start Date ascending, Then by Progress ascending, each "
+            "level breaking the last's ties. Sort applies them and "
+            "numbers the arrows in the headings so the levels read in "
+            "order; Reset puts every level back to (none) and the "
+            "list back in plan order. A plain heading click replaces "
+            "the whole sort with the one column it names - the click "
+            "answers a single-column question.",
+
+            "View > AutoFilter turns the dropdowns on every heading "
+            "on or off, the way Microsoft Project's Display "
+            "AutoFilter does. While it is on a heading opens its "
+            "column's dropdown instead of sorting directly: Sort "
+            "Ascending and Sort Descending rows at the top, a Clear "
+            "Filter where one is set, and the checklist of every "
+            "value the cells actually show - ticked values are the "
+            "ones that stay. (Select All) ticks or clears the lot, "
+            "an empty checklist hides every row, and Apply asks the "
+            "question once rather than tick by tick. Columns combine "
+            "the way a filter's rules do - a row stays only while "
+            "every checklist keeps it - and a matched sub-task keeps "
+            "the summary rows above it on screen, as the other "
+            "filters keep them. Switching AutoFilter off clears the "
+            "checklists with the arrows, so nothing stays hidden by "
+            "a control that is gone.",
+        ],
+    ),
+    (
         "Highlighting the rows a filter matches",
         [
             "A highlight answers the same question the other way round. "
