@@ -92,7 +92,7 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
         self.project = project
         self.on_apply = on_apply
 
-        self.title("Project Settings")
+        self.title("Project Info")
         self.geometry(self.GEOMETRY)
         self.resizable(False, False)
         self.transient(master.winfo_toplevel())
@@ -150,7 +150,7 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
 
     def _build(self):
         """Lay the panel out: what the plan is, then when, then how."""
-        ctk.CTkLabel(self, text="Project Settings",
+        ctk.CTkLabel(self, text="Project Info",
                      font=ctk.CTkFont(size=16, weight="bold"),
                      ).pack(anchor=tk.W, padx=16, pady=(14, 4))
 
@@ -333,7 +333,7 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
         priority = self._read_priority()
         if priority is None:
             messagebox.showerror(
-                "Project Settings",
+                "Project Info",
                 f"The priority has to be a whole number between "
                 f"{MIN_PROJECT_PRIORITY} and {MAX_PROJECT_PRIORITY}.")
             return False
@@ -342,12 +342,17 @@ class ProjectSettingsDialog(ctk.CTkToplevel):
         deadline = self.finish_entry.get_date() if backward else None
         if backward and deadline is None:
             messagebox.showerror(
-                "Project Settings",
+                "Project Info",
                 "Scheduling backwards needs a finish date to work back from.")
             return False
 
         name = str(self.name_entry.get()).strip()
         if name:
+            # Only a name that is actually different counts as the user
+            # naming the plan: Apply on an untouched field must not stop
+            # a Save As file name from being adopted (issue #91).
+            if name != self.project.name:
+                self.project.name_was_set = True
             self.project.name = name
 
         self.project.priority = priority
@@ -398,7 +403,7 @@ def edit_project_settings(master, project: Project,
     except Exception:
         logger.exception("Could not open the project settings")
         messagebox.showerror(
-            "Project Settings",
+            "Project Info",
             "Could not open the project settings.\n\n"
             "See the Log window for details.")
         return None

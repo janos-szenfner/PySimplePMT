@@ -345,5 +345,136 @@ class TestThePreferenceStore(unittest.TestCase):
                     preferences.apply_baseline_slot_preferences(manager))
 
 
+class TestTheFileNameAndTheProjectName(unittest.TestCase):
+    """
+    Issue #91: how the project name and the file name keep up with each
+    other. A file name suggested by the project name is derived, and a
+    rename in settings moves the save to a file of the new name. A file
+    name the user picked - in Save As, or by opening a file - is locked:
+    renames leave it where it is. And a plan never deliberately named
+    adopts the first file name it is saved to.
+    """
+
+    def _saver(self, project: Project, path=None, locked=False):
+        stub = SimpleNamespace(project=project,
+                               baseline_manager=None,
+                               current_file_path=path,
+                               _file_name_locked=locked,
+                               task_list=None,
+                               master=SimpleNamespace())
+        for method in ('_write_project', 'save_project', 'save_project_as',
+                       '_report'):
+            setattr(stub, method,
+                    MethodType(getattr(Toolbar, method), stub))
+        return stub
+
+    def _save_as(self, stub, file_path):
+        import gantt_app.views.toolbar as toolbar_mod
+
+        with mock.patch.object(toolbar_mod.filedialog,
+                               'asksaveasfilename',
+                               return_value=file_path):
+            Toolbar.save_project_as(stub)
+
+    def test_the_suggestion_writes_spaces_and_unsafe_chars_as_underscores(self):
+        from gantt_app.views.toolbar import _file_name_for
+
+        self.assertEqual(_file_name_for('My Plan'), 'My_Plan')
+        self.assertEqual(_file_name_for('My Plan: v2/a'), 'My_Plan__v2_a')
+        self.assertEqual(_file_name_for('   '), 'untitled')
+
+    def test_save_as_adopts_the_chosen_name_on_an_untouched_plan(self):
+        project = Project(name="New Project")
+        self.assertFalse(project.name_was_set)
+        stub = self._saver(project)
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / "my plan_v2.json")
+            self._save_as(stub, path)
+            self.assertEqual(project.name, 'my plan_v2')
+            self.assertTrue(stub._file_name_locked)
+            self.assertEqual(stub.current_file_path, path)
+            self.assertTrue(Path(path).exists())
+            # The adopted name is in the file, not just the live plan.
+            self.assertEqual(json.loads(Path(path).read_text())['name'],
+                             'my plan_v2')
+
+    def test_save_as_keeps_a_name_the_user_deliberately_set(self):
+        project = Project(name="Real Name", name_was_set=True)
+        stub = self._saver(project)
+        with tempfile.TemporaryDirectory() as d:
+            self._save_as(stub, str(Path(d) / "other.json"))
+            self.assertEqual(project.name, 'Real Name')
+            self.assertTrue(stub._file_name_locked)
+
+    def test_accepting_the_suggestion_leaves_the_name_derived(self):
+        project = Project(name="My Plan", name_was_set=True)
+        stub = self._saver(project)
+        with tempfile.TemporaryDirectory() as d:
+            self._save_as(stub, str(Path(d) / "My_Plan.json"))
+            self.assertFalse(stub._file_name_locked)
+            self.assertEqual(project.name, 'My Plan')
+
+    def test_a_rename_moves_the_save_while_the_name_is_derived(self):
+        project = Project(name="New Name", name_was_set=True)
+        with tempfile.TemporaryDirectory() as d:
+            old = Path(d) / "Old_Name.json"
+            old.write_text('{}')
+            stub = self._saver(project, path=str(old), locked=False)
+            Toolbar.save_project(stub)
+            new = Path(d) / "New_Name.json"
+            self.assertEqual(stub.current_file_path, str(new))
+            self.assertTrue(new.exists())
+            # The old file is left alone - never silently deleted.
+            self.assertTrue(old.exists())
+            self.assertFalse(stub._file_name_locked)
+
+    def test_a_rename_leaves_a_chosen_file_name_alone(self):
+        project = Project(name="New Name", name_was_set=True)
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / "picked.json")
+            stub = self._saver(project, path=path, locked=True)
+            Toolbar.save_project(stub)
+            self.assertEqual(stub.current_file_path, path)
+            self.assertTrue(Path(path).exists())
+            self.assertFalse((Path(d) / "New_Name.json").exists())
+
+    def test_save_asks_before_landing_on_a_strangers_file(self):
+        import gantt_app.views.toolbar as toolbar_mod
+
+        project = Project(name="B", name_was_set=True)
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "B.json").write_text('{"someone": "elses"}')
+            stub = self._saver(project, path=str(Path(d) / "A.json"),
+                               locked=False)
+            with mock.patch.object(toolbar_mod.messagebox, 'askyesno',
+                                   return_value=False):
+                Toolbar.save_project(stub)
+            self.assertEqual(stub.current_file_path, str(Path(d) / "A.json"))
+            self.assertEqual(Path(d, "B.json").read_text(),
+                             '{"someone": "elses"}')
+            with mock.patch.object(toolbar_mod.messagebox, 'askyesno',
+                                   return_value=True):
+                Toolbar.save_project(stub)
+            self.assertEqual(stub.current_file_path,
+                             str(Path(d) / "B.json"))
+
+    def test_the_flag_survives_a_saved_file(self):
+        project = Project(name="P", name_was_set=True)
+        self.assertTrue(
+            Project.from_dict(project.to_dict()).name_was_set)
+
+    def test_an_old_file_guesses_from_whether_the_name_is_the_placeholder(self):
+        untouched = Project.from_dict({'name': 'New Project', 'tasks': []})
+        self.assertFalse(untouched.name_was_set)
+        named = Project.from_dict({'name': 'Vacation Plan', 'tasks': []})
+        self.assertTrue(named.name_was_set)
+
+    def test_take_on_carries_the_flag(self):
+        stub = SimpleNamespace(project=Project(name="Old"))
+        loaded = Project(name="Loaded", name_was_set=True)
+        Toolbar._take_on_project_fields(stub, loaded)
+        self.assertTrue(stub.project.name_was_set)
+
+
 if __name__ == '__main__':
     unittest.main()

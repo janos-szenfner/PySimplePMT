@@ -393,10 +393,13 @@ class UpdateProjectNameCommand(Command):
     def execute(self) -> bool:
         """Set the project name to the new name."""
         self.project.name = self.new_name
+        self.project.name_was_set = True
         return True
 
     def undo(self) -> bool:
         """Restore the project name to the old name."""
+        # The flag is not rewound: a rename that was undone still
+        # happened, and undoing it does not make the plan unnamed again.
         self.project.name = self.old_name
         return True
 

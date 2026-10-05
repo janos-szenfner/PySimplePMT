@@ -1404,6 +1404,11 @@ class Project:
     plan's own; see gantt_app.core.calendarregistry.
     """
     name: str
+    #: Whether the user deliberately named the plan - typed a name into
+    #: New Project or changed it in Project Settings - rather than it
+    #: still carrying the placeholder. While it is False, a file name
+    #: chosen in Save As is adopted as the project name (issue #91).
+    name_was_set: bool = False
     tasks: List[Task] = field(default_factory=list)
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -4051,6 +4056,7 @@ class Project:
         """Convert project to dictionary for serialization."""
         return {
             'name': self.name,
+            'name_was_set': self.name_was_set,
             'tasks': [task.to_dict() for task in self.tasks],
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
@@ -4240,6 +4246,14 @@ class Project:
         # the standard week for it - which is what those plans were built on.
         project = cls(
             name=data['name'],
+            # Absent from every plan saved before the flag existed
+            # (issue #91). Those plans cannot tell whether their name was
+            # chosen deliberately, so the placeholder answers for them:
+            # a file still named "New Project" was never named and may
+            # adopt a chosen file name, while any other name is kept as
+            # something its author wrote.
+            name_was_set=data.get('name_was_set',
+                                  data['name'] != 'New Project'),
             start_date=start_date,
             end_date=end_date,
             tasks=[],  # Start with empty tasks to avoid __post_init__ updating dates prematurely

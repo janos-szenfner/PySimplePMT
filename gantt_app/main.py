@@ -1278,6 +1278,7 @@ class GanttApp(ctk.CTk):
         """Initialize a fresh, empty project."""
         logger.info("Starting new empty project named %r", name)
         self.toolbar.current_file_path = None
+        self.toolbar._file_name_locked = False
         self.toolbar._blank_project(name)
 
         self.toolbar._forget_the_previous_plan()

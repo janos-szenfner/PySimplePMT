@@ -587,7 +587,10 @@ class MermaidImporter:
                 tasks = self._build_section_hierarchy(tasks_info, task_map,
                                                       tasks)
 
-            project = Project(name=project_name, tasks=tasks)
+            # A name from the file counts as set, so a later Save As is
+            # not adopted over it (issue #91).
+            project = Project(name=project_name, name_was_set=True,
+                              tasks=tasks)
 
             if carried:
                 # A Phase has no row in the chart, so the one rebuilt from

@@ -568,8 +568,10 @@ def parse_msproject(root: ET.Element) -> Project:
     if name.lower().endswith('.xml'):
         name = name[:-4]
 
-    return Project(name=name, tasks=tasks, calendar=base_calendar,
-                   calendars=registry)
+    # A name from the file counts as set, so a later Save As is not
+    # adopted over it (issue #91).
+    return Project(name=name, name_was_set=True, tasks=tasks,
+                   calendar=base_calendar, calendars=registry)
 
 
 def import_msproject_file(filepath: str) -> Optional[Project]:

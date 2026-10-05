@@ -950,7 +950,10 @@ class XLSXImporter:
 
             project_name = (self._project_name_from_labels(workbook)
                             or self._extract_project_name(sheet, rows, header_index))
-            project = Project(name=project_name, tasks=tasks)
+            # A name from the workbook counts as set, so a later Save As
+            # is not adopted over it (issue #91).
+            project = Project(name=project_name, name_was_set=True,
+                              tasks=tasks)
 
             # Rows placed at the project start are stacked on top of one
             # another until the links are applied. Settling the plan is what

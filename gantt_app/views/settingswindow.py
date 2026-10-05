@@ -166,7 +166,7 @@ class SettingsWindow(ctk.CTkToplevel):
         )
         self._card(
             "Project",
-            "Project Settings",
+            "Project Info",
             "Edit the project title, scheduling direction, dates, default "
             "calendar, status date, and priority.",
             (
@@ -174,7 +174,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 ("Schedule from", direction),
                 ("Priority", self.project.priority),
             ),
-            "Open Project Settings",
+            "Project Info",
         )
 
     def _build_resource_tab(self):

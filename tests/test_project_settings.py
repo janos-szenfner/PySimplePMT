@@ -376,10 +376,22 @@ class TestThePanel(PlanTestCase):
         self.assertTrue(panel.apply())
 
         self.assertEqual(self.project.name, "Renamed")
+        # A rename here is the user deliberately naming the plan, so a
+        # Save As file name is no longer adopted over it (issue #91).
+        self.assertTrue(self.project.name_was_set)
         self.assertEqual(self.project.priority, 750)
         self.assertEqual(self.project.status_date.date(),
                          datetime(2026, 9, 1).date())
         self.assertEqual(self.applied, [True])
+
+    def test_applying_an_untouched_name_does_not_count_as_naming(self):
+        """Apply on the name it already had leaves the flag alone (#91)."""
+        panel = self.panel()
+        self.assertFalse(self.project.name_was_set)
+
+        self.assertTrue(panel.apply())
+
+        self.assertFalse(self.project.name_was_set)
 
     def test_applying_a_backward_schedule_packs_the_plan(self):
         """The panel's end of what apply_backward_schedule does."""

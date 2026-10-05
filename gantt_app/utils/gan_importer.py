@@ -589,7 +589,11 @@ class GANImporter:
             calendar = GanttProjectCalendar.from_element(root.find('calendars'))
             tasks = self.parse_tasks(root, calendar)
 
-            project = Project(name=project_name, tasks=tasks,
+            # The name came off the file - it is not the untouched
+            # placeholder, so a later Save As is not adopted over it
+            # (issue #91).
+            project = Project(name=project_name, name_was_set=True,
+                              tasks=tasks,
                               calendar=calendar.to_working_calendar())
             logger.info("Imported %d task(s) from GAN file %s",
                         len(project.tasks), filepath)

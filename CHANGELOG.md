@@ -2,6 +2,17 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **The project name and the file name keep up with each other.** Save
+  As suggests the project name as the file name - spaces and unsafe
+  characters written as underscores - and while the name is still
+  suggested rather than chosen, renaming the plan under Settings >
+  Project Info moves the save to a file of the new name, leaving the
+  old one on disk. A file name picked by hand, or the file a plan was
+  opened from, is locked: renaming the plan does not rename it. And a
+  plan still carrying its placeholder name takes the first file name
+  it is saved to as its name, which Project Info can still change
+  afterwards (issue #91). The card and dialog are titled "Project
+  Info" now, matching the "Resource Information" naming.
 - **Filter names are one-of-a-kind, even in old files.** Files saved
   before the name guards could carry two filters of a name - or one
   named like a built-in - which drew as identical menu rows where only
