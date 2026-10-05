@@ -2,6 +2,15 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **Two more built-in highlight filters.** "Tasks With a Named
+  Calendar" paints every row carrying its own calendar override rather
+  than the project's default, and "Tasks With No Resources" paints the
+  work nobody owns - a dangling assignment counting as unassigned, the
+  way an empty Resources cell does (issue #98). Both sit in the
+  Highlight menu's Built-in section and, like every built-in, copy into
+  editable rules - the new Resources field answers the second and is
+  available to custom filters and queries too.
+
 - **The Highlight filters behave like a managed set.** An active
   highlight recomputes on every change, so a task edited out of
   "Unstarted Tasks" loses its yellow without the filter being picked

@@ -1501,6 +1501,24 @@ class Project:
             return base
         return IntersectingCalendar(base, resources)
 
+    def task_resource_names(self, task: 'Task') -> List[str]:
+        """
+        The names of the resources a task has assigned, in order.
+
+        An assignment whose resource is no longer in the repository
+        answers nothing rather than a dangling id, so a row carrying only
+        stale references reads as unassigned - the same way the filters
+        and the grid count it.
+        """
+        resources = getattr(
+            getattr(self, 'resource_repository', None),
+            'resources', None) or {}
+        return [resource.name for resource in (
+            resources.get(assignment.get('resource_id'))
+            for assignment in getattr(task, 'resource_assignments',
+                                      None) or [])
+            if resource is not None]
+
     def __setattr__(self, name: str, value) -> None:
         """Invalidate the ID index whenever the task list is replaced."""
         super().__setattr__(name, value)

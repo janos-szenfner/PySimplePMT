@@ -57,6 +57,7 @@ FIELD_ALIASES = {
     'milestone': 'Milestone', 'outline': 'Outline',
     'alert': 'Alert',
     'summary': 'Summary', 'late': 'Late', 'deadline': 'Deadline',
+    'resources': 'Resources', 'resource': 'Resources',
     'calendar': 'Task Calendar', 'taskcalendar': 'Task Calendar',
     'baselinestart': 'Baseline Start',
     'baselinefinish': 'Baseline Finish',

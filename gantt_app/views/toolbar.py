@@ -18,6 +18,7 @@ from typing import Optional, Callable, List, Dict
 import customtkinter as ctk
 
 from gantt_app.core.models import Task, Project
+from gantt_app.core.calendarregistry import PROJECT_DEFAULT_LABEL
 from gantt_app.utils.file_io import save_project, load_project
 from gantt_app.utils.gan_importer import import_gan_file
 from gantt_app.utils.mpp_importer import (
@@ -1242,6 +1243,13 @@ class Toolbar(ctk.CTkFrame):
          lambda p: (t.id for t in p.tasks if t.status == 'Estimated')),
         ('inactive', "Inactive Tasks",
          lambda p: (t.id for t in p.tasks if t.status == 'Inactive')),
+        ('own_calendar', "Tasks With a Named Calendar",
+         lambda p: (t.id for t in p.tasks
+                    if t.calendar_id is not None
+                    and p.calendars.get(t.calendar_id) is not None)),
+        ('unassigned', "Tasks With No Resources",
+         lambda p: (t.id for t in p.tasks
+                    if not p.task_resource_names(t))),
     )
 
     #: Each built-in filter said in the rule language a saved filter
@@ -1269,6 +1277,10 @@ class Toolbar(ctk.CTkFrame):
                        'value': 'Estimated'}],
         'inactive': [{'field': 'Status', 'test': 'equals',
                       'value': 'Inactive'}],
+        'own_calendar': [{'field': 'Task Calendar',
+                          'test': 'does_not_equal',
+                          'value': PROJECT_DEFAULT_LABEL}],
+        'unassigned': [{'field': 'Resources', 'test': 'is_empty'}],
     }
 
     def _connect_icon_toolbar(self):

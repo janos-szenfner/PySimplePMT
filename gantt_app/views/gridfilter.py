@@ -61,7 +61,7 @@ COLUMN_KIND = {
     'Task Name': 'text', 'Label': 'text', 'Dependencies': 'text',
     'Alert': 'choice', 'Type': 'choice', 'Status': 'choice',
     'Milestone': 'choice', 'Summary': 'choice', 'Late': 'choice',
-    'Deadline': 'date', 'Task Calendar': 'choice',
+    'Deadline': 'date', 'Task Calendar': 'choice', 'Resources': 'text',
     'Duration': 'number', 'Progress': 'number', 'Outline': 'number',
     'Start Variance': 'number', 'Finish Variance': 'number',
     'Baseline Duration': 'number', 'Duration Variance': 'number',
@@ -141,6 +141,10 @@ def column_value(task, column: str, project, context: Dict = None):
         return 'Yes' if task.id in (late or ()) else 'No'
     if column == 'Deadline':
         return getattr(task, 'deadline', None)
+    if column == 'Resources':
+        if project is None:
+            return ''
+        return ", ".join(project.task_resource_names(task))
     if column == 'Alert':
         conflicts = context.get('conflicts')
         if conflicts is None and project is not None:

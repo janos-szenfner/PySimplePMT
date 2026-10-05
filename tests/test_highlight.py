@@ -425,6 +425,59 @@ class TestCopyingFilters(unittest.TestCase):
             self.project.custom_filters[0]['rules'][0]['test'], 'gt')
 
 
+class TestTheCalendarAndResourceFilters(unittest.TestCase):
+    """Issue #98: the two built-ins the list was missing."""
+
+    def setUp(self):
+        self.project = _plan()
+
+    def test_named_calendar_picks_the_row_carrying_one(self):
+        from gantt_app.core.calendarregistry import NamedCalendar
+        from gantt_app.core.workdaycalendar import WorkingCalendar
+        self.project.calendars.add(NamedCalendar(
+            id='sixday', name='Six-Day Week',
+            calendar=WorkingCalendar(non_working_days={6})))
+        self.project.get_task_by_id("A").calendar_id = 'sixday'
+        self.assertEqual(_select('own_calendar', self.project), {"A"})
+
+    def test_a_named_calendar_nobody_uses_paints_nothing(self):
+        from gantt_app.core.calendarregistry import NamedCalendar
+        from gantt_app.core.workdaycalendar import WorkingCalendar
+        self.project.calendars.add(NamedCalendar(
+            id='sixday', name='Six-Day Week',
+            calendar=WorkingCalendar(non_working_days={6})))
+        self.assertEqual(_select('own_calendar', self.project), set())
+
+    def test_an_override_naming_nothing_is_no_calendar(self):
+        """A dangling calendar id resolves to the default, so it is not
+        'a calendar other than the default' - it is a broken pointer."""
+        self.project.get_task_by_id("A").calendar_id = 'gone'
+        self.assertNotIn("A", _select('own_calendar', self.project))
+
+    def test_no_resources_picks_every_row_carrying_none(self):
+        self.assertEqual(
+            _select('unassigned', self.project),
+            {"A", "B", "C", "D", "E", "F", "G", "H", "I"})
+
+    def test_no_resources_leaves_the_resourced_row_alone(self):
+        from gantt_app.core.resource_model import (
+            Resource, ResourceType, SchedulePattern)
+        self.project.resource_repository.resources['r1'] = Resource(
+            id='r1', name='Dev', resource_type=ResourceType.NAMED,
+            role_type='Dev',
+            schedule_pattern=SchedulePattern.STANDARD)
+        self.project.get_task_by_id("A").resource_assignments = [
+            {'resource_id': 'r1', 'units': 1.0}]
+        unassigned = _select('unassigned', self.project)
+        self.assertNotIn("A", unassigned)
+        self.assertIn("C", unassigned)
+
+    def test_a_stale_assignment_still_reads_as_no_resource(self):
+        self.project.get_task_by_id("A").resource_assignments = [
+            {'resource_id': 'missing', 'units': 1.0}]
+        self.assertIn("A", _select('unassigned', self.project))
+
+
 class TestTheNewFilterFields(unittest.TestCase):
     """Issue #77: Type offers the whole vocabulary, Phase included."""
 
