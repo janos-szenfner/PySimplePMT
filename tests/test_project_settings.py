@@ -235,7 +235,6 @@ class TestThePanel(PlanTestCase):
         self.assertEqual(self.spans(self.project), before)
 
 
-
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
 class TestThePanelIsLaidOut(PlanTestCase):
     """
