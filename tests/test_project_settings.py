@@ -1,32 +1,22 @@
 """
-Tests for the settings a whole plan is built from, and the panel over them.
+Tests for the settings panel - the parts that need a display.
 
 WHY THIS MODULE EXISTS:
 ======================
-Two of these settings are not settings at all in the ordinary sense.
+The settings themselves, the start-date shift and scheduling backward
+are all model arithmetic - they live in
+tests/features/project_settings.feature with their steps in
+tests/test_project_settings_bdd.py.
 
-The start date is not a field on a project - it is derived from the tasks - so
-the box is a command: typing a date moves the whole plan. What has to be true
-afterwards is that every duration and every gap survived it, because the
-alternative implementation, rescheduling from the new date, would collapse
-every gap somebody had put there on purpose.
-
-The direction is the other. Scheduled backward, the plan is packed as late as
-it can go against a deadline - which is a different thing from sliding it, and
-the difference only shows on a task with float: a slide keeps it early, and
-As Late As Possible does not.
-
-DEVELOPMENT NOTES:
-------------------
-The model half needs no display. The panel half does, and skips without one.
+What is kept here is the panel over them: the boxes it lays out, what
+typing in them does, and how it sizes itself.
 """
 
 import unittest
 from datetime import datetime, timedelta
 
 from gantt_app.core.models import (
-    DEFAULT_PROJECT_PRIORITY, MAX_PROJECT_PRIORITY, MIN_PROJECT_PRIORITY,
-    SCHEDULE_FROM_FINISH, SCHEDULE_FROM_START, Project, Task,
+    SCHEDULE_FROM_FINISH, Project, Task,
 )
 
 #: Monday 17 August 2026, so every weekday below is known.
@@ -75,213 +65,6 @@ class PlanTestCase(unittest.TestCase):
         """Each task's working duration, by id."""
         return {task.id: project.working_duration(task)
                 for task in project.tasks}
-
-
-class TestTheSettingsAreCarried(unittest.TestCase):
-    """What a project holds, and what an older file gets."""
-
-    def test_a_new_plan_is_scheduled_forward(self):
-        """Which is what every plan did before there was a choice."""
-        self.assertEqual(Project(name="P").schedule_from, SCHEDULE_FROM_START)
-
-    def test_a_direction_it_does_not_know_falls_back(self):
-        """A damaged file opens forward rather than not at all."""
-        self.assertEqual(Project(name="P", schedule_from="sideways").schedule_from,
-                         SCHEDULE_FROM_START)
-
-    def test_the_priority_is_clamped_rather_than_refused(self):
-        """
-        It arrives from a text box and from saved files.
-
-        A plan that will not open because somebody typed 2000 would be a
-        poor trade for a number nothing acts on yet.
-        """
-        self.assertEqual(Project(name="P", priority=2000).priority,
-                         MAX_PROJECT_PRIORITY)
-        self.assertEqual(Project(name="P", priority=0).priority,
-                         MIN_PROJECT_PRIORITY)
-        self.assertEqual(Project(name="P", priority="nonsense").priority,
-                         DEFAULT_PROJECT_PRIORITY)
-
-    def test_the_settings_survive_a_saved_file(self):
-        """All four of them."""
-        project = Project(name="P", schedule_from=SCHEDULE_FROM_FINISH,
-                          deadline=datetime(2026, 12, 1),
-                          status_date=datetime(2026, 11, 1), priority=750)
-
-        back = Project.from_dict(project.to_dict())
-
-        self.assertEqual(back.schedule_from, SCHEDULE_FROM_FINISH)
-        self.assertEqual(back.deadline, datetime(2026, 12, 1))
-        self.assertEqual(back.status_date, datetime(2026, 11, 1))
-        self.assertEqual(back.priority, 750)
-
-    def test_a_plan_saved_before_the_settings_existed_opens(self):
-        """With the defaults, which are what those plans meant."""
-        data = Project(name="P").to_dict()
-        for key in ('schedule_from', 'deadline', 'status_date', 'priority'):
-            del data[key]
-
-        back = Project.from_dict(data)
-
-        self.assertEqual(back.schedule_from, SCHEDULE_FROM_START)
-        self.assertIsNone(back.deadline)
-        self.assertIsNone(back.status_date)
-        self.assertEqual(back.priority, DEFAULT_PROJECT_PRIORITY)
-
-    def test_an_unreadable_date_does_not_stop_the_file_opening(self):
-        """A setting comes back empty rather than the plan failing to load."""
-        data = Project(name="P").to_dict()
-        data['deadline'] = 'the third of never'
-
-        self.assertIsNone(Project.from_dict(data).deadline)
-
-
-class TestMovingTheWholePlan(PlanTestCase):
-    """The start date box, which is a command rather than a setting."""
-
-    def test_it_begins_on_the_date_given(self):
-        """Which is the whole of what the box promises."""
-        project = self.plan()
-
-        project.shift_to_start(datetime(2026, 9, 14))
-
-        self.assertEqual(project.start_date.date(),
-                         datetime(2026, 9, 14).date())
-
-    def test_every_duration_survives(self):
-        """A plan is moved, not rebuilt."""
-        project = self.plan()
-        before = self.spans(project)
-
-        project.shift_to_start(datetime(2026, 9, 14))
-
-        self.assertEqual(self.spans(project), before)
-
-    def test_the_gaps_between_tasks_survive(self):
-        """
-        The reason this is a shift rather than a reschedule.
-
-        Rescheduling from the new date would pull everything up against its
-        links and collapse every gap somebody had put there on purpose.
-        """
-        project = self.plan()
-        gap = (project.get_task_by_id('c').start_date
-               - project.get_task_by_id('a').start_date)
-
-        project.shift_to_start(datetime(2026, 9, 14))
-
-        self.assertEqual(project.get_task_by_id('c').start_date
-                         - project.get_task_by_id('a').start_date, gap)
-
-    def test_a_constraint_date_moves_with_it(self):
-        """
-        A constraint set relative to the plan around it moves with that plan.
-
-        Left behind, a plan shifted six months later is full of constraints
-        nobody wrote (issue #32).
-        """
-        project = self.plan()
-        task = project.get_task_by_id('c')
-        task.constraint_type = 'SNET'
-        task.constraint_date = MONDAY + timedelta(days=7)
-        floor = task.constraint_date
-
-        project.shift_to_start(datetime(2026, 9, 14))
-
-        self.assertGreater(project.get_task_by_id('c').constraint_date, floor)
-
-    def test_moving_it_where_it_already_is_changes_nothing(self):
-        """And says so, so a caller can skip the redraw."""
-        project = self.plan()
-
-        self.assertFalse(project.shift_to_start(project.start_date))
-
-    def test_an_empty_plan_is_not_moved(self):
-        """There is nothing to move and nothing to fail on."""
-        self.assertFalse(Project(name="P").shift_to_start(MONDAY))
-
-
-class TestSchedulingBackwards(PlanTestCase):
-    """As Late As Possible, against a deadline."""
-
-    def backward(self, deadline=datetime(2026, 10, 30)):
-        """The fixture, scheduled backward to a Friday deadline."""
-        project = self.plan()
-        project.schedule_from = SCHEDULE_FROM_FINISH
-        project.deadline = deadline
-        project.apply_schedule()
-        return project
-
-    def test_the_plan_ends_on_the_deadline(self):
-        """Which is the point of scheduling from a finish date."""
-        project = self.backward()
-
-        self.assertEqual(project.end_date.date(),
-                         datetime(2026, 10, 30).date())
-
-    def test_durations_survive(self):
-        """The work is moved, not compressed."""
-        before = self.spans(self.plan())
-
-        self.assertEqual(self.spans(self.backward()), before)
-
-    def test_the_links_are_still_satisfied(self):
-        """
-        Nothing is rescheduled afterwards, so this is what says the late
-        dates were right - they satisfy every link by construction, which
-        is what the backward pass computes.
-        """
-        project = self.backward()
-
-        for task_id, predecessor in (('b', 'a'), ('c', 'b')):
-            follower = project.get_task_by_id(task_id)
-            leader = project.get_task_by_id(predecessor)
-            self.assertGreater(follower.start_date, leader.end_date,
-                               f"{predecessor} -> {task_id}")
-
-    def test_a_task_with_float_is_moved_late(self):
-        """
-        The behaviour that tells this apart from sliding the plan.
-
-        A slide keeps a task with float where it was relative to everything
-        else - early. As Late As Possible pushes it up against the finish,
-        because nothing starts earlier than it has to.
-        """
-        forward = self.plan()
-        early = (forward.get_task_by_id('slack').end_date
-                 - forward.start_date).days
-
-        project = self.backward()
-        late = (project.get_task_by_id('slack').end_date
-                - project.start_date).days
-
-        self.assertGreater(late, early)
-
-    def test_a_deadline_in_the_past_still_moves_the_plan(self):
-        """
-        A deadline that cannot be met from today is what a reader needs to
-        be shown, and refusing to move would hide it.
-        """
-        project = self.backward(deadline=datetime(2020, 1, 31))
-
-        self.assertEqual(project.end_date.date(),
-                         datetime(2020, 1, 31).date())
-
-    def test_a_forward_plan_is_settled_exactly_as_before(self):
-        """
-        The whole of the existing behaviour, unchanged.
-
-        apply_schedule dispatches on the direction, and a plan scheduled
-        forward has to get reschedule and nothing else.
-        """
-        one, other = self.plan(), self.plan()
-
-        one.apply_schedule()
-        other.reschedule()
-
-        self.assertEqual([(t.id, t.start_date, t.end_date) for t in one.tasks],
-                         [(t.id, t.start_date, t.end_date) for t in other.tasks])
 
 
 def _display_available() -> bool:
@@ -560,6 +343,7 @@ class TestThePanelIsLaidOut(PlanTestCase):
         self.assertGreaterEqual(int(height), wanted)
         self.assertGreaterEqual(int(width),
                                 self.panel.content.winfo_reqwidth())
+
 
 if __name__ == '__main__':
     unittest.main()
