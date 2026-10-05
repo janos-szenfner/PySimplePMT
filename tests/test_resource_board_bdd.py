@@ -353,7 +353,30 @@ def the_user_selects_the_team(app, name):
 
 
 @when("the user assigns the selected resource")
-def the_user_assigns_the_selected_resource(app):
+def the_user_assigns_the_selected_resource(app, monkeypatch):
+    # Issue #99: assigning now asks the share of the resource's week;
+    # the scenarios answer the default - the full week, 100%.
+    monkeypatch.setattr(
+        "tkinter.simpledialog.askfloat", lambda *a, **k: 100.0)
+    app.resource_board._assign_selected()
+    app.resource_board.update_idletasks()
+
+
+@when(parsers.parse(
+    "the user assigns the selected resource at {pct:g} percent"))
+def the_user_assigns_at_a_share(app, monkeypatch, pct):
+    """The assign question answered with a partial week (issue #99)."""
+    monkeypatch.setattr(
+        "tkinter.simpledialog.askfloat", lambda *a, **k: float(pct))
+    app.resource_board._assign_selected()
+    app.resource_board.update_idletasks()
+
+
+@when("the user cancels the assignment share question")
+def the_user_cancels_the_share_question(app, monkeypatch):
+    """Asked for a share and closed the window instead."""
+    monkeypatch.setattr(
+        "tkinter.simpledialog.askfloat", lambda *a, **k: None)
     app.resource_board._assign_selected()
     app.resource_board.update_idletasks()
 
@@ -631,6 +654,32 @@ def the_task_has_no_resource_assignments(app):
                 f"task still has assignments: {task.resource_assignments}")
             return
     raise AssertionError("Database Migration task not found")
+
+
+@then(parsers.parse(
+    'the assignment on "{task_name}" to "{resource}" is at {pct:g} percent'))
+def the_assignment_is_at_a_share(app, task_name, resource, pct):
+    """The asked share landed on the assignment, as units (issue #99)."""
+    task = _find_task(app.project, task_name)
+    entities = list(app.project.resource_repository.resources.values())
+    entities += list(app.project.resource_repository.teams.values())
+    entity = next(item for item in entities if item.name == resource)
+    assignment = next(
+        (a for a in task.resource_assignments
+         if a.get("resource_id") == entity.id), None)
+    assert assignment is not None, f"no assignment to {resource}"
+    assert assignment["resource_split"] == pct, assignment
+
+
+@then(parsers.parse(
+    'the task "{name}" has no assignment to "{resource}"'))
+def the_task_has_no_assignment_to(app, name, resource):
+    task = _find_task(app.project, name)
+    entities = list(app.project.resource_repository.resources.values())
+    entities += list(app.project.resource_repository.teams.values())
+    entity = next(item for item in entities if item.name == resource)
+    assert not any(a.get("resource_id") == entity.id
+                   for a in task.resource_assignments)
 
 
 @then("the heatmap canvas has drawing items")

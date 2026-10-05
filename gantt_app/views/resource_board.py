@@ -1027,6 +1027,13 @@ class ResourceBoard(ctk.CTkFrame):
             self._say(f"{resource.name} is already assigned to this task.")
             return
 
+        # The split is asked here rather than assumed: assigning from this
+        # board used to land every resource at 100% of their week, with the
+        # only way to say less buried in the task editor (issue #99).
+        split = self._ask_assignment_split(resource)
+        if split is None:
+            return
+
         # Effort-driven decides what the new resource does to a resourced,
         # auto-scheduled task: work conserved shortens the duration,
         # duration conserved grows the work - the same maths the task
@@ -1045,7 +1052,7 @@ class ResourceBoard(ctk.CTkFrame):
             "resource_id": resource.id,
             "estimated_hours": 0.0 if managed else (self._task_effort(task)
                                                     or 8.0),
-            "resource_split": 100.0,
+            "resource_split": split,
         })
 
         duration = task.duration
@@ -1069,6 +1076,24 @@ class ResourceBoard(ctk.CTkFrame):
                     resource.name, task.id, task.name)
         self._say(f"Assigned {resource.name} to {task.name}.")
         self._changed()
+
+    def _ask_assignment_split(self, resource) -> Optional[float]:
+        """
+        How much of the resource's week this task takes, asked on the spot.
+
+        Units in Microsoft Project's terms: 30 is a third of their time,
+        100 is all of it. The same on-the-spot question _assign_cost asks
+        for an expense's amount (issue #99). None when cancelled.
+        """
+        from tkinter import simpledialog
+        percent = simpledialog.askfloat(
+            "Assign Resource",
+            f"How much of {resource.name}'s time does this task take?\n"
+            "30 is a third of their week; 100 is all of it.",
+            initialvalue=100.0, minvalue=0.0, parent=self)
+        if percent is None:
+            return None
+        return float(percent)
 
     def _assign_cost(self, task: Task, resource: CostResource) -> None:
         """

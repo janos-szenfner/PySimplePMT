@@ -115,6 +115,20 @@ Feature: 4-Panel Resource Planning Matrix
     Then the task "Requirements Gathering" has an assignment to "Core QA Team"
     And the resource pool card for "Core QA Team" shows "8 / 80 hrs (10%)"
 
+  Scenario: Assigning asks what share of the resource's week the task takes
+    Given a resource board with a project that has unassigned and assigned tasks
+    When the user selects the "Requirements Gathering" task
+    And the user selects the "John Doe" resource
+    And the user assigns the selected resource at 30 percent
+    Then the assignment on "Requirements Gathering" to "John Doe" is at 30 percent
+
+  Scenario: Cancelling the share question assigns nothing
+    Given a resource board with a project that has unassigned and assigned tasks
+    When the user selects the "Requirements Gathering" task
+    And the user selects the "John Doe" resource
+    And the user cancels the assignment share question
+    Then the task "Requirements Gathering" has no assignment to "John Doe"
+
   Scenario: De-assigning a task updates its status
     Given a resource board with a project that has an assigned task
     When the user selects the assigned task in the inspector

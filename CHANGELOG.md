@@ -2,6 +2,17 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **Assigning a resource asks for its share, and a click picks it.**
+  "Assign Task" on the Resource Planning board used to land every
+  person and team at 100% of their week, with the only way to say less
+  buried in the task editor - so "Szefi at 30%" could not be done from
+  the board at all (issue #99). Assigning now asks how much of the
+  resource's time the task takes first - the Units figure, 30 for a
+  third, 100 for all - and cancelling asks nothing and changes nothing.
+  In the task editor's Resource tab, a single click on a dropdown row
+  now adds it (only a double-click or Enter did before, with nothing on
+  screen saying so), and the assignment column is labelled "Units (%)"
+  rather than the ambiguous "Split (%)".
 - **A dashboard you arrange, and a timeline you choose.** View > Charts
   now holds three views - Gantt Chart, Dashboard and the new Timeline -
   and both boards export to PNG and PDF through the Actions > Export and

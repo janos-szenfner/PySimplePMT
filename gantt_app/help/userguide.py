@@ -470,7 +470,7 @@ GUIDE_SECTIONS = (
             "Each assignment shows: Entity (resource or team with type "
             "badge), Schedule pattern, Workload (the projected load once "
             "this assignment's effort is added), Effort in hours, OT in "
-            "hours, Split percentage, and a Clear button to remove the "
+            "hours, Units percentage, and a Clear button to remove the "
             "assignment.",
 
             "Effort (hrs) - the total hours this assignment is expected to "
@@ -481,9 +481,10 @@ GUIDE_SECTIONS = (
             "They pay the resource's Ovt. Rate instead of the Std. Rate, "
             "and the assignment's Cost per Use is charged once on top.",
 
-            "Split (%) - the share of daily capacity the resource should "
-            "allocate to this task. 100% means the resource works on this "
-            "task for a full share of its day while the task is active.",
+            "Units (%) - the share of the resource's week this task "
+            "takes; what Microsoft Project calls Units. 30 is a third of "
+            "their time on this task, 100 all of it, and a number over "
+            "100 is allowed but flagged on save.",
 
             "The Workload colour shows Free (green), Optimal (green), "
             "Full capacity (yellow) or Over capacitated (red) after the "
@@ -1189,11 +1190,12 @@ GUIDE_SECTIONS = (
             "load against capacity across the full project timeline, so "
             "overbooking is visible at a glance.",
 
-            "Assigning a resource adds its committed hours to the task and "
-            "recalculates the resource's load. Assigning a team adds the "
-            "team's own allocation and updates the team's booking hours and "
-            "percentages. The colour bands and the heatmap update "
-            "immediately. Overbooked resources are shown in red.",
+            "Assign Task asks one question first - how much of the "
+            "resource's or team's week the task takes (the Units figure: "
+            "30 for a third of their time, 100 for all of it) - then adds "
+            "the assignment and recalculates the load. The colour bands "
+            "and the heatmap update immediately. Overbooked resources are "
+            "shown in red.",
 
             "While the Resource Planning tab is on top, the ribbon's View "
             "page gains a Resources group with the Usage Grid toggle. The "

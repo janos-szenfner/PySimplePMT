@@ -130,7 +130,7 @@ class ResourceDropdown(ctk.CTkFrame):
         self.tree = ttk.Treeview(
             self, columns=columns, show="headings", height=8,
             selectmode="browse", style="DataGrid.Treeview")
-        self.tree.heading("entity", text="Entity Name & Type")
+        self.tree.heading("entity", text="Entity Name & Type - click to add")
         self.tree.heading("schedule", text="Work Schedule Pattern")
         self.tree.heading("workload", text="Weekly Workload")
         self.tree.column("entity", width=240)
@@ -208,8 +208,17 @@ class ResourceDropdown(ctk.CTkFrame):
         return children[0] if children else None
 
     def _on_tree_select(self, _event=None) -> None:
+        """
+        A click on a row is a pick: the row is added straight away.
+
+        It used to only mark the row - the actual add was bound to a
+        double-click or to Enter, with nothing on screen saying so - and
+        a single click looked like it did nothing (issue #99).
+        """
         selection = self.tree.selection()
         self._selected_id = selection[0] if selection else None
+        if self._selected_id:
+            self._confirm()
 
     def _on_double_click(self, _event=None) -> None:
         self._confirm()
@@ -323,7 +332,7 @@ class TaskResourceTab(ctk.CTkFrame):
         heading("Workload", 230, 2)
         heading("Effort (hrs)", 65, 3)
         heading("OT (hrs)", 50, 4)
-        heading("Split (%)", 55, 5)
+        heading("Units (%)", 55, 5)
         heading("Action", 65, 6, anchor=tk.CENTER)
 
         # A hairline under the heading, then the scrolling body of rows.
