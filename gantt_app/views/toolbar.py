@@ -1513,6 +1513,8 @@ class Toolbar(ctk.CTkFrame):
             {
                 'text': 'Actions',
                 'items': [
+                    {"text": "Update Project...",
+                     "command": self.update_project},
                     {"text": "Baseline", "submenu": [
                         {"text": "Set Baseline...", "command": self.set_baseline},
                         {"text": "Clear Baseline...", "command": self.clear_baseline},
@@ -3740,6 +3742,57 @@ class Toolbar(ctk.CTkFrame):
                 + ("; the finish slipped" if plan.finish_slipped else ""))
         logger.info("Levelling applied: %s move(s), %s unresolved",
                     len(plan.moves), len(plan.unresolved))
+
+    def update_project(self):
+        """
+        Open the Update Project window (issue #89).
+
+        The window asks which date uncompleted work resumes on - the
+        status date is the default - and OK comes back through
+        _apply_update_project, where the move runs as one undoable step.
+        """
+        from gantt_app.views.updateproject import UpdateProjectDialog
+        logger.info("Opening the Update Project window")
+        UpdateProjectDialog(
+            self.winfo_toplevel(), self.project,
+            on_update=self._apply_update_project)
+
+    def _apply_update_project(self, after):
+        """
+        Reschedule uncompleted work to start after the given date.
+
+        The whole run - every row the move shifts and every successor the
+        reschedule drags - sits inside a single snapshot command, so Undo
+        takes it back at once rather than a task at a time. Without a
+        tracker (a toolbar built on its own, as the tests do) the same
+        move still runs; it just is not recorded.
+        """
+        moved = {}
+        def run():
+            moved['n'] = self.project.reschedule_uncompleted_work(after)
+            return moved['n'] > 0
+
+        tracker = getattr(getattr(self, 'task_list', None),
+                          'project_tracker', None)
+        if tracker is not None:
+            tracker.run_as_command(run, "Update Project")
+        else:
+            run()
+
+        count = moved.get('n', 0)
+        if not count:
+            self._report(
+                "No uncompleted work sits before "
+                f"{after:%d %b %Y} - nothing to reschedule")
+            return
+        if self.on_project_changed:
+            self.on_project_changed()
+        self.update_undo_redo_buttons()
+        self._report(
+            f"Rescheduled {count} row(s) of uncompleted work to start on "
+            f"or after {after:%d %b %Y}")
+        logger.info("Update Project moved %d row(s) behind %s",
+                    count, after.date())
 
     def set_undo_redo_manager(self, manager: UndoRedoManager):
         """Set the undo/redo manager."""

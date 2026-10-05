@@ -2817,6 +2817,108 @@ class Project:
                     self.name, delta.days, as_date(new_start))
         return True
 
+    def reschedule_uncompleted_work(self, after: datetime) -> int:
+        """
+        Microsoft Project's 'Reschedule uncompleted work to start after',
+        run over the whole plan.
+
+        PARAMETERS:
+        -----------
+        after : datetime
+            The line unstarted work moves behind - the plan's status date,
+            or whichever date the Update Project window was given.
+
+        RETURNS:
+        --------
+        int
+            How many rows moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Three kinds of row answer, and each answers differently:
+
+        - A row not started (0%) whose start sits before the line moves so
+          it begins on the line - the line itself, or the next working day
+          on the row's own calendar when the line is not worked. Its
+          duration is spent again from the new start, so a five-day task
+          stays a five-day task.
+        - A row underway whose finish is already behind the line keeps its
+          start - the reported part stays in the past where it was worked -
+          and pushes its finish out by the share of its duration still to
+          do, resumed on the line. This is the split MS Project draws in
+          the bar, said in the finish date this model stores. A row
+          underway that still ends on or after the line is running through
+          it and stays as it is.
+        - Done rows (100%), inactive rows and hard-constrained (MSO/MFO)
+          rows are left alone. The pinned kind cannot move without
+          breaking the pin; leaving it lets the conflict machinery flag it
+          rather than silently overriding a date somebody insisted on.
+
+        Summaries are never moved directly: their dates are their
+        children's, rebuilt by the reschedule at the end. The link pass
+        runs too, so a task pushed past the line drags the successors that
+        were waiting on it.
+
+        This is issue #89's Update Project: the 'Update work as complete
+        through' half of Microsoft's window is deliberately absent -
+        marking work complete is Mark on Track's job, and a reader picking
+        one button should not have to fear the other's side effects.
+        """
+        if after is None:
+            return 0
+        line = as_date(after)
+        summary_ids = self.get_summary_task_ids()
+        moved = 0
+
+        for task in self.tasks:
+            if task.id in summary_ids or task.is_container:
+                continue
+            if task.status == 'Inactive' or task.progress >= 100:
+                continue
+            if task.constraint_type in HARD_CONSTRAINTS:
+                continue
+            if task.start_date is None:
+                continue
+
+            calendar = self.calendar_for(task)
+            start = as_date(task.start_date)
+            finish = as_date(task.end_date) if task.end_date else start
+            # The calendar keeps the type it is handed, and task dates are
+            # datetimes - feeding it the stripped date would write bare
+            # dates into fields the rest of the model compares as
+            # datetimes.
+            resume = calendar.get_next_working_day(after)
+            # Measured before either date moves: a duration read off the
+            # dates afterwards would see the new start against the old
+            # finish and come out wrong.
+            duration = self.working_duration(task)
+
+            if task.progress <= 0:
+                if start >= line:
+                    continue
+                if task.effective_milestone:
+                    task.start_date = task.end_date = resume
+                else:
+                    task.start_date = resume
+                    task.end_date = calendar.add_working_days(
+                        resume, duration)
+                moved += 1
+            elif finish < line:
+                # Underway but late: the worked part stays in the past and
+                # the share still to do resumes on the line.
+                remaining = max(1, int(round(
+                    duration * (100 - task.progress) / 100)))
+                task.end_date = calendar.add_working_days(resume, remaining)
+                moved += 1
+
+        if moved:
+            self.enforce_working_calendar()
+            self.reschedule()
+            self._update_dates()
+            logger.info("Rescheduled %d row(s) of uncompleted work to start "
+                        "on or after %s", moved, line)
+        return moved
+
     def lag_days(self, dependency) -> int:
         """
         A link's lag as a number of working days.

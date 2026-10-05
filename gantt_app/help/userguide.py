@@ -659,7 +659,10 @@ GUIDE_SECTIONS = (
             "Mark on Track is a statement about the schedule rather than "
             "about the work. It fills in the rows nobody has had to think "
             "about, and the ones that are genuinely ahead or behind are "
-            "still typed in.",
+            "still typed in. Moving the dates themselves is the other "
+            "half of catching up - Update Project on the Project tab "
+            "reschedules the work nobody has started, and what is left "
+            "of the work running late, to begin on the status date.",
 
             "Pressing a percentage on a phase marks the work underneath it. "
             "A phase's own completion is rolled up from its children, so a "
@@ -1086,7 +1089,13 @@ GUIDE_SECTIONS = (
 
             "Status date is what Mark on Track reports against. Leave it "
             "empty and it uses today; set it and a plan frozen for a "
-            "reporting meeting stays frozen.",
+            "reporting meeting stays frozen. The date is only a marker - "
+            "nothing moves for it on its own. Catching the plan up to it "
+            "is Update Project on the Project tab: tasks not yet started "
+            "move to begin on or after the status date, and a task "
+            "underway whose finish is already behind it keeps its start "
+            "while the work still to do resumes on the date. Completed "
+            "and inactive tasks are left alone.",
 
             "Priority is a number from 1 to 1000, 500 by default. Nothing "
             "here acts on it - it is for whoever is levelling resources "

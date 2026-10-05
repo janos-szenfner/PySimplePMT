@@ -25,7 +25,7 @@ Feature: The ribbon
   Scenario: The band is divided into captioned groups
     Then the "Task" tab has the groups "Clipboard", "Insert", "Tasks", "Outline", "Font" and "Progress"
     And the "View" tab has the groups "Views", "Resources", "Deliverables", "Analysis", "Highlight", "Filter", "Appearance" and "Window"
-    And the "Project" tab has the groups "Properties", "Baseline", "Calendar", "Resources" and "Leveling"
+    And the "Project" tab has the groups "Properties", "Status", "Baseline", "Calendar", "Resources" and "Leveling"
 
   @ribbon
   @needs_display

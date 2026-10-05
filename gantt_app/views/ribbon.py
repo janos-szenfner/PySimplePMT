@@ -227,6 +227,12 @@ class RibbonBar(IconToolbar):
                 _L('settings', 'Settings', 'open_settings',
                    tip="Project Settings..."),
             )),
+            ("Status", (
+                _S('sync', 'Update Project...', 'update_project',
+                   tip="Reschedule uncompleted work to start after the "
+                       "status date",
+                   key='update_project'),
+            )),
             ("Baseline", (
                 _S('baseline', 'Set...', 'set_baseline',
                    tip="Set Baseline...", key='baseline_set'),
@@ -303,7 +309,7 @@ class RibbonBar(IconToolbar):
         'show_critical_path', 'show_log', 'show_about', 'show_changelog',
         'show_help', 'open_grid_filter', 'clear_grid_filter',
         'toggle_resource_grid', 'preview_leveling', 'level_all',
-        'open_deliverable_reports',
+        'open_deliverable_reports', 'update_project',
     )
 
     #: Groups that belong to one footer-tab view and stay hidden while any

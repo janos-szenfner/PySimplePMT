@@ -2,6 +2,17 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **Update Project reschedules work behind the status date.** The status
+  date was only a marker - reaching it changed nothing on its own. The
+  Project tab's new Status group, and Actions > Update Project..., open
+  the window Microsoft Project names: unstarted tasks and milestones
+  move to begin on or after the date, a task underway whose finish is
+  already behind it keeps its start while the work still to do resumes
+  on the date, and linked successors settle after both. Completed,
+  inactive and must-on-a-date rows are left alone - a pin cannot move
+  without breaking what it promises. One press is one undoable change
+  (issue #89).
+
 - **The Advanced filter speaks SQL.** The query language takes the
   spellings a reader already knows - like and not like with the % and _
   wildcards, <>, in and not in, between a and b, is null and is not

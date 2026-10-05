@@ -85,11 +85,14 @@ class TestMenuContents(unittest.TestCase):
              'Save Project As...', 'Close Project', 'Project Settings...'])
 
     def test_actions_menu_nests_import_and_export(self):
-        """Actions carries Baseline, Import and Export as submenus."""
+        """Actions carries Update Project, then Baseline, Import and
+        Export as submenus."""
         items = find(self.tree, 'Actions')['items']
 
-        self.assertEqual(labels(items), ['Baseline', 'Import', 'Export'])
-        for item in items:
+        self.assertEqual(labels(items),
+                         ['Update Project...', 'Baseline', 'Import',
+                          'Export'])
+        for item in items[1:]:
             self.assertIn('submenu', item)
             self.assertTrue(item['submenu'])
 
