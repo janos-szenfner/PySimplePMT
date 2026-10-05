@@ -20,8 +20,7 @@ from datetime import datetime, timedelta
 
 import customtkinter as ctk
 
-from gantt_app.core.deliverable import (
-    Deliverable, deliverable_health, overall_deliverable_health)
+from gantt_app.core.deliverable import Deliverable
 from gantt_app.core.models import Project, Task
 from gantt_app.utils.undoredo import ProjectStateTracker, UndoRedoManager
 from gantt_app.views.deliverables_board import DeliverablesBoard
