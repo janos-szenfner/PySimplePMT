@@ -435,6 +435,9 @@ class GANImporter:
                 task_type="Task",
                 parent_task_id=parent_id,
                 status=status,
+                # Imported rows were drawn where they came from, so they
+                # start drawn here too (issue #72: off is the default)
+                show_in_timeline=True,
             )
 
             tasks = [task]

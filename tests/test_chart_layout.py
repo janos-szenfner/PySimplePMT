@@ -50,23 +50,23 @@ class ChartLayoutTestCase(unittest.TestCase):
         self.project = Project(name="Test Project")
         base = datetime(2026, 1, 1)
 
-        self.project.add_task(Task(
+        self.project.add_task(Task(show_in_timeline=True, 
             id="001", name="Phase One", start_date=base,
             end_date=base + timedelta(days=20),
         ))
         for task_id, name, offset in [("002", "Design", 0), ("003", "Build", 5)]:
-            self.project.add_task(Task(
+            self.project.add_task(Task(show_in_timeline=True, 
                 id=task_id, name=name,
                 start_date=base + timedelta(days=offset),
                 end_date=base + timedelta(days=offset + 4),
                 task_type="Subtask", parent_task_id="001",
             ))
-        self.project.add_task(Task(
+        self.project.add_task(Task(show_in_timeline=True, 
             id="004", name="Phase Two",
             start_date=base + timedelta(days=21),
             end_date=base + timedelta(days=30),
         ))
-        self.project.add_task(Task(
+        self.project.add_task(Task(show_in_timeline=True, 
             id="005", name="Sign-off",
             start_date=base + timedelta(days=31), is_milestone=True,
         ))
@@ -163,14 +163,14 @@ class TestMilestoneSitsOnItsDay(unittest.TestCase):
         self.project = Project(name="Milestone")
         base = datetime(2026, 9, 1)
         day = base + timedelta(days=7)          # a known interior day
-        self.project.add_task(Task(id="A", name="Anchor", start_date=base,
+        self.project.add_task(Task(show_in_timeline=True, id="A", name="Anchor", start_date=base,
                                    end_date=base + timedelta(days=1)))
-        self.project.add_task(Task(id="T", name="SameDay", start_date=day,
+        self.project.add_task(Task(show_in_timeline=True, id="T", name="SameDay", start_date=day,
                                    end_date=day))
-        self.project.add_task(Task(id="M", name="Mile", start_date=day,
+        self.project.add_task(Task(show_in_timeline=True, id="M", name="Mile", start_date=day,
                                    is_milestone=True))
         self.project.get_task_by_id("M").add_dependency("T")
-        self.project.add_task(Task(id="Z", name="Tail",
+        self.project.add_task(Task(show_in_timeline=True, id="Z", name="Tail",
                                    start_date=base + timedelta(days=14),
                                    end_date=base + timedelta(days=16)))
         self.layout = layout_chart(self.project, width=1200)
@@ -275,16 +275,16 @@ class TestPhaseShape(unittest.TestCase):
         self.project = Project(name="Shapes")
         base = datetime(2026, 1, 5)
 
-        self.project.add_task(Task(
+        self.project.add_task(Task(show_in_timeline=True, 
             id="P", name="Phase", start_date=base,
             end_date=base + timedelta(days=20), task_type="Phase",
         ))
-        self.project.add_task(Task(
+        self.project.add_task(Task(show_in_timeline=True, 
             id="D", name="Grouping task", start_date=base,
             end_date=base + timedelta(days=10), task_type="Task",
             parent_task_id="P",
         ))
-        self.project.add_task(Task(
+        self.project.add_task(Task(show_in_timeline=True, 
             id="W", name="Work", start_date=base,
             end_date=base + timedelta(days=4), task_type="Subtask",
             parent_task_id="D",
@@ -311,7 +311,7 @@ class TestPhaseShape(unittest.TestCase):
         in it, which read as two different kinds of row.
         """
         project = Project(name="Empty phase")
-        project.add_task(Task(id="P", name="Phase",
+        project.add_task(Task(show_in_timeline=True, id="P", name="Phase",
                               start_date=datetime(2026, 1, 5),
                               end_date=datetime(2026, 1, 9),
                               task_type="Phase"))
@@ -422,7 +422,7 @@ class TestNoonTimeTasksAreNotShifted(unittest.TestCase):
         """The time component is ignored; the bar is one day wide."""
         project = Project(name="Noon Repro")
         start = datetime(2026, 9, 28, 12, 0, 0)
-        project.add_task(Task(id="001", name="Deployment",
+        project.add_task(Task(show_in_timeline=True, id="001", name="Deployment",
                               start_date=start, end_date=start))
 
         layout = layout_chart(project, width=800)
@@ -460,7 +460,7 @@ class TestZoomControls(unittest.TestCase):
 
         self.project = Project(name="Test Project")
         base = datetime(2026, 1, 1)
-        self.project.add_task(Task(id="001", name="Alpha", start_date=base,
+        self.project.add_task(Task(show_in_timeline=True, id="001", name="Alpha", start_date=base,
                                    end_date=base + timedelta(days=5)))
 
         self.chart = GanttChart(self.root, self.project)
@@ -646,7 +646,7 @@ class TestTheResizeTimerDoesNotOutliveTheChart(unittest.TestCase):
         self.root.withdraw()
         self.project = Project(name="Test Project")
         base = datetime(2026, 1, 1)
-        self.project.add_task(Task(id="001", name="Alpha", start_date=base,
+        self.project.add_task(Task(show_in_timeline=True, id="001", name="Alpha", start_date=base,
                                    end_date=base + timedelta(days=5)))
         self.chart = GanttChart(self.root, self.project)
 
@@ -702,7 +702,7 @@ class TestBaselineOverlaySplitsRows(unittest.TestCase):
         from gantt_app.core.baselines import BaselineManager
 
         project = Project(name="Overlay Visibility")
-        task = Task(id="t1", name="Task",
+        task = Task(show_in_timeline=True, id="t1", name="Task",
                     start_date=datetime(2026, 1, 1),
                     end_date=datetime(2026, 1, 3),
                     color="#1f6aa5")
@@ -803,7 +803,7 @@ class TestBarShape(unittest.TestCase):
     def project(self, shape):
         """One plain task drawn in the named shape."""
         project = Project(name="S")
-        project.add_task(Task(
+        project.add_task(Task(show_in_timeline=True, 
             id="t", name="Work", task_type="Task", color="#ff0000",
             start_date=datetime(2026, 1, 5), end_date=datetime(2026, 1, 9),
             shape=shape))

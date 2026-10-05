@@ -987,5 +987,89 @@ class TestTaskFormFits(unittest.TestCase):
         self.assertLess(deadline_row, constraint_row)
 
 
+@unittest.skipUnless(HAVE_DISPLAY, "needs a display")
+class TestAssignedTeams(unittest.TestCase):
+    """
+    Issue #96: the resource editor's Assigned Teams tab works.
+
+    The refresh used to rebuild the pending store from the saved
+    memberships on every draw, so Add, Remove and the double-click each
+    rewrote the state and then watched the redraw throw the change away.
+    The box also listed every team in the pool rather than the assigned
+    ones.
+    """
+
+    def setUp(self):
+        import customtkinter as ctk
+        from gantt_app.core.resource_model import (
+            Resource, ResourceRepository, ResourceType, TeamPool,
+        )
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+
+        self.repo = ResourceRepository()
+        for team_id, name in (("t1", "Alpha"), ("t2", "Beta"),
+                              ("t3", "Gamma")):
+            self.repo.add_team(TeamPool(id=team_id, name=name))
+        self.resource = Resource(
+            id="r1", name="Bob", resource_type=ResourceType.NAMED,
+            role_type="Dev", team_memberships={"t1": 0.5})
+        self.repo.add_resource(self.resource)
+
+        from gantt_app.views.resourcesettings import ResourceEditorModal
+        self.dialog = ResourceEditorModal(self.root, self.repo,
+                                          self.resource)
+
+    def tearDown(self):
+        _shut_down(self.root)
+
+    def _shown_team_ids(self):
+        return list(self.dialog.team_grid.tree.get_children())
+
+    def test_the_box_lists_only_the_assigned_teams(self):
+        """Unassigned teams live in the Add dropdown, not the box."""
+        self.assertEqual(self._shown_team_ids(), ["t1"])
+        self.assertEqual(
+            sorted(self.dialog._add_team_menu.cget("values")),
+            ["Beta", "Gamma"])
+
+    def test_add_assigns_at_the_typed_split(self):
+        """The Add button lands the picked team in the box at its split."""
+        self.dialog._add_team_id = "t2"
+        self.dialog._add_split_entry.delete(0, "end")
+        self.dialog._add_split_entry.insert(0, "50")
+        self.dialog._on_add_team()
+
+        self.assertEqual(sorted(self._shown_team_ids()), ["t1", "t2"])
+        self.assertTrue(self.dialog.team_controls["t2"][0].get())
+        self.assertEqual(self.dialog.team_controls["t2"][1].get(), "50")
+
+    def test_remove_unassigns_the_selected_row(self):
+        self.dialog.team_grid.select("t1")
+        self.assertEqual(self.dialog._remove_button.cget("state"),
+                         "normal")
+        self.dialog._on_remove_team()
+        self.assertEqual(self._shown_team_ids(), [])
+        self.assertFalse(self.dialog.team_controls["t1"][0].get())
+
+    def test_two_teams_can_split_fifty_fifty(self):
+        """The issue's own case: one resource, two teams, 50% each."""
+        for team_id in ("t2", "t3"):
+            self.dialog._add_team_id = team_id
+            self.dialog._add_split_entry.delete(0, "end")
+            self.dialog._add_split_entry.insert(0, "50")
+            self.dialog._on_add_team()
+        self.dialog._on_remove_team.__self__  # already wired
+
+        # t1 still holds its 50 from the seed; t2 and t3 were added at 50
+        self.dialog.team_grid.select("t1")
+        self.dialog._on_remove_team()
+        self.dialog.save_and_apply()
+
+        self.assertEqual(self.resource.team_memberships,
+                         {"t2": 0.5, "t3": 0.5})
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -86,7 +86,7 @@ class ChartTestCase(unittest.TestCase):
                                       ("003", "Subtask", "002"),
                                       ("004", "Task", None),
                                       ("005", "Milestone", None)):
-            self.project.add_task(Task(
+            self.project.add_task(Task(show_in_timeline=True, 
                 id=task_id, name=f"{kind} {task_id}", task_type=kind,
                 parent_task_id=parent, start_date=BASE,
                 end_date=BASE + timedelta(days=4),
@@ -244,7 +244,7 @@ class TestWhatTheListReports(unittest.TestCase):
                                       ("002", "Task", "001"),
                                       ("003", "Subtask", "002"),
                                       ("004", "Task", None)):
-            self.project.add_task(Task(
+            self.project.add_task(Task(show_in_timeline=True, 
                 id=task_id, name=f"{kind} {task_id}", task_type=kind,
                 parent_task_id=parent, start_date=BASE,
                 end_date=BASE + timedelta(days=4),
@@ -470,7 +470,7 @@ class TestTheRowsLineUpOnScreen(unittest.TestCase):
 
         # Enough rows to have somewhere to scroll to
         for i in range(40):
-            self.app.project.add_task(Task(
+            self.app.project.add_task(Task(show_in_timeline=True, 
                 id=f"x{i:03d}", name=f"Filler {i}", task_type="Task",
                 start_date=BASE, end_date=BASE + timedelta(days=4)))
         self.app.task_list.update_task_list()

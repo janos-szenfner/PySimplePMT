@@ -49,7 +49,7 @@ def _template(task_type="Task", parent_task=None):
 def a_parent_task_exists():
     return Task(id="p", name="Parent",
                 start_date=Project(name="P").calendar
-                .get_next_working_day(datetime(2026, 9, 10)))
+                .get_next_working_day(datetime(2026, 9, 10)), show_in_timeline=True)
 
 
 # ------------------------------------------------------------------
@@ -68,10 +68,23 @@ def a_template_is_built_under_the_parent(kind, parent):
     return _template(kind, parent)
 
 
-@when("a task is built the way importers and file loads build one",
+@when("a task is built the way a new one is built in code",
       target_fixture="template")
 def a_task_is_built_the_plain_way():
+    """A bare Task() - the shape issue #72 asked to start off."""
     return Task(id="t", name="Loaded", start_date=datetime(2026, 9, 10))
+
+
+@when("a task is loaded from a file that never recorded the flag",
+      target_fixture="template")
+def a_task_is_loaded_from_a_flagless_file():
+    """Pre-flag plans meant every row drawn; nothing recorded stays True."""
+    data = {'id': 't', 'name': 'Loaded',
+            'start_date': '2026-09-10T00:00:00',
+            'end_date': '2026-09-11T00:00:00',
+            'progress': 0, 'dependencies': [],
+            'color': '#1f6aa5', 'is_milestone': False}
+    return Task.from_dict(data)
 
 
 # ------------------------------------------------------------------
@@ -80,6 +93,11 @@ def a_task_is_built_the_plain_way():
 
 @then("the template is off the timeline")
 def the_template_is_off_the_timeline(template):
+    assert template.show_in_timeline is False
+
+
+@then("the task is off the timeline")
+def the_task_is_off_the_timeline(template):
     assert template.show_in_timeline is False
 
 

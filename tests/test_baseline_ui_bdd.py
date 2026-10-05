@@ -85,7 +85,7 @@ def a_project_with_sample_tasks_exists(app):
     app.project.tasks = []
     app.project.calendar = app.project.calendar
 
-    task_a = Task(
+    task_a = Task(show_in_timeline=True, 
         id="bui-task-a",
         name="Task A",
         start_date=datetime(2026, 6, 1),
@@ -96,7 +96,7 @@ def a_project_with_sample_tasks_exists(app):
     task_a.__post_init__()
     app.project.add_task(task_a)
 
-    task_b = Task(
+    task_b = Task(show_in_timeline=True, 
         id="bui-task-b",
         name="Task B",
         start_date=datetime(2026, 6, 6),

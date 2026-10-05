@@ -53,7 +53,7 @@ def _add(plan, name, days):
     project = plan["project"]
     base = plan["base"]
     end = project.calendar.add_working_days(base, days - 1)
-    task = Task(id=name, name=name, start_date=base, end_date=end)
+    task = Task(show_in_timeline=True, id=name, name=name, start_date=base, end_date=end)
     project.add_task(task)
     return task
 
@@ -117,10 +117,10 @@ def summary_with_child(plan, parent, child, start):
     """A parent row bracketing one child placed on the given day (issue #28)."""
     project = plan["project"]
     when = _day(start)
-    parent_task = Task(id=parent, name=parent, start_date=when,
+    parent_task = Task(show_in_timeline=True, id=parent, name=parent, start_date=when,
                        end_date=project.calendar.add_working_days(when, 1),
                        task_type="Phase")
-    child_task = Task(id=child, name=child, start_date=when,
+    child_task = Task(show_in_timeline=True, id=child, name=child, start_date=when,
                       end_date=project.calendar.add_working_days(when, 1),
                       parent_task_id=parent)
     project.add_task(parent_task)
@@ -397,7 +397,7 @@ def an_advanced_tab_mfo():
 
     root = ctk.CTk()
     root.withdraw()
-    task = Task(id="1", name="X", start_date=BASE,
+    task = Task(show_in_timeline=True, id="1", name="X", start_date=BASE,
                 end_date=BASE + timedelta(days=3))
     tab = AdvancedTab(root, task)
     tab.constraint_var.set("Must Finish On")

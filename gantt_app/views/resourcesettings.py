@@ -531,7 +531,6 @@ class ResourceEditorModal(BaseEditorModal):
         self._render_days_off()
 
     TEAM_ASSIGN_COLUMNS = (
-        ("Assign", 50, 0, tk.CENTER),
         ("Team Name", 200, 1, tk.W),
         ("Schedule Pattern", 150, 1, tk.W),
         ("Allocation / Split %", 130, 0, tk.CENTER),
@@ -543,6 +542,18 @@ class ResourceEditorModal(BaseEditorModal):
             tab, self.TEAM_ASSIGN_COLUMNS, self._on_team_select,
             on_double_click=self._toggle_team_assignment)
         self.team_grid.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        # team_controls is the pending state this tab edits and
+        # save_and_apply writes. It is seeded once from the resource: the
+        # refresh used to rebuild it from the saved memberships on every
+        # draw, which threw each Add or Remove straight back out (issue
+        # #96).
+        for team in self.repo.teams.values():
+            ratio = (self.resource.team_memberships.get(team.id, 0)
+                     if self.resource else 0)
+            self.team_controls[team.id] = (
+                _ControlValue(ratio > 0),
+                _ControlValue(f"{ratio * 100:g}" if ratio > 0 else "100"))
 
         controls = ctk.CTkFrame(tab, fg_color="transparent")
         controls.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -575,9 +586,18 @@ class ResourceEditorModal(BaseEditorModal):
     def _on_add_team_selected(self, team_name):
         self._add_team_id = self._team_name_to_id.get(team_name)
 
+    def _team_control(self, team_id):
+        """A team's pending (assigned, split) pair, defaulting to unassigned.
+
+        A team created while this dialog is open is not in the store the
+        constructor seeded, so it reads as unassigned until it is added.
+        """
+        return self.team_controls.setdefault(
+            team_id, (_ControlValue(False), _ControlValue("100")))
+
     def _update_team_controls(self):
         unassigned = [team for team in self.repo.teams.values()
-                      if not self.team_controls[team.id][0].get()]
+                      if not self._team_control(team.id)[0].get()]
         self._team_name_to_id = {team.name: team.id for team in unassigned}
         if unassigned:
             names = [team.name for team in unassigned]
@@ -595,56 +615,63 @@ class ResourceEditorModal(BaseEditorModal):
             self._add_button.configure(state="disabled")
 
         remove_state = "normal" if (self._selected_team_id and
-            self.team_controls[self._selected_team_id][0].get()) else "disabled"
+            self._team_control(self._selected_team_id)[0].get()) \
+            else "disabled"
         self._remove_button.configure(state=remove_state)
 
     def _refresh_teams(self):
+        """
+        Redraw the box from the pending assignments - assigned teams only.
+
+        The unassigned teams live in the Add dropdown beside the box, not
+        in it: a plan with many teams used to list every one of them here
+        with the members checked, which is the chaos issue #96 describes.
+        """
         self.team_grid.clear()
         for team in self.repo.teams.values():
-            ratio = (self.resource.team_memberships.get(team.id, 0)
-                     if self.resource else 0)
-            assigned = ratio > 0
-            split = ratio * 100 if assigned else 100
+            assigned, split = self._team_control(team.id)
+            if not assigned.get():
+                continue
             self.team_grid.add_row(
                 team.id,
-                ("✓" if assigned else " ",
-                 team.name,
+                (team.name,
                  _schedule_short(team.schedule_pattern),
-                 f"{split:g}%" if assigned else ""))
-            self.team_controls[team.id] = (
-                _ControlValue(assigned), _ControlValue(f"{split:g}"))
+                 f"{split.get().rstrip('%')}%"))
         self._update_team_controls()
 
     def _toggle_team_assignment(self, team_id):
+        """
+        Double-click an assigned row: re-ask its split.
+
+        The box holds only assigned teams now, so there is nothing to
+        toggle on - assigning goes through Add, unassigning through
+        Remove or a split of 0 here.
+        """
         control = self.team_controls.get(team_id)
-        if control is None:
+        if control is None or not control[0].get():
             return
-        assigned, split = control
-        if assigned.get():
-            self.team_controls[team_id] = (
-                _ControlValue(False), _ControlValue(split.get()))
-        else:
-            value = simpledialog.askstring(
-                "Assign to Team",
-                f"Allocation / Split % for {self.repo.teams[team_id].name}:",
-                initialvalue="100",
-                parent=self)
-            if value is None:
-                return
-            try:
-                split_value = self._validate_split(value)
-            except ValueError as error:
-                self.fail(str(error))
-                return
-            self.team_controls[team_id] = (
-                _ControlValue(True), _ControlValue(f"{split_value:g}"))
+        _assigned, split = control
+        value = simpledialog.askstring(
+            "Edit Team Split",
+            f"Allocation / Split % for {self.repo.teams[team_id].name}:",
+            initialvalue=split.get(),
+            parent=self)
+        if value is None:
+            return
+        try:
+            split_value = self._validate_split(value)
+        except ValueError as error:
+            self.fail(str(error))
+            return
+        self.team_controls[team_id] = (
+            _ControlValue(split_value > 0), _ControlValue(f"{split_value:g}"))
         self._refresh_teams()
 
     def _on_add_team(self):
         team_id = self._add_team_id
         if not team_id:
             return
-        if self.team_controls[team_id][0].get():
+        if self._team_control(team_id)[0].get():
             return
         text = self._add_split_entry.get().strip().rstrip("%")
         try:
@@ -662,9 +689,9 @@ class ResourceEditorModal(BaseEditorModal):
         team_id = self._selected_team_id
         if not team_id:
             return
-        if not self.team_controls[team_id][0].get():
+        if not self._team_control(team_id)[0].get():
             return
-        split = self.team_controls[team_id][1]
+        split = self._team_control(team_id)[1]
         self.team_controls[team_id] = (
             _ControlValue(False), _ControlValue(split.get()))
         self._refresh_teams()

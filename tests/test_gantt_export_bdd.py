@@ -53,17 +53,17 @@ def sample_project() -> Project:
     project = Project(name="Export Test")
     start = datetime(2024, 1, 1)
 
-    first = Task.create_task("Task 1", start, start + timedelta(days=4),
+    first = Task.create_task("Task 1", start, start + timedelta(days=4), show_in_timeline=True,
                              task_id=project.next_task_id())
     project.add_task(first)
 
     second = Task.create_task("Task 2", start + timedelta(days=5),
-                              start + timedelta(days=9),
+                              start + timedelta(days=9), show_in_timeline=True,
                               dependencies=[first.id],
                               task_id=project.next_task_id())
     project.add_task(second)
 
-    project.add_task(Task.create_milestone("Review", start + timedelta(days=10),
+    project.add_task(Task.create_milestone("Review", start + timedelta(days=10), show_in_timeline=True,
                                            dependencies=[second.id],
                                            task_id=project.next_task_id()))
     return project
@@ -74,7 +74,7 @@ def project_spanning(days) -> Project:
     project = Project(name=f"{days} days")
     start = datetime(2024, 1, 1)
     project.add_task(Task.create_task(
-        "Long", start, start + timedelta(days=days),
+        "Long", start, start + timedelta(days=days), show_in_timeline=True,
         task_id=project.next_task_id()))
     return project
 
@@ -88,7 +88,7 @@ def project_with(count, span_days) -> Project:
         project.add_task(Task.create_task(
             f"T{index}",
             start + timedelta(days=index * step),
-            start + timedelta(days=index * step + 5),
+            start + timedelta(days=index * step + 5), show_in_timeline=True,
             task_id=project.next_task_id()))
     return project
 
@@ -113,7 +113,7 @@ def a_plan_holding_a_named_task(name):
     name = name.replace('\\"', '"')
     project = Project(name="Escaping")
     project.add_task(Task.create_task(
-        name, datetime(2024, 1, 1), datetime(2024, 1, 3),
+        name, datetime(2024, 1, 1), datetime(2024, 1, 3), show_in_timeline=True,
         task_id=project.next_task_id()))
     return SimpleNamespace(project=project)
 
@@ -379,7 +379,7 @@ def both_plans_are_rendered(ctx):
     for index in range(10):
         bigger.add_task(Task.create_task(
             f"Extra {index}", start + timedelta(days=index),
-            start + timedelta(days=index + 2),
+            start + timedelta(days=index + 2), show_in_timeline=True,
             task_id=bigger.next_task_id()))
     ctx.big = render_image(bigger, scale=1.0)
 

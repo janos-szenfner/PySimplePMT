@@ -2,6 +2,33 @@
 
 ## 1.72.0 - 2026-09-30
 
+- **Filter names are one-of-a-kind, even in old files.** Files saved
+  before the name guards could carry two filters of a name - or one
+  named like a built-in - which drew as identical menu rows where only
+  the first answered (issue #80). Loading now renames the repeats
+  ("X (2)", "X (3)"), so every row in the Highlight and Filter menus
+  names exactly one filter.
+- **The resource editor's Assigned Teams tab works.** A redraw was
+  rebuilding the pending assignments from the saved memberships on
+  every draw, so Add, Remove and the double-click each applied and were
+  immediately thrown away (issue #96). The box now lists only the teams
+  the resource actually belongs to - everything else sits in the Add
+  dropdown - Add lands a team at the typed split (one person can split
+  across teams, 50/50 included), Remove drops the selected row, and a
+  double-click re-asks a row's split.
+- **Show in timeline is off by default everywhere.** The checkbox was
+  only off for tasks the create dialog made; a task built any other
+  way opened its editor with the box ticked (issue #72). The model
+  default is off now; imports and plans written before the field
+  existed still arrive drawn, because their rows were already showing.
+- **Saving no longer pops a dialog.** The star leaving the title bar is
+  the confirmation; the "saved successfully" popup is gone (issue #87).
+- **Copying rows does not copy their wiring.** A pasted task used to
+  carry its predecessor links - re-pointed at the other copies when
+  they came along - plus its resource assignments and progress. Only
+  the row's own fields travel now: name, dates and duration (issue
+  #62). Cut is untouched - that is a move, and a move keeps everything.
+
 - **The task form shows everything without scrolling.** The General tab
   needed seventy pixels more than the window gave it, and the deadline
   sat at the foot of a scrolled Advanced tab (issue #75). The rows now

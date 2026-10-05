@@ -1063,6 +1063,42 @@ class DropdownButton(ctk.CTkButton):
                 )
 
 
+def _unique_filter_names(filters, built_in_labels=None):
+    """
+    The loaded filters, with every name made one-of-a-kind.
+
+    A name a menu is going to list has to point at one filter: a saved
+    file can carry two of a name, or one named like a built-in - the
+    guards refuse both at save time now, but files written before the
+    guards (or by hand) still arrive, and they drew as two identical
+    menu rows where only the first answered (issue #80). The first of
+    a name keeps it; each repeat earns a " (2)", " (3)", ... suffix,
+    the same convention Project._read_custom_filters applies between
+    customs in the file itself.
+    """
+    taken = {label for _k, label, _s in
+             (built_in_labels if built_in_labels is not None
+              else Toolbar.HIGHLIGHT_FILTERS)}
+    unique = []
+    for definition in filters or []:
+        name = definition.get('name')
+        if not isinstance(name, str):
+            unique.append(definition)
+            continue
+        candidate = name
+        suffix = 2
+        while candidate in taken:
+            candidate = f"{name} ({suffix})"
+            suffix += 1
+        if candidate != name:
+            logger.info("Renaming filter %r to %r: the name was taken",
+                        name, candidate)
+            definition = dict(definition, name=candidate)
+        taken.add(candidate)
+        unique.append(definition)
+    return unique
+
+
 class Toolbar(ctk.CTkFrame):
     """
     Toolbar with action buttons for the Gantt application.
@@ -2744,7 +2780,8 @@ class Toolbar(ctk.CTkFrame):
             extra = {"baselines": self.baseline_manager.to_dict()}
         if save_project(self.project, file_path, extra_data=extra):
             self.current_file_path = file_path
-            messagebox.showinfo("Success", "Project saved successfully!")
+            # No success popup (issue #87): the star leaving the title bar
+            # is the confirmation a save needs.
             startup_settings = getattr(self.master, 'startup_settings', None)
             if startup_settings is not None:
                 logger.info("Recording %s in the recent-projects list", file_path)
@@ -2882,7 +2919,9 @@ class Toolbar(ctk.CTkFrame):
         self.project.hours_per_day = project.hours_per_day
         self.project.hidden_grid_columns = project.hidden_grid_columns
         self.project.grid_column_order = project.grid_column_order
-        self.project.custom_filters = project.custom_filters
+        self.project.custom_filters = _unique_filter_names(
+            project.custom_filters,
+            getattr(self, 'HIGHLIGHT_FILTERS', Toolbar.HIGHLIGHT_FILTERS))
 
     def _blank_project(self, name: str):
         """

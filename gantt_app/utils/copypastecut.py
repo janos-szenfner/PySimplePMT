@@ -434,13 +434,15 @@ class ClipboardService:
         row they had duplicated on purpose. The reference tool does not
         rename what it pastes either.
 
-        What was copied together stays together. A link or a parentage
-        pointing at another row in the same selection is re-pointed at that
-        row's copy, so copying two tasks that run one after the other gives
-        two copies that run one after the other. One pointing outside the
-        selection is dropped: the copy would otherwise be wired into the
-        plan the moment it appeared, waiting on work the user did not copy
-        and never said it depended on.
+        What was copied together stays together for parentage: a parent
+        copied with its child points the child's copy at the parent's copy.
+        Links, staffing and progress do not travel (issue #62): the copy is
+        the same row - name, dates, duration, look - but it is new work, so
+        it lands unwired into the plan's dependency graph, with no resource
+        assignments, and unstarted. Rewiring a copy's predecessors at the
+        originals' copies used to make a paste of two linked tasks depend on
+        rows the user may not have meant to relate, and re-point it again
+        each time the same clipboard was pasted.
         """
         if not self.project:
             return []
@@ -451,6 +453,9 @@ class ClipboardService:
             new_task_data = copy.deepcopy(item.payload)
             new_task_data['id'] = self._next_id(new_tasks)
             new_task_data['parent_task_id'] = target_container_id
+            new_task_data['dependencies'] = []
+            new_task_data['resource_assignments'] = []
+            new_task_data['progress'] = 0
 
             new_task = self._dict_to_task(new_task_data)
             mapping[item.id] = new_task.id
@@ -484,24 +489,12 @@ class ClipboardService:
         so the child came out at the same level as the parent it belongs
         to. A parent that was itself copied is the copy's parent instead.
 
-        Links are the same question and get the same answer, one level
-        down. A predecessor that was copied too becomes the copy of that
-        predecessor; a predecessor that was not is dropped rather than left
-        pointing into the plan the copy came from.
+        Links are not the same question: a copy carries none at all (issue
+        #62), so there is nothing here to re-point.
         """
         original_parent = item.payload.get('parent_task_id')
         if original_parent in mapping:
             new_task.parent_task_id = mapping[original_parent]
-
-        kept = []
-        for link in new_task.dependencies:
-            if link.task_id in mapping:
-                link.task_id = mapping[link.task_id]
-                kept.append(link)
-            else:
-                logger.debug("Dropped %s's link to %s: it was not copied",
-                             new_task.id, link.task_id)
-        new_task.dependencies = kept
     
     def _paste_cut(self, payload: ClipboardPayload,
                    target_container_id: Optional[str]) -> List[str]:

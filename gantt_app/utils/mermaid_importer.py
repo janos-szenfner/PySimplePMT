@@ -462,7 +462,8 @@ class MermaidImporter:
                 color=self.section_color,
                 is_milestone=False,
                 task_type="Task",
-                parent_task_id=None
+                parent_task_id=None,
+                show_in_timeline=True,
             )
             section_tasks[section] = parent
 
@@ -560,7 +561,8 @@ class MermaidImporter:
                     progress=int(info.get('progress', 0)),
                     dependencies=[],
                     color=color,
-                    is_milestone=is_milestone
+                    is_milestone=is_milestone,
+                    show_in_timeline=True,
                 )
                 
                 tasks.append(task)
@@ -686,6 +688,7 @@ class MermaidImporter:
                     start_date=datetime.now(),
                     end_date=None,
                     task_type=str(entry.get('type') or 'Task'),
+                    show_in_timeline=True,
                 )
                 task_map[str(task_id)] = task
             else:

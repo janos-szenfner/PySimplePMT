@@ -496,6 +496,8 @@ def _parse_tasks(root: ET.Element, calendar_ids: Dict[str, str],
             status=_parse_status(_child_text(element, 'Status')),
             details=_child_text(element, 'Notes', '') or '',
             calendar_id=calendar_ids.get(_child_text(element, 'CalendarUID')),
+            # Imported rows were drawn where they came from (issue #72)
+            show_in_timeline=True,
         )
         task.task_type = child_type_for(parent, task)
 

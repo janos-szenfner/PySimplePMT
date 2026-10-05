@@ -123,19 +123,19 @@ class TestClipboardService(unittest.TestCase):
         
         # Create test tasks
         today = datetime(2024, 1, 1)
-        self.task1 = Task.create_task(
+        self.task1 = Task.create_task(show_in_timeline=True, 
             name="Task 1",
             start_date=today,
             end_date=today + timedelta(days=5),
             task_id="001"
         )
-        self.task2 = Task.create_task(
+        self.task2 = Task.create_task(show_in_timeline=True, 
             name="Task 2",
             start_date=today + timedelta(days=2),
             end_date=today + timedelta(days=7),
             task_id="002"
         )
-        self.phase = Task.create_task(
+        self.phase = Task.create_task(show_in_timeline=True, 
             name="Phase 1",
             start_date=today,
             end_date=today + timedelta(days=10),
@@ -364,7 +364,7 @@ class TestClipboardService(unittest.TestCase):
         self.phase.task_type = "Phase"
         self.assertEqual(self.service._get_entity_type(self.phase), "phase")
         
-        milestone = Task.create_milestone(
+        milestone = Task.create_milestone(show_in_timeline=True, 
             name="Milestone",
             date=datetime(2024, 1, 10)
         )
@@ -429,7 +429,7 @@ class TestClipboardManager(unittest.TestCase):
         
         self.project = Project(name="Test Project")
         today = datetime(2024, 1, 1)
-        self.task1 = Task.create_task(
+        self.task1 = Task.create_task(show_in_timeline=True, 
             name="Task 1",
             start_date=today,
             end_date=today + timedelta(days=5),
@@ -513,7 +513,7 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         today = datetime(2024, 1, 1)
         
         # Create a phase
-        self.phase = Task.create_task(
+        self.phase = Task.create_task(show_in_timeline=True, 
             name="Phase 1",
             start_date=today,
             end_date=today + timedelta(days=20),
@@ -523,7 +523,7 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         self.project.add_task(self.phase)
         
         # Create a task under the phase
-        self.task = Task.create_task(
+        self.task = Task.create_task(show_in_timeline=True, 
             name="Task 1",
             start_date=today,
             end_date=today + timedelta(days=5),
@@ -533,7 +533,7 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         self.project.add_task(self.task)
         
         # Create a subtask under the task
-        self.subtask = Task.create_task(
+        self.subtask = Task.create_task(show_in_timeline=True, 
             name="Subtask 1",
             start_date=today,
             end_date=today + timedelta(days=2),
@@ -579,10 +579,16 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         new_task = self.project.tasks[-1]
         self.assertEqual(list(new_task.dependencies), [])
 
-    def test_a_link_within_the_selection_follows_the_copies(self):
-        """Two tasks copied together stay linked to each other, not to the
-        originals."""
-        second = Task.create_task(
+    def test_a_link_within_the_selection_does_not_follow_the_copies(self):
+        """
+        Two tasks copied together land unlinked (issue #62).
+
+        A copy is the same row - name, dates, duration - but new work:
+        dependency contents do not travel, even when the row the link
+        pointed at was copied in the same handful. Wiring them up again
+        silently invented a link nobody made.
+        """
+        second = Task.create_task(show_in_timeline=True,
             name="Task 2", start_date=datetime(2024, 1, 1),
             end_date=datetime(2024, 1, 6), task_id="T002")
         second.parent_task_id = "P001"
@@ -596,8 +602,24 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
         # copies are not simply the two rows named
         copies = {self.project.get_task_by_id(i).name: i for i in pasted}
         follower = self.project.get_task_by_id(copies["Task 2"])
-        self.assertEqual([d.task_id for d in follower.dependencies],
-                         [copies["Task 1"]])
+        self.assertEqual(list(follower.dependencies), [])
+
+    def test_a_copy_carries_no_resources_or_progress(self):
+        """
+        Staffing and progress do not travel either (issue #62).
+
+        Only the row's own fields - name, duration, dates - come across;
+        a copy starts unassigned and unstarted.
+        """
+        self.task.resource_assignments = [{"resource_id": "r1"}]
+        self.task.progress = 40
+
+        self.service.copy(["T001"])
+        pasted = self.service.paste("P001")
+
+        copy = self.project.get_task_by_id(pasted[0])
+        self.assertEqual(copy.resource_assignments, [])
+        self.assertEqual(copy.progress, 0)
 
     def test_a_parent_copied_with_its_child_keeps_the_child(self):
         """
@@ -620,7 +642,7 @@ class TestClipboardWithTaskHierarchy(unittest.TestCase):
 
     def test_paste_multiple_tasks_into_container(self):
         """Test pasting multiple tasks into a container."""
-        second = Task.create_task(
+        second = Task.create_task(show_in_timeline=True, 
             name="Task 2", start_date=datetime(2024, 1, 1),
             end_date=datetime(2024, 1, 6), task_id="T002")
         second.parent_task_id = "P001"
@@ -681,19 +703,19 @@ class TestTheBranchTravelsWithTheRow(unittest.TestCase):
         self.service = ClipboardService(self.project)
 
         today = datetime(2024, 1, 1)
-        self.phase = Task.create_task(name="Phase 1", start_date=today,
+        self.phase = Task.create_task(show_in_timeline=True, name="Phase 1", start_date=today,
                                       end_date=today + timedelta(days=20),
                                       task_id="P001")
         self.phase.task_type = "Phase"
         self.project.add_task(self.phase)
 
-        self.task = Task.create_task(name="Task 1", start_date=today,
+        self.task = Task.create_task(show_in_timeline=True, name="Task 1", start_date=today,
                                      end_date=today + timedelta(days=5),
                                      task_id="T001")
         self.task.parent_task_id = "P001"
         self.project.add_task(self.task)
 
-        self.subtask = Task.create_task(name="Subtask 1", start_date=today,
+        self.subtask = Task.create_task(show_in_timeline=True, name="Subtask 1", start_date=today,
                                         end_date=today + timedelta(days=2),
                                         task_id="ST001")
         self.subtask.task_type = "Subtask"
@@ -800,7 +822,7 @@ class TestWhatMayGoWhere(unittest.TestCase):
                                       ("T", "Task", "P"),
                                       ("S", "Subtask", "T"),
                                       ("M", "Milestone", "T")):
-            task = Task.create_task(name=kind, start_date=today,
+            task = Task.create_task(show_in_timeline=True, name=kind, start_date=today,
                                     end_date=today + timedelta(days=1),
                                     task_id=task_id)
             task.task_type = kind
@@ -855,7 +877,7 @@ class TestWhatMayGoWhere(unittest.TestCase):
         paste near a row inside such a group did nothing.
         """
         today = datetime(2024, 1, 1)
-        inner = Task.create_task(name="Inner", start_date=today,
+        inner = Task.create_task(show_in_timeline=True, name="Inner", start_date=today,
                                  end_date=today + timedelta(days=1),
                                  task_id="SI")
         inner.task_type = "Subtask"
@@ -887,7 +909,7 @@ class TestSayingWhatWasPasted(unittest.TestCase):
         today = datetime(2024, 1, 1)
         for task_id, kind, parent in (("P", "Phase", None),
                                       ("T", "Task", "P")):
-            task = Task.create_task(name=kind, start_date=today,
+            task = Task.create_task(show_in_timeline=True, name=kind, start_date=today,
                                     end_date=today + timedelta(days=1),
                                     task_id=task_id)
             task.task_type = kind
@@ -936,7 +958,7 @@ class TestTheCutRowsAreMarked(unittest.TestCase):
 
         today = datetime(2024, 1, 1)
         for task_id in ("001", "002"):
-            self.project.add_task(Task.create_task(
+            self.project.add_task(Task.create_task(show_in_timeline=True, 
                 name=f"Task {task_id}", start_date=today,
                 end_date=today + timedelta(days=1), task_id=task_id))
 
@@ -989,14 +1011,14 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         self.service = ClipboardService(self.project)
 
         today = datetime(2024, 1, 1)
-        phase = Task.create_task(name="Phase", start_date=today,
+        phase = Task.create_task(show_in_timeline=True, name="Phase", start_date=today,
                                  end_date=today + timedelta(days=30),
                                  task_id="P")
         phase.task_type = "Phase"
         self.project.add_task(phase)
 
         for number in ("A", "B", "C", "D"):
-            task = Task.create_task(name=f"Task {number}", start_date=today,
+            task = Task.create_task(show_in_timeline=True, name=f"Task {number}", start_date=today,
                                     end_date=today + timedelta(days=2),
                                     task_id=number)
             task.parent_task_id = "P"
@@ -1056,7 +1078,7 @@ class TestWhereThePastedRowsLand(unittest.TestCase):
         Pasting a sub-task into a task makes it a child of that task, not
         its neighbour, so it lands after the children already there.
         """
-        subtask = Task.create_task(name="Subtask", start_date=datetime(2024, 1, 1),
+        subtask = Task.create_task(show_in_timeline=True, name="Subtask", start_date=datetime(2024, 1, 1),
                                    end_date=datetime(2024, 1, 2), task_id="S")
         subtask.task_type = "Subtask"
         subtask.parent_task_id = "A"
@@ -1108,19 +1130,19 @@ class TestPastingIntoItself(unittest.TestCase):
         self.service = ClipboardService(self.project)
 
         today = datetime(2024, 1, 1)
-        self.phase = Task.create_task(name="Phase 1", start_date=today,
+        self.phase = Task.create_task(show_in_timeline=True, name="Phase 1", start_date=today,
                                       end_date=today + timedelta(days=20),
                                       task_id="P001")
         self.phase.task_type = "Phase"
         self.project.add_task(self.phase)
 
-        self.task = Task.create_task(name="Task 1", start_date=today,
+        self.task = Task.create_task(show_in_timeline=True, name="Task 1", start_date=today,
                                      end_date=today + timedelta(days=5),
                                      task_id="T001")
         self.task.parent_task_id = "P001"
         self.project.add_task(self.task)
 
-        self.subtask = Task.create_task(name="Subtask 1", start_date=today,
+        self.subtask = Task.create_task(show_in_timeline=True, name="Subtask 1", start_date=today,
                                         end_date=today + timedelta(days=2),
                                         task_id="ST001")
         self.subtask.task_type = "Subtask"
@@ -1150,7 +1172,7 @@ class TestPastingIntoItself(unittest.TestCase):
 
     def test_it_still_moves_somewhere_that_is_not_beneath_it(self):
         """The guard refuses a loop, not every paste."""
-        other = Task.create_task(name="Phase 2", start_date=datetime(2024, 1, 1),
+        other = Task.create_task(show_in_timeline=True, name="Phase 2", start_date=datetime(2024, 1, 1),
                                  end_date=datetime(2024, 1, 5), task_id="P002")
         other.task_type = "Phase"
         self.project.add_task(other)
@@ -1172,14 +1194,14 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         today = datetime(2024, 1, 1)
         
         # Create various task types
-        self.task = Task.create_task(
+        self.task = Task.create_task(show_in_timeline=True, 
             name="Regular Task",
             start_date=today,
             end_date=today + timedelta(days=5),
             task_id="T001"
         )
         
-        self.phase = Task.create_task(
+        self.phase = Task.create_task(show_in_timeline=True, 
             name="Phase",
             start_date=today,
             end_date=today + timedelta(days=20),
@@ -1187,7 +1209,7 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         )
         self.phase.task_type = "Phase"
         
-        self.subtask = Task.create_task(
+        self.subtask = Task.create_task(show_in_timeline=True, 
             name="Subtask",
             start_date=today,
             end_date=today + timedelta(days=2),
@@ -1195,7 +1217,7 @@ class TestClipboardWithSpecialTaskTypes(unittest.TestCase):
         )
         self.subtask.task_type = "Subtask"
         
-        self.milestone = Task.create_milestone(
+        self.milestone = Task.create_milestone(show_in_timeline=True, 
             name="Milestone",
             date=today + timedelta(days=10),
             task_id="M001"
@@ -1260,7 +1282,7 @@ class TestClipboardEdgeCases(unittest.TestCase):
         self.service = ClipboardService(self.project)
         
         today = datetime(2024, 1, 1)
-        self.task = Task.create_task(
+        self.task = Task.create_task(show_in_timeline=True, 
             name="Task 1",
             start_date=today,
             end_date=today + timedelta(days=5),
@@ -1354,7 +1376,7 @@ class TestTheSelectionReachesTheClipboard(unittest.TestCase):
         self.project = Project(name="Test Project")
         today = datetime(2024, 1, 1)
         for number in ("001", "002", "003"):
-            self.project.add_task(Task.create_task(
+            self.project.add_task(Task.create_task(show_in_timeline=True, 
                 name=f"Task {number}", start_date=today,
                 end_date=today + timedelta(days=2), task_id=number))
 
@@ -1424,7 +1446,7 @@ class TestTheMenuOffersCopyAndCutWhenItCan(unittest.TestCase):
         self.project = Project(name="Test Project")
         today = datetime(2024, 1, 1)
         for number in ("001", "002"):
-            self.project.add_task(Task.create_task(
+            self.project.add_task(Task.create_task(show_in_timeline=True, 
                 name=f"Task {number}", start_date=today,
                 end_date=today + timedelta(days=2), task_id=number))
 
@@ -1497,7 +1519,7 @@ class TestPastingAtTheEndOfThePlan(unittest.TestCase):
         self.project = Project(name="Test Project")
         today = datetime(2024, 1, 1)
         for number in ("001", "002", "003"):
-            self.project.add_task(Task.create_task(
+            self.project.add_task(Task.create_task(show_in_timeline=True, 
                 name=f"Task {number}", start_date=today,
                 end_date=today + timedelta(days=2), task_id=number))
 
@@ -1604,7 +1626,7 @@ class TestWhereAPasteLands(unittest.TestCase):
         for task_id, name, task_type, parent in rows:
             self.project.add_task(Task(
                 id=task_id, name=name, start_date=base, end_date=base,
-                task_type=task_type, parent_task_id=parent))
+                task_type=task_type, parent_task_id=parent, show_in_timeline=True))
 
     def names(self):
         """Every row by name, in the order the list reads."""
@@ -1728,14 +1750,14 @@ class TestAPasteIsOneUndoStep(unittest.TestCase):
         for task_id, name in (("001", "Testing"), ("002", "Deployment")):
             self.project.add_task(Task(id=task_id, name=name,
                                        start_date=base, end_date=base,
-                                       task_type="Task"))
+                                       task_type="Task", show_in_timeline=True))
 
         self.manager = UndoRedoManager()
         self.tracker = ProjectStateTracker(self.project, self.manager)
         self.service = ClipboardService(self.project)
 
         self.tracker.add_task(Task(id="003", name="Phase1", start_date=base,
-                                   end_date=base, task_type="Phase"))
+                                   end_date=base, task_type="Phase", show_in_timeline=True))
         self.before = [(t.id, t.name) for t in self.project.tasks]
 
     def rows(self):
@@ -1856,7 +1878,7 @@ class TestOpeningAnotherPlanEmptiesTheClipboard(unittest.TestCase):
         for task_id, name in (("001", "A-first"), ("002", "A-second")):
             self.project.add_task(Task(
                 id=task_id, name=name, start_date=today,
-                end_date=today + timedelta(days=1), task_type="Task"))
+                end_date=today + timedelta(days=1), task_type="Task", show_in_timeline=True))
 
         self.clipboard = ClipboardManager(self.project)
         self.manager = UndoRedoManager()
@@ -1879,7 +1901,7 @@ class TestOpeningAnotherPlanEmptiesTheClipboard(unittest.TestCase):
         for task_id, name in (("001", "B-first"), ("002", "B-second")):
             other.add_task(Task(
                 id=task_id, name=name, start_date=today,
-                end_date=today + timedelta(days=1), task_type="Task"))
+                end_date=today + timedelta(days=1), task_type="Task", show_in_timeline=True))
 
         self.project.name = other.name
         self.project.tasks = other.tasks
@@ -1925,7 +1947,7 @@ class TestOpeningAnotherPlanEmptiesTheClipboard(unittest.TestCase):
         self.manager.execute(
             create_add_task_command(self.project, Task(
                 id="099", name="Late arrival", start_date=datetime(2026, 8, 19),
-                task_type="Task")))
+                task_type="Task", show_in_timeline=True)))
         self.assertTrue(self.manager.can_undo())
 
         self.open_another_plan()
@@ -1963,7 +1985,7 @@ class TestWhatReachesTheDesktopClipboard(unittest.TestCase):
         self.service = ClipboardService(self.project)
         base = datetime(2026, 8, 19)
         task = Task(id="001", name="Testing", start_date=base, end_date=base,
-                    task_type="Task")
+                    task_type="Task", show_in_timeline=True)
         task.style = TaskStyle(bold=True)
         self.project.add_task(task)
 

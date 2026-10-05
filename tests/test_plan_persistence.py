@@ -279,6 +279,60 @@ class TestThePreferenceStore(unittest.TestCase):
                     self._settings(directory).get('theme_mode'), 'dark')
                 self.assertEqual(theme.load_mode(), 'dark')
 
+    def test_duplicate_filter_names_are_made_unique_on_load(self):
+        """
+        Issue #80: a file written before the name guards can carry two
+        filters of a name - they drew as two identical menu rows where
+        only the first answered. The repeats are renamed on the way in.
+        """
+        data = Project(name="P").to_dict()
+        data['custom_filters'] = [
+            {'name': 'Milestone', 'rules': [
+                {'field': 'Type', 'test': 'equals', 'value': 'Task'}]},
+            {'name': 'Milestone', 'rules': [
+                {'field': 'Progress', 'test': 'equals', 'value': '0'}]},
+            {'name': 'Milestone', 'query': 'type = "Phase"'},
+        ]
+        project = Project.from_dict(data)
+        self.assertEqual([d['name'] for d in project.custom_filters],
+                         ['Milestone', 'Milestone (2)', 'Milestone (3)'])
+
+    def test_a_filter_named_like_a_built_in_is_renamed_on_take_on(self):
+        """
+        The other half of #80: a saved filter wearing a built-in's label
+        drew a second identical menu row beside it.
+        """
+        stub = SimpleNamespace(project=Project(name="Old"))
+        loaded = Project(name="Loaded")
+        loaded.custom_filters = [
+            {'name': 'Milestones', 'rules': [
+                {'field': 'Progress', 'test': 'equals', 'value': '0'}]}]
+        Toolbar._take_on_project_fields(stub, loaded)
+        self.assertEqual(stub.project.custom_filters[0]['name'],
+                         'Milestones (2)')
+
+    def test_saving_does_not_pop_a_dialog(self):
+        """
+        Issue #87: the star leaving the title bar is the confirmation a
+        save needs - a "saved successfully" popup on top was noise.
+        """
+        import gantt_app.views.toolbar as toolbar_mod
+
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / "p.json")
+            stub = SimpleNamespace(project=Project(name="P"),
+                                   baseline_manager=None,
+                                   current_file_path=None,
+                                   master=SimpleNamespace())
+            calls = []
+            with mock.patch.object(toolbar_mod.messagebox, 'showinfo',
+                                   lambda *a, **k: calls.append(a)):
+                Toolbar._write_project(stub, path)
+
+            self.assertEqual(calls, [])
+            self.assertEqual(stub.current_file_path, path)
+            self.assertTrue(Path(path).exists())
+
     def test_a_damaged_file_is_not_worth_failing_over(self):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)

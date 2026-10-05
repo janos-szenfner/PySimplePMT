@@ -650,7 +650,11 @@ class Task:
     duration: Optional[int] = None
     priority: str = DEFAULT_PRIORITY
     shape: str = "Default"
-    show_in_timeline: bool = True
+    #: Off by default (issue #72): a row's bar is drawn only once the
+    #: planner puts it there. Loading fills the field from the file, and a
+    #: plan written before the flag existed still means "everything drawn"
+    #: - see the from_dict fallback.
+    show_in_timeline: bool = False
     #: A target finish the task should not slip past. Informational: it does
     #: not pin the schedule (see the Advanced tab / REQ-UI-041), but a finish
     #: later than it is flagged as slipped. None means N/A.
@@ -924,10 +928,11 @@ class Task:
         return len(self.dependencies) < before
     
     @classmethod
-    def create_task(cls, name: str, start_date: datetime, end_date: datetime, 
-                   color: str = "#1f6aa5", progress: int = 0, 
+    def create_task(cls, name: str, start_date: datetime, end_date: datetime,
+                   color: str = "#1f6aa5", progress: int = 0,
                    dependencies: List[str] = None,
-                   task_id: str = None) -> 'Task':
+                   task_id: str = None,
+                   show_in_timeline: bool = False) -> 'Task':
         """
         Create a new regular task (Work Unit).
 
@@ -947,14 +952,16 @@ class Task:
             dependencies=dependencies or [],
             color=color,
             task_type="Task",
-            is_milestone=False
+            is_milestone=False,
+            show_in_timeline=show_in_timeline,
         )
-    
+
     @classmethod
     def create_milestone(cls, name: str, date: datetime,
                         color: str = "#f39c12",
                         dependencies: List[str] = None,
-                        task_id: str = None) -> 'Task':
+                        task_id: str = None,
+                        show_in_timeline: bool = False) -> 'Task':
         """
         Create a new milestone (zero-duration key event marker).
 
@@ -973,7 +980,8 @@ class Task:
             color=color,
             task_type="Task",
             is_milestone=True,
-            parent_task_id=None
+            parent_task_id=None,
+            show_in_timeline=show_in_timeline,
         )
     
     @classmethod
@@ -982,7 +990,8 @@ class Task:
                       color: str = "#1f6aa5",
                       progress: int = 0,
                       dependencies: List[str] = None,
-                      task_id: str = None) -> 'Task':
+                      task_id: str = None,
+                      show_in_timeline: bool = False) -> 'Task':
         """
         Create a new subtask under a parent task.
 
@@ -1036,13 +1045,15 @@ class Task:
             color=color,
             is_milestone=False,
             task_type="Task",
-            parent_task_id=parent_task.id
+            parent_task_id=parent_task.id,
+            show_in_timeline=show_in_timeline,
         )
-    
+
     @classmethod
     def create_phase(cls, name: str, start_date: datetime,
                      color: str = "#2ecc71", progress: int = 0,
-                     dependencies: List[str] = None, task_id: str = None) -> 'Task':
+                     dependencies: List[str] = None, task_id: str = None,
+                     show_in_timeline: bool = False) -> 'Task':
         """
         Create a new Phase (high-level lifecycle container).
         
@@ -1076,9 +1087,10 @@ class Task:
             color=color,
             task_type="Phase",
             is_milestone=False,
-            parent_task_id=None
+            parent_task_id=None,
+            show_in_timeline=show_in_timeline,
         )
-    
+
     @property
     def working_calendar(self) -> WorkingCalendar:
         """
@@ -4133,8 +4145,16 @@ class Project:
         filter is applied, and a filter naming a column that no longer
         exists simply matches nothing until it is edited. What is dropped
         here is only what could never have been a filter.
+
+        Names are made unique among themselves (issue #80): files saved
+        before the guards existed can carry two filters of a name, which
+        then show as two identical menu rows with only the first
+        reachable. The first keeps the name; each repeat earns a " (2)",
+        " (3)", ... suffix. Collisions with the built-ins' labels are the
+        toolbar's to settle - it is the layer that knows them.
         """
         read = []
+        taken = set()
         for definition in value if isinstance(value, list) else []:
             if not isinstance(definition, dict):
                 continue
@@ -4143,11 +4163,20 @@ class Project:
                 logger.warning("Ignoring unreadable saved filter %r",
                                name)
                 continue
+            name = name.strip()
+            if name in taken:
+                suffix = 2
+                while f"{name} ({suffix})" in taken:
+                    suffix += 1
+                logger.info("Renaming duplicate saved filter %r to %r",
+                            name, f"{name} ({suffix})")
+                name = f"{name} ({suffix})"
+            taken.add(name)
             query = definition.get('query')
             rules = definition.get('rules')
             if isinstance(query, str) and query.strip():
                 read.append({
-                    'name': name.strip(),
+                    'name': name,
                     'show_in_menu': bool(definition.get('show_in_menu')),
                     'query': query,
                 })
@@ -4156,7 +4185,7 @@ class Project:
                             isinstance(rule.get('field'), str)
                             for rule in rules)):
                 read.append({
-                    'name': name.strip(),
+                    'name': name,
                     'show_in_menu': bool(definition.get('show_in_menu')),
                     'rules': [dict(rule) for rule in rules],
                 })

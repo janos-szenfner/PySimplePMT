@@ -435,6 +435,12 @@ class GanttApp(ctk.CTk):
         self.project.add_task(task4)
         self.project.add_task(task5)
 
+        # The sample plan is the tour a new install opens, so its bars are
+        # drawn: the off-by-default flag (issue #72) governs work the
+        # planner adds, not the demonstration it was greeted with.
+        for seeded in self.project.tasks:
+            seeded.show_in_timeline = True
+
         # The factories generate UUIDs, which read as noise in the ID column.
         # Renumbering here gives the sample project the same 001, 002, ...
         # sequence that new tasks and imported plans use.

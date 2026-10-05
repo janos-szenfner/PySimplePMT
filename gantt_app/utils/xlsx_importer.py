@@ -551,7 +551,10 @@ class XLSXImporter:
             color=colour,
             is_milestone=is_milestone,
             task_type="Task",
-            parent_task_id=None
+            parent_task_id=None,
+            # Imported rows were drawn where they came from (issue #72:
+            # off is the default)
+            show_in_timeline=True,
         )
 
     def _resolve_dependencies(self, records: List[Dict[str, Any]],
@@ -663,7 +666,8 @@ class XLSXImporter:
                 color=self.phase_color,
                 is_milestone=False,
                 task_type="Task",
-                parent_task_id=None
+                parent_task_id=None,
+                show_in_timeline=True,
             )
             phase_tasks[phase] = parent
 

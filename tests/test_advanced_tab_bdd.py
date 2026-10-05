@@ -44,13 +44,13 @@ def ctx():
 # ---------------------------------------------------------------------------
 @given("a new task", target_fixture="subject")
 def a_new_task():
-    return Task(id="1", name="New", start_date=BASE)
+    return Task(show_in_timeline=True, id="1", name="New", start_date=BASE)
 
 
 @given("a task with a deadline and a Must Finish On constraint",
        target_fixture="original")
 def a_task_with_deadline_and_constraint():
-    return Task(id="1", name="Build", start_date=BASE,
+    return Task(show_in_timeline=True, id="1", name="Build", start_date=BASE,
                 end_date=BASE + timedelta(days=5),
                 deadline=BASE + timedelta(days=7),
                 constraint_type="MFO",
@@ -60,7 +60,7 @@ def a_task_with_deadline_and_constraint():
 @given("a task dict written before the Advanced tab existed",
        target_fixture="legacy")
 def a_legacy_task_dict():
-    data = Task(id="1", name="Old", start_date=BASE).to_dict()
+    data = Task(show_in_timeline=True, id="1", name="Old", start_date=BASE).to_dict()
     data.pop("deadline", None)
     data.pop("constraint_type", None)
     data.pop("constraint_date", None)
@@ -70,7 +70,7 @@ def a_legacy_task_dict():
 @given(parsers.parse('a task dict whose constraint is "{ctype}" but carries '
                      'a date'), target_fixture="legacy")
 def a_dict_with_stray_date(ctype):
-    data = Task(id="1", name="Stray", start_date=BASE).to_dict()
+    data = Task(show_in_timeline=True, id="1", name="Stray", start_date=BASE).to_dict()
     data["constraint_type"] = ctype
     data["constraint_date"] = (BASE + timedelta(days=2)).isoformat()
     return data
@@ -130,7 +130,7 @@ def an_advanced_tab(ctx):
     root = ctk.CTk()
     root.withdraw()
     ctx["root"] = root
-    task = Task(id="1", name="X", start_date=BASE,
+    task = Task(show_in_timeline=True, id="1", name="X", start_date=BASE,
                 end_date=BASE + timedelta(days=3))
     tab = AdvancedTab(root, task)
     tab.update_idletasks()
@@ -201,7 +201,7 @@ def an_advanced_tab_milestone(ctx):
     root = ctk.CTk()
     root.withdraw()
     ctx["root"] = root
-    task = Task(id="1", name="M", start_date=BASE, task_type="Milestone")
+    task = Task(show_in_timeline=True, id="1", name="M", start_date=BASE, task_type="Milestone")
     tab = AdvancedTab(root, task)
     tab.update_idletasks()
     yield tab
@@ -221,7 +221,7 @@ def an_advanced_tab_summary(ctx):
     root = ctk.CTk()
     root.withdraw()
     ctx["root"] = root
-    task = Task(id="1", name="S", start_date=BASE,
+    task = Task(show_in_timeline=True, id="1", name="S", start_date=BASE,
                 end_date=BASE + timedelta(days=3))
     tab = AdvancedTab(root, task, is_summary=True)
     tab.update_idletasks()
@@ -279,9 +279,9 @@ def task_type_disabled(tab):
 # ---------------------------------------------------------------------------
 def _one_task_layout(**task_kwargs):
     project = Project(name="Chart")
-    project.add_task(Task(id="A", name="Anchor", start_date=BASE,
+    project.add_task(Task(show_in_timeline=True, id="A", name="Anchor", start_date=BASE,
                           end_date=BASE + timedelta(days=1)))
-    project.add_task(Task(id="T", name="Work", start_date=BASE,
+    project.add_task(Task(show_in_timeline=True, id="T", name="Work", start_date=BASE,
                           end_date=BASE + timedelta(days=4), **task_kwargs))
     return cr.layout_chart(project, width=1200)
 

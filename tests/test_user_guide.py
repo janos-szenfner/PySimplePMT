@@ -152,7 +152,7 @@ class TestTheWorkedExamplesAreTrue(unittest.TestCase):
         September ends on Tuesday 15 September once Saturday is worked,
         still holding four days'."""
         project = Project(name="Guide")
-        project.add_task(Task(id="a", name="A",
+        project.add_task(Task(show_in_timeline=True, id="a", name="A",
                               start_date=datetime(2026, 9, 11),
                               end_date=datetime(2026, 9, 16)))
         project.reschedule()
@@ -173,7 +173,7 @@ class TestTheWorkedExamplesAreTrue(unittest.TestCase):
         for identifier, calendar_id in (("d", None),
                                         ("w", "weekend-shift"),
                                         ("c", "continuous")):
-            project.add_task(Task(id=identifier, name=identifier,
+            project.add_task(Task(show_in_timeline=True, id=identifier, name=identifier,
                                   start_date=datetime(2026, 9, 10),
                                   end_date=datetime(2026, 9, 10),
                                   duration=3, calendar_id=calendar_id))
@@ -205,7 +205,7 @@ class TestTheChartOpensOnThePlan(unittest.TestCase):
     def plan(self, days=28):
         """One task spanning a given number of days."""
         start = datetime(2026, 8, 18)
-        return [Task(id="a", name="A", start_date=start,
+        return [Task(show_in_timeline=True, id="a", name="A", start_date=start,
                      end_date=start + timedelta(days=days))]
 
     def test_almost_nothing_is_drawn_before_the_first_bar(self):
@@ -520,7 +520,7 @@ class TestTheTaskEditorReference(unittest.TestCase):
         for identifier, calendar_id in (("d", None),
                                         ("w", "weekend-shift"),
                                         ("c", "continuous")):
-            project.add_task(Task(id=identifier, name=identifier,
+            project.add_task(Task(show_in_timeline=True, id=identifier, name=identifier,
                                   start_date=datetime(2026, 9, 10),
                                   end_date=datetime(2026, 9, 10),
                                   duration=3, calendar_id=calendar_id))
@@ -691,7 +691,7 @@ class TestTheCalendarStrip(unittest.TestCase):
     def plan(self, days=24, start=datetime(2026, 8, 18)):
         """A project spanning a given number of days."""
         project = Project(name="Strip")
-        project.add_task(Task(id="a", name="A", start_date=start,
+        project.add_task(Task(show_in_timeline=True, id="a", name="A", start_date=start,
                               end_date=start + timedelta(days=days)))
         project.reschedule()
         return project

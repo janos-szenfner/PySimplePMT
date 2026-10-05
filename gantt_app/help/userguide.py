@@ -1057,6 +1057,14 @@ GUIDE_SECTIONS = (
             "team. Assigning a resource to an actual task is done from the "
             "task editor's Resource tab, not here; the Assigned Tasks tabs "
             "show which tasks currently reference this resource or team.",
+
+            "The same membership works from the other direction on the "
+            "resource editor's Assigned Teams tab. The box lists only the "
+            "teams the resource already belongs to - pick a team in the "
+            "dropdown, type a split, and press Add to join another (the same "
+            "person can split across teams, 50/50 or otherwise). Remove "
+            "drops the selected row, and double-clicking a row re-asks its "
+            "split - 0% takes the membership off.",
         ],
     ),
     (
