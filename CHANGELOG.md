@@ -2,6 +2,12 @@
 
 ## 1.72.1 - 2026-10-07
 
+- **Project name and file name are now clearly separated.**
+  The window title shows the file name so you always know which file is
+  open. The Title field in Project Info is kept for friendly display
+  names and is used on exported charts and PDFs; if you leave it alone,
+  exports use the file name. Renaming the file is done with Save As
+  (issue #86).
 - **Task grid gains a Resource column.**
   The grid now shows assigned resources by name; the column is listed in
   the Task Grid settings alongside the others and can be hidden or

@@ -188,36 +188,27 @@ Feature: What survives a save, an open, and a fresh plan
     Then the plan is named "Real Name"
     And the file name is locked
 
-  Scenario: Accepting the suggestion leaves the name derived
+  Scenario: Accepting the suggestion locks the file name
     Given a saver for a plan deliberately named "My Plan"
     When the plan is saved as "My_Plan.json"
     Then the plan is named "My Plan"
-    And the file name is not locked
+    And the file name is locked
 
-  Scenario: A rename moves the save while the name is derived
-    # The old file is left alone - never silently deleted.
+  Scenario: A title change does not move the save
+    # The old file is left alone - Save always writes back to the same path.
     Given a plan deliberately named "New Name"
     And a saver whose file "Old_Name.json" exists
     When the plan is saved
-    Then the current file is "New_Name.json"
+    Then the current file is "Old_Name.json"
     And "Old_Name.json" still exists
     And the file name is not locked
 
-  Scenario: A rename leaves a chosen file name alone
+  Scenario: A chosen file name is left alone on save
     Given a plan deliberately named "New Name"
     And a saver locked onto "picked.json"
     When the plan is saved
     Then the current file is "picked.json"
     And no "New_Name.json" was written
-
-  Scenario: Save asks before landing on a stranger's file
-    Given a plan deliberately named "B"
-    And a saver whose file "A.json" exists beside a "B.json" that is not ours
-    When the plan is saved and the stranger's file is declined
-    Then the current file is "A.json"
-    And "B.json" still says it is not ours
-    When the plan is saved and the stranger's file is accepted
-    Then the current file is "B.json"
 
   Scenario: The deliberately-set flag survives a saved file
     Given a plan deliberately named "P"

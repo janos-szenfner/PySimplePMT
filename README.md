@@ -1277,6 +1277,10 @@ to wherever the plan was last saved or loaded from, and only asks when there
 is nowhere to write yet. A new plan clears that path, so Save on a new plan
 asks rather than writing over the file the last one came from.
 
+The window title shows the file name so you can always tell which file is open.
+The Title in Project Info is used for exported charts and PDFs: leave it alone
+to use the file name, or type a friendly name to show that on exports instead.
+
 ### Keyboard Shortcuts (`shortcuts.py`)
 
 Every shortcut in the application was written out as `Control`. On a Mac that
@@ -2152,7 +2156,9 @@ pysimplepmt --log-file      # print the log file path
 
 1. **Create a New Project**
    - Choose **File -> New Project...** on the backstage
-   - Enter project name
+   - Enter a project title (used on exported charts and PDFs)
+   - Save the plan with **File -> Save** or **Save As** to give it a file name;
+     the window title will show that file name from then on
    - Start adding tasks and milestones
 
 2. **Add Work Items**

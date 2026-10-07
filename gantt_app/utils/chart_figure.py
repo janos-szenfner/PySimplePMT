@@ -483,7 +483,7 @@ def build_gantt_figure(project: Project,
     text_color = resolved['text_color']
 
     figure.update_layout(
-        title=dict(text=f"Gantt Chart: {project.name or 'New Project'}",
+        title=dict(text=f"Gantt Chart: {project.export_title()}",
                    font=dict(size=18, color=text_color)),
         xaxis_title="Date",
         yaxis_title="Tasks",
@@ -516,5 +516,5 @@ def build_gantt_figure(project: Project,
     )
 
     logger.debug("Built Gantt figure for %r with %d task(s)",
-                 project.name, len(tasks))
+                 project.export_title(), len(tasks))
     return figure

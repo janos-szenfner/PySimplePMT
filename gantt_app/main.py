@@ -7,6 +7,7 @@ Creates the main window and manages the application components.
 import sys
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 import tkinter as tk
 from tkinter import ttk
@@ -90,7 +91,7 @@ class GanttApp(ctk.CTk):
         super().__init__(className=self.WM_CLASS_NAME)
 
         # Configure main window
-        self.title("Gantt Project Manager")
+        self.title("PySimplePMT")
         self._fit_to_screen()
         self._set_window_icon()
         self._install_about_handler()
@@ -1171,8 +1172,16 @@ class GanttApp(ctk.CTk):
             pass
 
     def _update_title(self):
-        """Refresh the window title to show the project name and dirty state."""
-        title = f"Gantt Project Manager - {self.project.name}"
+        """Refresh the window title to show the file name and dirty state."""
+        file_path = getattr(self.project, 'file_path', None)
+        if file_path:
+            label = Path(file_path).stem
+        elif (self.project.name_was_set and self.project.name
+              and self.project.name != 'New Project'):
+            label = self.project.name
+        else:
+            label = 'New Project'
+        title = f"{label} - PySimplePMT"
         if self.is_dirty:
             title += " *"
         self.title(title)

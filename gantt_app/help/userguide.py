@@ -1154,16 +1154,14 @@ GUIDE_SECTIONS = (
             "from. It used to be Project Title and ask only for a title; the "
             "title is still there, with the rest of it.",
 
-            "The project name and the file name travel together until the "
-            "file name is chosen by hand. While Save As is still suggesting "
-            "the project name - spaces and unsafe characters written as "
-            "underscores - renaming the plan here moves the save to a file "
-            "of the new name, and the old file is left where it was. Once "
-            "a file name has been picked yourself, or the plan was opened "
-            "from one, the file keeps it: renaming the plan renames the "
-            "plan only. And a plan never deliberately named takes the "
-            "first file name you save it to as its name, which this "
-            "dialog can still change afterwards.",
+            "The Title field is now an optional display name. It is used "
+            "on exported charts and PDFs. The window title always shows the "
+            "file name, so you can tell which file is open even if the "
+            "project has a friendly title. If you leave the title alone, "
+            "it follows the file name. If you type your own title, it stays "
+            "on exports and charts while the window title keeps showing the "
+            "file name. To rename the file, use File > Save As; changing "
+            "the title here does not rename the file.",
 
             "Start date moves the whole plan. It is not a setting that gets "
             "stored - a plan starts whenever its earliest task does - so "
@@ -1406,12 +1404,14 @@ GUIDE_SECTIONS = (
             "behind it, so Save asks again rather than writing over the one "
             "the last plan came from.",
 
-            "The suggested file name is the project name, with spaces and "
-            "unsafe characters written as underscores. A plan still carrying "
-            "its placeholder name takes the name of the first file it is "
-            "saved to. Once a file name has been chosen - in Save As, or by "
-            "the file a plan was opened from - it stays put: renaming the "
-            "project in Settings does not rename the file.",
+            "The window title shows the file name so you always know which "
+            "file is open. The Title in Project Info is used on exported "
+            "charts and PDFs instead. The suggested file name is the project "
+            "name, with spaces and unsafe characters written as underscores. "
+            "A plan still carrying its placeholder name takes the name of the "
+            "first file it is saved to. Once a file name has been chosen - in "
+            "Save As, or by the file a plan was opened from - it stays put: "
+            "renaming the project in Settings does not rename the file.",
 
             "A plan saved by an older version opens in a newer one. Anything "
             "the older version did not have is simply absent rather than "

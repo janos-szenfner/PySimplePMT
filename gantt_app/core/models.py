@@ -7,6 +7,7 @@ Contains the Task and Project classes that form the core data structure.
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 import logging
 import uuid
@@ -1571,6 +1572,9 @@ class Project:
         self._analysis_signature_seen = None
         #: Lookup dict for get_task_by_id, invalidated by add/remove/renumber.
         self._id_to_task: Optional[Dict[str, Task]] = None
+        #: Path the plan is currently associated with, set by the UI.
+        #: Not persisted - the file name is always recovered from disk.
+        self.file_path = None
 
         if self.tasks:
             # The flat list is the order the grid shows, saves and numbers
@@ -1579,6 +1583,24 @@ class Project:
             # that order here rather than disagreeing with the grid.
             self.tasks = self.display_order()
             self._update_dates()
+
+    def export_title(self) -> str:
+        """
+        The name a chart, PDF or picture export should carry.
+
+        A title that differs from the placeholder and from the file stem
+        is treated as a friendly display name and wins on exports. When
+        no such title exists, the file stem is used, and a brand-new
+        unsaved plan falls back to the placeholder.
+        """
+        file_path = getattr(self, 'file_path', None)
+        file_stem = Path(file_path).stem if file_path else None
+        if (self.name and self.name != 'New Project'
+                and self.name != file_stem):
+            return self.name
+        if file_stem:
+            return file_stem
+        return 'New Project'
 
     def _update_dates(self):
         """Calculate project start and end dates from tasks."""

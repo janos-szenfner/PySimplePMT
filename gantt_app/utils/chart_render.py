@@ -583,7 +583,7 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     tasks = rows.tasks if rows is not None else _get_visible_tasks(project)
     top_margin = rows.top_margin if rows is not None else MARGIN_TOP
     label_width = rows.label_width if rows is not None else MARGIN_LEFT
-    title = f"Gantt Chart: {project.name or 'New Project'}"
+    title = f"Gantt Chart: {project.export_title()}"
 
     if not tasks:
         return ChartLayout(width=width, height=320, settings=resolved,

@@ -2810,38 +2810,14 @@ class Toolbar(ctk.CTkFrame):
         a plan that has never been saved, which is the one case where the
         question is the right one.
 
-        A file name born from the project name follows it (issue #91):
-        renaming the plan in settings and saving writes <new name>.json,
-        in the same folder, leaving the old file on disk rather than
-        silently deleting the user's earlier work. A name the user chose
-        themselves - typed into Save As, or the path the plan was opened
-        from - is locked instead (_file_name_locked), and renames leave
-        the file where it is.
+        A path chosen by the user - in Save As, or the file the plan
+        was opened from - is locked (_file_name_locked). Save always
+        writes back to that file and does not rename it. To give the
+        plan a different file name, use Save As.
         """
         if not self.current_file_path:
             self.save_project_as()
             return
-
-        if not self._file_name_locked:
-            directory = os.path.dirname(self.current_file_path)
-            desired = os.path.join(
-                directory, _file_name_for(self.project.name) + '.json')
-            if (os.path.normcase(desired)
-                    != os.path.normcase(self.current_file_path)):
-                if os.path.exists(desired):
-                    if not messagebox.askyesno(
-                            "Save Project",
-                            f"A file named {os.path.basename(desired)} "
-                            "already exists. Overwrite it?\n\n"
-                            "No writes to the current file instead."):
-                        self._write_project(self.current_file_path)
-                        return
-                previous = self.current_file_path
-                self._write_project(desired)
-                if self.current_file_path == desired:
-                    self._report(f"Saved as {os.path.basename(desired)} "
-                                 f"({os.path.basename(previous)} kept).")
-                return
 
         self._write_project(self.current_file_path)
 
@@ -2855,14 +2831,12 @@ class Toolbar(ctk.CTkFrame):
         plan that has never been saved acquires one - see save_project,
         which hands over to this rather than asking the question twice.
 
-        The box suggests the project name, made file-safe. Which answer
-        comes back decides the name's nature (issue #91): accepting the
-        suggestion leaves the name derived - it keeps following renames -
-        while typing a different one makes it chosen and locks the path,
-        so later renames leave the file alone. And when the project was
-        never deliberately named, a chosen file name is the name the
-        user meant: the stem is adopted as the project name, written
-        the way it was typed ("my_plan" stays "my_plan").
+        The box suggests the project name, made file-safe. The chosen
+        path is locked: from then on Save writes back to that file and
+        does not rename it. If the project title has not been deliberately
+        set, the chosen file stem becomes the project name; a custom
+        title is left alone so the file name and the display name can
+        differ.
         """
         file_path = filedialog.asksaveasfilename(
             defaultextension=".json",
@@ -2875,12 +2849,13 @@ class Toolbar(ctk.CTkFrame):
             logger.info("Save As cancelled")
             return
 
-        chosen = Path(file_path).stem != _file_name_for(self.project.name)
-        self._file_name_locked = chosen
-        if chosen and not self.project.name_was_set:
-            self.project.name = Path(file_path).stem
+        file_stem = Path(file_path).stem
+        self._file_name_locked = True
+        if not self.project.name_was_set:
+            self.project.name = file_stem
             logger.info("Adopting the chosen file name %r as the "
                         "project name", self.project.name)
+        self.project.file_path = file_path
 
         self._write_project(file_path)
 
@@ -2929,6 +2904,9 @@ class Toolbar(ctk.CTkFrame):
             # derived from the project name - renaming the plan does not
             # move it (issue #91).
             self._file_name_locked = True
+            # Tie the plan to the file it came from. The window title uses
+            # the file stem; exports prefer a deliberately-set title.
+            project.file_path = file_path
             # Replace current project. Native project files already use the
             # app's IDs and carry baseline snapshots keyed by those IDs, so
             # we keep them as-is; imports use their own renumbering path.
@@ -2938,6 +2916,7 @@ class Toolbar(ctk.CTkFrame):
             # project is offered to every other (issue #92).
             self._merge_loaded_calendars(project)
             self._take_on_project_fields(project)
+            self.project.file_path = file_path
 
             # Restore any baseline data that was saved with the project
             if self.baseline_manager is not None:
@@ -3088,6 +3067,7 @@ class Toolbar(ctk.CTkFrame):
             # file name become the project name.
             if new_name.strip() != "New Project":
                 self.project.name_was_set = True
+            self.project.file_path = None
 
             self._forget_the_previous_plan()
 
@@ -3130,6 +3110,7 @@ class Toolbar(ctk.CTkFrame):
         self.current_file_path = None
         self._file_name_locked = False
         self._blank_project("New Project")
+        self.project.file_path = None
 
         self._forget_the_previous_plan()
 
