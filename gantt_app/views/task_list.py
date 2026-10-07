@@ -742,6 +742,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<Shift-Up>', self._on_shift_up)
         self.tree.bind('<Shift-Down>', self._on_shift_down)
         self._bind_hierarchy_hotkeys()
+        self._bind_scroll_keys()
 
         # Right-click menu, which offers the same moves as dragging
         self.context_menu = TaskContextMenu(
@@ -2558,6 +2559,17 @@ class DragDropTaskList(ctk.CTkFrame):
         self._active_hierarchy_bindings = tuple(bound)
         logger.info("Configured %d hierarchy shortcut(s) for %s; %d active",
                     len(bindings), sys.platform, len(bound))
+
+    def _bind_scroll_keys(self):
+        """Left and Right scroll horizontally instead of folding rows."""
+        self.tree.bind('<Left>',
+                       lambda _event: self._scroll_horizontal(-1))
+        self.tree.bind('<Right>',
+                       lambda _event: self._scroll_horizontal(1))
+
+    def _scroll_horizontal(self, direction):
+        self.tree.xview_scroll(direction, 'units')
+        return "break"
 
     def _hotkey_indent(self, _event=None):
         """Indent the selected rows from a keyboard shortcut."""

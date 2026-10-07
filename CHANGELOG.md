@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.72.2 - 2026-10-07
+
+- **Left and Right arrow keys now scroll the task list horizontally.**
+  The task grid used to let the arrow keys expand and collapse task
+  hierarchies. They now scroll the visible columns left and right, which
+  is what people expect from the arrows in a focused list (issue #112).
+
 ## 1.72.1 - 2026-10-07
 
 - **Project name and file name are now clearly separated.**
