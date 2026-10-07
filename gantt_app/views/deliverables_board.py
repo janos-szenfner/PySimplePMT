@@ -1840,6 +1840,32 @@ class DeliverablesBoard(ctk.CTkFrame):
             label='Edit…',
             state=(tk.NORMAL if deliverable is not None else tk.DISABLED),
             command=lambda: self._open_editor(item))
+        menu.add_command(
+            label='Delete',
+            state=(tk.NORMAL if chosen else tk.DISABLED),
+            command=lambda: self.delete_deliverables(chosen))
+        menu.add_separator()
+
+        can_paste = bool(self._clipboard_items)
+        menu.add_command(
+            label='Copy',
+            state=(tk.NORMAL if chosen else tk.DISABLED),
+            command=lambda: self.copy_deliverables(chosen))
+        menu.add_command(
+            label='Cut',
+            state=(tk.NORMAL if chosen else tk.DISABLED),
+            command=lambda: self.cut_deliverables(chosen))
+        menu.add_command(
+            label='Paste',
+            state=(tk.NORMAL if can_paste else tk.DISABLED),
+            command=lambda: self.paste_deliverables())
+        menu.add_command(
+            label='Paste as Sub-deliverable',
+            state=(tk.NORMAL if can_paste and deliverable is not None
+                   else tk.DISABLED),
+            command=lambda: self.paste_deliverables(inside=True))
+        menu.add_separator()
+
         if deliverable is not None:
             marked = item in self._marked
             menu.add_command(
@@ -1849,10 +1875,6 @@ class DeliverablesBoard(ctk.CTkFrame):
             label='Duplicate',
             state=(tk.NORMAL if chosen else tk.DISABLED),
             command=lambda: self.duplicate_deliverables(chosen))
-        menu.add_command(
-            label='Delete',
-            state=(tk.NORMAL if chosen else tk.DISABLED),
-            command=lambda: self.delete_deliverables(chosen))
         menu.add_separator()
 
         tasks_menu = tk.Menu(menu, tearoff=0)
@@ -1895,26 +1917,6 @@ class DeliverablesBoard(ctk.CTkFrame):
                 command=lambda f=fmt: self.export_rows(chosen, f))
         menu.add_cascade(label='Export Rows', menu=export_menu,
                          state=(tk.NORMAL if chosen else tk.DISABLED))
-        menu.add_separator()
-
-        can_paste = bool(self._clipboard_items)
-        menu.add_command(
-            label='Copy',
-            state=(tk.NORMAL if chosen else tk.DISABLED),
-            command=lambda: self.copy_deliverables(chosen))
-        menu.add_command(
-            label='Cut',
-            state=(tk.NORMAL if chosen else tk.DISABLED),
-            command=lambda: self.cut_deliverables(chosen))
-        menu.add_command(
-            label='Paste',
-            state=(tk.NORMAL if can_paste else tk.DISABLED),
-            command=lambda: self.paste_deliverables())
-        menu.add_command(
-            label='Paste as Sub-deliverable',
-            state=(tk.NORMAL if can_paste and deliverable is not None
-                   else tk.DISABLED),
-            command=lambda: self.paste_deliverables(inside=True))
         menu.add_separator()
 
         manager = getattr(self.project_tracker, 'manager', None)

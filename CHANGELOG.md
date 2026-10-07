@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.72.1 - 2026-10-07
+
+- **Deliverables right-click menu now mirrors the Task List layout.**
+  Copy, Cut, Paste and Paste as Sub-deliverable sit right after Edit and
+  Delete, in the same order as the task list uses, so muscle memory works
+  across both grids.
+- **Deliverables Delete from the toolbar/menu now targets the front view.**
+  When the Deliverables tab is active, the keyboard, ribbon and menu Delete
+  commands remove selected deliverables instead of deleting from the task
+  list (issue #109).
+- **Deliverable progress and health colour refresh with task edits.**
+  The Deliverables board re-rolls derived progress before redrawing, and
+  the health tag is applied last so its colour is no longer hidden by the
+  banding foreground (issue #110).
+
 ## 1.72.0 - 2026-09-30
 
 - **Logging covers the gaps the recent features left.** The dashboard's

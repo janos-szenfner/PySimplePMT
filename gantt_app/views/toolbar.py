@@ -1462,14 +1462,21 @@ class Toolbar(ctk.CTkFrame):
     
     def _delete_selected_tasks(self):
         """
-        Delete the selected tasks through the list's own multi-delete.
+        Delete the selected rows through the front view's own multi-delete.
 
-        Routes to DragDropTaskList.delete_tasks so the keyboard and icon-bar
-        Delete behave exactly like the right-click one: every selected row
-        goes, as a single undoable step, with one confirmation and a refresh
-        (issue #17). The old loop here deleted straight off the project,
-        skipping undo and the redraw.
+        Routes to DragDropTaskList.delete_tasks when the Task Planning tab is
+        on top, and to the Deliverables board's delete when the Deliverables
+        tab is showing, so the keyboard, icon-bar and menu Delete all behave
+        like the right-click one for whichever grid is active. Every selected
+        row goes as a single undoable step, with one confirmation and a
+        refresh (issue #17, issue #109).
         """
+        if self._deliverables_on_top() and self.deliverables_board:
+            selected_ids = self.deliverables_board.selected_deliverable_ids()
+            if selected_ids:
+                self.deliverables_board.delete_deliverables(selected_ids)
+            return
+
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'delete_tasks'):
             return
