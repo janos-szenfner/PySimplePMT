@@ -31,6 +31,8 @@ from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
+from gantt_app.utils.shortcuts import accelerator
+
 from gantt_app.views import theme
 from gantt_app.views.tooltip import attach as attach_tooltip
 from gantt_app.views.toolbar import (
@@ -154,7 +156,8 @@ class RibbonBar(IconToolbar):
             ("Tasks", (
                 _L('edit', 'Edit Task', 'edit_selected_task',
                    tip="Edit Task..."),
-                _S('delete', 'Delete', 'delete_selected'),
+                _S('delete', 'Delete', 'delete_selected',
+                   tip=f"Delete  ({accelerator('BackSpace')})"),
             )),
             ("Outline", (
                 _S('indent', 'Indent', 'indent_selected',
@@ -320,6 +323,22 @@ class RibbonBar(IconToolbar):
         ("View", "Deliverables"): "Deliverables",
     }
 
+    #: Buttons that only answer while Task Planning is on top - they are
+    #: greyed on the other views rather than firing at a grid nobody is
+    #: looking at (issue #116). The keys are the ones the specs carry.
+    TASK_VIEW_KEYS = {
+        'task', 'link', 'unlink',
+        'gantt', 'dashboard', 'grid',
+        'critical_path', 'critical_path_report',
+        'highlight', 'grid_filter', 'grid_filter_clear',
+    }
+
+    #: Buttons Task Planning and Deliverables share; dead while the
+    #: resource board is on top, where there is nothing they act on.
+    LIST_VIEW_KEYS = {
+        'paste', 'cut', 'copy', 'edit', 'delete', 'indent', 'outdent',
+    }
+
     def __init__(self, master, project, galleries: Dict = None, **kwargs):
         #: Where the inherited helpers place what they build; None is the
         #: ribbon itself. A group sets this to its body while the helper
@@ -342,6 +361,8 @@ class RibbonBar(IconToolbar):
         self._open_dropdown = None
         #: Context groups currently off the page, by (tab, caption).
         self._context_hidden = set()
+        #: The footer-tab view the buttons are answering for right now.
+        self._view_name = "Task Planning"
         super().__init__(master, project, **kwargs)
         self.configure(height=self.STRIP_HEIGHT + self.BAND_HEIGHT)
 
@@ -729,11 +750,41 @@ class RibbonBar(IconToolbar):
         Show the groups the active footer-tab view lends the ribbon.
 
         The Resources group on the View page exists only while Resource
-        Planning is on top; the other pages' groups are always up.
+        Planning is on top; the other pages' groups are always up. The
+        buttons that cannot answer on the view showing are greyed at the
+        same time (issue #116).
         """
+        self._view_name = view_name
         for (tab, caption), wanted in self.CONTEXT_GROUPS.items():
             self.set_group_visible(tab, caption, view_name == wanted)
+        self._update_button_states()
         self.refresh_checks()
+
+    def _update_button_states(self):
+        """
+        The project-open rule first, then the active view's greys on top.
+
+        A view switch can re-enable a button only when the button means
+        something to the view on top - Delete stays live on Deliverables,
+        where it deletes the selected deliverables, and goes dark on
+        Resource Planning, where there is nothing for it to delete.
+        """
+        super()._update_button_states()
+        view = getattr(self, '_view_name', 'Task Planning')
+        for key, btn in self.icon_buttons.items():
+            dead = (key in self.TASK_VIEW_KEYS and view != 'Task Planning') \
+                or (key in self.LIST_VIEW_KEYS and view == 'Resource Planning')
+            if dead:
+                try:
+                    btn.configure(state='disabled')
+                except tk.TclError:
+                    continue
+            arrow = getattr(btn, 'split_arrow', None)
+            if arrow is not None:
+                try:
+                    arrow.configure(state=btn.cget('state'))
+                except tk.TclError:
+                    continue
 
     def set_group_visible(self, tab: str, caption: str,
                           visible: bool) -> None:

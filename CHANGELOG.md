@@ -6,6 +6,28 @@
   The task grid used to let the arrow keys expand and collapse task
   hierarchies. They now scroll the visible columns left and right, which
   is what people expect from the arrows in a focused list (issue #112).
+- **A keyboard shortcut for Delete.**
+  Command+Backspace on a Mac, Ctrl+Backspace everywhere else, deletes the
+  selected rows - the same command the ribbon's Delete runs, on whichever
+  of the three views is on top. While a text field has the focus the keys
+  keep editing text (issue #114).
+- **Menus, buttons and keys follow the view on top.**
+  Commands used to reach the task list no matter which footer tab was
+  showing, and switching views left the keyboard behind: on Deliverables
+  the arrow keys only worked after a click, and coming back to Task
+  Planning they stopped answering at all. Now the keyboard moves to the
+  view's own list the moment the tab changes, the ribbon greys out what
+  does not apply there - New Task, linking, the chart views, the grid
+  filters on the other views; Copy, Cut, Paste, Delete and the outline
+  commands on Resource Planning - and a key press that reaches a command
+  anyway says on the status bar where it belongs instead of acting on a
+  grid nobody is looking at (issue #116).
+- **Clearing a progress cell no longer raises an error.**
+  Deleting the 0 from the grid's Progress box and then pressing a preset
+  button used to pop up an error before the button's answer arrived. An
+  empty box - or the "N/A" a derived cell shows - now simply commits
+  nothing, and the preset lands as expected. The Deliverables grid's
+  Progress cell treats empty input the same way (issue #117).
 
 ## 1.72.1 - 2026-10-07
 

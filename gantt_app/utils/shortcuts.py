@@ -112,7 +112,8 @@ def accelerator(key: str, shift: bool = False, alt: bool = False) -> str:
     a fixed order - ⌥ before ⌘, so Option+Command+. is written ⌥⌘. however
     it is said out loud.
     """
-    name = 'Enter' if key in ('Return', 'KP_Enter') else key
+    name = {'Return': 'Enter', 'KP_Enter': 'Enter',
+            'BackSpace': 'Backspace'}.get(key, key)
     if IS_MACOS:
         return (f"{SHIFT_LABEL if shift else ''}"
                 f"{ALT_LABEL if alt else ''}{MODIFIER_LABEL}{name}")

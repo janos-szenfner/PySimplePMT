@@ -651,6 +651,24 @@ GUIDE_SECTIONS = (
             "spreadsheet or a note. Pasting that back into the plan does "
             "nothing; the plan pastes only what you copied inside it.",
 
+            "Delete is on the keyboard too: Command+Backspace on a Mac, "
+            "Ctrl+Backspace everywhere else. It does exactly what the "
+            "ribbon's Delete does on whichever of the three views is on "
+            "top, and it asks before anything is removed. In a text box "
+            "the same keys edit the text, as they should - the shortcut "
+            "stands aside while a field has the focus.",
+
+            "Every command answers the view that is showing. With the "
+            "Deliverables tab up, Copy, Cut, Paste, Delete, Edit, Indent "
+            "and Outdent all act on the selected deliverables; on the "
+            "Resource Planning tab there are no rows those commands could "
+            "reach, so the buttons grey out and the keys stay quiet. "
+            "Commands that only belong to the task list - the chart views, "
+            "the column filters, linking - are greyed off it in the same "
+            "way. Picking a footer tab hands the keyboard to that view's "
+            "list at once, so the arrow keys move its rows without a "
+            "click first.",
+
             "Calendar changes are not on the undo stack. Changing a "
             "calendar setting back moves the plan back, which is how that "
             "change is undone.",

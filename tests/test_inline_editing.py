@@ -1049,6 +1049,54 @@ class TestTypingIntoTheProgressCell(InlineEditingTestCase):
         self.assertEqual(
             self.project.get_task_by_id('u1').progress, 60)
 
+    def test_an_empty_box_is_not_a_complaint(self):
+        """
+        Clearing the cell, then letting the commit run, is "never mind".
+
+        Issue #117: the reader clears the 0 and presses a preset button.
+        The focus leaving the box commits what is in it - and an empty
+        box used to pop an error before the button's own answer arrived.
+        """
+        from unittest import mock
+
+        self.task_list.edit_progress_cell('u2')
+        self.type_into_editor('')
+        with mock.patch('gantt_app.views.task_list.messagebox.showerror'
+                        ) as told:
+            self.task_list._commit_progress()
+
+        told.assert_not_called()
+        self.assertEqual(self.progress_of(), 0)
+
+    def test_n_a_is_not_a_complaint_either(self):
+        """The figure a derived cell shows is not a number to store."""
+        from unittest import mock
+
+        self.task_list.edit_progress_cell('u2')
+        self.type_into_editor('N/A')
+        with mock.patch('gantt_app.views.task_list.messagebox.showerror'
+                        ) as told:
+            self.task_list._commit_progress()
+
+        told.assert_not_called()
+        self.assertEqual(self.progress_of(), 0)
+
+    def test_a_preset_after_clearing_still_lands(self):
+        """
+        The button answers after the empty box's commit does nothing.
+
+        The press on 50% is what the focus left the box for; it sets the
+        selected rows itself, so the row ends at 50, not still at 0
+        (issue #117).
+        """
+        self.task_list.edit_progress_cell('u2')
+        self.type_into_editor('')
+        self.task_list._commit_progress()
+
+        self.task_list.set_progress('u2', 50)
+
+        self.assertEqual(self.progress_of(), 50)
+
 
 @unittest.skipUnless(HAVE_DISPLAY, "no display")
 class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):

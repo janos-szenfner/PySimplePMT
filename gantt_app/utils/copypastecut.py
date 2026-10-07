@@ -988,7 +988,8 @@ TEXT_ENTRY_CLASSES = ('Entry', 'TEntry', 'Text', 'Spinbox', 'TSpinbox',
 
 
 def setup_keyboard_bindings(root: Any, on_copy: callable, on_cut: callable,
-                            on_paste: callable) -> None:
+                            on_paste: callable,
+                            on_delete: callable = None) -> None:
     """
     Bind the clipboard shortcuts for this platform.
 
@@ -998,6 +999,12 @@ def setup_keyboard_bindings(root: Any, on_copy: callable, on_cut: callable,
         The window to bind on, so the shortcuts work wherever the focus is.
     on_copy, on_cut, on_paste : callable
         Called with no arguments when the shortcut fires.
+    on_delete : callable
+        Called with no arguments when the platform's delete shortcut
+        fires - Command+Backspace on a Mac, Control+Backspace elsewhere
+        (issue #114). The same text-field guard applies, because in an
+        entry the keystroke means "delete the word behind the caret",
+        not "delete the row".
 
     DEVELOPMENT NOTES:
     ------------------
@@ -1037,3 +1044,5 @@ def setup_keyboard_bindings(root: Any, on_copy: callable, on_cut: callable,
     bind_all(root, 'c', guarded(on_copy))
     bind_all(root, 'x', guarded(on_cut))
     bind_all(root, 'v', guarded(on_paste))
+    if on_delete is not None:
+        bind_all(root, 'BackSpace', guarded(on_delete))

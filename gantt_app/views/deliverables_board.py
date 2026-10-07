@@ -958,8 +958,13 @@ class DeliverablesBoard(ctk.CTkFrame):
             self._write(deliverable_id,
                         {'weight': max(0.0, weight)}, 'Set Weight')
         elif column == 'Progress':
+            # An empty box - or the "N/A" a derived cell may carry -
+            # means "leave it as it was", the way the task grid's
+            # Progress editor treats it (issue #117).
+            if not text or text.upper().rstrip('%').strip() == 'N/A':
+                return
             try:
-                progress = int(float(text))
+                progress = int(float(text.rstrip('%')))
             except (TypeError, ValueError):
                 self._say("Progress is a percentage - 0 to 100.")
                 return
@@ -1309,6 +1314,31 @@ class DeliverablesBoard(ctk.CTkFrame):
         order = [d.id for d in self.project.deliverable_display_order()]
         picked = set(self.tree.selection())
         return [i for i in order if i in picked]
+
+    def focus_view(self) -> None:
+        """
+        Give the grid the keyboard, for when its view comes to the top.
+
+        Arrow keys work the moment the view is showing instead of needing
+        a row clicked first (issue #116). A grid with no keyboard cursor
+        gets the first deliverable row's; the selection already there is
+        left as it was.
+        """
+        try:
+            if not self.tree.focus():
+                rows = self._rows_in_display_order()
+                if rows:
+                    self.tree.focus(rows[0])
+            # focus_force: see DragDropTaskList.focus_view.
+            self.tree.focus_force()
+        except tk.TclError:
+            logger.debug("Could not focus the deliverables grid")
+
+    def edit_selected(self) -> None:
+        """Open the editor for the one selected deliverable, if there is one."""
+        ids = self.selected_deliverable_ids()
+        if len(ids) == 1:
+            self._open_editor(ids[0])
 
     def copy_deliverables(self, deliverable_ids=None) -> None:
         """

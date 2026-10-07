@@ -1631,8 +1631,17 @@ class DragDropTaskList(ctk.CTkFrame):
         if task is None:
             return
 
+        # An empty box - or the "N/A" a derived cell shows - means "leave
+        # it as it was", not a complaint. Clicking a preset button pulls
+        # the focus away and commits what is in the box; an empty box is
+        # the user saying "never mind the typing", and the preset still
+        # applies after this returns (issue #117).
+        cleaned = text.strip().rstrip('%').strip()
+        if not cleaned or cleaned.upper() == 'N/A':
+            return
+
         try:
-            percent = int(text.strip().rstrip('%').strip())
+            percent = int(cleaned)
         except ValueError:
             messagebox.showerror(
                 "Progress", "Enter a percentage from 0 to 100.")
@@ -2019,6 +2028,33 @@ class DragDropTaskList(ctk.CTkFrame):
             return []
         return [task_id for task_id in selection
                 if self.project.get_task_by_id(task_id) is not None]
+
+    def focus_view(self):
+        """
+        Give the grid the keyboard, for when its view comes to the top.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Called when the footer's tab bar switches to this view (issue
+        #116): the arrow keys work the moment the view is showing instead
+        of needing a row clicked first. A grid with no keyboard cursor
+        gets the first row's, so the first Up or Down has somewhere to
+        move from - the cursor is set without selecting anything, so the
+        selection the user left behind stays as it was.
+        """
+        try:
+            if not self.tree.focus():
+                rows = self._rows_in_display_order()
+                if rows:
+                    self.tree.focus(rows[0])
+            # focus_force, not focus_set: the press that switched the view
+            # left the keyboard on the footer tab bar, and a plain set only
+            # asks for the focus once the window is next active - which on
+            # some window managers never arrives if the button still holds
+            # it. The view on top owns the keyboard outright (issue #116).
+            self.tree.focus_force()
+        except tk.TclError:
+            logger.debug("Could not focus the task grid")
 
     def copy_tasks(self, selected_ids: List[str]):
         """

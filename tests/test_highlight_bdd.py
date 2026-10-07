@@ -117,6 +117,8 @@ class _ToolbarShell:
                      '_unique_filter_name', '_more_filters_entries',
                      '_more_filters_copy', '_more_filters_delete',
                      '_reload_more_filters',
+                     '_off_task_view', '_task_planning_on_top',
+                     '_front_view', '_say',
                      'new_highlight_filter', 'more_highlight_filters'):
             setattr(self, name, getattr(Toolbar, name).__get__(self))
         self._more_filters_dialog = None

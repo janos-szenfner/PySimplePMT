@@ -1195,3 +1195,27 @@ class ResourceBoard(ctk.CTkFrame):
         """Tell the status bar what is selected now, if it is listening."""
         if self.on_status:
             self.on_status(self.selection_status() or "Ready")
+
+    def focus_view(self) -> None:
+        """
+        Give the board's main list the keyboard, for when the view
+        comes to the top.
+
+        Arrow keys work the moment the view is showing instead of
+        needing a row clicked first (issue #116). The grid face and the
+        matrix face each have their own list, so the one showing is the
+        one focused. A list with no keyboard cursor gets the first
+        row's; the selection already there is left as it was.
+        """
+        grid = getattr(self, '_usage_grid', None)
+        tree = grid.tree if self._mode == 'grid' and grid is not None \
+            else self.task_tree
+        try:
+            if not tree.focus():
+                rows = tree.get_children('')
+                if rows:
+                    tree.focus(rows[0])
+            # focus_force: see DragDropTaskList.focus_view.
+            tree.focus_force()
+        except tk.TclError:
+            logger.debug("Could not focus the resource board")

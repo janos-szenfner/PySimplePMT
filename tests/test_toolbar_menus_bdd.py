@@ -137,6 +137,7 @@ def edit_menu_contents():
         f"Cut  ({accelerator('X')})",
         f"Copy  ({accelerator('C')})",
         f"Paste  ({accelerator('V')})",
+        f"Delete  ({accelerator('BackSpace')})",
     ]
     assert labels(find(menu_tree(), 'Edit')['items']) == expected
 

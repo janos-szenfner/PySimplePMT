@@ -620,6 +620,14 @@ class GanttApp(ctk.CTk):
             "Resource Planning": self.resource_board.selection_status,
             "Deliverables": self.deliverables_board.selection_status,
         }
+        #: Which widget takes the keyboard when each view comes to the
+        #: top, so the arrow keys and shortcuts land on the grid the user
+        #: is looking at without a click first (issue #116).
+        self._view_focus = {
+            "Task Planning": self.task_list.focus_view,
+            "Resource Planning": self.resource_board.focus_view,
+            "Deliverables": self.deliverables_board.focus_view,
+        }
         self._active_view = "Task Planning"
 
         # Footer with status bar, view tab bar and close button
@@ -787,6 +795,8 @@ class GanttApp(ctk.CTk):
                 if board is not None:
                     board.copy_deliverables()
                 return
+            if self._active_view != "Task Planning":
+                return
             if not self._task_list_ready():
                 return
             selected = self.task_list.get_selected_task_ids()
@@ -799,6 +809,8 @@ class GanttApp(ctk.CTk):
                 board = getattr(self, 'deliverables_board', None)
                 if board is not None:
                     board.cut_deliverables()
+                return
+            if self._active_view != "Task Planning":
                 return
             if not self._task_list_ready():
                 return
@@ -813,11 +825,30 @@ class GanttApp(ctk.CTk):
                 if board is not None:
                     board.paste_deliverables()
                 return
+            if self._active_view != "Task Planning":
+                return
             if not self._task_list_ready():
                 return
             self.task_list.paste_tasks()
 
-        setup_keyboard_bindings(self, on_copy, on_cut, on_paste)
+        def on_delete():
+            """
+            Delete the selected rows of the view on top.
+
+            DEVELOPMENT NOTES:
+            ------------------
+            The toolbar's own dispatch is used rather than a second
+            routing written here, so the shortcut, the ribbon button and
+            the menu entry cannot drift apart - the same press, whichever
+            way it arrived (issue #114).
+            """
+            toolbar = getattr(self, 'toolbar', None)
+            dispatch = getattr(toolbar, '_delete_selected_tasks', None)
+            if callable(dispatch):
+                dispatch()
+
+        setup_keyboard_bindings(self, on_copy, on_cut, on_paste,
+                                on_delete=on_delete)
 
     def _task_list_ready(self) -> bool:
         """Whether there is a task list for a shortcut to act on."""
@@ -859,6 +890,12 @@ class GanttApp(ctk.CTk):
             on_shown = getattr(widget, 'on_shown', None)
             if callable(on_shown):
                 widget.after_idle(on_shown)
+            # The keyboard belongs to the view on top: its grid gets the
+            # focus so the arrow keys move its rows, not the pick a
+            # hidden view was left holding (issue #116).
+            focus = getattr(self, '_view_focus', {}).get(name)
+            if focus is not None:
+                widget.after_idle(focus)
             # The status bar belongs to the view on top: it shows that
             # view's selection, not the pick the previous view left behind.
             describe = self._view_status.get(name)

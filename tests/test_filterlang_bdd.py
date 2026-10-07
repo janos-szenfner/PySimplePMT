@@ -438,6 +438,11 @@ def _shell():
     bar.show_gantt_chart = Toolbar.show_gantt_chart.__get__(bar)
     bar._showing = Toolbar._showing.__get__(bar)
     bar._hide_pane = Toolbar._hide_pane.__get__(bar)
+    bar._off_task_view = Toolbar._off_task_view.__get__(bar)
+    bar._task_planning_on_top = Toolbar._task_planning_on_top.__get__(bar)
+    bar._front_view = Toolbar._front_view.__get__(bar)
+    bar._say = Toolbar._say.__get__(bar)
+    bar._report = lambda _m: None
     return bar
 
 

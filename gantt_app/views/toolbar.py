@@ -1477,6 +1477,11 @@ class Toolbar(ctk.CTkFrame):
                 self.deliverables_board.delete_deliverables(selected_ids)
             return
 
+        # On a view that has no rows to delete the shortcut does nothing
+        # rather than reaching the hidden task list's stale selection.
+        if not self._task_planning_on_top():
+            return
+
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'delete_tasks'):
             return
@@ -1665,6 +1670,8 @@ class Toolbar(ctk.CTkFrame):
                      "command": self.copy_tasks},
                     {"text": f"Paste  ({accelerator('V')})",
                      "command": self.paste_tasks},
+                    {"text": f"Delete  ({accelerator('BackSpace')})",
+                     "command": self._delete_selected_tasks},
                 ],
             },
             {
@@ -1796,6 +1803,8 @@ class Toolbar(ctk.CTkFrame):
 
     def add_phase(self):
         """Add a phase: the outermost grouping, bracketing its tasks."""
+        if self._off_task_view("New phase"):
+            return
         self._create_of_type("Phase")
 
     def add_task(self):
@@ -1811,6 +1820,8 @@ class Toolbar(ctk.CTkFrame):
         the selected one; before the list exists it falls back to appending
         at the top level.
         """
+        if self._off_task_view("New task"):
+            return
         if self.task_list is not None and \
                 hasattr(self.task_list, 'create_task_at_cursor'):
             self.task_list.create_task_at_cursor()
@@ -1839,6 +1850,8 @@ class Toolbar(ctk.CTkFrame):
     
     def add_milestone(self):
         """Add a new milestone to the project with undo support."""
+        if self._off_task_view("New milestone"):
+            return
         self._create_of_type("Milestone")
 
     def open_settings(self, initial_tab="Project"):
@@ -2072,6 +2085,8 @@ class Toolbar(ctk.CTkFrame):
         link would give an answer that changes the moment anything else
         touches the project.
         """
+        if self._off_task_view("Critical path rows"):
+            return
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'show_critical_path_rows'):
             return
@@ -2179,6 +2194,8 @@ class Toolbar(ctk.CTkFrame):
         reads finish dates, and a finish read before the links are applied
         is a finish that changes the moment anything else touches the plan.
         """
+        if self._off_task_view("Row highlight"):
+            return
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'show_highlighted_rows'):
             return
@@ -2602,6 +2619,8 @@ class Toolbar(ctk.CTkFrame):
         already in force refill the controls, so the window is the state,
         not a fresh form.
         """
+        if self._off_task_view("The column filter"):
+            return
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'apply_grid_filters'):
             return
@@ -3129,7 +3148,14 @@ class Toolbar(ctk.CTkFrame):
         The list is set after this toolbar is built - see set_task_list - so
         every action asking what is selected has to cope with there being no
         list yet rather than assuming one.
+
+        Commands work on the view on top (issue #116), so a selection in
+        the hidden task grid answers nothing while another view is up -
+        where a command is truly task-only its caller is gated instead of
+        reaching here at all.
         """
+        if self._off_task_view(None):
+            return []
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'get_selected_task_ids'):
             return []
@@ -3150,6 +3176,14 @@ class Toolbar(ctk.CTkFrame):
         One row only. The editor edits a single task, and picking the first
         of several silently would edit something the user did not point at.
         """
+        # On the Deliverables tab the pencil edits the deliverable that is
+        # selected there, the way the row's own Edit entry does (#116).
+        if self._deliverables_on_top() and self.deliverables_board:
+            self.deliverables_board.edit_selected()
+            return
+        if self._off_task_view("Edit"):
+            return
+
         selected = self._selected_task_ids()
         if not selected:
             messagebox.showinfo("Edit Task",
@@ -3164,7 +3198,14 @@ class Toolbar(ctk.CTkFrame):
         self.task_list.edit_task(selected[0])
 
     def indent_selected(self):
-        """Make the selected rows sub-tasks of the row above them."""
+        """Make the selected rows sub-rows of the row above them."""
+        if self._deliverables_on_top() and self.deliverables_board:
+            ids = self.deliverables_board.selected_deliverable_ids()
+            if ids:
+                self.deliverables_board.indent_deliverables(ids)
+            return
+        if self._off_task_view("Indent"):
+            return
         selected = self._selected_task_ids()
         if not selected:
             messagebox.showinfo("Indent",
@@ -3174,6 +3215,13 @@ class Toolbar(ctk.CTkFrame):
 
     def outdent_selected(self):
         """Move the selected rows out to sit beside their parent."""
+        if self._deliverables_on_top() and self.deliverables_board:
+            ids = self.deliverables_board.selected_deliverable_ids()
+            if ids:
+                self.deliverables_board.outdent_deliverables(ids)
+            return
+        if self._off_task_view("Outdent"):
+            return
         selected = self._selected_task_ids()
         if not selected:
             messagebox.showinfo("Outdent",
@@ -3199,11 +3247,15 @@ class Toolbar(ctk.CTkFrame):
         reachable. The clipboard actions beside these already report in the
         status bar, so that is the one kept.
         """
+        if self._off_task_view("Linking"):
+            return
         if hasattr(self.task_list, 'link_tasks'):
             self.task_list.link_tasks(self._selected_task_ids())
 
     def unlink_selected(self):
         """Break the links between the selected rows."""
+        if self._off_task_view("Unlinking"):
+            return
         if hasattr(self.task_list, 'unlink_tasks'):
             self.task_list.unlink_tasks(self._selected_task_ids())
 
@@ -3842,6 +3894,8 @@ class Toolbar(ctk.CTkFrame):
         The chart is what the window opens on; this is the way back from
         the dashboard rather than a thing the reader has to choose first.
         """
+        if self._off_task_view("The chart views"):
+            return
         if self.content_panes is None or self.gantt_chart is None:
             return
 
@@ -3854,6 +3908,8 @@ class Toolbar(ctk.CTkFrame):
 
     def show_dashboard(self):
         """Put the dashboard in the right-hand pane instead of the chart."""
+        if self._off_task_view("The dashboard"):
+            return
         if self.content_panes is None:
             return
 
@@ -3884,6 +3940,8 @@ class Toolbar(ctk.CTkFrame):
         picker last chose. Built the first time it is asked for, like
         the dashboard.
         """
+        if self._off_task_view("The timeline"):
+            return
         if self.content_panes is None:
             return
 
@@ -3915,6 +3973,8 @@ class Toolbar(ctk.CTkFrame):
         new value as _state, which is why the var is synced rather than
         read: nothing else sets it, and the ribbon's pressed look reads it.
         """
+        if self._off_task_view("Grid view only"):
+            return
         if self.content_panes is None or self.gantt_chart is None:
             return
         if _state is not None:
@@ -3942,6 +4002,9 @@ class Toolbar(ctk.CTkFrame):
         hierarchy itself never moves. A heading click answers the
         one-level question without the dialog (issue #46).
         """
+        if self._off_task_view("Sorting"):
+            return
+
         from gantt_app.views.gridsort import SortDialog
 
         task_list = getattr(self, 'task_list', None)
@@ -3974,6 +4037,8 @@ class Toolbar(ctk.CTkFrame):
         (issue #81). The var is synced rather than read, the same way
         toggle_grid_view_only answers both menu and button presses.
         """
+        if self._off_task_view("AutoFilter"):
+            return
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'set_autofilter'):
             return
@@ -3996,7 +4061,52 @@ class Toolbar(ctk.CTkFrame):
 
     def _deliverables_on_top(self) -> bool:
         """Whether the footer's Deliverables tab is the front view."""
-        return getattr(self.master, '_active_view', '') == 'Deliverables'
+        return getattr(getattr(self, 'master', None), '_active_view',
+                       '') == 'Deliverables'
+
+    def _front_view(self) -> str:
+        """
+        Which footer-tab view is on top.
+
+        Task Planning when the toolbar's master does not carry the
+        answer - a toolbar built on its own, as the tests do, behaves
+        exactly as it did before the views had contexts (issue #116).
+        """
+        return getattr(getattr(self, 'master', None), '_active_view',
+                       'Task Planning')
+
+    def _task_planning_on_top(self) -> bool:
+        """Whether a task-grid command would land where it is aimed."""
+        return self._front_view() == 'Task Planning'
+
+    def _say(self, message: str):
+        """
+        A line for the status bar, whichever view owns it now.
+
+        _report goes through the task list, whose status lines are held
+        back while another view is on top - a "not here" note for a
+        command aimed at the view showing has to go to the window's own
+        bar instead.
+        """
+        show = getattr(getattr(self, 'master', None), '_show_status', None)
+        if callable(show):
+            show(message)
+        else:
+            self._report(message)
+
+    def _off_task_view(self, what: str) -> bool:
+        """
+        Whether a task-grid command was aimed at a view it cannot reach.
+
+        The command answers in the status bar rather than silently doing
+        nothing, so a menu pick or a shortcut that is not greyed out still
+        says why nothing happened (issue #116).
+        """
+        if self._task_planning_on_top():
+            return False
+        if what:
+            self._say(f"{what} belongs to the Task Planning view.")
+        return True
 
     def open_deliverable_reports(self):
         """Open the deliverable reports panel - the ribbon's entry point."""
@@ -4009,10 +4119,13 @@ class Toolbar(ctk.CTkFrame):
 
         The Resources group on the View page is only offered while
         Resource Planning is showing; the other tabs leave it hidden.
+        The formatting and progress controls follow the same rule -
+        off the task view they have no selection to act on (issue #116).
         """
         context = getattr(self.icon_toolbar, 'set_view_context', None)
         if callable(context):
             context(view_name)
+        self.refresh_style_bar()
 
     def toggle_resource_grid(self, _state=None):
         """
@@ -4282,6 +4395,8 @@ class Toolbar(ctk.CTkFrame):
         if self._deliverables_on_top() and self.deliverables_board:
             self.deliverables_board.copy_deliverables()
             return
+        if self._off_task_view("Copy"):
+            return
         if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
             selected_ids = self.task_list.get_selected_task_ids()
             if selected_ids:
@@ -4292,6 +4407,8 @@ class Toolbar(ctk.CTkFrame):
         """Cut the front view's selected rows, like Copy does."""
         if self._deliverables_on_top() and self.deliverables_board:
             self.deliverables_board.cut_deliverables()
+            return
+        if self._off_task_view("Cut"):
             return
         if self.clipboard_manager and hasattr(self.task_list, 'get_selected_task_ids'):
             selected_ids = self.task_list.get_selected_task_ids()
@@ -4315,6 +4432,8 @@ class Toolbar(ctk.CTkFrame):
         """
         if self._deliverables_on_top() and self.deliverables_board:
             self.deliverables_board.paste_deliverables()
+            return
+        if self._off_task_view("Paste"):
             return
         if hasattr(self.task_list, 'paste_tasks'):
             self.task_list.paste_tasks()
@@ -4494,6 +4613,8 @@ class Toolbar(ctk.CTkFrame):
         """Create a task at the cursor from the keyboard."""
         task_list = getattr(self, 'task_list', None)
         if task_list is None or not hasattr(task_list, 'create_task_at_cursor'):
+            return 'break'
+        if self._off_task_view("New task"):
             return 'break'
         task_list.create_task_at_cursor()
         return 'break'
@@ -4676,6 +4797,8 @@ class Toolbar(ctk.CTkFrame):
         rows already at that percentage are left out of it so pressing the
         same button twice does not cost a second undo step.
         """
+        if self._off_task_view("Progress"):
+            return
         selected = self._selected_task_ids()
         targets = self._progress_targets(selected)
         if not targets:
@@ -4731,6 +4854,8 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.views.progressgroup import SCOPE_PROJECT
 
+        if self._off_task_view("Mark on Track"):
+            return
         status_date = self.project.status_date or datetime.now()
 
         if scope == SCOPE_PROJECT:
@@ -4797,6 +4922,8 @@ class Toolbar(ctk.CTkFrame):
         """
         from gantt_app.core.taskstyle import TaskStyle
 
+        if self._off_task_view("Formatting"):
+            return
         selected = self._selected_task_ids()
         if not selected:
             return

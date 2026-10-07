@@ -2112,5 +2112,98 @@ class TestTheClipboardShortcuts(unittest.TestCase):
         self.assertEqual(self.called, [])
 
 
+class TestTheDeleteShortcut(unittest.TestCase):
+    """
+    The delete key a plan was missing (issue #114).
+
+    WHY THESE EXIST:
+    ================
+    Rows could be deleted from the ribbon and the right-click menu but
+    not from the keyboard. The shortcut is the platform's usual one -
+    Command+Backspace on a Mac, Control+Backspace elsewhere - and it goes
+    through the same dispatch the button uses, so the two cannot disagree
+    on which view's rows go.
+    """
+
+    class FakeWidget:
+        """Records what is bound to it."""
+
+        def __init__(self):
+            self.bindings = {}
+
+        def bind(self, sequence, handler, add=None):
+            """Remember the sequence, as Tk would."""
+            self.bindings.setdefault(sequence, []).append(handler)
+
+        def focus_get(self):
+            """Nothing has the focus, so nothing swallows the keystroke."""
+            return None
+
+    def bind(self, on_delete=None):
+        """Bind the shortcuts, handing in the delete callback."""
+        from gantt_app.utils.copypastecut import setup_keyboard_bindings
+
+        self.called = []
+        widget = self.FakeWidget()
+        setup_keyboard_bindings(
+            widget,
+            lambda: self.called.append('copy'),
+            lambda: self.called.append('cut'),
+            lambda: self.called.append('paste'),
+            on_delete=on_delete,
+        )
+        return widget
+
+    def test_it_binds_the_platform_s_delete(self):
+        """Command+Backspace on a Mac, Control+Backspace elsewhere."""
+        from gantt_app.utils.shortcuts import MODIFIER
+
+        widget = self.bind(lambda: self.called.append('delete'))
+
+        self.assertIn(f"<{MODIFIER}-BackSpace>", widget.bindings)
+
+    def test_it_runs_the_delete_and_consumes_the_key(self):
+        """Same handler as the ribbon's Delete, and 'break' like the rest."""
+        from gantt_app.utils.shortcuts import MODIFIER
+
+        widget = self.bind(lambda: self.called.append('delete'))
+        handler = widget.bindings[f"<{MODIFIER}-BackSpace>"][0]
+
+        self.assertEqual(handler(None), "break")
+        self.assertEqual(self.called, ['delete'])
+
+    def test_a_text_field_keeps_its_own_delete(self):
+        """
+        In an entry the keystroke deletes the word behind the caret.
+
+        The same guard the clipboard keys get: with a field focused the
+        press is text editing, not row deletion.
+        """
+        from gantt_app.utils.shortcuts import MODIFIER
+
+        widget = self.bind(lambda: self.called.append('delete'))
+
+        class Entry:
+            """Something Tk would report as an entry."""
+
+            def winfo_class(self):
+                """As ttk.Entry reports itself."""
+                return 'TEntry'
+
+        widget.focus_get = lambda: Entry()
+        handler = widget.bindings[f"<{MODIFIER}-BackSpace>"][0]
+
+        self.assertIsNone(handler(None))
+        self.assertEqual(self.called, [])
+
+    def test_no_delete_callback_means_no_binding(self):
+        """A caller that never asked for delete gets no stray key."""
+        from gantt_app.utils.shortcuts import MODIFIER
+
+        widget = self.bind()
+
+        self.assertNotIn(f"<{MODIFIER}-BackSpace>", widget.bindings)
+
+
 if __name__ == '__main__':
     unittest.main()
