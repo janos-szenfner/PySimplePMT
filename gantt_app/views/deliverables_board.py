@@ -366,10 +366,18 @@ class DeliverablesBoard(ctk.CTkFrame):
         """
         Rebuild every row from the project's deliverables.
 
+        Deliverable progress is derived from assigned tasks and children,
+        so the roll-up is done here before the board is redrawn. That
+        keeps the displayed numbers current when an edit reaches the
+        board from the task list, and it corrects a file that was saved
+        before the roll-up ran.
+
         Rebuilding throws away the rows the reader had acted on, so the
         selection, the folds and the scroll position are carried across -
         the task list's update_task_list rule.
         """
+        self.project.roll_up_deliverables()
+
         state = self._capture_view_state()
 
         try:
@@ -547,9 +555,12 @@ class DeliverablesBoard(ctk.CTkFrame):
             if deliverable is None:
                 continue
             health = f"health_{deliverable_health(deliverable)}"
-            # The health tag sits first - its foreground wins over the
+            # The health tag sits last - its foreground wins over the
             # band's, so status and progress read in the health colour.
-            self.tree.item(item, tags=(health, band))
+            # Treeview tags apply right-to-left for overlapping options,
+            # so band (background only) is first and health (foreground)
+            # is the one that shows.
+            self.tree.item(item, tags=(band, health))
 
         self._refresh_health_chip()
 
