@@ -2,6 +2,10 @@
 
 ## 1.72.1 - 2026-10-07
 
+- **Task grid gains a Resource column.**
+  The grid now shows assigned resources by name; the column is listed in
+  the Task Grid settings alongside the others and can be hidden or
+  rearranged (issue #97).
 - **Deliverables right-click menu now mirrors the Task List layout.**
   Copy, Cut, Paste and Paste as Sub-deliverable sit right after Edit and
   Delete, in the same order as the task list uses, so muscle memory works

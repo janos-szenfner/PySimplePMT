@@ -156,7 +156,7 @@ GRID_DATA_COLUMNS = (
     'Baseline Start', 'Start Variance', 'Baseline Finish',
     'Finish Variance', 'Baseline Duration', 'Duration Variance',
     'Baseline Work', 'Work Variance', 'Baseline Cost',
-    'Cost Variance', 'Task Calendar',
+    'Cost Variance', 'Resources', 'Task Calendar',
 )
 
 #: The column that never leaves the front while it is on show: the alert

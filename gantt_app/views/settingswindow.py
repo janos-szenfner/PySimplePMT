@@ -35,7 +35,8 @@ class SettingsWindow(ctk.CTkToplevel):
         'Baseline Duration': 'Base Duration',
         'Duration Variance': 'Dur Var', 'Baseline Work': 'Base Work',
         'Work Variance': 'Work Var', 'Baseline Cost': 'Base Cost',
-        'Cost Variance': 'Cost Var', 'Task Calendar': 'Task Calendar',
+        'Cost Variance': 'Cost Var', 'Resources': 'Resource',
+        'Task Calendar': 'Task Calendar',
     }
 
     def __init__(

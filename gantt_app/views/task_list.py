@@ -578,7 +578,7 @@ class DragDropTaskList(ctk.CTkFrame):
             'Baseline Start', 'Start Variance', 'Baseline Finish',
             'Finish Variance', 'Baseline Duration', 'Duration Variance',
             'Baseline Work', 'Work Variance', 'Baseline Cost', 'Cost Variance',
-            'Task Calendar',
+            'Resources', 'Task Calendar',
         ), show='tree headings')
 
         # Configure columns.
@@ -611,6 +611,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.heading('Work Variance', text='Work Var', anchor=tk.W)
         self.tree.heading('Baseline Cost', text='Base Cost', anchor=tk.W)
         self.tree.heading('Cost Variance', text='Cost Var', anchor=tk.W)
+        self.tree.heading('Resources', text='Resource', anchor=tk.W)
         self.tree.heading('Task Calendar', text='Task Calendar', anchor=tk.W)
 
         #: The base text of each heading, kept so a sort or the autofilter
@@ -665,6 +666,7 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.column('Work Variance', width=80, minwidth=60, stretch=False)
         self.tree.column('Baseline Cost', width=85, minwidth=60, stretch=False)
         self.tree.column('Cost Variance', width=80, minwidth=60, stretch=False)
+        self.tree.column('Resources', width=110, minwidth=80, stretch=False)
         self.tree.column('Task Calendar', width=110, minwidth=80, stretch=False)
         
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -2365,6 +2367,32 @@ class DragDropTaskList(ctk.CTkFrame):
         logger.info("Task list active baseline set to slot %s", slot_number)
         self._apply_column_visibility()
         self.update_task_list()
+
+    def _resource_label(self, task) -> str:
+        """
+        The resources assigned to a task, comma-joined by name.
+
+        A missing assignment or a resource that no longer exists falls
+        back to its id so the cell still says what the row is tied to.
+        """
+        assignments = getattr(task, 'resource_assignments', None) or []
+        if not assignments:
+            return ''
+        repo = self.project.resource_repository
+        labels = []
+        for a in assignments:
+            resource_id = getattr(a, 'resource_id', None)
+            if resource_id is None and isinstance(a, dict):
+                resource_id = a.get('resource_id')
+            if not resource_id:
+                continue
+            resource = (
+                repo.resources.get(resource_id)
+                or repo.teams.get(resource_id)
+                or repo.costs.get(resource_id)
+            )
+            labels.append(getattr(resource, 'name', '') or str(resource_id))
+        return ', '.join(labels)
 
     def _task_calendar_label(self, task) -> str:
         """
@@ -4191,7 +4219,8 @@ class DragDropTaskList(ctk.CTkFrame):
                                      milestone_str,
                                      str(self.project.outline_level(task.id)),
                                  ) + self._task_variance_strings(task)
-                                 + (self._task_calendar_label(task),))
+                                 + (self._resource_label(task),
+                                    self._task_calendar_label(task)))
         
         # What the row is. How it is painted is decided afterwards, once
         # every row is in place and the order they are drawn in is known -
