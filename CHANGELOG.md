@@ -33,6 +33,15 @@
   easy to miss. It now wears the app's accent colour with bold white
   text - the same treatment the File button beside it has - while the
   other tabs stay quiet (issue #118).
+- **Deliverable health colours finally show.**
+  Rows on the Deliverables grid could still come out in the plain text
+  colour: the row's striping tag and its health tag both set the text
+  colour, and which one wins is left to tag priority. Now each tag sets
+  a different option - the band owns the background, the health colour
+  owns the text - so green, blue, grey, amber and red always reach the
+  screen. The Deliverable Status Report's rows get the same striping and
+  colours, and a drag's drop-target highlight can no longer be hidden
+  the same way (issue #121).
 
 ## 1.72.1 - 2026-10-07
 

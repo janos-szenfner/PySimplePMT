@@ -95,6 +95,26 @@ class TestTheColumns(BoardTestCase):
         self.assertIn('health_overdue',
                       self.board.tree.item('001', 'tags'))
 
+    def test_no_two_tags_on_a_row_claim_the_same_option(self):
+        """
+        #121: a health colour that shares an option with the band tag is
+        a colour Tk's tag priority gets to choose - and it chose the
+        banding. Each tag on a row may set an option only once: the band
+        owns the background, the health tag the foreground.
+        """
+        self._add('001', 'Late', due_date=YESTERDAY, progress=40)
+        claimed = {}
+        for tag in self.board.tree.item('001', 'tags'):
+            for option, value in self.board.tree.tag_configure(
+                    tag).items():
+                if not value:
+                    continue
+                self.assertNotIn(
+                    option, claimed,
+                    f"tags {claimed.get(option)} and {tag} both set "
+                    f"{option}")
+                claimed[option] = tag
+
 
 class TestTheClipboard(BoardTestCase):
     """Copy, cut and paste for deliverable branches - issue #109."""

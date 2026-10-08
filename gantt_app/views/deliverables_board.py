@@ -303,11 +303,16 @@ class DeliverablesBoard(ctk.CTkFrame):
         """
         Resolve the row appearances against the theme now in force.
 
-        The health tags set only the foreground - the bands keep the
-        background, so a row's colour reads on its text and progress bar.
-        Task rows take their own muted foreground: they are display, not
-        deliverables, and look it. Tag names are fixed so a theme change
-        re-colours them here rather than building new names.
+        The health tags set only the foreground and the bands only the
+        background, so the two never share an option and a row's colour
+        reads on its text and progress bar no matter which tag Tk ranks
+        first - two tags setting the same option leaves the choice to
+        tag priority, which is how the banding used to eat the health
+        colour (issue #121; the task list's _row_tag avoids the same
+        trap the same way). Task rows take their own muted foreground:
+        they are display, not deliverables, and look it. Tag names are
+        fixed so a theme change re-colours them here rather than
+        building new names.
         """
         for health, colour in HEALTH_FOREGROUNDS.items():
             self.tree.tag_configure(
@@ -315,11 +320,9 @@ class DeliverablesBoard(ctk.CTkFrame):
         self.tree.tag_configure(
             'task_row', foreground=theme.now(theme.MUTED_TEXT))
         self.tree.tag_configure(
-            'evenrow', background=theme.now(theme.GRID_ROW_BG),
-            foreground=theme.now(theme.GRID_TEXT))
+            'evenrow', background=theme.now(theme.GRID_ROW_BG))
         self.tree.tag_configure(
-            'oddrow', background=theme.now(theme.GRID_ROW_ALT),
-            foreground=theme.now(theme.GRID_TEXT))
+            'oddrow', background=theme.now(theme.GRID_ROW_ALT))
 
     def _apply_gutter_style(self) -> None:
         """Grey the fixed gutter, the same shade the task list's wears."""
@@ -555,11 +558,9 @@ class DeliverablesBoard(ctk.CTkFrame):
             if deliverable is None:
                 continue
             health = f"health_{deliverable_health(deliverable)}"
-            # The health tag sits last - its foreground wins over the
-            # band's, so status and progress read in the health colour.
-            # Treeview tags apply right-to-left for overlapping options,
-            # so band (background only) is first and health (foreground)
-            # is the one that shows.
+            # Band and health never set the same option - the band owns
+            # the background, the health tag owns the foreground - so the
+            # row's colour survives however Tk ranks the two tags.
             self.tree.item(item, tags=(band, health))
 
         self._refresh_health_chip()
@@ -1710,7 +1711,12 @@ class DeliverablesBoard(ctk.CTkFrame):
             self._drop_parent_tags = tags
             self.tree.tag_configure('drop_parent',
                                     background=self.DROP_LINE_COLOR)
-            self.tree.item(item, tags=tags + ('drop_parent',))
+            # drop_parent owns the row's background while it is on, so
+            # the band tag comes off - two tags setting the same option
+            # leaves the pick to tag priority (see _apply_row_tag_colours).
+            kept = tuple(t for t in tags
+                         if t not in ('evenrow', 'oddrow'))
+            self.tree.item(item, tags=kept + ('drop_parent',))
         except tk.TclError:
             self._drop_parent_item = None
             self._drop_parent_tags = ()

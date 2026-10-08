@@ -234,6 +234,12 @@ class DeliverableReportsDialog(ctk.CTkToplevel):
         for health, colour in HEALTH_COLORS.items():
             tree.tag_configure(f'health_{health}',
                                foreground=theme.now(colour))
+        # The bands carry the striping's background only; the health tag
+        # owns the foreground, so the two never fight for an option.
+        tree.tag_configure('evenrow',
+                           background=theme.now(theme.GRID_ROW_BG))
+        tree.tag_configure('oddrow',
+                           background=theme.now(theme.GRID_ROW_ALT))
 
         for index, deliverable in enumerate(
                 self.project.deliverable_display_order()):
