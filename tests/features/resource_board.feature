@@ -12,7 +12,10 @@ Feature: 4-Panel Resource Planning Matrix
     And the footer contains the "Dashboard" tab
     And the "Deliverables" tab is enabled
 
-  Scenario: The four panels sit in a draggable split kept at the default
+  Scenario: The three panels sit in a draggable split kept at the default
+    # Issue #126 folded the inspector into the task list - its fields
+    # are columns now, its buttons live under the list, and the
+    # assignee preview sits under the pool.
     Then the resource board panels are a resizable split
     And the resource board uses compact panel proportions
     When the user drags a panel divider
@@ -63,14 +66,12 @@ Feature: 4-Panel Resource Planning Matrix
   Scenario: Selecting a task does not rebuild the task list
     Given a resource board with a project that has unassigned and assigned tasks
     When the user selects the "Requirements Gathering" task without rebuilding the task list
-    Then the inspector shows "Requirements Gathering"
+    Then the task list shows "Requirements Gathering" as the selected row
 
-  Scenario: Selecting a task shows its details in the inspector
+  Scenario: A task row carries the fields the inspector used to
+    # Issue #126: the details sit in the row's own columns now.
     Given a resource board with a project that has unassigned and assigned tasks
-    When the user selects the "Requirements Gathering" task
-    Then the inspector shows "Requirements Gathering"
-    And the inspector shows "Effort:"
-    And the inspector shows "Priority:"
+    Then the task list row for "Requirements Gathering" carries effort, cost and priority
 
   Scenario: Resource pool lists every resource and team
     Given a resource board with a project that has resources and a team
@@ -132,7 +133,7 @@ Feature: 4-Panel Resource Planning Matrix
 
   Scenario: De-assigning a task updates its status
     Given a resource board with a project that has an assigned task
-    When the user selects the assigned task in the inspector
+    When the user selects the assigned task in the list
     And the user de-assigns the selected task
     Then the task has no resource assignments
     And the task list shows "Database Migration" with status "Unassigned"

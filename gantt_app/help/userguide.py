@@ -1251,23 +1251,28 @@ GUIDE_SECTIONS = (
         [
             "The footer at the bottom of the window has four tabs: Task "
             "Planning, Resource Planning, Deliverables and Dashboard. Task "
-            "Planning is the default. Resource Planning opens the four-"
+            "Planning is the default. Resource Planning opens the three-"
             "panel resource matrix, Deliverables opens the checklist of "
             "what the plan owes, and Dashboard opens the board of panels "
             "that read the plan.",
 
-            "The left half of the matrix lists every project task, "
-            "indented rows open by default so the whole outline is "
-            "visible - a branch you fold stays folded, and only that "
-            "one. Click a task to see its details in the inspector "
-            "panel on the right, and to choose the resources or teams "
-            "that can work on it.",
+            "The left panel lists every project task, indented rows "
+            "open by default so the whole outline is visible - a "
+            "branch you fold stays folded, and only that one. Each row "
+            "carries the task's effort, duration, cost, priority and "
+            "status in its own columns, so everything a pick needs sits "
+            "beside the task itself. Click a task, then a resource or "
+            "team, and the Assign Task and De-assign buttons under the "
+            "list do the work - there is no separate inspector panel.",
 
-            "The top-right panel is the resource pool. It lists every named "
+            "The middle panel is the resource pool. It lists every named "
             "person, generic placeholder and team, with a colour band that "
             "shows whether they are free, optimal, fully booked or "
             "overbooked. Long names wrap inside the fixed panel size so the "
-            "layout stays compact.",
+            "layout stays compact. The assignee preview sits under the "
+            "pool - it shows the hours, percentage and projected load for "
+            "whichever resource is selected, and updates as soon as "
+            "assignments change.",
 
             "The pool's type filter answers for the heat map too - "
             "the two panels always name the same set of rows, so who "
@@ -1276,11 +1281,7 @@ GUIDE_SECTIONS = (
             "away. Cost resources hold a row in both, their cells left "
             "blank: they commit money, not hours.",
 
-            "The middle-right panel is the assignment preview. It shows the "
-            "hours, percentage and daily heatmap for whichever resource or "
-            "team is selected, and it updates as soon as assignments change.",
-
-            "The bottom-right panel is the project heatmap. Each row is a "
+            "The right panel is the project heatmap. Each row is a "
             "resource or team and each cell is one day. The colour shows "
             "load against capacity across the full project timeline, so "
             "overbooking is visible at a glance.",

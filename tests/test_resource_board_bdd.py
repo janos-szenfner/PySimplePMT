@@ -382,12 +382,11 @@ def the_user_cancels_the_share_question(app, monkeypatch):
     app.resource_board.update_idletasks()
 
 
-@when("the user selects the assigned task in the inspector")
-def the_user_selects_the_assigned_task_in_the_inspector(app):
+@when("the user selects the assigned task in the list")
+def the_user_selects_the_assigned_task_in_the_list(app):
     for task in app.project.tasks:
         if task.resource_assignments:
-            app.resource_board._selected_task_id = task.id
-            app.resource_board._show_task(task.id)
+            app.resource_board._select_task(task.id)
             app.resource_board.update_idletasks()
             return
     raise AssertionError("no assigned task found")
@@ -532,13 +531,28 @@ def the_task_list_shows_with_status(app, name, status):
     raise AssertionError(f"expected task {name!r} in task list")
 
 
-@then(parsers.parse('the inspector shows "{text}"'))
-def the_inspector_shows(app, text):
-    widget = app.resource_board.inspector_text
-    widget.configure(state="normal")
-    content = widget.get("0.0", "end")
-    widget.configure(state="disabled")
-    assert text in content, f"expected {text!r} in inspector, got {content!r}"
+@then(parsers.parse(
+    'the task list shows "{name}" as the selected row'))
+def the_task_list_shows_the_selected_row(app, name):
+    task = _find_task(app.project, name)
+    tree = app.resource_board.task_tree
+    assert tree.selection() == (task.id,), (
+        f"expected {task.id!r} selected, got {tree.selection()}")
+
+
+@then(parsers.parse(
+    'the task list row for "{name}" carries effort, cost and priority'))
+def the_task_row_carries_the_inspector_fields(app, name):
+    # The inspector's fields are the row's own columns now (#126) -
+    # effort, duration, cost, priority, status, in column order.
+    task = _find_task(app.project, name)
+    tree = app.resource_board.task_tree
+    values = tree.item(task.id, "values")
+    assert len(values) == 5, f"expected five columns, got {values}"
+    effort, duration, cost, priority, status = values
+    assert effort.endswith("h"), f"effort cell: {values}"
+    assert cost.startswith("$"), f"cost cell: {values}"
+    assert priority == str(task.priority), f"priority cell: {values}"
 
 
 @then(parsers.parse('the resource pool contains "{name}"'))
@@ -566,25 +580,23 @@ def the_resource_board_uses_compact_panel_proportions(app):
     board = app.resource_board
     board.update_idletasks()
     # The paned split sets the widths, not the panel content, so a long name
-    # wraps rather than widening a panel. Check the default 2:1:1:4 split,
+    # wraps rather than widening a panel. Check the default 2:1:4 split,
     # computed for a known width, and that selecting a resource left it
     # untouched (no divider was dragged).
     assert not board._user_sized
     positions = board._default_sash_positions(800)
     widths = [positions[0],
               positions[1] - positions[0],
-              positions[2] - positions[1],
-              800 - positions[2]]
+              800 - positions[1]]
     assert abs(widths[0] - 2 * widths[1]) <= 2, widths
-    assert abs(widths[1] - widths[2]) <= 1, widths
-    assert abs(widths[3] - 4 * widths[1]) <= 4, widths
+    assert abs(widths[2] - 4 * widths[1]) <= 4, widths
 
 
 @then("the resource board panels are a resizable split")
 def the_panels_are_a_resizable_split(app):
     board = app.resource_board
     assert isinstance(board._panes, ttk.PanedWindow)
-    assert len(board._panes.panes()) == 4
+    assert len(board._panes.panes()) == 3
 
 
 @when("the user drags a panel divider")

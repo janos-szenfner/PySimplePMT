@@ -123,6 +123,14 @@
   a task made its indented children vanish. Rows now open by default
   and stay open; a branch the reader folds is the one thing
   remembered as closed (issue #124).
+- **The resource matrix is three panels wide.** The Task Inspector
+  used to take a quarter of the width to repeat what the selected row
+  already said plus two buttons. Its fields are columns in the task
+  list now - cost and priority join effort, duration and status -
+  its Assign Task and De-assign buttons sit under the list they act
+  on, and the assignee preview moved under the resource pool, which
+  is the pick it reads. What is left is the task list, the pool and
+  the heat map, in the same draggable split (issue #126).
 
 ## 1.72.1 - 2026-10-07
 

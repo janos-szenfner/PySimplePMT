@@ -1,10 +1,13 @@
 """
-4-Panel Resource Planning Matrix.
+3-Panel Resource Planning Matrix.
 
 A single-screen resource view that sits beside the standard WBS / Gantt
-viewport and is toggled from the bottom status bar.  It shows the unassigned
-backlog, a task inspector, the resource pool with capacity indicators, and a
-weekly stacking heatmap.
+viewport and is toggled from the bottom status bar.  It shows the plan's
+task list with the assignment facts in its columns, the resource pool
+with capacity indicators, and a weekly stacking heatmap.  There was an
+inspector panel between the first two; its fields moved into the task
+list's columns and its two buttons under the list, which is all the
+panel was doing (issue #126).
 
 This first version uses selection + buttons for assignment and a Tk canvas
 for the heatmap.  Full drag-and-drop and a plotly renderer can be layered on
@@ -126,7 +129,7 @@ def _team_load_for_date(
 
 class ResourceBoard(ctk.CTkFrame):
     """
-    The 4-panel resource planning view.
+    The 3-panel resource planning view.
 
     PARAMETERS:
     -----------
@@ -171,12 +174,14 @@ class ResourceBoard(ctk.CTkFrame):
         self._drag_origin: Optional[Tuple[int, int]] = None
         self._drag_window: Optional[tk.Toplevel] = None
 
-        # The four panels sit in a draggable paned window, the same as the
-        # task list and the Gantt chart split, so the reader can widen one at
-        # another's expense. The default split - task list 2, inspector and
-        # pool 1 each, heatmap 4 - is kept until the reader drags a divider;
-        # see _keep_default_proportions.
-        self._pane_weights = (2, 1, 1, 4)
+        # The three panels sit in a draggable paned window, the same as
+        # the task list and the Gantt chart split, so the reader can
+        # widen one at another's expense. The default split - task list
+        # 2, pool 1, heatmap 4 - is kept until the reader drags a
+        # divider; see _keep_default_proportions. (There were four
+        # panels until issue #126 folded the inspector into the task
+        # list.)
+        self._pane_weights = (2, 1, 4)
         self._panels: List[ctk.CTkFrame] = []
         self._user_sized = False
         self._heatmap_reset_pending = True
@@ -200,7 +205,6 @@ class ResourceBoard(ctk.CTkFrame):
         self._panes.lift()
 
         self._build_task_list_panel()
-        self._build_inspector_panel()
         self._build_pool_panel()
         self._build_heatmap_panel()
 
@@ -232,7 +236,7 @@ class ResourceBoard(ctk.CTkFrame):
         The paned window's weights govern how extra space is shared once the
         panes have a size, but not the size they open at - a pane opens at
         its content's width. So the sashes are placed by hand to the default
-        2:1:1:4 on every layout change, until a divider is dragged.
+        2:1:4 on every layout change, until a divider is dragged.
         """
         if self._user_sized:
             return
@@ -240,7 +244,7 @@ class ResourceBoard(ctk.CTkFrame):
             width = self._panes.winfo_width()
         except tk.TclError:
             return
-        if width <= 1 or len(self._panels) < 4:
+        if width <= 1 or len(self._panels) < 3:
             return
         for index, position in enumerate(self._default_sash_positions(width)):
             try:
@@ -329,7 +333,7 @@ class ResourceBoard(ctk.CTkFrame):
 
         self.task_tree = ttk.Treeview(
             self.backlog_frame,
-            columns=("effort", "duration", "status"),
+            columns=("effort", "duration", "cost", "priority", "status"),
             show="tree headings",
             style='ResourceBoard.Treeview',
             selectmode='browse',
@@ -337,10 +341,14 @@ class ResourceBoard(ctk.CTkFrame):
         self.task_tree.heading("#0", text="Task")
         self.task_tree.heading("effort", text="Effort")
         self.task_tree.heading("duration", text="Duration")
+        self.task_tree.heading("cost", text="Cost")
+        self.task_tree.heading("priority", text="Priority")
         self.task_tree.heading("status", text="Status")
         self.task_tree.column("#0", width=120, minwidth=80)
         self.task_tree.column("effort", width=60, anchor="center")
         self.task_tree.column("duration", width=60, anchor="center")
+        self.task_tree.column("cost", width=70, anchor="e")
+        self.task_tree.column("priority", width=60, anchor="center")
         self.task_tree.column("status", width=110, anchor="w")
         self.task_tree.grid(row=0, column=0, sticky="nsew")
 
@@ -362,6 +370,26 @@ class ResourceBoard(ctk.CTkFrame):
         # not answer the wheel on its own here.
         self.task_tree.bind("<Enter>", self._bind_task_wheel, add='+')
         self.task_tree.bind("<Leave>", self._unbind_task_wheel, add='+')
+
+        # The two buttons are all the inspector panel was really for;
+        # its fields moved into the columns above, so the pair sits
+        # under the list it acts on (issue #126)
+        buttons = ctk.CTkFrame(p1, fg_color="transparent")
+        buttons.grid(row=3, column=0, padx=8, pady=(0, 8), sticky="ew")
+        buttons.grid_columnconfigure(0, weight=1)
+        buttons.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkButton(
+            buttons, text="Assign Task",
+            fg_color="#1f6aa5", hover_color="#144870",
+            command=self._assign_selected,
+        ).grid(row=0, column=0, padx=(0, 3), sticky="ew")
+
+        ctk.CTkButton(
+            buttons, text="De-assign",
+            fg_color="#c0392b", hover_color="#962d22",
+            command=self._deassign_selected,
+        ).grid(row=0, column=1, padx=(3, 0), sticky="ew")
 
     def _bind_task_wheel(self, _event=None):
         for sequence in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
@@ -385,48 +413,18 @@ class ResourceBoard(ctk.CTkFrame):
         self.task_tree.yview_scroll(steps, 'units')
         return 'break'
 
-    def _build_inspector_panel(self) -> None:
+    def _build_pool_panel(self) -> None:
         p2 = self._add_panel(self._pane_weights[1])
+        p2.grid_rowconfigure(2, weight=1)
         p2.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            p2, text="2. TASK INSPECTOR",
-            font=ctk.CTkFont(weight="bold"),
-        ).pack(pady=(8, 4))
-
-        self.inspector_text = ctk.CTkTextbox(
-            p2, wrap="word", height=160, width=180, state="disabled")
-        self.inspector_text.pack(padx=10, pady=4, fill="x")
-
-        self.preview_label = ctk.CTkLabel(
-            p2, text="Assignee preview:", anchor="w", justify="left",
-            wraplength=160)
-        self.preview_label.pack(padx=10, pady=(8, 2), fill="x")
-
-        ctk.CTkButton(
-            p2, text="Assign Task",
-            fg_color="#1f6aa5", hover_color="#144870",
-            command=self._assign_selected,
-        ).pack(padx=10, pady=5, fill="x")
-
-        ctk.CTkButton(
-            p2, text="De-assign / Move to Backlog",
-            fg_color="#c0392b", hover_color="#962d22",
-            command=self._deassign_selected,
-        ).pack(padx=10, pady=5, fill="x")
-
-    def _build_pool_panel(self) -> None:
-        p3 = self._add_panel(self._pane_weights[2])
-        p3.grid_rowconfigure(2, weight=1)
-        p3.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(
-            p3, text="3. RESOURCE POOL",
+            p2, text="2. RESOURCE POOL",
             font=ctk.CTkFont(weight="bold"),
         ).grid(row=0, column=0, pady=(8, 4), padx=8, sticky="w")
 
         self.pool_filter = ctk.CTkOptionMenu(
-            p3, values=["All Types", "Named", "Generic", "Team", "Cost"])
+            p2, values=["All Types", "Named", "Generic", "Team", "Cost"])
         self.pool_filter.grid(row=1, column=0, padx=8, pady=(0, 4),
                               sticky="ew")
         self.pool_filter.set("All Types")
@@ -435,22 +433,31 @@ class ResourceBoard(ctk.CTkFrame):
         self.pool_filter.configure(
             command=lambda _v: (self._filter_pool(), self._draw_heatmap()))
 
-        self.pool_frame = ScrollFrame(p3)
+        self.pool_frame = ScrollFrame(p2)
         self.pool_frame.grid(row=2, column=0, padx=8, pady=(0, 8),
                              sticky="nsew")
         self.pool_frame.content.grid_columnconfigure(0, weight=1)
 
+        # The assignee preview used to sit in the inspector panel; it
+        # belongs under the pool, since a resource pick is what it reads
+        # (issue #126)
+        self.preview_label = ctk.CTkLabel(
+            p2, text="Assignee preview:", anchor="w", justify="left",
+            wraplength=160)
+        self.preview_label.grid(row=3, column=0, padx=8, pady=(0, 8),
+                                sticky="ew")
+
     def _build_heatmap_panel(self) -> None:
-        p4 = self._add_panel(self._pane_weights[3])
-        p4.grid_rowconfigure(1, weight=1)
-        p4.grid_columnconfigure(0, weight=1)
+        p3 = self._add_panel(self._pane_weights[2])
+        p3.grid_rowconfigure(1, weight=1)
+        p3.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            p4, text="4. LIVE STACKING & HEATMAP",
+            p3, text="3. LIVE STACKING & HEATMAP",
             font=ctk.CTkFont(weight="bold"),
         ).grid(row=0, column=0, pady=(8, 4), padx=8, sticky="w")
 
-        self.heatmap_frame = ctk.CTkFrame(p4, fg_color="transparent")
+        self.heatmap_frame = ctk.CTkFrame(p3, fg_color="transparent")
         self.heatmap_frame.grid(row=1, column=0, padx=8, pady=(0, 8),
                                 sticky="nsew")
         self.heatmap_frame.grid_rowconfigure(0, weight=1)
@@ -573,6 +580,11 @@ class ResourceBoard(ctk.CTkFrame):
         visible_ids = self._visible_task_ids_for(search)
         display_ids = self.project.display_ids()
 
+        # The inspector panel's fields moved into the columns, so the
+        # facts a pick needs sit beside the row they belong to (#126)
+        from gantt_app.core.baselines import _task_cost
+        repo = self.project.resource_repository
+
         def add_task(task: Task, parent: str = "") -> None:
             if task.id not in visible_ids:
                 return
@@ -580,6 +592,8 @@ class ResourceBoard(ctk.CTkFrame):
             values = (
                 f"{self._task_effort(task):.1f}h",
                 f"{self._task_duration(task)}d",
+                f"${_task_cost(task, repo):g}",
+                str(task.priority),
                 self._task_status_text(task),
             )
             # Open unless the reader folded this branch - indented rows
@@ -748,7 +762,7 @@ class ResourceBoard(ctk.CTkFrame):
             self._assign_task(task_id, resource_id)
 
     # ------------------------------------------------------------------
-    # Inspector
+    # Selection
     # ------------------------------------------------------------------
     def _select_task(self, task_id: str) -> None:
         self._selected_task_id = task_id
@@ -762,24 +776,12 @@ class ResourceBoard(ctk.CTkFrame):
         logger.debug("Resource board selected task %s", task_id)
 
     def _show_task(self, task_id: str) -> None:
-        task = self.project.get_task_by_id(task_id)
-        if task is None:
+        """
+        A task pick: the fields show in the list's own columns now, so
+        what updates is the assignee preview (issue #126).
+        """
+        if self.project.get_task_by_id(task_id) is None:
             return
-
-        self.inspector_text.configure(state="normal")
-        self.inspector_text.delete("0.0", "end")
-        from gantt_app.core.baselines import _task_cost
-        info = (
-            f"TASK: #{task.id} {task.name}\n"
-            f"Effort: {self._task_effort(task)}h\n"
-            f"Duration: {self._task_duration(task)}d\n"
-            f"Cost: ${_task_cost(task, self.project.resource_repository):g}\n"
-            f"Priority: {task.priority}\n"
-            f"Calendar: {task.calendar_id or 'project'}\n"
-        )
-        self.inspector_text.insert("0.0", info)
-        self.inspector_text.configure(state="disabled")
-
         self._update_preview()
 
     def _update_preview(self) -> None:
