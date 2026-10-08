@@ -162,7 +162,11 @@ class ResourceBoard(ctk.CTkFrame):
         #: ('task', id) or ('entity', id) - whichever was clicked last, so
         #: the status bar describes the latest pick, not an older one.
         self._status_subject: Optional[Tuple[str, str]] = None
-        self._expanded_task_ids: Set[str] = set()
+        #: The task rows the reader folded away. Branches open by
+        #: default - hiding indented rows behind a collapsed parent is
+        #: the surprise issue #124 reports - so what is remembered is
+        #: which rows the reader closed, not which they opened.
+        self._closed_task_ids: Set[str] = set()
         self._drag_task_id: Optional[str] = None
         self._drag_origin: Optional[Tuple[int, int]] = None
         self._drag_window: Optional[tk.Toplevel] = None
@@ -426,7 +430,10 @@ class ResourceBoard(ctk.CTkFrame):
         self.pool_filter.grid(row=1, column=0, padx=8, pady=(0, 4),
                               sticky="ew")
         self.pool_filter.set("All Types")
-        self.pool_filter.configure(command=lambda _v: self._filter_pool())
+        # The heat map answers the same filter as the pool - one pick,
+        # both lists (issue #127)
+        self.pool_filter.configure(
+            command=lambda _v: (self._filter_pool(), self._draw_heatmap()))
 
         self.pool_frame = ScrollFrame(p3)
         self.pool_frame.grid(row=2, column=0, padx=8, pady=(0, 8),
@@ -575,7 +582,10 @@ class ResourceBoard(ctk.CTkFrame):
                 f"{self._task_duration(task)}d",
                 self._task_status_text(task),
             )
-            is_open = task.id in self._expanded_task_ids
+            # Open unless the reader folded this branch - indented rows
+            # show from the first draw, and a refresh after an assign
+            # does not tuck them away again (issue #124)
+            is_open = task.id not in self._closed_task_ids
             item = self.task_tree.insert(
                 parent, tk.END, iid=task.id, text=text, values=values,
                 open=is_open)
@@ -659,11 +669,13 @@ class ResourceBoard(ctk.CTkFrame):
             self._sync_expansion(item)
 
     def _sync_expansion(self, item: str) -> None:
-        task_id = self.task_tree.item(item, "iid")
+        # The iid is the item itself; item(item, 'iid') is not a real
+        # option and never recorded a usable id, which is how an assign's
+        # refresh came to fold every parent (issue #124)
         if self.task_tree.item(item, "open"):
-            self._expanded_task_ids.add(task_id)
+            self._closed_task_ids.discard(item)
         else:
-            self._expanded_task_ids.discard(task_id)
+            self._closed_task_ids.add(item)
         for child in self.task_tree.get_children(item):
             self._sync_expansion(child)
 
@@ -742,6 +754,10 @@ class ResourceBoard(ctk.CTkFrame):
         self._selected_task_id = task_id
         self._status_subject = ('task', task_id)
         self._show_task(task_id)
+        # The pick is one half of what the heat map overlays - the
+        # projected load follows the selection, not the next refresh
+        # (issue #127)
+        self._draw_heatmap()
         self._push_selection_status()
         logger.debug("Resource board selected task %s", task_id)
 
@@ -802,6 +818,33 @@ class ResourceBoard(ctk.CTkFrame):
     # ------------------------------------------------------------------
     # Resource pool
     # ------------------------------------------------------------------
+    def _pool_filter_keeps(self, entity) -> bool:
+        """
+        Whether the pool's type filter lets this entity show.
+
+        One predicate for both pool and heat map, which is what "the two
+        lists kept in sync" means (issue #127): a filter that hid a card
+        but left its heat-map row - or the other way round - would be
+        answering two different questions with one switch.
+        """
+        selected_filter = self.pool_filter.get()
+        is_team = isinstance(entity, TeamPool)
+        is_cost = isinstance(entity, CostResource)
+        if selected_filter == "Cost":
+            return is_cost
+        if is_cost:
+            # A cost resource only answers "Cost" or "All Types"
+            return selected_filter == "All Types"
+        if selected_filter == "Named":
+            # A team is neither named nor generic - asking it for a
+            # resource_type it does not have only raises (issue #127)
+            return not is_team and entity.resource_type == ResourceType.NAMED
+        if selected_filter == "Generic":
+            return not is_team and entity.resource_type == ResourceType.GENERIC
+        if selected_filter == "Team":
+            return is_team
+        return True
+
     def _filter_pool(self) -> None:
         selected_filter = self.pool_filter.get()
         logger.debug("Filtering resource pool by %r", selected_filter)
@@ -817,15 +860,8 @@ class ResourceBoard(ctk.CTkFrame):
         for entity in entities:
             is_team = isinstance(entity, TeamPool)
             is_cost = isinstance(entity, CostResource)
-            if selected_filter == "Cost" and not is_cost:
+            if not self._pool_filter_keeps(entity):
                 continue
-            if not is_cost:
-                if selected_filter == "Named" and entity.resource_type != ResourceType.NAMED:
-                    continue
-                if selected_filter == "Generic" and entity.resource_type != ResourceType.GENERIC:
-                    continue
-                if selected_filter == "Team" and not is_team:
-                    continue
 
             if is_cost:
                 committed = _cost_committed(repo, entity.id, self.project)
@@ -870,6 +906,9 @@ class ResourceBoard(ctk.CTkFrame):
         self._status_subject = ('entity', entity_id)
         self._filter_pool()
         self._update_preview()
+        # Same as in _select_task: the heat map's projected overlay reads
+        # both picks, so it redraws when either moves (issue #127)
+        self._draw_heatmap()
         self._push_selection_status()
         logger.debug("Resource board selected resource %s", entity_id)
 
@@ -911,7 +950,15 @@ class ResourceBoard(ctk.CTkFrame):
         logger.debug("Drawing resource heatmap")
 
         repo = self.project.resource_repository
-        entities = list(repo.resources.values()) + list(repo.teams.values())
+        # The same entities the pool lists, under the same type filter:
+        # the two views answer one question, so a row one hides the
+        # other hides too (issue #127). Cost resources draw a row of
+        # empty cells - they commit money, not hours.
+        entities = [entity
+                    for entity in (list(repo.resources.values())
+                                   + list(repo.teams.values())
+                                   + list(repo.costs.values()))
+                    if self._pool_filter_keeps(entity)]
         if not entities:
             canvas.create_text(
                 80, 30, text="No resources loaded",
@@ -956,13 +1003,17 @@ class ResourceBoard(ctk.CTkFrame):
         resources = list(repo.resources.values())
         for row, entity in enumerate(entities):
             is_team = isinstance(entity, TeamPool)
+            is_cost = isinstance(entity, CostResource)
             y = 40 + row * row_height
             canvas.create_text(
                 10, y + row_height // 2,
                 text=entity.name,
                 fill=theme.now(theme.GRID_TEXT), anchor="w", width=150)
 
-            if is_team:
+            if is_cost:
+                capacity_per_day = {}
+                loads = {}
+            elif is_team:
                 capacity_per_day = entity.calculate_daily_capacity(resources)
                 loads = _team_load_for_date(entity, resources, self.project)
             else:
@@ -997,7 +1048,9 @@ class ResourceBoard(ctk.CTkFrame):
                     x + 2, y + 2, x + day_width - 2, y + row_height - 2,
                     fill=colour, outline=theme.now(theme.GRID_TEXT))
 
-                label = f"{used:.1f}h"
+                # A cost row holds no hours - the cells stay grey and
+                # blank where a resource row would label its load
+                label = "" if is_cost else f"{used:.1f}h"
                 if cap > 0:
                     label += f" / {cap:.0f}h"
                 canvas.create_text(

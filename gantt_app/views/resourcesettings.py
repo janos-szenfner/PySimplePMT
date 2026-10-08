@@ -1320,12 +1320,18 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
     def __init__(self, master, repo, active_project_ids=None,
                  on_save: Optional[Callable] = None,
+                 on_changed: Optional[Callable] = None,
                  theme_controller=None, **kwargs):
         super().__init__(master, **kwargs)
         self.repo = repo
         self._theme_controller = theme_controller
         self.active_project_ids = list(active_project_ids or [])
         self.on_save = on_save
+        #: Fired on every pool change - apply or delete - so the views
+        #: behind the window redraw now rather than waiting for a view
+        #: switch or a Save (issue #125). on_save still means "write the
+        #: file"; this one means "the pool moved".
+        self.on_changed = on_changed
         self.selected_resource_id = None
         self.selected_team_id = None
         self.selected_material_id = None
@@ -1666,9 +1672,25 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                 self, self.repo, self.repo.resources[self.selected_resource_id],
                 self._resource_applied)
 
+    def _pool_changed(self):
+        """
+        Tell the app the pool moved so its views redraw (issue #125).
+
+        A change here used to reach the Resource Planning view only when
+        the window's Save ran or the reader switched away and back; the
+        pool editor writes the repository itself, so the views hear
+        about each apply and delete as it happens.
+        """
+        if self.on_changed:
+            try:
+                self.on_changed()
+            except Exception:
+                logger.exception("The on_changed callback failed")
+
     def _resource_applied(self, resource_id):
         self._refresh_resources(resource_id)
         self._refresh_teams()
+        self._pool_changed()
 
     def _delete_resource(self):
         if not self.selected_resource_id:
@@ -1679,6 +1701,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.repo.remove_resource(resource.id)
             self._refresh_resources()
             self._refresh_teams()
+            self._pool_changed()
 
     def _create_team(self):
         self.team_editor = TeamEditorModal(
@@ -1695,6 +1718,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
     def _team_applied(self, team_id):
         self._refresh_teams(team_id)
         self._refresh_resources()
+        self._pool_changed()
 
     def _delete_team(self):
         if not self.selected_team_id:
@@ -1705,6 +1729,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
             self.repo.remove_team(team.id)
             self._refresh_teams()
             self._refresh_resources()
+            self._pool_changed()
 
     def _create_material(self):
         self.material_editor = MaterialEditorModal(
@@ -1721,6 +1746,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
     def _material_applied(self, material_id):
         self._refresh_materials(material_id)
+        self._pool_changed()
 
     def _delete_material(self):
         if not self.selected_material_id:
@@ -1731,6 +1757,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                 f"Delete {material.name} from the resource pool?"):
             self.repo.remove_material(material.id)
             self._refresh_materials()
+            self._pool_changed()
 
     def _create_cost(self):
         self.cost_editor = CostEditorModal(
@@ -1747,6 +1774,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
 
     def _cost_applied(self, cost_id):
         self._refresh_costs(cost_id)
+        self._pool_changed()
 
     def _delete_cost(self):
         if not self.selected_cost_id:
@@ -1757,6 +1785,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
                 f"Delete {cost.name} from the resource pool?"):
             self.repo.remove_cost(cost.id)
             self._refresh_costs()
+            self._pool_changed()
 
     def _bind_shortcuts(self):
         bind_all(self, 'c', self._hotkey_copy)
@@ -1924,6 +1953,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.repo.add_resource(resource)
         logger.info("Pasted resource as %r (%s)", resource.name, resource.id)
         self._refresh_resources(resource.id)
+        self._pool_changed()
 
     def _paste_team(self):
         if not self.clipboard or self.clipboard.get("kind") != "team":
@@ -1935,6 +1965,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.repo.add_team(team)
         logger.info("Pasted team as %r (%s)", team.name, team.id)
         self._refresh_teams(team.id)
+        self._pool_changed()
 
     def _paste_material(self):
         if not self.clipboard or self.clipboard.get("kind") != "material":
@@ -1946,6 +1977,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.repo.add_material(material)
         logger.info("Pasted material as %r (%s)", material.name, material.id)
         self._refresh_materials(material.id)
+        self._pool_changed()
 
     def _paste_cost(self):
         if not self.clipboard or self.clipboard.get("kind") != "cost":
@@ -1957,6 +1989,7 @@ class ResourceSettingsWindow(ctk.CTkToplevel):
         self.repo.add_cost(cost)
         logger.info("Pasted cost resource as %r (%s)", cost.name, cost.id)
         self._refresh_costs(cost.id)
+        self._pool_changed()
 
     def _refresh_button_states(self):
         if self.selected_resource_id:

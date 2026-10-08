@@ -16,7 +16,8 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from gantt_app.views import theme
 from gantt_app.core.models import Project, Task
 from gantt_app.core.resource_model import (
-    Resource, ResourceRepository, ResourceType, SchedulePattern, TeamPool,
+    CostResource, Resource, ResourceRepository, ResourceType,
+    SchedulePattern, TeamPool,
 )
 
 
@@ -401,7 +402,10 @@ def the_user_de_assigns_the_selected_task(app):
 @when(parsers.parse('the user filters the resource pool to "{filter}"'))
 def the_user_filters_the_resource_pool_to(app, filter):
     app.resource_board.pool_filter.set(filter)
+    # What the dropdown's command runs: both lists answer the same pick
+    # (issue #127)
     app.resource_board._filter_pool()
+    app.resource_board._draw_heatmap()
     app.resource_board.update_idletasks()
 
 
@@ -774,3 +778,102 @@ def the_resource_pool_card_for_shows_a_percentage_above_100(app, name):
                 f"expected percentage above 100 in {text!r}")
             return
     raise AssertionError(f"card for {name!r} not found")
+
+
+# ------------------------------------------------------------------
+# Issue #124 - indented tasks on the board's task list
+# ------------------------------------------------------------------
+@given("a resource board with a project that has an indented task")
+def a_resource_board_with_an_indented_task(app):
+    _setup_common_project(app.project)
+
+    phase = Task(
+        id="rbt-p", name="Build", task_type="Phase",
+        start_date=datetime(2026, 1, 1),
+        end_date=datetime(2026, 1, 9))
+    phase.__post_init__()
+    app.project.add_task(phase)
+    child = Task(
+        id="rbt-c", name="Frame", task_type="Task",
+        parent_task_id="rbt-p",
+        start_date=datetime(2026, 1, 1),
+        end_date=datetime(2026, 1, 2))
+    child.__post_init__()
+    app.project.add_task(child)
+
+    app.project.renumber_task_ids()
+    app.resource_board.refresh()
+    app.resource_board.update_idletasks()
+
+
+@when("the reader folds the indented task's parent")
+def the_reader_folds_the_indented_tasks_parent(app):
+    parent = _find_task(app.project, "Build")
+    app.resource_board.task_tree.item(parent.id, open=False)
+    # The open-close binding is how a click records a fold
+    app.resource_board._on_task_tree_open_close()
+
+
+@when("the resource board refreshes")
+def the_resource_board_refreshes(app):
+    app.resource_board.refresh()
+    app.resource_board.update_idletasks()
+
+
+@then("the indented task is on the task list")
+def the_indented_task_is_on_the_task_list(app):
+    parent = _find_task(app.project, "Build")
+    child = _find_task(app.project, "Frame")
+    tree = app.resource_board.task_tree
+    assert tree.exists(child.id)
+    # ...and on screen, not parked under a folded parent: open is how
+    # a branch's children get drawn at all.
+    assert tree.item(parent.id, "open")
+
+
+@then("the indented task's parent stays folded")
+def the_indented_tasks_parent_stays_folded(app):
+    parent = _find_task(app.project, "Build")
+    assert not app.resource_board.task_tree.item(parent.id, "open")
+
+
+# ------------------------------------------------------------------
+# Issue #127 - the pool and the heat map answer one filter
+# ------------------------------------------------------------------
+@given("a resource board with a project that has a cost resource")
+def a_resource_board_with_a_cost_resource(app):
+    _setup_common_project(app.project)
+    app.project.resource_repository.costs["k1"] = CostResource(
+        id="k1", name="Licence Fee")
+    app.resource_board.refresh()
+    app.resource_board.update_idletasks()
+
+
+@then(parsers.parse('the heatmap does not contain text for "{name}"'))
+def the_heatmap_does_not_contain_text_for(app, name):
+    canvas = app.resource_board.heatmap_canvas
+    texts = [canvas.itemcget(i, "text")
+             for i in canvas.find_all()
+             if canvas.type(i) == "text"]
+    assert all(name not in t for t in texts), (
+        f"expected {name!r} gone from heatmap texts, got {texts}")
+
+
+@when("heat-map redraws are being counted")
+def heat_map_redraws_are_being_counted(app):
+    board = app.resource_board
+    draws = []
+    original = board._draw_heatmap
+
+    def counted():
+        draws.append(1)
+        return original()
+
+    board._draw_heatmap = counted
+    app._heatmap_draws = draws
+
+
+@then("the heatmap was redrawn for the pick")
+def the_heatmap_was_redrawn_for_the_pick(app):
+    assert app._heatmap_draws, (
+        "selecting a resource did not repaint the heat map")

@@ -1156,6 +1156,17 @@ class GanttApp(ctk.CTk):
                 logger.debug("The deliverables board has gone; "
                              "not refreshing it")
 
+        # The Resource Planner reads the same pool; a resource added in
+        # Resource Information used to reach it only on the next view
+        # switch (issue #125).
+        resource_board = getattr(self, 'resource_board', None)
+        if resource_board is not None:
+            try:
+                resource_board.refresh()
+            except tk.TclError:
+                logger.debug("The resource board has gone; "
+                             "not refreshing it")
+
         # Only when they have been built. They read the same plan the
         # other two do, so a change that reaches the chart and not them
         # leaves a board describing a plan that no longer exists

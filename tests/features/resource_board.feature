@@ -160,3 +160,41 @@ Feature: 4-Panel Resource Planning Matrix
   Scenario: Resource pool shows load percentages
     Given a resource board with an overloaded resource
     Then the resource pool card for "Jane Smith" shows a percentage above 100
+
+  Scenario: Indented tasks are on the list without being unfolded
+    # Issue #124. Rows used to arrive folded, so everything under a
+    # parent was hidden until each expander was clicked - and an
+    # assign's refresh folded them again.
+    Given a resource board with a project that has an indented task
+    Then the indented task is on the task list
+
+  Scenario: A fold the reader made survives a refresh
+    # The reader's fold is remembered; everything else stays open.
+    Given a resource board with a project that has an indented task
+    When the reader folds the indented task's parent
+    And the resource board refreshes
+    Then the indented task's parent stays folded
+
+  Scenario: The pool's type filter applies to the heat map too
+    # Issue #127. The two lists answer the same question - a type the
+    # filter drops from the pool leaves the heat map with it.
+    Given a resource board with a project that has resources and a team
+    When the user filters the resource pool to "Team"
+    Then the heatmap contains text for "Core QA Team"
+    And the heatmap does not contain text for "Jane Smith"
+
+  Scenario: Cost resources hold a heat-map row like the pool holds a card
+    # A cost commits money rather than hours, so its cells stay blank,
+    # but the row is there - the lists name the same set.
+    Given a resource board with a project that has a cost resource
+    When the user filters the resource pool to "Cost"
+    Then the heatmap contains text for "Licence Fee"
+    And the heatmap does not contain text for "Jane Smith"
+
+  Scenario: Picking a resource repaints the heat map's projected load
+    # The overlay answering "what if this task went to this resource"
+    # follows the pick rather than the next full refresh (issue #127).
+    Given a resource board with a project that has unassigned and assigned tasks
+    When heat-map redraws are being counted
+    And the user selects the "John Doe" resource
+    Then the heatmap was redrawn for the pick

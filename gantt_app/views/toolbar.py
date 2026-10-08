@@ -4420,6 +4420,10 @@ class Toolbar(ctk.CTkFrame):
             self.winfo_toplevel(), self.project.resource_repository,
             active_project_ids=[self.project.name],
             on_save=self.save_project,
+            # The pool moves while the window is still open - the views
+            # behind it, the Resource Planner above all, redraw on each
+            # change rather than waiting for a view switch (issue #125)
+            on_changed=self.on_project_changed,
             theme_controller=self.theme_controller,
         )
 

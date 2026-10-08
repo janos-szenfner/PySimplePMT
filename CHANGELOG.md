@@ -104,6 +104,25 @@
   answered in the status bar rather than in silence, and both commands
   belong to the Task Planning view, saying so on another tab (issue
   #113).
+- **The Resource Planner sees pool changes as they happen.** A
+  resource added or removed in Resource Information used to reach the
+  board only when the reader switched away and back: the window wrote
+  the repository, and the app refresh never included the board. Every
+  apply and delete now tells the app the pool moved, and update_all
+  redraws the Resource Planning view like the other tabs (issue #125).
+- **The pool's type filter answers for the heat map too.** Filtering
+  the resource pool to Named, Generic, Team or Cost now shows the same
+  set of rows in the heat map - the two lists answer one question.
+  Cost resources hold a row in each, their heat-map cells blank since
+  they commit money rather than hours, and picking a task or a
+  resource repaints the projected-load overlay straight away rather
+  than on the next refresh (issue #127).
+- **The board's task list stops hiding indented rows.** Parents
+  arrived folded, and - because the fold bookkeeping read an option
+  that does not exist - every refresh folded them again, so assigning
+  a task made its indented children vanish. Rows now open by default
+  and stay open; a branch the reader folds is the one thing
+  remembered as closed (issue #124).
 
 ## 1.72.1 - 2026-10-07
 
