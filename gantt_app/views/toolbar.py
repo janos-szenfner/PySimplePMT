@@ -3907,29 +3907,28 @@ class Toolbar(ctk.CTkFrame):
         self.grid_view_only_var.set(False)
 
     def show_dashboard(self):
-        """Put the dashboard in the right-hand pane instead of the chart."""
-        if self._off_task_view("The dashboard"):
+        """
+        Bring the Dashboard footer view to the top (issue #122).
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The dashboard is a view of its own now - a fourth footer tab
+        beside Task Planning, Resource Planning and Deliverables - not a
+        picture standing in for the chart in the right-hand pane. The
+        window owns the lift, so the ribbon entry, the View > Charts menu
+        item and the footer tab all land in the same place.
+
+        It is reachable from any view: unlike the chart commands it is
+        not a task-list command aimed at a hidden grid, so the
+        _off_task_view gate does not apply.
+        """
+        show = getattr(getattr(self, 'master', None), '_show_view', None)
+        if callable(show):
+            show("Dashboard")
             return
-        if self.content_panes is None:
-            return
-
-        if self.dashboard_frame is None:
-            factory = getattr(self, '_dashboard_factory', None)
-            if factory is None:
-                logger.debug("No dashboard to show")
-                return
-            self.dashboard_frame = factory()
-            if self.dashboard_frame is None:
-                return
-
-        self._hide_pane(self.gantt_chart)
-        self._hide_pane(getattr(self, 'timeline_frame', None))
-        if not self._showing(self.dashboard_frame):
-            self.content_panes.add(self.dashboard_frame, weight=3)
-            logger.info("Showing the dashboard")
-
-        self.dashboard_frame.refresh()
-        self.grid_view_only_var.set(False)
+        # A toolbar built on its own has no window to switch - nothing
+        # to answer with but the quiet log.
+        logger.debug("No view host to show the dashboard in")
 
     def show_timeline(self):
         """

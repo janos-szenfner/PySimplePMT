@@ -136,7 +136,8 @@ def _watch_focus(app):
     """
     trees = [app.task_list.tree, app.deliverables_board.tree,
              app.resource_board.task_tree,
-             app.resource_board._usage_grid.tree]
+             app.resource_board._usage_grid.tree,
+             app.dashboard_frame.canvas]
     calls = []
     for tree in trees:
         original = tree.focus_force
@@ -183,6 +184,13 @@ def the_new_task_command_runs(app):
     app.update_idletasks()
 
 
+@when("the Dashboard command runs")
+def the_dashboard_command_runs(app):
+    _watch_focus(app)
+    app.toolbar.show_dashboard()
+    app.update_idletasks()
+
+
 @when(parsers.parse('the deliverable "{name}" is picked on the board'))
 def the_deliverable_is_picked(app, name):
     def rows(parent=""):
@@ -223,6 +231,18 @@ def the_resource_board_holds_focus(app):
 @then("the usage grid's list holds the keyboard focus")
 def the_usage_grid_holds_focus(app):
     assert app._focus_calls[-1] is app.resource_board._usage_grid.tree
+
+
+@then("the dashboard canvas holds the keyboard focus")
+def the_dashboard_holds_focus(app):
+    assert app._focus_calls[-1] is app.dashboard_frame.canvas
+
+
+@then(parsers.parse('the "{name}" view is on top'))
+def the_view_is_on_top(app, name):
+    assert app._active_view == name
+    shown = app._view_widgets[name]
+    assert shown.winfo_manager(), f"{name} is not on screen"
 
 
 @then("nothing is on the plan's clipboard")

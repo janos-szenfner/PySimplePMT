@@ -844,6 +844,27 @@ class Task:
         return self.task_type in LEAF_TYPES or self.is_milestone
 
     @property
+    def is_placeholder(self) -> bool:
+        """
+        Whether this row has not been made into anything yet.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The task list's insert-shortcut adds a row that is totally empty
+        (issue #115): no name, no type, no dates worth showing. The type
+        stays empty to say so - it is the one field the rest of the row's
+        defaults hang off - and the grid draws the row as a blank line
+        waiting to be filled.
+
+        The row still carries a start date underneath: it is only hidden,
+        not absent. Keeping a real date means a placeholder never becomes
+        a crash risk for the scheduler, the chart, or an export that
+        assumes every row has one; the first field typed over it decides
+        what the row turns into.
+        """
+        return self.task_type == ''
+
+    @property
     def is_completed(self) -> bool:
         """
         Whether this row is finished.

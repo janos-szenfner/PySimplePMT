@@ -5,10 +5,11 @@ Feature: 4-Panel Resource Planning Matrix
   Background:
     Given the application is started
 
-  Scenario: The footer has Task Planning, Resource Planning and Deliverables tabs
+  Scenario: The footer has Task Planning, Resource Planning, Deliverables and Dashboard tabs
     Then the footer contains the "Task Planning" tab
     And the footer contains the "Resource Planning" tab
     And the footer contains the "Deliverables" tab
+    And the footer contains the "Dashboard" tab
     And the "Deliverables" tab is enabled
 
   Scenario: The four panels sit in a draggable split kept at the default

@@ -9,7 +9,6 @@ Converted from test_new_task_shortcut.py - every case carried over.
 """
 from datetime import datetime
 from types import SimpleNamespace
-from unittest import mock
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
@@ -128,9 +127,8 @@ def a_toolbar_wired_to_a_task_list():
 @when("the new-task hotkey fires")
 def the_new_task_hotkey_fires(ctx):
     ctx.task_list.tree.focus('1')
-    with mock.patch.object(type(ctx.task_list), 'create_task') as create:
-        ctx.toolbar._hotkey_new_task()
-    ctx.create = create
+    ctx.before = [task.id for task in ctx.project.tasks]
+    ctx.toolbar._hotkey_new_task()
 
 
 # ------------------------------------------------------------------
@@ -165,6 +163,13 @@ def a_bare_key_net_only_on_macos(ctx):
     assert bool(bare) == IS_MACOS
 
 
-@then("a task is created as a sibling of the focused row")
-def a_task_is_created_at_the_cursor(ctx):
-    ctx.create.assert_called_once_with('Task', '1', above=True)
+@then("an empty row is inserted as a sibling of the focused row")
+def an_empty_row_is_inserted_at_the_cursor(ctx):
+    ids = [task.id for task in ctx.project.tasks]
+    new = [task_id for task_id in ids if task_id not in ctx.before]
+    assert len(new) == 1, f"expected one new row, ids now {ids}"
+    # It landed above the focused row, and it is the blank line the
+    # insert makes - no name and no type until a field is filled (#115)
+    assert ids.index(new[0]) == ids.index('1') - 1
+    task = ctx.project.get_task_by_id(new[0])
+    assert task.is_placeholder, f"{task!r} is not a placeholder"

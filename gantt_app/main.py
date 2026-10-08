@@ -559,21 +559,21 @@ class GanttApp(ctk.CTk):
         )
         self.content_panes.add(self.gantt_chart, weight=3)
 
-        # The other things the right-hand pane can hold. Neither is built
-        # here: see _create_dashboard_frame and _create_timeline_frame
-        self.dashboard_frame = None
+        # The other thing the right-hand pane can hold. It is not built
+        # here: see _create_timeline_frame. The dashboard is a view of its
+        # own now, below - it used to share this pane with the chart,
+        # until a footer tab of its own asked it to move (issue #122).
         self.timeline_frame = None
 
         # Place the divider once the window has its real size
         self.after(120, self._set_initial_sash)
-        
+
         # Set Gantt chart reference in toolbar for export functionality
         self.toolbar.set_gantt_chart(self.gantt_chart)
 
-        # What View > Charts switches between, and how to build the two
-        # halves that do not exist yet
+        # What View > Charts switches between, and how to build the half
+        # that does not exist yet
         self.toolbar.set_content_panes(self.content_panes)
-        self.toolbar.set_dashboard_factory(self._create_dashboard_frame)
         self.toolbar.set_timeline_factory(self._create_timeline_frame)
 
         # The chart draws the rows the task list is showing, so the two line
@@ -606,12 +606,27 @@ class GanttApp(ctk.CTk):
             row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
         self.toolbar.set_deliverables_board(self.deliverables_board)
 
+        # The Dashboard, fourth widget in the same cell - a full-window
+        # view of its own beside the others rather than a picture that
+        # stood in for the chart (issue #122). Built here, not lazily, so
+        # the footer tab is never asked to wait for one.
+        self.dashboard_frame = ProjectDashboardFrame(
+            content_frame,
+            get_project=lambda: self.project,
+            enabled_ids=self._saved_dashboard_panels(),
+            on_panels_changed=self._dashboard_panels_changed,
+        )
+        self.dashboard_frame.grid(
+            row=0, column=0, sticky=tk.NSEW, padx=5, pady=5)
+        self.toolbar.set_dashboard(self.dashboard_frame)
+
         # What each footer tab lifts. Task Planning is the paned task view;
-        # the other two are the boards overlaid on it.
+        # the other three are the boards overlaid on it.
         self._view_widgets = {
             "Task Planning": self.content_panes,
             "Resource Planning": self.resource_board,
             "Deliverables": self.deliverables_board,
+            "Dashboard": self.dashboard_frame,
         }
         #: What each view says to the status bar when it comes to the top -
         #: the line its current selection writes.
@@ -619,6 +634,7 @@ class GanttApp(ctk.CTk):
             "Task Planning": self._task_selection_status,
             "Resource Planning": self.resource_board.selection_status,
             "Deliverables": self.deliverables_board.selection_status,
+            "Dashboard": self.dashboard_frame.selection_status,
         }
         #: Which widget takes the keyboard when each view comes to the
         #: top, so the arrow keys and shortcuts land on the grid the user
@@ -627,6 +643,7 @@ class GanttApp(ctk.CTk):
             "Task Planning": self.task_list.focus_view,
             "Resource Planning": self.resource_board.focus_view,
             "Deliverables": self.deliverables_board.focus_view,
+            "Dashboard": self.dashboard_frame.focus_view,
         }
         self._active_view = "Task Planning"
 
@@ -645,7 +662,8 @@ class GanttApp(ctk.CTk):
 
         # View-mode tab bar, centred in the footer.  The first tab is the
         # default.
-        self._tab_names = ["Task Planning", "Resource Planning", "Deliverables"]
+        self._tab_names = ["Task Planning", "Resource Planning",
+                           "Deliverables", "Dashboard"]
         self.resource_switch_frame = ctk.CTkFrame(
             self.footer_frame, fg_color="transparent")
         self.resource_switch_frame.grid(row=0, column=1, sticky="",
@@ -688,23 +706,16 @@ class GanttApp(ctk.CTk):
     
     def _create_dashboard_frame(self):
         """
-        Build the dashboard the first time somebody asks for it.
+        The dashboard - built with the other views at startup (issue #122).
 
         DEVELOPMENT NOTES:
         ------------------
-        Built into the paned window but not added to it - showing it is the
-        toolbar's business, and building it here as well would put it on
-        screen the moment it exists.
+        It used to be made lazily, the first time View > Charts asked for
+        it, and lived in the chart's pane. It is a footer view of its own
+        now and exists from the start; this stays as the answer to
+        toolbar.set_dashboard_factory, which any caller that asks still
+        gets - it is handed the frame the window already has.
         """
-        if self.dashboard_frame is None:
-            self.dashboard_frame = ProjectDashboardFrame(
-                self.content_panes,
-                get_project=lambda: self.project,
-                enabled_ids=self._saved_dashboard_panels(),
-                on_panels_changed=self._dashboard_panels_changed,
-            )
-            self.toolbar.set_dashboard(self.dashboard_frame)
-            logger.info("Built the dashboard")
         return self.dashboard_frame
 
     def _create_timeline_frame(self):

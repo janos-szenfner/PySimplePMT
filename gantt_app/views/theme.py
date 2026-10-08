@@ -107,6 +107,18 @@ POSITIVE_TEXT: Tuple[str, str] = ('#15803d', '#4ade80')
 #: Something that failed, or a day that is not worked.
 NEGATIVE_TEXT: Tuple[str, str] = ('#b91c1c', '#f87171')
 
+#: The colour each deliverable health state is written in - the
+#: Deliverables board's row text and the dashboard's bars read the same
+#: table, so a green row on one is the same green on the other
+#: (issue #120). The states are core.deliverable.DELIVERABLE_HEALTHS.
+HEALTH_TEXT: Dict[str, Tuple[str, str]] = {
+    'done': POSITIVE_TEXT,
+    'on_track': ('#1565c0', '#7cb3f5'),
+    'not_started': MUTED_TEXT,
+    'at_risk': WARNING_TEXT,
+    'overdue': NEGATIVE_TEXT,
+}
+
 #: The menu bar and icon row across the top.
 MENU_BG: Tuple[str, str] = ('#F1F3F5', '#232529')
 MENU_HOVER: Tuple[str, str] = ('#E9ECEF', '#34373d')
@@ -345,6 +357,9 @@ def view_palette() -> dict:
         'lane_text': now(TEXT),
         'spine': now(TL_SPINE),
         'today': now(TL_TODAY),
+        # The deliverable health colours, resolved - the dashboard's
+        # Deliverables panel paints each bar in its state (issue #120)
+        'health': {state: now(pair_) for state, pair_ in HEALTH_TEXT.items()},
     }
 
 

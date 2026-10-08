@@ -42,6 +42,36 @@
   screen. The Deliverable Status Report's rows get the same striping and
   colours, and a drag's drop-target highlight can no longer be hidden
   the same way (issue #121).
+- **New rows insert as blank placeholders.**
+  The new-task shortcut and button used to open a dialog before a row
+  existed. They now put a totally empty row above the cursor - no name,
+  no type, its cells reading N/A - with the name cell open for typing.
+  The first field filled - a name, a duration, a start, a type, a link
+  or a percentage - turns the row into a one-day Task from the project
+  start and defaults the rest, so a row can never come out half-made.
+  A placeholder draws nothing on the chart and writes nothing extra to
+  the file; deleting it or undoing the insert removes the line as it
+  was (issue #115).
+- **The Gantt chart marks the selected rows.**
+  The rows picked in the task list are now banded across the chart, so
+  a selected task stays visible however far the chart is scrolled.
+  The band is drawn into the chart itself and scrolls with it; exported
+  charts carry no selection, so none is drawn there (issue #119).
+- **The dashboard gains a Deliverables panel.**
+  A fifth panel lists the plan's top-level deliverables as progress
+  bars, each filled in the colour its health wears on the Deliverables
+  grid - green done, blue on track, grey not started, amber at risk,
+  red overdue - with the percentage written in the same colour so a 0%
+  overdue bar still reads red. The panel checklist and exports include
+  it, and the board now allows six panels so all five can show at once
+  (issue #120).
+- **Dashboard is a footer view of its own.**
+  The dashboard used to stand in for the chart in the right-hand pane.
+  It is now a fourth tab in the footer bar beside Task Planning,
+  Resource Planning and Deliverables - a full-window view the ribbon
+  button, the View > Charts entry and the footer tab all land on, with
+  the task-only ribbon commands greyed out while it is on top
+  (issue #122).
 
 ## 1.72.1 - 2026-10-07
 

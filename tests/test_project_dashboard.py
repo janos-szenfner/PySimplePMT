@@ -505,14 +505,15 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
     """
-    View > Charts, which swaps what the right-hand pane holds.
+    View > Charts, now the dashboard is a footer view of its own.
 
     WHY THESE EXIST:
     ================
-    ttk's panes() answers with Tk pathnames rather than widgets, so the
-    comparisons that decided what was on screen were all False: choosing
-    Dashboard left the chart where it was and added a third pane beside it,
-    and choosing Gantt Chart afterwards did nothing at all.
+    Since issue #122 the dashboard does not stand in for the chart in the
+    right-hand pane - it is the fourth footer tab, lifted by the window.
+    What is left of the old swapping is the chart and the timeline sharing
+    the pane beside the task list, and the toolbar's Dashboard entry
+    asking the window to bring the Dashboard view to the top.
     """
 
     def setUp(self):
@@ -537,18 +538,9 @@ class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
 
         self.toolbar.set_gantt_chart(self.chart)
         self.toolbar.set_content_panes(self.panes)
-        self.toolbar.set_dashboard_factory(self._make_dashboard)
-        self.built = 0
+        self.views = []
+        self.root._show_view = self.views.append
         self.root.update_idletasks()
-
-    def _make_dashboard(self):
-        """What the toolbar calls the first time the dashboard is wanted."""
-        from gantt_app.views.project_dashboard import ProjectDashboardFrame
-
-        self.built += 1
-        dashboard = ProjectDashboardFrame(self.panes, self.project)
-        self.toolbar.set_dashboard(dashboard)
-        return dashboard
 
     def tearDown(self):
         """Close the window."""
@@ -561,44 +553,26 @@ class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
         """The panes on the paned window, as Tk names them."""
         return list(self.panes.panes())
 
-    def test_the_chart_is_what_the_window_opens_on(self):
-        """The dashboard is somewhere to go, not the default."""
-        self.assertIn(str(self.chart), self.showing())
-        self.assertEqual(self.built, 0)
-
-    def test_the_dashboard_takes_the_charts_place(self):
-        """One pane goes and one arrives; the list keeps its own."""
+    def test_the_dashboard_is_a_view_of_its_own(self):
+        """Choosing it lifts the footer's Dashboard tab, not a pane."""
         self.toolbar.show_dashboard()
 
-        showing = self.showing()
-        self.assertNotIn(str(self.chart), showing)
-        self.assertIn(str(self.toolbar.dashboard_frame), showing)
-        self.assertEqual(len(showing), 2, showing)
+        self.assertEqual(self.views, ['Dashboard'])
 
-    def test_the_chart_comes_back(self):
-        """And the dashboard goes, rather than the two stacking up."""
+    def test_the_panes_are_left_alone(self):
+        """The task list and its chart keep their places throughout."""
         self.toolbar.show_dashboard()
-        self.toolbar.show_gantt_chart()
 
         showing = self.showing()
         self.assertIn(str(self.chart), showing)
-        self.assertNotIn(str(self.toolbar.dashboard_frame), showing)
         self.assertEqual(len(showing), 2, showing)
 
-    def test_choosing_the_same_view_twice_changes_nothing(self):
-        """A reader who clicks Dashboard again still has two panes."""
-        self.toolbar.show_dashboard()
-        self.toolbar.show_dashboard()
-
-        self.assertEqual(len(self.showing()), 2, self.showing())
-
-    def test_the_dashboard_is_built_once_and_kept(self):
-        """It is a panel most readers never open."""
-        self.toolbar.show_dashboard()
-        self.toolbar.show_gantt_chart()
+    def test_it_answers_from_whichever_view_is_up(self):
+        """Not a task-list command: no gate keeps it off another view."""
+        self.root._active_view = 'Deliverables'
         self.toolbar.show_dashboard()
 
-        self.assertEqual(self.built, 1)
+        self.assertEqual(self.views, ['Dashboard'])
 
     def test_the_menu_offers_both_under_charts(self):
         """View > Charts, with the Gantt chart named first."""

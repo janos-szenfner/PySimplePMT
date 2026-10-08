@@ -36,7 +36,8 @@ import customtkinter as ctk
 from gantt_app.utils import boardrender
 from gantt_app.utils.boardrender import (
     DASHBOARD_PANELS, MAX_PANELS,
-    dashboard_rows, duration_by_type, kpi_metrics, weighted_progress,
+    dashboard_rows, deliverable_rows, duration_by_type, kpi_metrics,
+    weighted_progress,
 )
 from gantt_app.utils.drawpen import CanvasPen
 from gantt_app.utils.log import get_logger
@@ -46,8 +47,8 @@ from gantt_app.views.boardframe import BoardRedrawMixin
 logger = get_logger(__name__)
 
 __all__ = [
-    'dashboard_rows', 'duration_by_type', 'kpi_metrics',
-    'weighted_progress', 'ProjectDashboardFrame',
+    'dashboard_rows', 'deliverable_rows', 'duration_by_type',
+    'kpi_metrics', 'weighted_progress', 'ProjectDashboardFrame',
     'DASHBOARD_PANELS', 'MAX_PANELS',
 ]
 
@@ -328,10 +329,12 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         pen.rect(0, 0, width, height, fill=palette['bg'])
 
         try:
-            rows = dashboard_rows(self._get_project())
+            project = self._get_project()
+            rows = dashboard_rows(project)
             landed = boardrender.render_dashboard(
                 pen, rows, palette, self.enabled, self.maximized,
-                width=width, height=height)
+                width=width, height=height,
+                deliverables=boardrender.deliverable_rows(project))
         except Exception:
             # A failed draw must not leave the hit-test rects pointing at
             # a picture that is not there.
@@ -348,6 +351,32 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         """Point the dashboard at a different plan - the old API, kept."""
         self._get_project = (lambda p=project: p)
         self.refresh()
+
+    # -- a footer view's obligations (issue #122) ---------------------------
+
+    def focus_view(self):
+        """
+        Take the keyboard when the Dashboard tab comes to the top.
+
+        There is no grid to hand it to - the canvas carries the clicks -
+        but a view that takes no focus leaves the last view's grid
+        answering keystrokes for a window that is no longer showing.
+        """
+        try:
+            self.canvas.focus_force()
+        except tk.TclError:
+            pass
+
+    def selection_status(self):
+        """
+        What the status bar says while the Dashboard is on top.
+
+        The board has no selection of its own to describe, so the line
+        says what the view is made of - how many of the panels it knows
+        are on show.
+        """
+        return (f"Dashboard - {len(self.enabled)} of "
+                f"{len(DASHBOARD_PANELS)} panels shown")
 
     def _draw_glyph(self, panel):
         """

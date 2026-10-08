@@ -18,9 +18,11 @@ from datetime import datetime, timedelta
 
 from gantt_app.core.models import Project, Task
 from gantt_app.utils import boardrender
+from gantt_app.core.deliverable import Deliverable
 from gantt_app.utils.boardrender import (
     DASHBOARD_PANELS, MAX_PANELS, TIMELINE_STYLES,
-    dashboard_layout, dashboard_rows, render_dashboard, render_timeline,
+    dashboard_layout, dashboard_rows, deliverable_rows,
+    render_dashboard, render_timeline,
     sanitize_panel_ids, timeline_items, timeline_span, axis_columns,
 )
 from gantt_app.utils.drawpen import ImagePen
@@ -40,6 +42,11 @@ PALETTE = {
     'band_bg': '#3f4753', 'band_text': '#ffffff',
     'lane_bg': '#f4f5f7', 'lane_text': '#1f2328',
     'spine': '#2f3552', 'today': '#2e7d32',
+    'health': {
+        'done': '#15803d', 'on_track': '#1565c0',
+        'not_started': '#6b7280', 'at_risk': '#b45309',
+        'overdue': '#b91c1c',
+    },
 }
 
 
@@ -80,11 +87,12 @@ def an_image_pen(width=800, height=600):
 class TestThePanelRegistry(unittest.TestCase):
     """What the dashboard can show, and the rules around it (issue #66)."""
 
-    def test_the_four_panels_are_the_registry(self):
+    def test_the_panels_are_the_registry(self):
         """The built-ins, in the order the checklist lists them."""
         self.assertEqual([pid for pid, _t, _d in DASHBOARD_PANELS],
-                         ['progress', 'donut', 'workload', 'summary'])
-        self.assertEqual(MAX_PANELS, 4)
+                         ['progress', 'donut', 'workload', 'summary',
+                          'deliverables'])
+        self.assertEqual(MAX_PANELS, 6)
 
     def test_sanitize_drops_names_the_registry_does_not_know(self):
         """A settings file that names a gone panel does not draw a gap."""
@@ -93,8 +101,9 @@ class TestThePanelRegistry(unittest.TestCase):
             ['progress', 'summary'])
 
     def test_sanitize_stops_at_the_cap(self):
-        """A file holding five panels keeps the first four."""
-        saved = boardrender.all_panel_ids() + ['progress']
+        """A file holding more panels than fit keeps the first of them."""
+        saved = (boardrender.all_panel_ids()
+                 + ['progress', 'donut', 'workload', 'summary'])
         self.assertEqual(len(sanitize_panel_ids(saved)), MAX_PANELS)
 
     def test_sanitize_empty_is_empty(self):
@@ -168,6 +177,116 @@ class TestRenderingTheDashboard(unittest.TestCase):
                                   boardrender.all_panel_ids(),
                                   None, width=800, height=600)
         self.assertEqual(landed, [])
+
+
+class _RecordingPen:
+    """
+    A pen that only remembers - for what the drawing asked to be painted.
+
+    ImagePen proves the calls can run; this one answers what the calls
+    were, which is what the health-colour tests are about.
+    """
+
+    def __init__(self):
+        self.rects = []      # (x0, y0, x1, y1, fill, outline)
+        self.texts = []
+
+    def rect(self, x0, y0, x1, y1, fill=None, outline=None, width=1):
+        self.rects.append((x0, y0, x1, y1, fill, outline))
+
+    def line(self, *args, **kwargs):
+        pass
+
+    def text(self, *args, **kwargs):
+        self.texts.append((args, kwargs))
+
+    def arc(self, *args, **kwargs):
+        pass
+
+    def text_width(self, text, size, bold=False):
+        return len(str(text)) * size
+
+
+class TestTheDeliverablesPanel(unittest.TestCase):
+    """The dashboard's fifth panel: the top-level deliverables (#120)."""
+
+    def _project_with_deliverables(self):
+        project = a_project()
+        parent = Deliverable(id='d1', name='The product',
+                             progress=50, status='In Progress')
+        child = Deliverable(id='d2', name='The installer',
+                            parent_id='d1', progress=25)
+        overdue = Deliverable(id='d3', name='The manual',
+                              due_date=datetime(2020, 1, 1))
+        project.deliverables.extend([parent, child, overdue])
+        return project
+
+    def test_only_the_top_level_is_listed(self):
+        """Main deliverables, not every sub-deliverable beneath them."""
+        rows = deliverable_rows(self._project_with_deliverables())
+
+        self.assertEqual([row['Name'] for row in rows],
+                         ['The product', 'The manual'])
+
+    def test_each_row_carries_its_progress_and_health(self):
+        rows = deliverable_rows(self._project_with_deliverables())
+
+        self.assertEqual(rows[0]['Progress'], 50)
+        self.assertEqual(rows[0]['Health'], 'on_track')
+        # Owed in 2020 and not finished: red.
+        self.assertEqual(rows[1]['Health'], 'overdue')
+
+    def test_a_project_with_none_lists_none(self):
+        self.assertEqual(deliverable_rows(a_project()), [])
+        self.assertEqual(deliverable_rows(None), [])
+
+    def test_the_panel_draws_in_its_health_colours(self):
+        """A bar's fill is the colour its state wears on the board."""
+        pen = _RecordingPen()
+        deliverables = deliverable_rows(
+            self._project_with_deliverables())
+
+        boardrender.draw_deliverables(pen, deliverables, PALETTE,
+                                      0, 0, 800, 600)
+
+        fills = [fill for _x0, _y0, _x1, _y1, fill, _o in pen.rects
+                 if fill]
+        self.assertIn(PALETTE['health']['on_track'], fills)
+        # The overdue row holds no progress to fill - the colour lives in
+        # its percentage instead.
+        text_fills = [kw.get('fill') for _a, kw in pen.texts]
+        self.assertIn(PALETTE['health']['overdue'], text_fills)
+
+    def test_the_panel_says_so_when_there_are_none(self):
+        pen = _RecordingPen()
+
+        boardrender.draw_deliverables(pen, [], PALETTE, 0, 0, 800, 600)
+
+        self.assertTrue(any('No deliverables' in str(args)
+                            for args, _kw in pen.texts))
+
+    def test_it_lands_on_the_board_like_every_panel(self):
+        pen, _image = an_image_pen()
+        landed = render_dashboard(
+            pen, dashboard_rows(a_project()), PALETTE,
+            ['deliverables'], None, width=800, height=600,
+            deliverables=deliverable_rows(
+                self._project_with_deliverables()))
+
+        self.assertEqual([p['id'] for p in landed], ['deliverables'])
+
+    def test_deliverables_alone_are_not_an_empty_plan(self):
+        """A plan with deliverables and no tasks still has a board."""
+        project = Project(name="Deliverables only")
+        project.deliverables.append(Deliverable(id='d1', name='One'))
+        pen, _image = an_image_pen()
+
+        landed = render_dashboard(
+            pen, [], PALETTE, ['deliverables'], None,
+            width=800, height=600,
+            deliverables=deliverable_rows(project))
+
+        self.assertEqual([p['id'] for p in landed], ['deliverables'])
 
 
 class TestTheTimelineRows(unittest.TestCase):
@@ -376,17 +495,22 @@ class TestTheDashboardShell(unittest.TestCase):
         self.frame._toggle_panel(self.frame.enabled[0], var)
         self.assertEqual(len(self.frame.enabled), 1)
 
-    def test_a_fifth_panel_is_refused(self):
-        """The cap bites when a registry gains a fifth entry (#66)."""
-        extra = ('extra', 'An extra', lambda *a: None)
-        boardrender.DASHBOARD_PANELS.append(extra)
+    def test_a_panel_past_the_cap_is_refused(self):
+        """The cap bites when a registry outgrows the board (#66, #120)."""
+        extras = [('extra%d' % i, 'An extra',
+                   lambda *a: None) for i in range(MAX_PANELS)]
+        boardrender.DASHBOARD_PANELS.extend(extras)
         try:
-            self.assertEqual(len(self.frame.enabled), 4)
+            # Filled to the cap, as a settings file holding them all
+            # would have left it.
+            self.frame.enabled = boardrender.sanitize_panel_ids(
+                boardrender.all_panel_ids())
+            self.assertEqual(len(self.frame.enabled), MAX_PANELS)
             var = self.ctk.BooleanVar(value=True)
-            self.frame._toggle_panel('extra', var)
-            self.assertNotIn('extra', self.frame.enabled)
+            self.frame._toggle_panel('extra1', var)
+            self.assertNotIn('extra1', self.frame.enabled)
         finally:
-            boardrender.DASHBOARD_PANELS.pop()
+            del boardrender.DASHBOARD_PANELS[-len(extras):]
 
     def test_maximize_and_restore(self):
         self.frame.set_maximized('summary')

@@ -860,5 +860,83 @@ class TestBarShape(unittest.TestCase):
         self.assertFalse(self._corner_differs('Rectangle'))
 
 
+class TestTheSelectionGuide(ChartLayoutTestCase):
+    """
+    The horizontal line across the chart at the picked row (issue #119).
+
+    WHY THESE EXIST:
+    ================
+    The line is part of the picture the canvas shows - it pans and zooms
+    with the bars rather than hovering over them - so it is laid out and
+    rendered like everything else. The rows to mark come in on the
+    RowPlan, because only the task list knows what is picked.
+    """
+
+    def _plan(self, selected=()):
+        return RowPlan(tasks=list(self.project.tasks), row_height=26,
+                       top_margin=40, label_width=120, selected=selected)
+
+    def test_the_picked_rows_bands_are_in_the_layout(self):
+        layout = layout_chart(self.project, rows=self._plan((1, 3)),
+                              width=1200)
+
+        self.assertEqual(layout.guide_bands,
+                         [(40 + 26, 40 + 52), (40 + 78, 40 + 104)])
+
+    def test_no_selection_draws_no_guide(self):
+        layout = layout_chart(self.project, width=1200)
+
+        self.assertEqual(layout.guide_bands, [])
+
+    def test_a_row_index_off_the_end_is_skipped(self):
+        """A selection that raced a rebuild has no band to draw on."""
+        layout = layout_chart(self.project, rows=self._plan((99,)),
+                              width=1200)
+
+        self.assertEqual(layout.guide_bands, [])
+
+    def test_the_guide_reaches_the_picture(self):
+        """The band is washed and edged, not just computed."""
+        plan = self._plan(selected=(1,))
+        image = render_image(self.project, rows=plan, width=1200,
+                             scale=1)
+        bg = image.getpixel((600, 0))
+
+        top, _bottom = layout_chart(
+            self.project, rows=plan, width=1200).guide_bands[0]
+        inside = image.getpixel((600, int(top + 13)))
+        self.assertNotEqual(inside, bg)
+
+
+class TestPlaceholderRows(ChartLayoutTestCase):
+    """The empty insert row draws nothing on the chart (issue #115)."""
+
+    def _add_placeholder(self):
+        task = Task(id="099", name='', task_type='',
+                    start_date=datetime(2026, 1, 1),
+                    end_date=None, duration=None)
+        self.project.add_task(task)
+        return task
+
+    def test_the_empty_row_draws_no_bar(self):
+        task = self._add_placeholder()
+        layout = layout_chart(self.project, width=1200)
+
+        drawn = ([b['task_id'] for b in layout.bars]
+                 + [s['task_id'] for s in layout.summaries]
+                 + [m['task_id'] for m in layout.milestones])
+        self.assertNotIn("099", drawn)
+
+    def test_it_keeps_its_row_slot_on_screen(self):
+        """The panes stay level - the chart skips the bar, not the row."""
+        task = self._add_placeholder()
+        plan = RowPlan(tasks=list(self.project.tasks), row_height=26,
+                       top_margin=40, label_width=120)
+        layout = layout_chart(self.project, rows=plan, width=1200)
+
+        # Six rows out, so the last label is the milestone's own slot
+        self.assertEqual(len(layout.row_labels), 5)
+
+
 if __name__ == '__main__':
     unittest.main()

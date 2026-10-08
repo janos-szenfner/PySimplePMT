@@ -39,10 +39,9 @@ Feature: The new-task shortcut is actually bound to the window
     # through it - so it is not carried anywhere it earns nothing.
     Then a bare key net is bound exactly when running on macOS
 
-  Scenario: The handler makes a task where the cursor is
-    # The end of the chain: a sibling inserted where the cursor is,
-    # taking the focused row's place. The dialog is stubbed out; what is
-    # checked is that the keyboard route reaches the same creation the
-    # right-click menu does.
+  Scenario: The handler inserts a blank row where the cursor is
+    # The end of the chain: an empty placeholder row inserted above the
+    # focused row, the way MS Project's Insert works - the row's cells
+    # wait for the first field typed (issue #115).
     When the new-task hotkey fires
-    Then a task is created as a sibling of the focused row
+    Then an empty row is inserted as a sibling of the focused row

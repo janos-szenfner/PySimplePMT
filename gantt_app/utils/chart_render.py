@@ -138,6 +138,9 @@ class RowPlan:
     row_height: int
     top_margin: int = MARGIN_TOP
     label_width: int = 0
+    #: Indexes into ``tasks`` of the rows picked in the list, so the chart
+    #: can mark where the selection sits while it is scrolled (issue #119).
+    selected: Tuple[int, ...] = ()
 
 
 @dataclass
@@ -151,6 +154,9 @@ class ChartLayout:
     #: Tasks that have sub-tasks, drawn as a spanning bracket
     summaries: List[Dict[str, Any]] = field(default_factory=list)
     milestones: List[Dict[str, Any]] = field(default_factory=list)
+    #: The (y0, y1) of each selected row's band - the horizontal guide that
+    #: keeps the picked row readable across the chart's width (issue #119).
+    guide_bands: List[Tuple[float, float]] = field(default_factory=list)
     dependencies: List[Tuple[float, float, float, float]] = field(default_factory=list)
     #: Deadline and constraint markers drawn over the bars; see the Advanced
     #: tab (REQ-UI-041). Each is a dict carrying its kind, anchor and colour.
@@ -291,7 +297,12 @@ def _get_visible_tasks(project: Project) -> List[Task]:
         (issue #64), so a rendered file puts the rows where the screen did.
     """
     return [task for task in project.display_order()
-            if task.show_in_timeline and not _is_inactive(task)]
+            if task.show_in_timeline and not _is_inactive(task)
+            # An empty placeholder row has nothing to print - no gap is
+            # left for it in a file the way the screen keeps its row
+            # (issue #115)
+            and not getattr(task, 'is_placeholder', False)
+            and task.start_date is not None]
 
 
 def _summary_outline(summary: Dict[str, Any]) -> List[Tuple[float, float]]:
@@ -629,7 +640,13 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
     # its dates do not stretch the axis. On the on-screen chart the rows come
     # straight from the list and include it; the export path has already
     # dropped it in _get_visible_tasks, so this is what hides it there too.
-    hidden = {task.id for task in tasks if _is_inactive(task)}
+    # A placeholder - the empty row the insert shortcut makes - is treated
+    # the same way: it has nothing drawn on it until a field is filled
+    # (issue #115), as is a row carrying no start to draw from at all.
+    hidden = {task.id for task in tasks
+              if _is_inactive(task)
+              or getattr(task, 'is_placeholder', False)
+              or task.start_date is None}
     drawn = [task for task in tasks if task.id not in hidden]
 
     min_date, max_date = calculate_date_range(drawn or tasks)
@@ -762,6 +779,17 @@ def layout_chart(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     layout.plot_left = plot_left
     layout.plot_right = plot_right
+
+    # The guide line marking the list's selected rows: the band each
+    # picked row occupies, so the renderers can run a line the length of
+    # the plot under whatever the row draws (issue #119). A row index
+    # beyond the drawn list - a selection that raced a rebuild - is
+    # skipped rather than drawn off the chart.
+    for index in (rows.selected if rows is not None else ()):
+        if 0 <= index < len(tasks):
+            top = top_margin + index * row_height
+            layout.guide_bands.append((top, top + row_height))
+
     _build_date_header(layout, project, min_date, max_date, x_for,
                        total_days, plot_span)
 
@@ -1330,6 +1358,20 @@ def render_image(project: Project, settings: Optional[Dict[str, Any]] = None,
 
     _draw_baseline_overlay(draw, layout, baseline, sx, scale,
                            color=baseline_color)
+
+    # The horizontal guide marking the rows picked in the list (issue
+    # #119): a faint wash over the row's band with a firmer line along
+    # each edge, drawn under the bars so a bar it passes through stays
+    # readable. Being part of the picture, it pans and scrolls with the
+    # chart rather than hovering over it.
+    for y0, y1 in layout.guide_bands:
+        gy0, gy1 = sx(y0), sx(y1)
+        draw.rectangle([0, gy0, size[0], gy1], fill=(31, 106, 165, 28))
+        edge = max(1, int(scale))
+        draw.line([(0, gy0), (size[0], gy0)], fill=(31, 106, 165, 140),
+                  width=edge)
+        draw.line([(0, gy1), (size[0], gy1)], fill=(31, 106, 165, 140),
+                  width=edge)
 
     # Collect labels so they can be drawn after the calendar shading; the
     # shading is drawn on top of the bars to show day boundaries, so labels

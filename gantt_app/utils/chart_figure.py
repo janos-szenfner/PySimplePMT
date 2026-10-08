@@ -47,7 +47,10 @@ def _get_visible_tasks(project: Project) -> List[Task]:
     List[Task]
         List of tasks with show_in_timeline set to True.
     """
-    return [task for task in project.tasks if task.show_in_timeline]
+    return [task for task in project.tasks
+            if task.show_in_timeline
+            # An empty placeholder row has nothing to draw (issue #115)
+            and not getattr(task, 'is_placeholder', False)]
 
 
 #: Defaults used when a caller supplies no chart settings.

@@ -73,14 +73,11 @@ FILTER_OVERDUE = 'Overdue'
 STATUS_FILTERS = (FILTER_ALL,) + DELIVERABLE_STATUSES + (FILTER_OVERDUE,)
 
 #: The text colour each health state paints a row's status and progress.
-#: The bands keep the background; these carry the colour.
-HEALTH_FOREGROUNDS = {
-    'done': theme.POSITIVE_TEXT,
-    'on_track': ('#1565c0', '#7cb3f5'),
-    'not_started': theme.MUTED_TEXT,
-    'at_risk': theme.WARNING_TEXT,
-    'overdue': theme.NEGATIVE_TEXT,
-}
+#: The bands keep the background; these carry the colour. The table lives
+#: in theme.HEALTH_TEXT now, so the dashboard's Deliverables panel paints
+#: a state the same colour this board does (issue #120) - the name stays
+#: for everything that already imports it here.
+HEALTH_FOREGROUNDS = theme.HEALTH_TEXT
 #: The one-line health captions, for the header's overall chip and reports.
 HEALTH_LABELS = {
     'done': 'Done',

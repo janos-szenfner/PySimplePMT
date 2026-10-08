@@ -243,6 +243,14 @@ def _fallback_palette() -> Dict[str, Any]:
         'band_bg': '#3f4753', 'band_text': '#ffffff',
         'lane_bg': '#f4f5f7', 'lane_text': '#1f2328',
         'spine': '#2f3552', 'today': '#2e7d32',
+        # The deliverable health colours, light appearance - the same five
+        # theme.HEALTH_TEXT carries, resolved so a caller with no theme
+        # still paints the board it saw (issue #120)
+        'health': {
+            'done': '#15803d', 'on_track': '#1565c0',
+            'not_started': '#6b7280', 'at_risk': '#b45309',
+            'overdue': '#b91c1c',
+        },
     }
 
 
@@ -273,12 +281,13 @@ def export_dashboard_to_png(project: Project, filepath: str,
         width, height = BOARD_EXPORT_SIZE
         palette = palette or _fallback_palette()
         rows = boardrender.dashboard_rows(project)
+        deliverables = boardrender.deliverable_rows(project)
 
         def draw(pen, w, h):
             pen.rect(0, 0, w, h, fill=palette['bg'])
             boardrender.render_dashboard(
                 pen, rows, palette, enabled_ids, maximized_id,
-                width=w, height=h)
+                width=w, height=h, deliverables=deliverables)
 
         image = _board_image(draw, width, height, scale)
         image.save(path, 'PNG')
@@ -325,12 +334,13 @@ def export_dashboard_to_pdf(project: Project, filepath: str,
         width, height = BOARD_EXPORT_SIZE
         palette = palette or _fallback_palette()
         rows = boardrender.dashboard_rows(project)
+        deliverables = boardrender.deliverable_rows(project)
 
         def draw(pen, w, h):
             pen.rect(0, 0, w, h, fill=palette['bg'])
             boardrender.render_dashboard(
                 pen, rows, palette, enabled_ids, maximized_id,
-                width=w, height=h)
+                width=w, height=h, deliverables=deliverables)
 
         image = _board_image(draw, width, height, scale)
         image.save(path, 'PDF', resolution=float(BOARD_EXPORT_DPI))

@@ -328,16 +328,22 @@ class RibbonBar(IconToolbar):
     #: looking at (issue #116). The keys are the ones the specs carry.
     TASK_VIEW_KEYS = {
         'task', 'link', 'unlink',
-        'gantt', 'dashboard', 'grid',
+        'gantt', 'grid',
         'critical_path', 'critical_path_report',
         'highlight', 'grid_filter', 'grid_filter_clear',
     }
 
     #: Buttons Task Planning and Deliverables share; dead while the
-    #: resource board is on top, where there is nothing they act on.
+    #: resource board or the dashboard is on top, where there is nothing
+    #: they act on. The dashboard has no list to copy, edit or re-home -
+    #: it only reads the plan (issue #122).
     LIST_VIEW_KEYS = {
         'paste', 'cut', 'copy', 'edit', 'delete', 'indent', 'outdent',
     }
+
+    #: The views with no list of rows behind them - where the
+    #: LIST_VIEW_KEYS are dead rather than just pointed elsewhere.
+    _LISTLESS_VIEWS = ('Resource Planning', 'Dashboard')
 
     def __init__(self, master, project, galleries: Dict = None, **kwargs):
         #: Where the inherited helpers place what they build; None is the
@@ -773,7 +779,8 @@ class RibbonBar(IconToolbar):
         view = getattr(self, '_view_name', 'Task Planning')
         for key, btn in self.icon_buttons.items():
             dead = (key in self.TASK_VIEW_KEYS and view != 'Task Planning') \
-                or (key in self.LIST_VIEW_KEYS and view == 'Resource Planning')
+                or (key in self.LIST_VIEW_KEYS
+                    and view in self._LISTLESS_VIEWS)
             if dead:
                 try:
                     btn.configure(state='disabled')

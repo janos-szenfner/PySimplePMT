@@ -64,9 +64,12 @@ Feature: The menu and the keyboard follow the view on top (issue #116)
     And the status bar mentions "belongs to the Task Planning view"
 
   Scenario: The task buttons grey out off the task view
+    # The dashboard's own button stays live - it is a view of its own
+    # now, reachable from whichever view is on top (issue #122).
     When the "Resource Planning" tab is selected
-    Then ribbon buttons "task,link,unlink,gantt,dashboard,grid,critical_path,critical_path_report,highlight,grid_filter,grid_filter_clear" are disabled
+    Then ribbon buttons "task,link,unlink,gantt,grid,critical_path,critical_path_report,highlight,grid_filter,grid_filter_clear" are disabled
     And ribbon buttons "paste,cut,copy,edit,delete,indent,outdent" are disabled
+    And ribbon buttons "dashboard" are enabled
 
   Scenario: The task buttons come back with the task view
     When the "Resource Planning" tab is selected
@@ -76,4 +79,24 @@ Feature: The menu and the keyboard follow the view on top (issue #116)
   Scenario: On Deliverables the shared buttons stay live
     When the "Deliverables" tab is selected
     Then ribbon buttons "paste,cut,copy,edit,delete,indent,outdent" are enabled
-    And ribbon buttons "task,link,unlink,gantt,dashboard,grid" are disabled
+    And ribbon buttons "task,link,unlink,gantt,grid" are disabled
+    And ribbon buttons "dashboard" are enabled
+
+  Scenario: The dashboard is a footer view of its own
+    # Issue #122: a fourth tab beside the other three, not a picture
+    # standing in for the chart.
+    When the "Dashboard" tab is selected
+    Then the "Dashboard" view is on top
+    And the dashboard canvas holds the keyboard focus
+
+  Scenario: The dashboard answers from any view
+    When the "Deliverables" tab is selected
+    And the Dashboard command runs
+    Then the "Dashboard" view is on top
+
+  Scenario: The list commands grey out on the dashboard
+    # It only reads the plan: there is no list to copy, edit or delete
+    # while it is on top (issue #122).
+    When the "Dashboard" tab is selected
+    Then ribbon buttons "paste,cut,copy,edit,delete,indent,outdent" are disabled
+    And ribbon buttons "task,link,unlink,gantt,grid" are disabled

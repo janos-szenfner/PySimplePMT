@@ -578,20 +578,33 @@ GUIDE_SECTIONS = (
             "Too long a plan for that and it falls back to one cell per "
             "week, then to the month band alone. Days nobody works are "
             "shaded down the chart and today's column is tinted.",
+
+            "The chart answers what the list picks: each selected row is "
+            "banded across the chart, so a task stays findable however "
+            "far the chart is scrolled. The band is on the screen only - "
+            "an exported chart has no selection, so none is drawn.",
         ],
     ),
     (
         "The dashboard and the timeline",
         [
-            "View > Charts holds three views of the plan: the Gantt "
-            "chart, the Dashboard, and the Timeline. The last two are "
-            "drawings rather than editors - they read the plan, and every "
-            "edit repaints them.",
+            "The Dashboard is a view of its own - a fourth footer tab "
+            "beside Task Planning, Resource Planning and Deliverables. "
+            "The ribbon's Dashboard button and View > Charts both land "
+            "on the same tab, and picking the Task Planning tab brings "
+            "the task list and its chart back. The Timeline is the odd "
+            "one out: it still sits in the chart's pane on Task "
+            "Planning. Both are drawings rather than editors - they "
+            "read the plan, and every edit repaints them.",
 
-            "The dashboard is four charts - progress per top-level row, "
-            "duration split by task type, duration per item, and a summary "
-            "box of eight figures. Its Panels button opens a checklist "
-            "that takes any of them off or puts them back, four at most "
+            "The dashboard is five panels - progress per top-level row, "
+            "duration split by task type, duration per item, a summary "
+            "box of eight figures, and a Deliverables panel listing the "
+            "plan's top-level deliverables as progress bars, each in the "
+            "health colour its state wears on the Deliverables grid: "
+            "green done, blue on track, grey not started, amber at "
+            "risk, red overdue. Its Panels button opens a checklist "
+            "that takes any of them off or puts them back, six at most "
             "and two to a row; the choice is remembered between sessions. "
             "Double-click a panel - or the small window icon on its "
             "title - to give it the whole board, and press Escape or "
@@ -653,8 +666,8 @@ GUIDE_SECTIONS = (
 
             "Delete is on the keyboard too: Command+Backspace on a Mac, "
             "Ctrl+Backspace everywhere else. It does exactly what the "
-            "ribbon's Delete does on whichever of the three views is on "
-            "top, and it asks before anything is removed. In a text box "
+            "ribbon's Delete does on whichever view is on top, and it "
+            "asks before anything is removed. In a text box "
             "the same keys edit the text, as they should - the shortcut "
             "stands aside while a field has the focus.",
 
@@ -1222,11 +1235,12 @@ GUIDE_SECTIONS = (
     (
         "Resource Planning view",
         [
-            "The footer at the bottom of the window has three tabs: Task "
-            "Planning, Resource Planning and Deliverables. Task Planning is "
-            "the default. Resource Planning opens the four-panel resource "
-            "matrix, and Deliverables opens the checklist of what the plan "
-            "owes.",
+            "The footer at the bottom of the window has four tabs: Task "
+            "Planning, Resource Planning, Deliverables and Dashboard. Task "
+            "Planning is the default. Resource Planning opens the four-"
+            "panel resource matrix, Deliverables opens the checklist of "
+            "what the plan owes, and Dashboard opens the board of panels "
+            "that read the plan.",
 
             "The left half of the matrix lists every project task. Click a "
             "task to see its details in the inspector panel on the right, "
@@ -1377,10 +1391,16 @@ GUIDE_SECTIONS = (
             "Every button says what it is if you rest the pointer on it, "
             "which is the fastest way to learn the row.",
 
-            "Option+Command+. on a Mac, Ctrl+Alt+. elsewhere, makes a new "
-            "task and opens its editor. It goes beside the row the cursor "
-            "is on; in a list nobody has clicked in yet it goes at the end "
-            "of the plan.",
+            "Option+Command+. on a Mac, Ctrl+Alt+. elsewhere, inserts an "
+            "empty row above the one the cursor is on - a blank line "
+            "still being sketched, not a dialog to answer first. Its "
+            "cells show N/A until they are decided, and the name cell "
+            "opens for typing straight away. The first field filled - a "
+            "name, a duration, a start, a type, a link or a percentage - "
+            "turns the row into a one-day Task from the project start and "
+            "defaults the rest, so a row is never half-made. In a list "
+            "nobody has clicked in yet the row goes at the end of the "
+            "plan.",
 
             "The search box, the Day / Night control and the ? sit together "
             "against the right-hand end. None of them acts on the plan, and "

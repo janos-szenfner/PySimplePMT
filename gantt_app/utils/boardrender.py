@@ -38,6 +38,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from gantt_app.core.baselines import rolled_task_costs
+from gantt_app.core.deliverable import deliverable_health
 from gantt_app.core.models import Project, TASK_TYPES
 from gantt_app.utils.log import get_logger
 
@@ -54,6 +55,9 @@ PALETTE_KEYS = (
     'kpi_bg', 'kpi_border',
     'header_bg', 'header_text', 'band_bg', 'band_text',
     'lane_bg', 'lane_text', 'spine', 'today',
+    # 'health' is the odd one out - a small dict of the five deliverable
+    # health colours rather than a colour of its own (issue #120)
+    'health',
 )
 
 
@@ -113,6 +117,24 @@ def dashboard_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
             'Cost': costs.get(task.id, 0.0),
         })
     return rows
+
+
+def deliverable_rows(project: Optional[Project]) -> List[Dict[str, Any]]:
+    """
+    The top-level deliverables as the dashboard's rows (issue #120).
+
+    Only the highest level is listed - the deliverables a plan is judged
+    by - each with the progress the Deliverables board's roll-up already
+    settled and the health state that progress puts it in. An empty plan
+    gives no rows and the panel says so.
+    """
+    if project is None:
+        return []
+    return [{
+        'Name': deliverable.name,
+        'Progress': deliverable.progress or 0,
+        'Health': deliverable_health(deliverable),
+    } for deliverable in project.get_root_deliverables()]
 
 
 def _level_of(task, project: Project) -> int:
@@ -436,6 +458,68 @@ def draw_summary(pen, rows, palette, x, y, width, height):
         row_y += 24
 
 
+def draw_deliverables(pen, deliverables, palette, x, y, width, height):
+    """
+    Panel 5: the top-level deliverables, a bar each in its health colour.
+
+    The rows are the ones the Deliverables tab leads with - the highest
+    level, not every sub-deliverable beneath them (issue #120). Each bar
+    is filled to its progress in the colour that health wears on the
+    board: green done, blue on track, grey not started, amber at risk,
+    red overdue - so a red bar needs no label read to be understood.
+    """
+    left, top, right, bottom = _panel(
+        pen, palette, x, y, width, height, "Deliverables")
+
+    if not deliverables:
+        _say(pen, palette, left, top, right, bottom,
+             "No deliverables yet")
+        return
+
+    plot_left = left + LEFT_LABEL_W
+    plot_bottom = bottom - 28
+    if plot_left >= right - 40 or plot_bottom <= top + 10:
+        return
+
+    pen.rect(plot_left, top, right, plot_bottom,
+             outline=palette['axis'], width=1)
+
+    # The scale, every twenty per cent - the same one draw_progress draws
+    for percent in range(0, 101, 20):
+        at = plot_left + (right - plot_left) * percent / 100
+        if percent:
+            pen.line((at, top, at, plot_bottom), fill=palette['grid'],
+                     dash=(2, 3))
+        pen.text(at, plot_bottom + 10, f"{percent}%",
+                 fill=palette['tick'], size=9)
+
+    health_colours = palette.get('health') or {}
+    band = (plot_bottom - top) / len(deliverables)
+    thickness = max(4, min(22, band * 0.55))
+    for index, row in enumerate(deliverables):
+        middle = top + band * (index + 0.5)
+        pen.text(plot_left - 8, middle, _clip(row['Name'], 20),
+                 anchor='e', fill=palette['tick'], size=10)
+
+        share = max(0.0, min(100.0, float(row['Progress']))) / 100
+        end = plot_left + (right - plot_left) * share
+        colour = health_colours.get(row.get('Health'),
+                                    palette['progress_bar'])
+        # The full-width track behind the fill, so a part-done bar reads
+        # against the hundred it is short of
+        pen.rect(plot_left + 1, middle - thickness / 2,
+                 right - 1, middle + thickness / 2,
+                 outline=palette['grid'], width=1)
+        if end > plot_left + 1:
+            pen.rect(plot_left + 1, middle - thickness / 2,
+                     end, middle + thickness / 2, fill=colour)
+        # The percentage wears the health too: at 0% there is no fill to
+        # carry the colour, and an overdue bar that reads grey is an
+        # overdue bar that reads as nothing.
+        pen.text(end + 6, middle, f"{int(row['Progress'])}%", anchor='w',
+                 fill=colour, size=9)
+
+
 #: The panels the dashboard can show, in the order the Panels menu lists
 #: them. Each is (id, title, draw): the id is what settings.json keeps,
 #: the title heads the panel, and draw paints inside the pen rect it is
@@ -445,10 +529,13 @@ DASHBOARD_PANELS: List[Tuple[str, str, Callable]] = [
     ('donut', "Duration Allocation by Task Type (Days)", draw_donut),
     ('workload', "Duration per Item (Days)", draw_workload),
     ('summary', "Summary", draw_summary),
+    ('deliverables', "Deliverables", draw_deliverables),
 ]
 
-#: A dashboard holds four panels at most, two to a row (issue #66).
-MAX_PANELS = 4
+#: A dashboard holds six panels at most, two to a row - the three rows
+#: of the five the registry now carries, plus room for one more before
+#: the board stops reading at a glance (issues #66, #120).
+MAX_PANELS = 6
 PANELS_PER_ROW = 2
 
 
@@ -497,9 +584,18 @@ def dashboard_layout(count: int, width: float,
 
 def render_dashboard(pen, rows: List[Dict[str, Any]], palette,
                      enabled_ids, maximized_id=None,
-                     width=0, height=0) -> List[Dict]:
+                     width=0, height=0,
+                     deliverables: Optional[List[Dict[str, Any]]] = None
+                     ) -> List[Dict]:
     """
     Draw the enabled panels and report where each one landed.
+
+    PARAMETERS:
+    -----------
+    deliverables : List[Dict], optional
+        The top-level deliverable rows for the Deliverables panel, from
+        deliverable_rows - the panel draws from its own list, not the
+        plan's task rows (issue #120).
 
     RETURNS:
     --------
@@ -511,9 +607,10 @@ def render_dashboard(pen, rows: List[Dict[str, Any]], palette,
     enabled = sanitize_panel_ids(enabled_ids)
     if maximized_id in enabled:
         enabled = [maximized_id]
-    if not rows:
-        # An empty plan gets a sentence rather than four empty charts;
-        # see the old dashboard's _draw_empty and the test that pins it.
+    if not rows and not deliverables:
+        # An empty plan gets a sentence rather than a grid of empty
+        # charts; see the old dashboard's _draw_empty and the test that
+        # pins it.
         pen.text(width / 2, height / 2,
                  "Nothing to summarise yet.\n"
                  "Add a task to the plan and it will appear here.",
@@ -526,7 +623,10 @@ def render_dashboard(pen, rows: List[Dict[str, Any]], palette,
                                                 width, height),
                                  enabled):
         title, draw = panels[pid]
-        draw(pen, rows, palette, x, y, w, h)
+        # The Deliverables panel reads the deliverable rows; every other
+        # panel reads the plan's task rows.
+        data = (deliverables or []) if pid == 'deliverables' else rows
+        draw(pen, data, palette, x, y, w, h)
         pad = PANEL_PAD // 2
         landed.append({'id': pid,
                        'rect': (x + pad, y + pad,

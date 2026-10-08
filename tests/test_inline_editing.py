@@ -1110,29 +1110,30 @@ class TestMakingATaskFromTheKeyboard(InlineEditingTestCase):
     from the menu.
     """
 
-    def test_it_creates_beside_the_focused_row(self):
+    def test_it_creates_a_placeholder_beside_the_focused_row(self):
         """Where the cursor is, which is where the reader is looking."""
-        from unittest import mock
-
         self.task_list.tree.selection_set('u2')
         self.task_list.tree.focus('u2')
 
-        with mock.patch.object(self.task_list, 'create_task') as made:
-            self.task_list.create_task_at_cursor()
+        self.task_list.create_task_at_cursor()
 
-        made.assert_called_once_with('Task', 'u2', above=True)
+        made = [t for t in self.project.tasks if t.is_placeholder]
+        self.assertEqual(len(made), 1)
+        # The insert rule: the empty row takes the focused row's place.
+        self.assertLess(self.project.tasks.index(made[0]),
+                        self.project.tasks.index(
+                            self.project.get_task_by_id('u2')))
 
     def test_it_goes_at_the_end_with_no_cursor(self):
         """A list nobody has clicked in yet still makes a row."""
-        from unittest import mock
-
         self.task_list.tree.selection_remove(*self.task_list.tree.selection())
         self.task_list.tree.focus('')
 
-        with mock.patch.object(self.task_list, 'create_task') as made:
-            self.task_list.create_task_at_cursor()
+        self.task_list.create_task_at_cursor()
 
-        made.assert_called_once_with('Task', None, above=True)
+        made = [t for t in self.project.tasks if t.is_placeholder]
+        self.assertEqual(len(made), 1)
+        self.assertIs(made[0], self.project.tasks[-1])
 
     def new_task(self, task_id='new1'):
         """The task a saved dialog would hand back."""
@@ -1408,3 +1409,153 @@ class TestTheLabelField(unittest.TestCase):
         task = Task(id='t1', name='One', start_date=BASE, label='legal')
 
         self.assertTrue(task_matches(task, 'legal'))
+
+
+class TestPlaceholderRows(InlineEditingTestCase):
+    """
+    The empty row the insert shortcut makes, and how it grows (issue #115).
+
+    WHY THESE EXIST:
+    ================
+    The shortcut used to open the whole create form for a gesture meant to
+    be one keystroke. What it makes now is a blank line - nothing typed,
+    nothing decided - and the first field filled is what turns it into a
+    task. Each way in was a different place for the rule to silently not
+    apply, which is why there is a test per cell.
+    """
+
+    def _placeholder(self, anchor='u2'):
+        """The row the insert shortcut adds above the cursor."""
+        self.task_list.tree.selection_set(anchor)
+        self.task_list.tree.focus(anchor)
+        self.task_list.create_task_at_cursor()
+        made = [t for t in self.project.tasks if t.is_placeholder]
+        assert made, "the shortcut did not leave an empty row"
+        return made[0]
+
+    def test_the_new_row_is_totally_empty(self):
+        """No name, no type, no dates decided - it shows as a blank line."""
+        task = self._placeholder()
+
+        self.assertEqual(task.name, '')
+        self.assertEqual(task.task_type, '')
+        self.assertIsNone(task.end_date)
+        self.assertIsNone(task.duration)
+        self.assertFalse(task.is_milestone)
+
+    def test_the_grid_draws_it_as_a_blank_line(self):
+        """N/A where the plan's empty cells wear it; nothing else at all."""
+        task = self._placeholder()
+        self.task_list.update_task_list()
+
+        item = self.task_list.tree.item(task.id)
+        values = item['values']
+        self.assertEqual(item['text'], '')
+        # (alert, label, type, status, duration, start, end, progress,
+        #  deps, milestone, level, ...)
+        self.assertEqual(values[2], 'N/A')   # Type
+        self.assertEqual(values[4], 'N/A')   # Duration
+        self.assertEqual(values[5], 'N/A')   # Start
+        self.assertEqual(values[6], 'N/A')   # End
+        self.assertEqual(values[7], '')      # Progress
+        self.assertEqual(values[9], '')      # Milestone
+
+    def test_a_name_grows_it_into_a_one_day_task(self):
+        """Typing the name fills in the rest: a Task, a day long."""
+        task = self._placeholder()
+
+        self.task_list.set_task_name(task.id, 'Roofing')
+        row = self.project.get_task_by_id(task.id)
+
+        self.assertFalse(row.is_placeholder)
+        self.assertEqual(row.name, 'Roofing')
+        self.assertEqual(row.task_type, 'Task')
+        self.assertEqual(row.duration, 1)
+        # A day is inclusive here: a one-day task ends on the day it starts
+        self.assertEqual(row.end_date, row.start_date)
+        self.assertFalse(row.is_milestone)
+
+    def test_a_duration_grows_it_and_stretches_the_end(self):
+        """A length typed first lands start, end and the Task type."""
+        task = self._placeholder()
+
+        self.task_list.edit_schedule_cell(task.id, 'Duration')
+        self.type_into_editor('5')
+        self.task_list._commit_schedule_cell('Duration')
+        row = self.project.get_task_by_id(task.id)
+
+        self.assertFalse(row.is_placeholder)
+        self.assertEqual(row.task_type, 'Task')
+        self.assertEqual(row.duration, 5)
+        # Four working days in from the inclusive start
+        self.assertGreaterEqual(
+            (row.end_date - row.start_date).days, 4)
+        self.assertFalse(row.is_milestone)
+
+    def test_a_duration_of_zero_makes_a_milestone(self):
+        """Nought days is a moment, on an empty row as anywhere (#73)."""
+        task = self._placeholder()
+
+        self.task_list.set_schedule(task.id, task.start_date,
+                                    task.start_date, 0, None)
+        row = self.project.get_task_by_id(task.id)
+
+        self.assertFalse(row.is_placeholder)
+        self.assertTrue(row.is_milestone)
+
+    def test_a_start_grows_it_into_a_day(self):
+        """A date typed first lands a one-day Task pinned where typed."""
+        task = self._placeholder()
+        typed = '2026-09-14'     # a Monday
+
+        self.task_list.edit_schedule_cell(task.id, 'Start')
+        self.type_into_editor(typed)
+        self.task_list._commit_schedule_cell('Start')
+        row = self.project.get_task_by_id(task.id)
+
+        self.assertFalse(row.is_placeholder)
+        self.assertEqual(row.task_type, 'Task')
+        self.assertEqual(row.duration, 1)
+        self.assertEqual(row.start_date.strftime('%Y-%m-%d'), typed)
+        self.assertEqual(row.end_date, row.start_date)
+        # The same pin any typed start earns (issue #31)
+        self.assertEqual(row.constraint_type, 'SNET')
+
+    def test_a_type_choice_grows_it(self):
+        """Picking Phase from the dropdown fills in the rest the same way."""
+        task = self._placeholder()
+
+        self.task_list.set_task_type(task.id, 'Phase')
+        row = self.project.get_task_by_id(task.id)
+
+        self.assertFalse(row.is_placeholder)
+        self.assertEqual(row.task_type, 'Phase')
+        self.assertEqual(row.duration, 1)
+        self.assertEqual(row.end_date, row.start_date)
+
+    def test_leaving_the_name_empty_keeps_it_a_placeholder(self):
+        """A name box committed blank decides nothing."""
+        task = self._placeholder()
+
+        self.task_list.set_task_name(task.id, '')
+
+        self.assertTrue(task.is_placeholder)
+
+    def test_it_survives_a_save_and_load(self):
+        """The empty type round-trips through the file like any field."""
+        task = Task(id='ph1', name='', task_type='', start_date=BASE,
+                    end_date=None, duration=None)
+
+        again = Task.from_dict(task.to_dict())
+
+        self.assertTrue(again.is_placeholder)
+        self.assertEqual(again.task_type, '')
+        self.assertIsNone(again.duration)
+
+    def test_undo_takes_the_row_back_out(self):
+        """The insert is one command; undo removes the whole row."""
+        task = self._placeholder()
+
+        self.manager.undo()
+
+        self.assertIsNone(self.project.get_task_by_id(task.id))

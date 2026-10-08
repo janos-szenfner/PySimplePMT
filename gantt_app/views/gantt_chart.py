@@ -144,6 +144,11 @@ class GanttChart(ctk.CTkFrame):
         self._drawn_top_margin = 0
         self._drawn_height = 0
 
+        # Which task IDs the drawn guide lines mark, and the redraw the
+        # last selection event is still waiting for (issue #119)
+        self._drawn_selection = set()
+        self._select_after = None
+
         # Where the chart's first row goes, measured once the panes have
         # been laid out; see _first_row_offset
         self._row_offset = None
@@ -410,8 +415,11 @@ class GanttChart(ctk.CTkFrame):
             self._drawn_rows = [task.id for task in plan.tasks]
             self._drawn_row_height = plan.row_height
             self._drawn_top_margin = plan.top_margin
+            self._drawn_selection = {plan.tasks[i].id
+                                     for i in plan.selected}
         else:
             self._drawn_rows = []
+            self._drawn_selection = set()
         self._drawn_height = image.size[1] / SCREEN_SCALE
 
         # The canvas was just rebuilt, so it is back at the top while the
@@ -434,7 +442,48 @@ class GanttChart(ctk.CTkFrame):
         self.task_list = task_list
         self._row_offset = None
         task_list.on_rows_changed(self._rows_changed)
+        try:
+            # The picked row's guide line has to move when the pick does -
+            # a redraw that waits a beat, so a keyboard sweep down the
+            # list rasterises once rather than once per row passed
+            task_list.tree.bind('<<TreeviewSelect>>',
+                                self._selection_moved, add='+')
+        except tk.TclError:
+            pass
         self.draw_chart()
+
+    def _selection_moved(self, _event=None):
+        """
+        Requeue the guide-line redraw when the list's pick changed.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        <<TreeviewSelect>> also fires while the list is rebuilt - the
+        selection is dropped and put back around every refresh - so the
+        draw is held until the event burst has settled, and skipped
+        entirely when the pick comes back as the same rows (issue #119).
+        """
+        try:
+            picked = set(self.task_list.get_selected_task_ids())
+        except Exception:
+            picked = set()
+        if picked == self._drawn_selection:
+            return
+        if self._select_after is not None:
+            try:
+                self.after_cancel(self._select_after)
+            except (tk.TclError, ValueError):
+                pass
+        try:
+            self._select_after = self.after(60, self._selection_settled)
+        except tk.TclError:
+            self._select_after = None
+
+    def _selection_settled(self):
+        """Draw again once the selection has stopped moving (#119)."""
+        self._select_after = None
+        if not self._drawing:
+            self.draw_chart()
 
     def _rows_changed(self):
         """
@@ -521,11 +570,21 @@ class GanttChart(ctk.CTkFrame):
         if not tasks:
             return None
 
+        # Which of the drawn rows the list has picked - the guide line
+        # runs across the chart at those bands (issue #119)
+        try:
+            picked = set(self.task_list.get_selected_task_ids())
+        except Exception:
+            picked = set()
+        selected = tuple(index for index, task in enumerate(tasks)
+                         if task.id in picked)
+
         return RowPlan(
             tasks=tasks,
             row_height=self.task_list.GRID_ROW_HEIGHT,
             top_margin=self._first_row_offset(),
             label_width=0,
+            selected=selected,
         )
 
     def _first_row_offset(self) -> int:

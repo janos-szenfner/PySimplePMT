@@ -1109,10 +1109,18 @@ class DragDropTaskList(ctk.CTkFrame):
         if task is None or task.name == name:
             return
 
+        # A name is the empty row's first decision as much as a schedule
+        # is: it becomes a day-long Task (issue #115). An empty name typed
+        # back leaves the row waiting.
+        fields = {'name': name}
+        if name and getattr(task, 'is_placeholder', False):
+            fields.update(self._placeholder_defaults(task))
+
         if self.project_tracker:
-            self.project_tracker.update_task(task_id, name=name)
+            self.project_tracker.update_task(task_id, **fields)
         else:
-            task.name = name
+            for key, value in fields.items():
+                setattr(task, key, value)
 
         logger.info("Renamed task %s to %r", task_id, name)
         self.update_task_list()
@@ -1225,10 +1233,19 @@ class DragDropTaskList(ctk.CTkFrame):
         if task.task_type == task_type:
             return
 
+        # Choosing a type is also the empty row's first decision: the
+        # picked type stands and the rest of the line fills in behind it -
+        # a day long, running from the start it quietly carried (#115).
+        fields = {'task_type': task_type}
+        if getattr(task, 'is_placeholder', False):
+            fields = {**self._placeholder_defaults(task),
+                      'task_type': task_type}
+
         if self.project_tracker:
-            self.project_tracker.update_task(task_id, task_type=task_type)
+            self.project_tracker.update_task(task_id, **fields)
         else:
-            task.task_type = task_type
+            for key, value in fields.items():
+                setattr(task, key, value)
 
         logger.info("Task %s is now a %s", task_id, task_type)
         self.project.reschedule()
@@ -1467,10 +1484,17 @@ class DragDropTaskList(ctk.CTkFrame):
         if list(task.dependencies) == list(links):
             return
 
+        # A link is a decision too: the empty row it hangs on becomes the
+        # day-long Task the rest of its cells were waiting for (issue #115)
+        fields = {'dependencies': links}
+        if links and getattr(task, 'is_placeholder', False):
+            fields.update(self._placeholder_defaults(task))
+
         if self.project_tracker:
-            self.project_tracker.update_task(task_id, dependencies=links)
+            self.project_tracker.update_task(task_id, **fields)
         else:
-            task.dependencies = links
+            for key, value in fields.items():
+                setattr(task, key, value)
 
         self.project.apply_schedule(forward_only=False)
         logger.info("Set %d dependency(ies) on task %s", len(links), task_id)
@@ -1497,7 +1521,11 @@ class DragDropTaskList(ctk.CTkFrame):
         task = self.project.get_task_by_id(task_id)
         if task is None:
             return
-        if cell == 'Duration':
+        if getattr(task, 'is_placeholder', False):
+            # An empty row's cells hold nothing to be corrected, so the box
+            # opens empty too (issue #115)
+            current = ''
+        elif cell == 'Duration':
             current = str(self.project.working_duration(task))
         elif cell == 'Start':
             current = task.start_date.strftime('%Y-%m-%d')
@@ -1525,6 +1553,10 @@ class DragDropTaskList(ctk.CTkFrame):
             return
 
         text = text.strip()
+        if not text:
+            # An empty box is the user saying "never mind the typing" - the
+            # same silent no-op the Progress cell learned (issue #117)
+            return
         start, end = task.start_date, task.end_date
         duration = self.project.working_duration(task)
         try:
@@ -1542,9 +1574,51 @@ class DragDropTaskList(ctk.CTkFrame):
             messagebox.showerror(cell, f"Enter {what}.")
             return
 
+        if getattr(task, 'is_placeholder', False) and cell == 'Start':
+            # A start on an empty row is a day-long Task running from the
+            # day typed (issue #115) - pinned with the same Start No
+            # Earlier Than any typed start earns, rather than stretched
+            # back to the end the row only pretended not to have.
+            calendar = self.project.calendar_for(task)
+            start = calendar.get_next_working_day(start)
+            self.set_schedule(task_id, start,
+                              calendar.add_working_days(start, 1), 1, start)
+            return
+
         new_start, new_end, new_duration, snet = \
             self.project.reconcile_schedule(task, start, end, duration)
         self.set_schedule(task_id, new_start, new_end, new_duration, snet)
+
+    def _placeholder_defaults(self, task) -> dict:
+        """
+        What an empty row grows into once any field is filled (issue #115).
+
+        RETURNS:
+        --------
+        dict
+            The fields a placeholder was waiting for: the Task type, a
+            day long, running from the start the row quietly carried -
+            taken to the next working day when the calendar says that
+            day is not one.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        One set of answers for every way in - a name, a length, a date, a
+        type, a link, a percentage - so the row cannot come out half
+        Task and half placeholder depending on which cell was filled
+        first. The caller's own field is laid over the top afterwards,
+        so typing "3" into Duration still lands a three-day row.
+        """
+        start = task.start_date or self.project.start_date or datetime.now()
+        calendar = self.project.calendar_for(task)
+        start = calendar.get_next_working_day(start)
+        return {
+            'task_type': 'Task',
+            'duration': 1,
+            'start_date': start,
+            'end_date': calendar.add_working_days(start, 1),
+            'is_milestone': False,
+        }
 
     def set_schedule(self, task_id: str, start, end, duration, snet_date):
         """
@@ -1568,9 +1642,24 @@ class DragDropTaskList(ctk.CTkFrame):
             fields['constraint_type'] = 'SNET'
             fields['constraint_date'] = snet_date
 
+        if getattr(task, 'is_placeholder', False):
+            # A filled schedule is the empty row's first decision: the row
+            # is a Task from here on (issue #115). A length that settled
+            # back to the hidden end - a one-day row reconciled to
+            # end == start - is re-laid a working day out, so the stored
+            # finish agrees with the length it was just given.
+            fields['task_type'] = 'Task'
+            if duration and int(duration) >= 1 and end is not None \
+                    and end <= start:
+                calendar = self.project.calendar_for(task)
+                fields['end_date'] = calendar.add_working_days(
+                    start, int(duration))
+
         unchanged = (task.start_date == start and task.end_date == end
                      and task.duration == duration
                      and task.is_milestone == fields['is_milestone']
+                     and task.task_type == fields.get('task_type',
+                                                    task.task_type)
                      and (snet_date is None
                           or (task.constraint_type == 'SNET'
                               and task.constraint_date == snet_date)))
@@ -1673,10 +1762,17 @@ class DragDropTaskList(ctk.CTkFrame):
         if task is None or task.progress == percent:
             return
 
+        # Marking work done is a decision too: the empty row becomes the
+        # day-long Task its cells were waiting for (issue #115)
+        fields = {'progress': percent}
+        if getattr(task, 'is_placeholder', False):
+            fields.update(self._placeholder_defaults(task))
+
         if self.project_tracker:
-            self.project_tracker.update_task(task_id, progress=percent)
+            self.project_tracker.update_task(task_id, **fields)
         else:
-            task.progress = percent
+            for key, value in fields.items():
+                setattr(task, key, value)
 
         self.project.apply_schedule()
         logger.info("Set task %s to %d%%", task_id, percent)
@@ -3281,8 +3377,46 @@ class DragDropTaskList(ctk.CTkFrame):
         it lands on moves down. With no cursor - a list nobody has clicked
         in yet - it goes at the end of the plan at the top level, which is
         where a row made without pointing at anything belongs.
+
+        What is inserted is a placeholder - a totally empty row, no name,
+        no type, nothing but the blank cells of a line still being
+        sketched (issue #115). The create dialog would have forced a type
+        on it before the planner had decided anything, and a half-filled
+        form is heavier than the gesture that opened it. The first field
+        typed - a name, a length, a date or a type - decides what the row
+        grows into; see _placeholder_defaults.
+
+        It still carries a start date underneath, hidden behind the N/A
+        its cells show, so nothing that reads dates - the scheduler, the
+        chart, an export - has to learn to do without one. The plan's
+        own start is the natural hiding place.
         """
-        self.create_task('Task', self.focused_task_id(), above=True)
+        anchor_id = self.focused_task_id()
+        anchor = self.project.get_task_by_id(anchor_id) if anchor_id else None
+        if anchor_id is not None and anchor is None:
+            logger.warning("Cannot create at unknown task %s", anchor_id)
+            return
+        parent_id = anchor.parent_task_id if anchor else None
+
+        start = self.project.start_date or datetime.now()
+        task = Task(
+            id=self.project.next_task_id(),
+            name='',
+            task_type='',
+            start_date=start,
+            end_date=None,
+            duration=None,
+            parent_task_id=parent_id,
+        )
+        logger.info("Inserting an empty row at %s", anchor_id)
+        self._save_created(task, anchor_id, parent_id, above=True)
+
+        # The name is the field a new row is usually given first, so its
+        # cell is opened over the row that just arrived.
+        try:
+            self.after_idle(lambda: self.edit_name_cell(task.id))
+        except tk.TclError:
+            pass
 
     def _save_created(self, task: Task, anchor_id: str, parent_id,
                       above: bool = False):
@@ -3306,8 +3440,10 @@ class DragDropTaskList(ctk.CTkFrame):
             """Place the new row, then renew the numbering it changed."""
             task.parent_task_id = parent_id
             # A phase stays what it was; anything else takes the type the
-            # level it lands at calls for
-            if parent_id and task.task_type != "Phase":
+            # level it lands at calls for. An empty row keeps its empty
+            # type - what it becomes is decided by the first field filled,
+            # not by where the row happened to land (issue #115).
+            if parent_id and task.task_type and task.task_type != "Phase":
                 parent = self.project.get_task_by_id(parent_id)
                 task.task_type = child_type_for(parent, task)
 
@@ -4202,13 +4338,26 @@ class DragDropTaskList(ctk.CTkFrame):
         # without anything being rewritten. See dependencysyntax.format_links.
         numbers = getattr(self, '_display_ids', None) or self.project.display_ids()
         deps_str = format_links(task.dependencies, numbers) or 'None'
-        
+
+        # A placeholder row - the blank line the insert shortcut makes -
+        # shows nothing. Its type, length and dates have not been chosen,
+        # so the cells wear the N/A the plan's other empty cells wear, and
+        # nothing it does not have is written in (issue #115). The date it
+        # quietly carries is only a hiding place: the first field filled
+        # decides what the row becomes.
+        placeholder = getattr(task, 'is_placeholder', False)
+
         # Format dates
-        start_str = task.start_date.strftime('%Y-%m-%d')
-        end_str = task.end_date.strftime('%Y-%m-%d') if task.end_date else 'N/A'
-        
+        if placeholder or task.start_date is None:
+            start_str = 'N/A'
+        else:
+            start_str = task.start_date.strftime('%Y-%m-%d')
+        end_str = 'N/A' if placeholder or task.end_date is None \
+            else task.end_date.strftime('%Y-%m-%d')
+
         # Format milestone indicator
-        milestone_str = 'Yes' if task.is_milestone else 'No'
+        milestone_str = '' if placeholder \
+            else ('Yes' if task.is_milestone else 'No')
         
         # Format duration
         #
@@ -4226,10 +4375,11 @@ class DragDropTaskList(ctk.CTkFrame):
             duration = self.project.working_duration(task)
         else:
             duration = task.duration_days
-        duration_str = str(duration) if duration is not None else 'N/A'
-        
+        duration_str = 'N/A' if placeholder or duration is None \
+            else str(duration)
+
         # Format task type
-        type_str = task.task_type
+        type_str = 'N/A' if placeholder else task.task_type
         
         # Format status - Active is the ordinary case and shows nothing, so
         # the column stays quiet until a row is something other than active.
@@ -4243,6 +4393,8 @@ class DragDropTaskList(ctk.CTkFrame):
         # the Alert column; see Project.tasks_in_conflict.
         alert_str = '⚠' if task.id in getattr(self, '_at_risk_ids', set()) \
             else ''
+        deps_str = '' if placeholder else deps_str
+        progress_str = '' if placeholder else f"{task.progress}%"
 
         # The name goes in column #0, which is the one that draws the
         # indentation and the expander beside it
@@ -4262,7 +4414,7 @@ class DragDropTaskList(ctk.CTkFrame):
                                      duration_str,
                                      start_str,
                                      end_str,
-                                     f"{task.progress}%",
+                                     progress_str,
                                      deps_str,
                                      milestone_str,
                                      str(self.project.outline_level(task.id)),
