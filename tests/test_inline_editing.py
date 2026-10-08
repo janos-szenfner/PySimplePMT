@@ -1559,3 +1559,178 @@ class TestPlaceholderRows(InlineEditingTestCase):
         self.manager.undo()
 
         self.assertIsNone(self.project.get_task_by_id(task.id))
+
+
+@unittest.skipUnless(HAVE_DISPLAY, "no display")
+class TestTheBlankTail(InlineEditingTestCase):
+    """
+    The uncommitted empty rows the grid always ends with (issue #111).
+
+    WHY THESE EXIST:
+    ================
+    An empty plan used to show a bare canvas - nothing to click, nothing
+    to type into, and no hint that typing was the way to start. The grid
+    now ends with a block of blank rows like a spreadsheet's unused ones:
+    drawn, selectable and editable, but with no task behind them until a
+    cell is typed into - which is what turns them into rows of the plan.
+    """
+
+    def blanks(self):
+        """The tail rows' iids, in the order they are drawn."""
+        return list(self.task_list._blank_rows)
+
+    def test_a_plan_shows_a_tail_of_blank_rows(self):
+        """Every task is followed by empty rows to type into."""
+        rows = self.task_list._visible_row_items()
+
+        self.assertTrue(self.blanks())
+        self.assertEqual(rows[:2], ['u1', 'u2'])
+        self.assertEqual(rows[2:], self.blanks())
+        # ...while the task-facing answer carries tasks alone
+        self.assertEqual(self.task_list.visible_rows(), ['u1', 'u2'])
+
+    def test_an_empty_plan_is_not_a_blank_canvas(self):
+        """The welcome line: an empty project still shows rows to type."""
+        for task in list(self.project.tasks):
+            self.project.remove_task(task.id)
+        self.task_list.update_task_list()
+
+        self.assertEqual(self.project.tasks, [])
+        self.assertTrue(self.blanks())
+        self.assertEqual(self.task_list._visible_row_items(),
+                         self.blanks())
+        self.assertEqual(self.task_list.visible_rows(), [])
+
+    def test_blank_rows_are_not_part_of_the_plan(self):
+        """No task, no number - drawn, but nothing the file would store."""
+        for iid in self.blanks():
+            self.assertIsNone(self.project.get_task_by_id(iid))
+            self.assertNotIn(iid, self.task_list._display_ids)
+
+    def test_a_blank_selected_is_not_a_task_selected(self):
+        """Commands read the selection as empty when only blanks are."""
+        self.task_list.tree.selection_set(self.blanks()[0])
+        self.task_list.tree.focus(self.blanks()[0])
+
+        self.assertEqual(self.task_list.get_selected_task_ids(), [])
+        self.assertIsNone(self.task_list.focused_task_id())
+
+    def test_typing_a_name_materializes_the_row(self):
+        """The first piece of information makes it a row of the plan."""
+        before = len(self.project.tasks)
+        iid = self.blanks()[0]
+
+        self.task_list.edit_name_cell(iid)
+        self.type_into_editor('Roofing')
+        self.task_list._commit_name()
+
+        self.assertEqual(len(self.project.tasks), before + 1)
+        row = self.project.tasks[-1]
+        self.assertEqual(row.name, 'Roofing')
+        self.assertEqual(row.task_type, 'Task')
+        self.assertFalse(row.is_placeholder)
+
+    def test_an_empty_commit_leaves_the_blank_uncommitted(self):
+        """Opening a cell and clicking away is not a decision."""
+        before = len(self.project.tasks)
+
+        self.task_list.edit_name_cell(self.blanks()[0])
+        self.task_list._commit_name()
+
+        self.assertEqual(len(self.project.tasks), before)
+
+    def test_a_later_blank_takes_the_rows_between_with_it(self):
+        """
+        Typing into the third blank adds three rows, not one.
+
+        The two before it land as undecided placeholder rows - in the plan,
+        numbered, but still showing nothing - so the typed row keeps the
+        position it was pointed at rather than sliding up to meet the list.
+        """
+        before = len(self.project.tasks)
+        iid = self.blanks()[2]
+
+        self.task_list.edit_name_cell(iid)
+        self.type_into_editor('Roofing')
+        self.task_list._commit_name()
+
+        self.assertEqual(len(self.project.tasks), before + 3)
+        new = self.project.tasks[-3:]
+        self.assertTrue(new[0].is_placeholder)
+        self.assertTrue(new[1].is_placeholder)
+        self.assertEqual(new[2].name, 'Roofing')
+        self.assertFalse(new[2].is_placeholder)
+
+    def test_the_tail_refills_once_a_row_is_taken(self):
+        """There is always somewhere left to type."""
+        self.task_list.edit_name_cell(self.blanks()[0])
+        self.type_into_editor('Roofing')
+        self.task_list._commit_name()
+
+        self.assertEqual(len(self.blanks()),
+                         self.task_list._blank_tail_count())
+        self.assertEqual(
+            self.task_list._visible_row_items()[-len(self.blanks()):],
+            self.blanks())
+
+    def test_a_type_chosen_on_a_blank_materializes_it(self):
+        """The chooser commits without the entry's text path."""
+        iid = self.blanks()[0]
+
+        self.task_list.set_task_type(iid, 'Phase')
+
+        row = self.project.tasks[-1]
+        self.assertEqual(row.task_type, 'Phase')
+        self.assertFalse(row.is_placeholder)
+
+    def test_a_schedule_cell_materializes_it(self):
+        """A duration typed on a blank lands a three-day Task."""
+        self.task_list.edit_schedule_cell(self.blanks()[0], 'Duration')
+        self.type_into_editor('3')
+        self.task_list._commit_schedule_cell('Duration')
+
+        row = self.project.tasks[-1]
+        self.assertEqual(row.task_type, 'Task')
+        self.assertEqual(row.duration, 3)
+
+    def test_undo_takes_the_added_rows_back(self):
+        """
+        Materializing is one step; the field typed is the next.
+
+        The first undo returns the typed-into row to its undecided state,
+        the second lifts the whole group out of the plan again.
+        """
+        before = len(self.project.tasks)
+        self.task_list.edit_name_cell(self.blanks()[1])
+        self.type_into_editor('Roofing')
+        self.task_list._commit_name()
+        self.assertEqual(len(self.project.tasks), before + 2)
+
+        self.manager.undo()
+        made = self.project.tasks[-2:]
+        self.assertTrue(all(t.is_placeholder for t in made))
+        self.assertEqual(made[-1].name, '')
+
+        self.manager.undo()
+        self.assertEqual(len(self.project.tasks), before)
+
+    def test_double_click_on_other_cells_starts_the_row_by_name(self):
+        """
+        A blank has nothing for the whole-row editor to describe.
+
+        Double-clicking it opens the same typing box the insert shortcut
+        opens, rather than a form for a task that is not there yet.
+        """
+        iid = self.blanks()[0]
+        self.double_click(iid, column='Milestone')
+
+        self.assertIsNotNone(self.task_list._cell_editor)
+        self.assertEqual(self.task_list._cell_editor_task, iid)
+
+    def test_double_click_on_a_schedule_cell_types_into_it(self):
+        """Duration, Start and End take typing on a blank like on a leaf."""
+        iid = self.blanks()[0]
+        self.double_click(iid, column='Start')
+
+        self.assertIsNotNone(self.task_list._cell_editor)
+        self.assertEqual(self.task_list._cell_editor_task, iid)

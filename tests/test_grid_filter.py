@@ -978,7 +978,8 @@ class TestTheGridItself(unittest.TestCase):
 
     def _on_screen(self):
         """The ids the tree is showing, in display order."""
-        return [item for item in self.task_list._rows_in_display_order()]
+        return [item for item in self.task_list._rows_in_display_order()
+                if item not in self.task_list._blank_set]
 
     def test_a_text_filter_shows_the_match_and_its_phase(self):
         self.task_list.apply_grid_filters(

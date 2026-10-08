@@ -113,6 +113,17 @@ class DragDropTaskList(ctk.CTkFrame):
     #: critical fill wins the argument, see _row_tag.
     HIGHLIGHT_ROW_BG = theme.GRID_HIGHLIGHT_BG
 
+    #: The iid prefix of the uncommitted blank rows the grid always ends
+    #: with (issue #111). A blank row is decoration until it is typed into:
+    #: it has no task behind it, no number, and nothing it holds is saved.
+    #: The prefix cannot collide with a task ID, which is a padded number.
+    BLANK_IID_PREFIX = 'blank:'
+
+    #: The least the blank tail holds - the "block of twenty-five empty
+    #: rows" the issue asked for. A taller grid gets as many as fill it
+    #: plus one; see _blank_tail_count.
+    BLANK_TAIL_ROWS = 25
+
     def _apply_grid_style(self):
         """
         Re-colour the task table's global ttk style for the current theme.
@@ -540,6 +551,17 @@ class DragDropTaskList(ctk.CTkFrame):
         self._cell_editor = None
         self._cell_editor_task = None
 
+        #: The uncommitted blank rows at the end of the grid, as iids in
+        #: display order (issue #111), and the same again as a set for the
+        #: "is this a blank row" test. Rebuilt by _fill_blank_tail on every
+        #: update; a row leaves the list by being typed into, which makes
+        #: it a real task - see _materialize_blank.
+        self._blank_rows = []
+        self._blank_set = set()
+        #: Set while a resize's tail re-count is on the idle queue, so a
+        #: run of Configure events does not queue one each.
+        self._blank_tail_pending = False
+
         #: A rename waiting to see whether a second click is coming, and the
         #: row it would rename. See on_release and RENAME_DELAY_MS.
         self._rename_pending = None
@@ -741,6 +763,8 @@ class DragDropTaskList(ctk.CTkFrame):
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
         self.tree.bind('<Shift-Up>', self._on_shift_up)
         self.tree.bind('<Shift-Down>', self._on_shift_down)
+        # A taller grid wants a longer blank tail; see _grid_resized
+        self.tree.bind('<Configure>', self._grid_resized, add='+')
         self._bind_hierarchy_hotkeys()
         self._bind_scroll_keys()
 
@@ -838,7 +862,11 @@ class DragDropTaskList(ctk.CTkFrame):
         length on a moment is how the flag comes off (issue #73).
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None or task.is_container:
+        if task is None:
+            # A blank tail row is a leaf-to-be: every cell takes typing
+            # (issue #111)
+            return task_id in self._blank_set
+        if task.is_container:
             return False
         if task_id in self.project.get_summary_task_ids():
             return False
@@ -854,7 +882,9 @@ class DragDropTaskList(ctk.CTkFrame):
         cells already do (issue #61).
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None or task.is_container:
+        if task is None:
+            return task_id in self._blank_set
+        if task.is_container:
             return False
         return task_id not in self.project.get_summary_task_ids()
 
@@ -1041,7 +1071,20 @@ class DragDropTaskList(ctk.CTkFrame):
             text = None
         self._close_cell_editor()
 
-        if text is None or self.project.get_task_by_id(task_id) is None:
+        if text is None:
+            return None, None
+
+        if task_id in self._blank_set:
+            # An untouched blank stays uncommitted - opening a cell and
+            # clicking away changes nothing. Text in the box is the first
+            # piece of information, which is what makes the row - and every
+            # blank above it - part of the plan (issue #111).
+            if not text.strip():
+                return None, None
+            task_id = self._materialize_blank(task_id)
+            if task_id is None:
+                return None, None
+        elif self.project.get_task_by_id(task_id) is None:
             return None, None
         return text, task_id
 
@@ -1059,9 +1102,10 @@ class DragDropTaskList(ctk.CTkFrame):
         The arrow comes back the moment the edit ends.
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if task is None and task_id not in self._blank_set:
             return
-        self._open_cell_editor(task_id, '#0', task.name or '',
+        self._open_cell_editor(task_id, '#0',
+                               (task.name or '') if task else '',
                                self._commit_name)
 
     def _commit_name(self):
@@ -1140,9 +1184,10 @@ class DragDropTaskList(ctk.CTkFrame):
         rather than scheduling it, so a summary may carry one too.
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if task is None and task_id not in self._blank_set:
             return
-        self._open_cell_editor(task_id, 'Label', task.label or '',
+        self._open_cell_editor(task_id, 'Label',
+                               (task.label or '') if task else '',
                                self._commit_label)
 
     def _commit_label(self):
@@ -1205,10 +1250,11 @@ class DragDropTaskList(ctk.CTkFrame):
         other edit.
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if task is None and task_id not in self._blank_set:
             return
         self._open_cell_chooser(
-            task_id, 'Type', task.task_type, list(TASK_TYPES),
+            task_id, 'Type', task.task_type if task else '',
+            list(TASK_TYPES),
             lambda chosen: self.set_task_type(task_id, chosen))
 
     def set_task_type(self, task_id: str, task_type: str):
@@ -1218,7 +1264,9 @@ class DragDropTaskList(ctk.CTkFrame):
         PARAMETERS:
         -----------
         task_id : str
-            The task being retyped.
+            The task being retyped. A blank tail row is accepted too -
+            picking a type is information, which is what makes the row
+            real (issue #111).
         task_type : str
             One of TASK_TYPES.
 
@@ -1227,6 +1275,12 @@ class DragDropTaskList(ctk.CTkFrame):
         Through the tracker, so it is one step in the undo history and the
         editor reads what the column stored.
         """
+        if task_id in self._blank_set:
+            # The chooser commits without going through _editor_text, so
+            # the row is materialized here instead
+            task_id = self._materialize_blank(task_id)
+            if task_id is None:
+                return
         task = self.project.get_task_by_id(task_id)
         if task is None or task_type not in TASK_TYPES:
             return
@@ -1405,9 +1459,10 @@ class DragDropTaskList(ctk.CTkFrame):
         shown is what can be typed straight back in.
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if task is None and task_id not in self._blank_set:
             return
-        current = format_links(task.dependencies, self.project.display_ids())
+        current = format_links(task.dependencies,
+                               self.project.display_ids()) if task else ''
         self._open_cell_editor(task_id, 'Dependencies', current,
                                self._commit_dependencies)
 
@@ -1519,11 +1574,11 @@ class DragDropTaskList(ctk.CTkFrame):
         Start No Earlier Than so auto-scheduling cannot drag it back.
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if task is None and task_id not in self._blank_set:
             return
-        if getattr(task, 'is_placeholder', False):
+        if task is None or getattr(task, 'is_placeholder', False):
             # An empty row's cells hold nothing to be corrected, so the box
-            # opens empty too (issue #115)
+            # opens empty too (issues #111, #115)
             current = ''
         elif cell == 'Duration':
             current = str(self.project.working_duration(task))
@@ -1697,9 +1752,10 @@ class DragDropTaskList(ctk.CTkFrame):
         its children.
         """
         task = self.project.get_task_by_id(task_id)
-        if task is None:
+        if task is None and task_id not in self._blank_set:
             return
-        self._open_cell_editor(task_id, 'Progress', str(task.progress),
+        self._open_cell_editor(task_id, 'Progress',
+                               str(task.progress) if task else '',
                                self._commit_progress)
 
     def _commit_progress(self):
@@ -1798,7 +1854,15 @@ class DragDropTaskList(ctk.CTkFrame):
         nothing in the log.
         """
         task = self.project.get_task_by_id(task_id)
-        if not task or not self.on_task_edit:
+        if task is None:
+            if task_id in self._blank_set:
+                # A row with nothing on it yet has nothing for the form to
+                # describe - double-clicking it starts the row the way the
+                # insert shortcut does, with a typing box on the name
+                # (issue #111)
+                self.edit_name_cell(task_id)
+            return
+        if not self.on_task_edit:
             return
 
         logger.info("Editing task %s %r", task.id, task.name)
@@ -2011,8 +2075,12 @@ class DragDropTaskList(ctk.CTkFrame):
         numbers = getattr(self, '_display_ids', None) \
             or self.project.display_ids()
         width = self.project.ID_WIDTH
-        for task_id in self.visible_rows():
-            number = numbers.get(task_id)
+        # One gutter row for every row the list is showing, the blank tail
+        # included: the gutter sits row-for-row beside the list, so a
+        # shorter answer would scroll out of step. Blanks get an empty
+        # cell - they have no number (issue #111).
+        for item_id in self._visible_row_items():
+            number = numbers.get(item_id)
             label = '' if number is None else str(number).zfill(width)
             gutter.insert('', tk.END, text=label)
 
@@ -2068,6 +2136,26 @@ class DragDropTaskList(ctk.CTkFrame):
         the project is the point: the project knows nothing about which
         branches are folded away, and a chart drawn from it put bars beside
         rows that were not on screen.
+
+        The blank tail rows are left out (issue #111): they carry no task,
+        so they are not rows of the plan even though the reader can see
+        them. _visible_row_items is the one that answers every drawn row,
+        blanks included - the gutter numbers and the banding want those.
+        """
+        return [item_id for item_id in self._visible_row_items()
+                if item_id not in self._blank_set]
+
+    def _visible_row_items(self) -> List[str]:
+        """
+        Every row the grid is showing, top to bottom, blanks included.
+
+        RETURNS:
+        --------
+        List[str]
+            In the order they are drawn, with the contents of folded-away
+            branches left out. Unlike visible_rows this is a row count,
+            not a task count - the uncommitted tail rows count as drawn
+            rows (issue #111).
         """
         rows: List[str] = []
 
@@ -2759,8 +2847,12 @@ class DragDropTaskList(ctk.CTkFrame):
         new_item = items[new_index]
 
         start, end = sorted((anchor_index, new_index))
-        selected = items[start:end + 1]
-        self.tree.selection_set(*selected)
+        # Blank tail rows are walked but not selected - a range only ever
+        # holds rows the commands can act on (issue #111)
+        selected = [item for item in items[start:end + 1]
+                    if item not in self._blank_set]
+        if selected:
+            self.tree.selection_set(*selected)
         self.tree.focus(new_item)
         self.tree.see(new_item)
 
@@ -4138,6 +4230,7 @@ class DragDropTaskList(ctk.CTkFrame):
             self._autofilter_visible = None
 
         self._populate_tree_hierarchical()
+        self._fill_blank_tail()
         self._paint_rows()
         self._restore_view_state(state)
 
@@ -4435,6 +4528,219 @@ class DragDropTaskList(ctk.CTkFrame):
 
         return item_id
 
+    # ------------------------------------------------------------------
+    # The blank tail (issue #111)
+    # ------------------------------------------------------------------
+
+    def _blank_tail_count(self) -> int:
+        """
+        How many blank rows the tail holds now.
+
+        RETURNS:
+        --------
+        int
+            The issue's twenty-five, or enough to fill the grid plus one
+            when the grid is taller than that - a spreadsheet's unused
+            rows always reach the bottom of the window.
+        """
+        try:
+            height = self.tree.winfo_height()
+        except tk.TclError:
+            height = 0
+        if height < self.GRID_ROW_HEIGHT:
+            # Not drawn yet; take the fixed count rather than no tail at all
+            return self.BLANK_TAIL_ROWS
+        return max(self.BLANK_TAIL_ROWS,
+                   height // self.GRID_ROW_HEIGHT + 1)
+
+    def _fill_blank_tail(self):
+        """
+        Draw the uncommitted blank rows the grid always ends with.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every cell is empty text - no task, no number, nothing the file
+        would store. The rows are real treeview items so they take the
+        selection, the focus and the cell editors like any other row;
+        _editor_text materializes the row the moment something is typed
+        into it. Being items rather than paint, they scroll and band
+        with the rest of the grid for free.
+
+        They are positional - 'blank:0' is the first blank whichever way
+        the rebuild went - so a focus or selection captured on a tail row
+        restores onto the tail again rather than being dropped.
+        """
+        self._blank_rows = []
+        self._blank_set = set()
+        columns = len(self.tree.cget('columns'))
+        wanted = self._blank_tail_count()
+        index = 0
+        while len(self._blank_rows) < wanted:
+            iid = f'{self.BLANK_IID_PREFIX}{index}'
+            index += 1
+            if self.tree.exists(iid):
+                # A task really carries this iid (an imported file could
+                # name one anything); step past it rather than fail
+                continue
+            try:
+                self.tree.insert('', tk.END, iid=iid, text='',
+                                 values=('',) * columns)
+            except tk.TclError:
+                return
+            self._blank_rows.append(iid)
+            self._blank_set.add(iid)
+
+    def _grid_resized(self, _event=None):
+        """
+        Re-count the blank tail once the grid's height settles.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Configure fires for width too, and again for every step of a
+        resize drag - so the sync waits on the idle queue and only runs
+        once however many events piled up. Width changes answer the same
+        count, so the settled run is a no-op for them.
+        """
+        if self._blank_tail_pending:
+            return
+        self._blank_tail_pending = True
+
+        def settle():
+            """One re-count for the whole run of Configure events."""
+            self._blank_tail_pending = False
+            try:
+                if not self.tree.winfo_exists():
+                    return
+            except tk.TclError:
+                return
+            self._sync_blank_tail()
+
+        try:
+            self.after_idle(settle)
+        except tk.TclError:
+            self._blank_tail_pending = False
+
+    def _sync_blank_tail(self):
+        """
+        Grow or trim the drawn tail to what the grid's height now wants.
+
+        Only the tail is touched - the task rows above are left alone, so
+        this is cheap enough to run behind every resize. The gutter and
+        the chart beside the list are told afterwards, because the row
+        count they mirror just changed.
+        """
+        wanted = self._blank_tail_count()
+        if wanted == len(self._blank_rows):
+            return
+
+        changed = False
+        while len(self._blank_rows) > wanted:
+            iid = self._blank_rows.pop()
+            self._blank_set.discard(iid)
+            try:
+                self.tree.delete(iid)
+            except tk.TclError:
+                return
+            changed = True
+
+        columns = len(self.tree.cget('columns'))
+        index = len(self._blank_rows)
+        while len(self._blank_rows) < wanted:
+            iid = f'{self.BLANK_IID_PREFIX}{index}'
+            index += 1
+            if self.tree.exists(iid):
+                continue
+            try:
+                self.tree.insert('', tk.END, iid=iid, text='',
+                                 values=('',) * columns)
+            except tk.TclError:
+                break
+            self._blank_rows.append(iid)
+            self._blank_set.add(iid)
+            changed = True
+
+        if changed:
+            self._refresh_id_gutter()
+            self._tell_row_watchers()
+
+    def _materialize_blank(self, item_id) -> Optional[str]:
+        """
+        Turn a blank tail row into a real row of the plan.
+
+        PARAMETERS:
+        -----------
+        item_id : str
+            The blank row's iid - one of _blank_rows.
+
+        RETURNS:
+        --------
+        Optional[str]
+            The new task's id - the row that was typed into - or None when
+            item_id is not a blank row.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The tail rows are drawn but hold nothing. Writing into one is the
+        decision that makes it real: it becomes a placeholder row of the
+        issue #115 sort - an id and a hidden start date, everything else
+        still to be chosen - and every blank drawn above it comes with it,
+        because a typed-into row sliding up the list to meet the plan
+        would read as the row jumping.
+
+        The whole group lands as one undoable step, so Undo takes the rows
+        back out of the plan together. The field that was typed is the
+        caller's to store on the row afterwards - a second step, which
+        undo unwinds first, leaving the empty row it was typed on.
+        """
+        try:
+            index = self._blank_rows.index(item_id)
+        except ValueError:
+            return None
+
+        count = index + 1
+        start = self.project.start_date or datetime.now()
+        created = []
+
+        def apply() -> bool:
+            """One real empty row for each blank up to the one typed."""
+            for _ in range(count):
+                task = Task(
+                    id=self.project.next_task_id(),
+                    name='',
+                    task_type='',
+                    start_date=start,
+                    end_date=None,
+                    duration=None,
+                )
+                self.project.add_task(task)
+                created.append(task.id)
+            return bool(created)
+
+        if self.project_tracker:
+            self.project_tracker.run_as_command(apply, "Add Rows")
+        else:
+            apply()
+        if not created:
+            return None
+
+        logger.info("Blank row %s became task %s (%d row(s) added to the "
+                    "plan)", item_id, created[-1], len(created))
+        self.update_task_list()
+        if self.on_project_changed:
+            self.on_project_changed()
+
+        # The typed-into row keeps the reader's place: it is selected and
+        # focused where the blank stood, not left off the bottom of a
+        # scrolled view.
+        target = created[-1]
+        try:
+            self.tree.selection_set(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+        except tk.TclError:
+            pass
+        return target
+
     def _paint_rows(self):
         """
         Give every row its banding and its formatting, in the order shown.
@@ -4453,9 +4759,13 @@ class DragDropTaskList(ctk.CTkFrame):
         """
         for index, item in enumerate(self._rows_in_display_order()):
             task = self.project.get_task_by_id(item)
-            if task is None:
-                continue
             band = 'oddrow' if index % 2 else 'evenrow'
+            if task is None:
+                # A blank tail row still wears the banding, so the striping
+                # carries unbroken to the bottom of the grid (issue #111)
+                if item in self._blank_set:
+                    self.tree.item(item, tags=(band,))
+                continue
             markers = [tag for tag in self.tree.item(item, 'tags')
                        if not tag.startswith('row_')]
             self.tree.item(item, tags=tuple(

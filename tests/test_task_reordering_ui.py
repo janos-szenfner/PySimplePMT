@@ -123,13 +123,18 @@ class TaskListTestCase(unittest.TestCase):
         return menu
 
     def rows(self):
-        """Every visible row, parents before their children."""
+        """Every visible task row, parents before their children.
+
+        The uncommitted blank rows the grid ends with (issue #111) are
+        not tasks, so they are not rows of the answer.
+        """
         found = []
 
         def walk(parent=''):
             """Collect a row and then its children."""
             for item in self.task_list.tree.get_children(parent):
-                found.append(item)
+                if item not in self.task_list._blank_set:
+                    found.append(item)
                 walk(item)
 
         walk()
@@ -1320,12 +1325,13 @@ class TestShiftRangeSelection(TaskListTestCase):
     """Shift+Up/Down extend the selection from the clicked anchor."""
 
     def rows(self):
-        """Every visible row, parents before their children."""
+        """Every visible task row, parents before their children."""
         found = []
 
         def walk(parent=''):
             for item in self.task_list.tree.get_children(parent):
-                found.append(item)
+                if item not in self.task_list._blank_set:
+                    found.append(item)
                 walk(item)
 
         walk()

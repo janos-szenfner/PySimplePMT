@@ -328,7 +328,8 @@ def the_column_offers(ctx, column, values):
 
 @then(parsers.parse('the grid rows are "{order}"'))
 def the_grid_rows_are(ctx, order):
-    rows = list(ctx.task_list._rows_in_display_order())
+    rows = [item for item in ctx.task_list._rows_in_display_order()
+            if item not in ctx.task_list._blank_set]
     assert rows == order.split(',')
 
 

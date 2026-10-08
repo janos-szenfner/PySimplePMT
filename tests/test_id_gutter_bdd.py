@@ -75,8 +75,10 @@ def a_task_list_over_a_mixed_plan():
 
 
 def _gutter(ctx):
+    """The numbered gutter cells - the blank tail's empty ones left out."""
     tree = ctx.view.id_tree
-    return [tree.item(i, 'text') for i in tree.get_children('')]
+    return [tree.item(i, 'text') for i in tree.get_children('')
+            if tree.item(i, 'text') != '']
 
 
 # ------------------------------------------------------------------

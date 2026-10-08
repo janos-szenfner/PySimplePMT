@@ -1405,6 +1405,18 @@ GUIDE_SECTIONS = (
             "nobody has clicked in yet the row goes at the end of the "
             "plan.",
 
+            "The grid also always ends with a block of blank rows - "
+            "twenty-five, or enough to fill the window plus one - like "
+            "the unused rows of a spreadsheet, so an empty plan is a "
+            "page to type into rather than a bare canvas. They are not "
+            "part of the plan: no number, nothing saved, nothing on the "
+            "chart. Double-click a cell and type, and the row becomes "
+            "real - every blank above it comes with it as an undecided "
+            "N/A row, so the one you typed keeps its place - and fresh "
+            "blanks grow back at the end. Opening a cell and clicking "
+            "away commits nothing, so an untouched blank is never "
+            "stored.",
+
             "The search box, the Day / Night control and the ? sit together "
             "against the right-hand end. None of them acts on the plan, and "
             "the actions grow from the left as icons are added, so these "

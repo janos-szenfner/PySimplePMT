@@ -81,6 +81,19 @@
   them back like any other field. The right-click menu's Assign Tasks
   checklist stays, since it is how several marked rows are assigned at
   once (issue #123).
+- **The task grid ends with blank rows you can type into.**
+  An empty plan used to open on a bare canvas, with no hint that the way
+  to start was a keystroke. The grid now always ends with a block of
+  uncommitted blank rows - twenty-five, or enough to fill the window
+  plus one when it is taller - that look and edit like any other row but
+  hold nothing: no task, no number, nothing a save or an export would
+  write. Typing into one is the decision that makes it real: it becomes
+  a row of the plan, every blank drawn above it comes with it as an
+  undecided placeholder row so the one filled keeps its place, and the
+  tail refills so there is always somewhere left to type. Opening a
+  cell and clicking away commits nothing - an untouched blank is never
+  part of the plan, never shows on the chart, and never enters the undo
+  history (issue #111).
 
 ## 1.72.1 - 2026-10-07
 
