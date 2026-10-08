@@ -50,6 +50,7 @@ from gantt_app.core.deliverable import (
     deliverable_health, overall_deliverable_health)
 from gantt_app.core.priority import PRIORITY_LEVELS, PRIORITY_MENU_ORDER
 from gantt_app.views.datepicker import parse_date, DATE_FORMAT
+from gantt_app.views.deliverables_tab import DeliverableTasksTab
 from gantt_app.views.statusline import (
     deliverable_status_line, task_status_line)
 from gantt_app.utils.log import get_logger
@@ -2028,9 +2029,7 @@ class DeliverablesBoard(ctk.CTkFrame):
     # Assigning tasks
     # ------------------------------------------------------------------
 
-    def _open_task_picker(self, deliverable_ids,
-                          checked: Optional[Set[str]] = None,
-                          on_done: Optional[Callable] = None) -> None:
+    def _open_task_picker(self, deliverable_ids) -> None:
         """
         Open the task checklist for the row - or the marked rows - it was
         asked for.
@@ -2048,39 +2047,30 @@ class DeliverablesBoard(ctk.CTkFrame):
         the one row under the pointer, and Space does the same to the
         selection, so ticking stays possible without ever pressing Add.
 
-        checked/on_done let a caller drive the ticks itself - the editor
-        dialog opens the picker on the set it is still editing, so the
-        result lands in the dialog's one Save rather than writing early.
+        The editor's own checklist is a tab inside its window (issue
+        #123); this pop-up is what the right-click menu's Assign Tasks
+        still opens for a row or a marked set.
         """
         rows = [d for d in
                 (self.project.get_deliverable_by_id(i)
                  for i in self._as_ids(deliverable_ids))
                 if d is not None]
-        if not rows and checked is None:
+        if not rows:
             return
         tasks = self.project.display_order()
         if not tasks:
             self._say('There are no tasks to assign yet.')
             return
 
-        if checked is None:
-            # A task counts as "already assigned" only when every edited
-            # row holds it - anything else arrives unticked and is applied
-            # to all.
-            ticked = set(rows[0].task_ids)
-            for row in rows[1:]:
-                ticked &= set(row.task_ids)
-            checked = set(ticked)
-        checked = set(checked)
+        # A task counts as "already assigned" only when every edited row
+        # holds it - anything else arrives unticked and is applied to all.
+        checked = set(rows[0].task_ids)
+        for row in rows[1:]:
+            checked &= set(row.task_ids)
 
         window = ctk.CTkToplevel(self.winfo_toplevel())
-        if on_done is not None:
-            title = 'Assign Tasks'
-        elif len(rows) == 1:
-            title = 'Assign Tasks'
-        else:
-            title = f'Assign Tasks to {len(rows)} Deliverables'
-        window.title(title)
+        window.title('Assign Tasks' if len(rows) == 1
+                     else f'Assign Tasks to {len(rows)} Deliverables')
         window.geometry('640x460')
         window.transient(self.winfo_toplevel())
 
@@ -2233,10 +2223,7 @@ class DeliverablesBoard(ctk.CTkFrame):
 
         def apply() -> None:
             window.destroy()
-            if on_done is not None:
-                on_done(set(checked))
-            else:
-                self._assign_tasks([d.id for d in rows], set(checked))
+            self._assign_tasks([d.id for d in rows], set(checked))
 
         ctk.CTkButton(buttons, text='All', width=64,
                       command=lambda: set_marked(known, True)
@@ -2377,15 +2364,24 @@ class DeliverablesBoard(ctk.CTkFrame):
 
         window = ctk.CTkToplevel(self.winfo_toplevel())
         window.title(f"Edit Deliverable - {deliverable.name or 'untitled'}")
-        window.geometry('460x560')
+        window.geometry('480x600')
         window.transient(self.winfo_toplevel())
 
         derived = self._has_inputs(deliverable)
         due_text = (deliverable.due_date.strftime(DATE_FORMAT)
                     if deliverable.due_date else '')
 
-        fields = ctk.CTkScrollableFrame(window)
-        fields.pack(fill=tk.BOTH, expand=True, padx=12, pady=(12, 4))
+        # The window is tabbed the way the task editor is (issue #123):
+        # General holds the row's own fields, and Tasks holds the
+        # checklist of what the deliverable collects - membership used to
+        # be a pop-up behind a button on the form.
+        tabs = ctk.CTkTabview(window)
+        tabs.pack(fill=tk.BOTH, expand=True, padx=12, pady=(12, 4))
+        tabs.add('General')
+        tabs.add('Tasks')
+
+        fields = ctk.CTkScrollableFrame(tabs.tab('General'))
+        fields.pack(fill=tk.BOTH, expand=True)
 
         def row(label_text):
             line = ctk.CTkFrame(fields, fg_color='transparent')
@@ -2445,28 +2441,14 @@ class DeliverablesBoard(ctk.CTkFrame):
         tags_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         tags_entry.insert(0, ', '.join(deliverable.tags))
 
-        #: Task membership the Save will write - the picker edits this
-        #: pending set, so the window's Cancel can take it back.
-        pending_tasks: Set[str] = set(deliverable.task_ids)
-
-        tasks_row = row('Tasks')
-        tasks_label = ctk.CTkLabel(tasks_row, anchor=tk.W)
-        tasks_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        def tasks_count() -> None:
-            count = len(pending_tasks)
-            tasks_label.configure(
-                text=f"{count} task(s)" if count else 'none')
-
-        tasks_count()
-        ctk.CTkButton(
-            tasks_row, text='Assign Tasks…', width=110,
-            command=lambda: self._open_task_picker(
-                [deliverable.id], checked=set(pending_tasks),
-                on_done=lambda chosen: (pending_tasks.clear(),
-                                        pending_tasks.update(chosen),
-                                        tasks_count())),
-        ).pack(side=tk.RIGHT)
+        # The Tasks tab: every task in the plan as a checklist, ticked
+        # where it counts toward this deliverable - the same gesture the
+        # task editor's Deliverables tab makes, turned around (issue
+        # #123). Nothing it ticks is written until Save; the window's
+        # Cancel takes the ticks back like any other field.
+        tasks_tab = DeliverableTasksTab(
+            tabs.tab('Tasks'), self.project, deliverable.id)
+        tasks_tab.pack(fill=tk.BOTH, expand=True)
 
         ctk.CTkLabel(
             fields, text='Description / acceptance criteria',
@@ -2512,7 +2494,7 @@ class DeliverablesBoard(ctk.CTkFrame):
                          for part in tags_entry.get().split(',')
                          if part.strip()],
                 'details': details_text.get('1.0', tk.END).strip(),
-                'task_ids': sorted(pending_tasks),
+                'task_ids': sorted(tasks_tab.selected_ids()),
             }
 
         def current_values():

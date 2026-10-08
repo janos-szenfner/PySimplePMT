@@ -204,6 +204,88 @@ class TestTheDoubleClick(BoardTestCase):
         self.assertEqual([t.id for t in opened], ['001'])
 
 
+class TestTheEditorTasksTab(BoardTestCase):
+    """The deliverable editor's Tasks tab - issue #123."""
+
+    @staticmethod
+    def _walk(widget):
+        yield widget
+        for child in widget.winfo_children():
+            yield from TestTheEditorTasksTab._walk(child)
+
+    def _editor(self, deliverable_id):
+        self.board._open_editor(deliverable_id)
+        windows = [w for w in self.root.winfo_children()
+                   if isinstance(w, ctk.CTkToplevel)]
+        self.assertEqual(len(windows), 1)
+        return windows[0]
+
+    def _save(self, window):
+        for widget in self._walk(window):
+            if isinstance(widget, ctk.CTkButton) \
+                    and widget.cget('text') == 'Save':
+                widget.invoke()
+                return
+        self.fail("the editor has no Save button")
+
+    def _tasks_tab(self, window):
+        from gantt_app.views.deliverables_tab import DeliverableTasksTab
+        tabs = [w for w in self._walk(window)
+                if isinstance(w, DeliverableTasksTab)]
+        self.assertEqual(len(tabs), 1)
+        return tabs[0]
+
+    def _tasks(self):
+        self.project.tasks = [
+            Task(id='001', name='Dig', start_date=datetime(2026, 1, 5),
+                 end_date=datetime(2026, 1, 6)),
+            Task(id='002', name='Fill', start_date=datetime(2026, 1, 7),
+                 end_date=datetime(2026, 1, 8))]
+
+    def test_the_editor_is_tabbed_like_the_task_editor(self):
+        """General holds the fields; Tasks holds the membership (#123)."""
+        self._add('001', 'First')
+        window = self._editor('001')
+        tabviews = [w for w in self._walk(window)
+                    if isinstance(w, ctk.CTkTabview)]
+        self.assertEqual(len(tabviews), 1)
+        self.assertIn('General', tabviews[0]._tab_dict)
+        self.assertIn('Tasks', tabviews[0]._tab_dict)
+        window.destroy()
+
+    def test_assigned_tasks_arrive_ticked(self):
+        """The deliverable's own membership is what opens ticked."""
+        self._tasks()
+        self._add('001', 'First', task_ids=['001'])
+        window = self._editor('001')
+        self.assertEqual(self._tasks_tab(window).selected_ids(), {'001'})
+        window.destroy()
+
+    def test_ticking_and_saving_writes_the_membership(self):
+        """A tick lands on Save, in the one undoable write (#123)."""
+        self._tasks()
+        row = self._add('001', 'First', task_ids=['001'])
+        window = self._editor('001')
+        tab = self._tasks_tab(window)
+        tab._vars['001'].set(False)
+        tab._vars['002'].set(True)
+        self._save(window)
+
+        self.assertEqual(row.task_ids, ['002'])
+        self.assertTrue(self.tracker.manager.undo())
+        self.assertEqual(row.task_ids, ['001'])
+
+    def test_no_tasks_says_so_instead_of_listing_nothing(self):
+        """An empty plan gets a sentence, not a blank checklist."""
+        self._add('001', 'First')
+        window = self._editor('001')
+        labels = [w.cget('text') for w in self._walk(window)
+                  if isinstance(w, ctk.CTkLabel)]
+        self.assertTrue(any('No tasks yet' in text for text in labels),
+                        labels)
+        window.destroy()
+
+
 class TestTheMenu(BoardTestCase):
     """The right-click menu's order, the task list's own - issue #109."""
 

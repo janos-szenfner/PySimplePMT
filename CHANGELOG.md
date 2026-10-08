@@ -72,6 +72,15 @@
   button, the View > Charts entry and the footer tab all land on, with
   the task-only ribbon commands greyed out while it is on top
   (issue #122).
+- **The deliverable editor assigns tasks in a tab, not a pop-up.**
+  Edit Deliverable is now tabbed like the task editor: General keeps
+  the row's fields, and a Tasks tab lists every task in the plan as a
+  checklist, ticked where the task counts toward the deliverable - the
+  task editor's Deliverables tab turned around. The ticks land in the
+  same single undoable Save as the rest of the form, and Cancel takes
+  them back like any other field. The right-click menu's Assign Tasks
+  checklist stays, since it is how several marked rows are assigned at
+  once (issue #123).
 
 ## 1.72.1 - 2026-10-07
 

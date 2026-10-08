@@ -1319,18 +1319,20 @@ GUIDE_SECTIONS = (
             "will not do - and is recalculated the moment a child changes.",
 
             "Tasks, subtasks and milestones can be assigned to a "
-            "deliverable, and one task can feed several. Two ways to do "
+            "deliverable, and one task can feed several. Three ways to do "
             "it: the task editor has a Deliverables tab that ticks the "
-            "deliverables the task belongs to, and the grid's right-click "
-            "menu has a Tasks submenu - Assign Tasks opens the whole "
+            "deliverables the task belongs to, the deliverable editor has "
+            "a Tasks tab that ticks the tasks the row collects - the "
+            "same checklist turned around - and the grid's right-click "
+            "menu has a Tasks submenu whose Assign Tasks opens the whole "
             "task list as a small grid with mark boxes, its own indent "
-            "and a filter, while the ticked entries below it remove a "
-            "task with one click. The Tasks column shows what "
-            "each row holds, and double-clicking it opens the same "
-            "checklist. An assigned task's progress counts toward the "
-            "deliverable's, one share each beside the weighted children, "
-            "so a row with tasks derives its progress like a parent does "
-            "and hands it back when the last assignment is removed.",
+            "and a filter, for ticking several rows at once; the ticked "
+            "entries below it remove a task with one click. The Tasks "
+            "column shows what each row holds. An assigned task's "
+            "progress counts toward the deliverable's, one share each "
+            "beside the weighted children, so a row with tasks derives "
+            "its progress like a parent does and hands it back when the "
+            "last assignment is removed.",
 
             "Indentation is the hierarchy: Tab makes a row a "
             "sub-deliverable of the row above it, Shift-Tab moves it back "
@@ -1340,9 +1342,10 @@ GUIDE_SECTIONS = (
             "collapse a branch.",
 
             "Double-click a row to open its editor - the name, status, "
-            "progress, weight, responsible, due date, priority, tags, "
-            "task assignments and the description/acceptance criteria all "
-            "in one window, saved as a single undoable change. Status, "
+            "progress, weight, responsible, due date, priority, tags and "
+            "the description/acceptance criteria on the General tab, and "
+            "the task checklist on the Tasks tab beside it, all saved as "
+            "a single undoable change. Status, "
             "priority and responsible keep their own quick pickers on "
             "their cells; a double-click on an assigned task opens that "
             "task's own editor. Click a column heading to "
