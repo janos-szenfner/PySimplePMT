@@ -1008,6 +1008,17 @@ GUIDE_SECTIONS = (
             "filters keep them. Switching AutoFilter off clears the "
             "checklists with the arrows, so nothing stays hidden by "
             "a control that is gone.",
+
+            "View > Hide Indent Tasks folds the selected rows' "
+            "children away, and View > Show Indent Tasks opens every "
+            "folded level beneath them again - the same pair Microsoft "
+            "Project calls Hide and Show Subtasks, named for what the "
+            "plan actually has: indented rows, not a sub-task type. "
+            "One press does what clicking each row's fold arrow would, "
+            "and a row with nothing under it simply has nothing to "
+            "fold - the status bar says so rather than doing nothing "
+            "in silence. Both belong to the Task Planning view; on "
+            "another view they say where they live.",
         ],
     ),
     (

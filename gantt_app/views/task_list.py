@@ -3623,6 +3623,99 @@ class DragDropTaskList(ctk.CTkFrame):
         self._apply_restructure(lambda: self.project.outdent_tasks(chosen),
                                 chosen, label)
 
+    def hide_indent_tasks(self, task_ids=None) -> int:
+        """
+        Fold the chosen rows' indented children away - View > Hide Indent
+        Tasks (issue #113).
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str], optional
+            The rows to fold. The selection answers when none are given,
+            which is how the menu item reads it.
+
+        RETURNS:
+        --------
+        int
+            How many rows were folded - zero when the selection holds only
+            leaves, so the caller can say why nothing moved.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The open flag is set by hand rather than the fold arrows being
+        clicked, so the <<TreeviewClose>> event does not fire - the row
+        watchers and the gutter are told directly, the same as they are
+        after a repopulate.
+        """
+        ids = (self.get_selected_task_ids() if task_ids is None
+               else self._as_ids(task_ids))
+        folded = 0
+        for task_id in ids:
+            try:
+                if self.tree.exists(task_id) \
+                        and self.tree.get_children(task_id) \
+                        and self.tree.item(task_id, 'open'):
+                    self.tree.item(task_id, open=False)
+                    folded += 1
+            except tk.TclError:
+                continue
+        if folded:
+            self._tell_row_watchers()
+            self.after_idle(self._refresh_id_gutter)
+            logger.info("Hid the indented rows under %d task(s)", folded)
+        return folded
+
+    def show_indent_tasks(self, task_ids=None) -> int:
+        """
+        Open the chosen rows and every folded branch beneath them - View >
+        Show Indent Tasks (issue #113).
+
+        PARAMETERS:
+        -----------
+        task_ids : Sequence[str], optional
+            The rows to open. The selection answers when none are given,
+            which is how the menu item reads it.
+
+        RETURNS:
+        --------
+        int
+            How many branches were opened. The chosen rows count too, so a
+            folded parent answers one even with no folds beneath it.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        Every level under a chosen row is opened, not just the first: a
+        row shown with its grandchildren still folded away reads as only
+        half-shown. The watchers and the gutter are told by hand, since
+        item(open=) fires no <<TreeviewOpen>> event.
+        """
+        ids = (self.get_selected_task_ids() if task_ids is None
+               else self._as_ids(task_ids))
+        opened = 0
+
+        def open_branch(item: str):
+            """Open a row and every branch beneath it, counting as it goes."""
+            nonlocal opened
+            children = self.tree.get_children(item)
+            if children and not self.tree.item(item, 'open'):
+                opened += 1
+            self.tree.item(item, open=True)
+            for child in children:
+                open_branch(child)
+
+        try:
+            for task_id in ids:
+                if self.tree.exists(task_id):
+                    open_branch(task_id)
+        except tk.TclError:
+            pass
+        if opened:
+            self._tell_row_watchers()
+            self.after_idle(self._refresh_id_gutter)
+            logger.info("Showed the indented rows under %d branch(es)",
+                        opened)
+        return opened
+
     def link_tasks(self, task_ids):
         """
         Chain the chosen rows Finish-to-Start, down the list.

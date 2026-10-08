@@ -94,6 +94,16 @@
   cell and clicking away commits nothing - an untouched blank is never
   part of the plan, never shows on the chart, and never enters the undo
   history (issue #111).
+- **Show and hide indented rows from the View menu.**
+  Two new entries - Show Indent Tasks and Hide Indent Tasks - do from
+  the menu what clicking each row's fold arrow would: Hide folds the
+  selected rows' children away, and Show opens every folded level
+  beneath them again at once, the pair Microsoft Project calls Hide
+  and Show Subtasks named for what the plan actually has - indented
+  rows, not a sub-task type. A selection with nothing under it is
+  answered in the status bar rather than in silence, and both commands
+  belong to the Task Planning view, saying so on another tab (issue
+  #113).
 
 ## 1.72.1 - 2026-10-07
 

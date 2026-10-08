@@ -62,8 +62,11 @@ Feature: The arrangement of the toolbar menus
     # Critical Path came the other way: it changes what the window shows
     # rather than what the plan says. Sort By and AutoFilter joined for
     # the three-level sort dialog and the heading dropdowns (#45, #81);
-    # the one-level sort lives on the headings themselves (#46).
-    Then "View" holds "Grid View Only, Charts, Sort By..., AutoFilter, Critical Path..."
+    # the one-level sort lives on the headings themselves (#46). Show and
+    # Hide Indent Tasks fold or open the selected rows' children - the
+    # app's spelling of MS Project's sub-task pair, the plan having no
+    # sub-task type, only indented rows (issue #113).
+    Then "View" holds "Grid View Only, Charts, Sort By..., AutoFilter, Show Indent Tasks, Hide Indent Tasks, Critical Path..."
     And "View" does not hold "Project Info" or "Help"
 
   Scenario: The appearance controls left the View menu

@@ -1695,6 +1695,14 @@ class Toolbar(ctk.CTkFrame):
                     {"text": "AutoFilter", "type": "toggle",
                      "variable": "autofilter_var",
                      "command": self.toggle_autofilter},
+                    # The outline pair MS Project calls Show/Hide
+                    # Subtasks - the app has no sub-task type, only
+                    # indented rows, so that is what the entries say
+                    # (issue #113)
+                    {"text": "Show Indent Tasks",
+                     "command": self.show_indent_tasks},
+                    {"text": "Hide Indent Tasks",
+                     "command": self.hide_indent_tasks},
                     # The full report. The icon on the bar paints the
                     # critical rows in the list instead; see
                     # highlight_critical_path
@@ -4049,6 +4057,42 @@ class Toolbar(ctk.CTkFrame):
             "AutoFilter on - column headings now open a sort and "
             "filter dropdown." if on else
             "AutoFilter off - heading clicks sort the column.")
+
+    def show_indent_tasks(self):
+        """
+        View > Show Indent Tasks: open the selected rows' folded
+        branches, every level of them (issue #113).
+        """
+        if self._off_task_view("Show Indent Tasks"):
+            return
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'show_indent_tasks'):
+            return
+        if not task_list.get_selected_task_ids():
+            self._report("Select the task whose indented rows to show.")
+            return
+        opened = task_list.show_indent_tasks()
+        self._report(
+            "Indented rows are all on show."
+            if opened else "Nothing folded away under the selection.")
+
+    def hide_indent_tasks(self):
+        """
+        View > Hide Indent Tasks: fold the selected rows' indented
+        children away (issue #113).
+        """
+        if self._off_task_view("Hide Indent Tasks"):
+            return
+        task_list = getattr(self, 'task_list', None)
+        if task_list is None or not hasattr(task_list, 'hide_indent_tasks'):
+            return
+        if not task_list.get_selected_task_ids():
+            self._report("Select the task whose indented rows to hide.")
+            return
+        folded = task_list.hide_indent_tasks()
+        self._report(
+            "Indented rows folded away."
+            if folded else "No indented rows to hide under the selection.")
 
     def set_resource_board(self, board) -> None:
         """The Resource Planning view the Usage Grid toggle switches."""
