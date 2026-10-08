@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.72.2 - 2026-10-07
+## 1.72.2 - 2026-10-08
 
 - **Left and Right arrow keys now scroll the task list horizontally.**
   The task grid used to let the arrow keys expand and collapse task

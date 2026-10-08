@@ -2833,5 +2833,5 @@ Copyright (c) 2026 Janos Szenfner.
 ---
 
 **Project Status**: Active Development
-**Version**: 1.72.1
-**Last Updated**: 2026-10-07
+**Version**: 1.72.2
+**Last Updated**: 2026-10-08
