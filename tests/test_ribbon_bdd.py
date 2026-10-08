@@ -100,6 +100,26 @@ def tab_page_not_shown(toolbar, name):
     assert ribbon._band.winfo_children()[-1] is not ribbon._pages[name]
 
 
+@then(parsers.parse('the "{name}" tab is accented'))
+def tab_is_accented(toolbar, name):
+    """The active page's tab wears the accent so it is noticed."""
+    from gantt_app.views.toolbar import ACCENT, ACCENT_TEXT
+    btn = toolbar.icon_toolbar._tab_buttons[name]
+    assert btn.cget('fg_color') == ACCENT
+    assert btn.cget('text_color') == ACCENT_TEXT
+    assert btn.cget('font').cget('weight') == 'bold'
+
+
+@then(parsers.parse('the "{name}" tab is plain'))
+def tab_is_plain(toolbar, name):
+    """Inactive tabs stay transparent in the strip's text colour."""
+    from gantt_app.views.toolbar import WIN_MENU_HOVER
+    btn = toolbar.icon_toolbar._tab_buttons[name]
+    assert btn.cget('fg_color') == 'transparent'
+    assert btn.cget('hover_color') == WIN_MENU_HOVER
+    assert btn.cget('font').cget('weight') == 'normal'
+
+
 # ---- the groups -------------------------------------------------------------
 
 @then(parsers.re(r'the "(?P<tab>[^"]+)" tab has the groups (?P<groups>.*)'))

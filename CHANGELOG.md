@@ -28,6 +28,11 @@
   empty box - or the "N/A" a derived cell shows - now simply commits
   nothing, and the preset lands as expected. The Deliverables grid's
   Progress cell treats empty input the same way (issue #117).
+- **The active ribbon tab is now unmistakable.**
+  The tab of the page showing used to pick up only a faint hover-grey,
+  easy to miss. It now wears the app's accent colour with bold white
+  text - the same treatment the File button beside it has - while the
+  other tabs stay quiet (issue #118).
 
 ## 1.72.1 - 2026-10-07
 

@@ -22,6 +22,15 @@ Feature: The ribbon
 
   @ribbon
   @needs_display
+  Scenario: The active tab wears the accent
+    Then the "Task" tab is accented
+    And the "View" tab is plain
+    When the user picks the "View" tab
+    Then the "View" tab is accented
+    And the "Task" tab is plain
+
+  @ribbon
+  @needs_display
   Scenario: The band is divided into captioned groups
     Then the "Task" tab has the groups "Clipboard", "Insert", "Tasks", "Outline", "Font" and "Progress"
     And the "View" tab has the groups "Views", "Resources", "Deliverables", "Analysis", "Highlight", "Filter", "Appearance" and "Window"

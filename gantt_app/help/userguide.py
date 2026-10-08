@@ -1368,6 +1368,12 @@ GUIDE_SECTIONS = (
             "choose something from it. If one ever seems stuck, clicking "
             "anywhere else in the window will close it.",
 
+            "The commands stand on three tabbed pages - Task, View and "
+            "Project - picked along the strip beside File. The tab of the "
+            "page showing wears the accent colour in bold white text, the "
+            "same treatment the File button has, so the page you are on "
+            "cannot be missed.",
+
             "Every button says what it is if you rest the pointer on it, "
             "which is the fastest way to learn the row.",
 

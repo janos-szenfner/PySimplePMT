@@ -820,12 +820,24 @@ class RibbonBar(IconToolbar):
         group.pack(**options)
 
     def _restyle_tabs(self):
-        """Draw the active tab apart from the rest."""
+        """
+        Draw the active tab apart from the rest.
+
+        A hover-grey fill was too quiet to notice (issue #118), so the
+        active page's tab takes the accent the File button beside it
+        wears, in bold - the marking is unmissable and still the same
+        accent everything else uses.
+        """
         for name, btn in self._tab_buttons.items():
             if name == self._active_tab and not self._collapsed:
-                btn.configure(fg_color=WIN_MENU_HOVER)
+                btn.configure(fg_color=ACCENT, text_color=ACCENT_TEXT,
+                              hover_color=ACCENT_HOVER,
+                              font=ctk.CTkFont(size=12, weight="bold"))
             else:
-                btn.configure(fg_color="transparent")
+                btn.configure(fg_color="transparent",
+                              text_color=WIN_MENU_TEXT,
+                              hover_color=WIN_MENU_HOVER,
+                              font=ctk.CTkFont(size=12))
 
     def toggle_collapsed(self):
         """Fold the band away to the strip alone, or bring it back."""
