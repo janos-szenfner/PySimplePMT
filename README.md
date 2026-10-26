@@ -2168,11 +2168,12 @@ pysimplepmt --log-file      # print the log file path
    - Start adding tasks and milestones
 
 2. **Add Work Items**
-   - **Task -> New Task** opens the create dialog, and its drop-down half
-     offers Task, Phase, Subtask and Milestone, as does the Create submenu
-     on any row's right-click menu
-   - Creating from a row puts the new item beside it - or inside it, for a
-     sub-task - rather than at the end of the plan
+   - **Task -> New Task**, the `⌥⌘.` shortcut and the right-click
+     **Create > Task** all insert the same empty row beside the cursor -
+     type into it, no dialog stands in the way. The drop-down's Phase
+     and Milestone entries still open the create dialog
+   - Creating from a row puts the new item beside it rather than at the
+     end of the plan
    - Enter the name, a start date, and either an end date or a duration
 
 3. **Add Sub-Tasks**

@@ -521,6 +521,12 @@ class TestCreateSubmenu(TaskListTestCase):
             self.submenu_labels("001"),
             ["Phase", "Task", "Milestone"])
 
+    def _created_placeholder(self):
+        """The one empty row the Task entry inserts - no dialog (issue #128)."""
+        placeholders = [t for t in self.project.tasks if t.is_placeholder]
+        self.assertEqual(len(placeholders), 1)
+        return placeholders[0]
+
     def test_a_task_lands_below_the_clicked_row(self):
         """
         The new task goes where the menu was opened, not at the end.
@@ -529,14 +535,15 @@ class TestCreateSubmenu(TaskListTestCase):
         middle of a plan appeared at the bottom of it.
         """
         self.task_list.create_task("Task", "001")
+        created = self._created_placeholder()
 
-        self.assertEqual(self.rows()[1], self.created.id)
+        self.assertEqual(self.rows()[1], created.id)
 
     def test_a_task_keeps_the_level_of_the_clicked_row(self):
         """Creating beside a sub-task gives another sub-task of the parent."""
         self.task_list.create_task("Task", "004")
 
-        self.assertEqual(self.created.parent_task_id, "002")
+        self.assertEqual(self._created_placeholder().parent_task_id, "002")
 
     def test_indenting_puts_the_new_row_under_the_clicked_one(self):
         """
@@ -546,11 +553,12 @@ class TestCreateSubmenu(TaskListTestCase):
         goes under another by being indented there.
         """
         self.task_list.create_task("Task", "001")
-        new_id = self.created.id
+        new_id = self._created_placeholder().id
 
         self.task_list.indent_task(new_id)
 
-        self.assertEqual(self.created.parent_task_id, "001")
+        self.assertEqual(
+            self.project.get_task_by_id(new_id).parent_task_id, "001")
         self.assertIn(new_id, self.task_list.tree.get_children("001"))
 
     def test_a_milestone_lands_below_the_clicked_row(self):
@@ -563,17 +571,19 @@ class TestCreateSubmenu(TaskListTestCase):
     def test_the_new_row_is_selected(self):
         """The task just created is what the next action applies to."""
         self.task_list.create_task("Task", "001")
+        created = self._created_placeholder()
 
-        self.assertEqual(self.task_list.tree.selection(), (self.created.id,))
+        self.assertEqual(self.task_list.tree.selection(), (created.id,))
 
     def test_creating_is_undoable(self):
         """Undo takes the new task away again."""
         self.task_list.create_task("Task", "001")
-        self.assertIn(self.created.id, [t.id for t in self.project.tasks])
+        created = self._created_placeholder()
+        self.assertIn(created.id, [t.id for t in self.project.tasks])
 
         self.manager.undo()
 
-        self.assertNotIn(self.created.id, [t.id for t in self.project.tasks])
+        self.assertNotIn(created.id, [t.id for t in self.project.tasks])
 
     def test_an_unknown_row_creates_nothing(self):
         """
@@ -591,9 +601,10 @@ class TestCreateSubmenu(TaskListTestCase):
     def test_no_row_creates_at_the_end(self):
         """Right-clicking the empty space adds a task to the plan."""
         self.task_list.create_task("Task", None)
+        created = self._created_placeholder()
 
-        self.assertEqual(self.rows()[-1], self.created.id)
-        self.assertIsNone(self.created.parent_task_id)
+        self.assertEqual(self.rows()[-1], created.id)
+        self.assertIsNone(created.parent_task_id)
 
     def test_no_row_creates_a_milestone_at_the_end(self):
         """Milestones work the same way there."""
@@ -607,9 +618,17 @@ class TestCreateSubmenu(TaskListTestCase):
         for task_type in ("Phase", "Task", "Milestone"):
             with self.subTest(task_type=task_type):
                 self.task_list.create_task(task_type, None)
+                if task_type == "Task":
+                    # The Task entry inserts the blank row itself - no
+                    # dialog stands in the way (issue #128)
+                    created = self._created_placeholder()
+                    created_id = created.id
+                else:
+                    created_id = self.created.id
 
-                self.assertEqual(self.rows()[-1], self.created.id)
-                self.assertIsNone(self.created.parent_task_id)
+                self.assertEqual(self.rows()[-1], created_id)
+                row = self.project.get_task_by_id(created_id)
+                self.assertIsNone(row.parent_task_id)
 
 
 class TestUndoRedoEntries(TaskListTestCase):

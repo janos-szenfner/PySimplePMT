@@ -28,7 +28,7 @@ Feature: The About > Changelog window
   # -- The shipped file ---------------------------------------------------
 
   Scenario: The real changelog loads with the latest first
-    Then the shipped changelog's first section starts with "1.72.2"
+    Then the shipped changelog's first section starts with "1.72.3"
 
   # -- The window itself - needs a display ----------------------------------
 

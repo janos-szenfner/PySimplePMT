@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.72.3 - 2026-10-26
+
+- **Right-click "Create &gt; Task" now inserts a blank row like every other
+  new-task gesture.** The context menu still opened the old create task
+  dialog - a pop-up you had to close - while the Edit menu and the
+  keyboard shortcut had moved on to the inline blank row (issue #128).
+  The Task entry now drops the same empty line below the row you opened
+  the menu on, ready to type into. Phase and Milestone keep their
+  dialogs, and right-clicking the blank tail behaves like the empty
+  space instead of failing.
+
 ## 1.72.2 - 2026-10-08
 
 - **Left and Right arrow keys now scroll the task list horizontally.**

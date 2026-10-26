@@ -3394,7 +3394,12 @@ class DragDropTaskList(ctk.CTkFrame):
 
     def create_task(self, task_type: str, anchor_id: str, above: bool = False):
         """
-        Open the create dialog for a new task placed at a row.
+        Create a row beside the one the menu was opened on.
+
+        A Task is the blank line the shortcut and the Edit menu insert -
+        filled in the grid, no dialog (issue #128). A Phase or Milestone
+        still opens the create dialog, the one gesture where the form is
+        doing more than naming a row.
 
         PARAMETERS:
         -----------
@@ -3424,6 +3429,12 @@ class DragDropTaskList(ctk.CTkFrame):
         plan at the top level, which is what right-clicking the empty space
         below the last row asks for.
         """
+        if anchor_id in self._blank_set:
+            # A blank tail row is the empty space below the plan wearing
+            # a row's clothes - creating beside it means the end of the
+            # plan, the same as right-clicking below the rows (#111)
+            anchor_id = None
+
         if anchor_id is None:
             anchor = None
         else:
@@ -3436,6 +3447,13 @@ class DragDropTaskList(ctk.CTkFrame):
                 return
 
         parent_id = anchor.parent_task_id if anchor else None
+
+        if task_type == "Task":
+            # The empty row the shortcut and the Edit menu make, not the
+            # dialog (issue #128): the right-click rule drops it a place
+            # below the row pointed at rather than above the cursor.
+            self._insert_placeholder(anchor_id, parent_id, above=above)
+            return
 
         parent = self.project.get_task_by_id(parent_id) if parent_id else None
 
@@ -3484,12 +3502,42 @@ class DragDropTaskList(ctk.CTkFrame):
         own start is the natural hiding place.
         """
         anchor_id = self.focused_task_id()
+        if anchor_id in self._blank_set:
+            # The focus resting on a blank tail row is the same as no
+            # cursor at all - the new row goes at the end of the plan,
+            # not above a line that is not one (issue #111)
+            anchor_id = None
         anchor = self.project.get_task_by_id(anchor_id) if anchor_id else None
         if anchor_id is not None and anchor is None:
             logger.warning("Cannot create at unknown task %s", anchor_id)
             return
         parent_id = anchor.parent_task_id if anchor else None
+        self._insert_placeholder(anchor_id, parent_id, above=True)
 
+    def _insert_placeholder(self, anchor_id, parent_id, above=True):
+        """
+        Put a totally empty row beside the anchor and open its name cell.
+
+        PARAMETERS:
+        -----------
+        anchor_id : Optional[str]
+            The row the new line is placed against - a real task id, or
+            None to append at the plan's end.
+        parent_id : Optional[str]
+            The level the row is born on - the anchor's parent, so a row
+            created beside a sub-task stays a sub-task.
+        above : bool
+            The insert rule: above the anchor for the shortcut and the
+            Edit menu, a place below it for the right-click menu.
+
+        DEVELOPMENT NOTES:
+        ------------------
+        The one way an empty row arrives (issue #115): no name, no type,
+        the plan's start carried hidden underneath so nothing that reads
+        dates meets a missing one, and the name cell opened over the row
+        for typing. Called by create_task_at_cursor and by the context
+        menu's Create > Task (issue #128).
+        """
         start = self.project.start_date or datetime.now()
         task = Task(
             id=self.project.next_task_id(),
@@ -3501,7 +3549,7 @@ class DragDropTaskList(ctk.CTkFrame):
             parent_task_id=parent_id,
         )
         logger.info("Inserting an empty row at %s", anchor_id)
-        self._save_created(task, anchor_id, parent_id, above=True)
+        self._save_created(task, anchor_id, parent_id, above=above)
 
         # The name is the field a new row is usually given first, so its
         # cell is opened over the row that just arrived.

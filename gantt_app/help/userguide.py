@@ -1430,6 +1430,12 @@ GUIDE_SECTIONS = (
             "nobody has clicked in yet the row goes at the end of the "
             "plan.",
 
+            "The right-click menu's Create > Task drops the same empty "
+            "row a place below the one pointed at - right-clicking the "
+            "empty space below the plan puts it at the end. Create's "
+            "Phase and Milestone entries still open their dialogs, which "
+            "is what the dates and parent pickers there are for.",
+
             "The grid also always ends with a block of blank rows - "
             "twenty-five, or enough to fill the window plus one - like "
             "the unused rows of a spreadsheet, so an empty plan is a "
