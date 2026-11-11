@@ -76,23 +76,74 @@ def check_mspdi_with_mpp_extension():
         os.unlink(path)
 
 
+def write_temp_mpp(suffix: str) -> str:
+    """A real MPP14 file in a temporary .mpp - built, not bundled."""
+    from datetime import datetime
+
+    from tests.mpphelp import write_mpp14
+
+    handle, path = tempfile.mkstemp(suffix=suffix)
+    os.close(handle)
+    write_mpp14(
+        path,
+        tasks=[
+            dict(uid=1, name='Phase One', outline_level=1, parent_uid=0,
+                 start=datetime(2026, 7, 6, 8),
+                 finish=datetime(2026, 7, 7, 17), duration_days=2.0),
+            dict(uid=2, name='Work', outline_level=2, parent_uid=1,
+                 start=datetime(2026, 7, 6, 8),
+                 finish=datetime(2026, 7, 7, 17), duration_days=2.0,
+                 percent_complete=40),
+            dict(uid=3, name='Done', outline_level=1, parent_uid=0,
+                 start=datetime(2026, 7, 8, 8),
+                 finish=datetime(2026, 7, 8, 8), duration_days=0.0),
+        ],
+        relations=[dict(pred=2, succ=3, type='FS', lag_days=0.0)],
+        title='Binary Plan',
+        project_start=datetime(2026, 7, 6, 8))
+    return path
+
+
 @when("importing a binary MPP file")
 @then("it should be detected as binary")
-@then("it should return None")
-def check_binary_mpp_detection():
-    path = write_temp_file(OLE2_SIGNATURE + b'\x00' * 128, '.mpp')
+@then("the binary project should import with its tasks and links")
+def check_binary_mpp_import():
+    path = write_temp_mpp('.mpp')
     try:
         assert is_binary_mpp(path)
-        assert import_mpp_file(path) is None
+        project = import_mpp_file(path)
+        assert project is not None
+        assert project.name == 'Binary Plan'
+        names = [task.name for task in project.tasks]
+        assert names == ['Phase One', 'Work', 'Done']
+        work = project.tasks[1]
+        assert work.parent_task_id == '1'
+        assert work.progress == 40
+        done = project.tasks[2]
+        assert done.is_milestone
+        assert [(dep.task_id, dep.dep_type)
+                for dep in done.dependencies] == [('2', 'FS')]
     finally:
         os.unlink(path)
 
 
 @when("importing a binary file named with .xml extension")
 @then("it should be detected as binary")
-@then("it should return None")
+@then("it should import successfully")
 def check_binary_with_xml_extension():
-    path = write_temp_file(OLE2_SIGNATURE + b'\x00' * 128, '.xml')
+    path = write_temp_mpp('.xml')
+    try:
+        assert is_binary_mpp(path)
+        assert import_mpp_file(path) is not None
+    finally:
+        os.unlink(path)
+
+
+@when("importing binary bytes that are not a project")
+@then("it should be detected as binary")
+@then("it should return None")
+def check_corrupt_binary():
+    path = write_temp_file(OLE2_SIGNATURE + b'\x00' * 128, '.mpp')
     try:
         assert is_binary_mpp(path)
         assert import_mpp_file(path) is None

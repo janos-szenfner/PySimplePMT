@@ -187,16 +187,17 @@ Feature: The application log keeps a bounded, inspectable record
     Then nothing came back
     And the log text holds "/nonexistent/plan.gan"
 
-  Scenario: A binary mpp is not an error
-    # The file is intact and the user did nothing wrong - the format
-    # simply cannot be read outside Project - so the Log window's error
-    # count and its Error filter must stay meaningful.
+  Scenario: An unreadable binary mpp is not an error
+    # The file is intact and the user did nothing wrong - it predates
+    # Project 2010, is protected, or is damaged - so the Log window's
+    # error count and its Error filter must stay meaningful, and the
+    # log must still name the Save-As-XML way forward.
     Given logging is set up in memory only
     When a binary MPP file is imported
     Then nothing came back
     And the log counts 0 records at ERROR
     And the log text does not hold "Traceback"
-    And the log text holds "Save it as XML"
+    And the log text holds "XML"
 
   Scenario: A malformed file logs a traceback
     Given logging is set up in memory only

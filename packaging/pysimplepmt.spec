@@ -103,6 +103,13 @@ bundle('holidays')
 # answered "couldn't check" (see update_check.default_ssl_context).
 bundle('certifi')
 
+# The binary .mpp reader and the OLE2 container library underneath it.
+# Required, not optional: it is in requirements.txt, and the import is lazy
+# (inside mpp14_reader.import_mpp14_file) so PyInstaller's static pass would
+# not pick either package up on its own.
+bundle('pymppwriter')
+bundle('olefile')
+
 hiddenimports += [
     'plotly.graph_objects',
     'plotly.io',

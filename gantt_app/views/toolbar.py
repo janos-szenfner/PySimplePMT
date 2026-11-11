@@ -3376,15 +3376,15 @@ class Toolbar(ctk.CTkFrame):
         DEVELOPMENT NOTES:
         ------------------
         Both Microsoft formats are offered, because somebody choosing this
-        does not necessarily know which one they have. MSPDI XML is read in
-        full; a binary .mpp cannot be read outside Project, so it is
-        identified as one and answered with the step that turns it into a
-        file this application can read - see mpp_importer.
+        does not necessarily know which one they have. MSPDI XML and the
+        binary .mpp of Project 2010 on are both read in full - see
+        mpp_importer and mpp14_reader.
 
-        That case gets showinfo rather than showerror. Nothing has gone
-        wrong: the file is intact, the user did nothing incorrect, and there
-        is a short way forward. An error dialog would say the application
-        failed at something it never claimed to do.
+        An .mpp the binary reader cannot take - older, protected, or
+        damaged - is answered with the step that still turns it into a
+        file this application can read. That case gets showinfo rather
+        than showerror: the file is intact, the user did nothing wrong,
+        and there is a short way forward.
         """
         file_path = filedialog.askopenfilename(
             filetypes=[("Microsoft Project Files", "*.xml *.mpp"),
@@ -3398,12 +3398,15 @@ class Toolbar(ctk.CTkFrame):
             logger.info("MS Project import cancelled")
             return
 
-        if is_binary_mpp(file_path):
-            logger.info("Declined a binary .mpp: %s", file_path)
-            messagebox.showinfo("Save it as XML first", BINARY_MPP_MESSAGE)
-            return
-
         project = import_mpp_file(file_path)
+        if project is None and is_binary_mpp(file_path):
+            # An .mpp that could not be read - older than Project 2010,
+            # protected, or damaged. Saving it as XML still opens it, so
+            # that answer gets a showinfo rather than an error dialog.
+            logger.info("Could not read the binary .mpp: %s", file_path)
+            messagebox.showinfo("Save it as XML instead",
+                                BINARY_MPP_MESSAGE)
+            return
         if project:
             # Replace current project
             project.renumber_task_ids()

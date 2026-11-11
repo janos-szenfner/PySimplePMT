@@ -1530,17 +1530,20 @@ GUIDE_SECTIONS = (
             "comes back as it went in.",
 
             "MS Project - MSPDI .xml files, which is what Project writes "
-            "from File > Save As > XML. The whole plan comes across: the "
-            "outline, the dates, the links with their types and lags, "
-            "progress, notes, priorities, the working calendar and the "
-            "per-task calendars. Nothing needs installing.",
+            "from File > Save As > XML, and binary .mpp files, which is "
+            "what Project saves by itself. The whole plan comes across "
+            "either way: the outline, the dates, the links with their "
+            "types and lags, progress, notes, priorities and the working "
+            "calendar. Nothing needs installing.",
 
-            "A binary .mpp cannot be read by anything except Project "
-            "itself, so choosing one says so and names the one step that "
-            "fixes it - open it in Project, File > Save As, pick XML "
-            "Format, and import that. Nothing is guessed at from the "
-            "binary: a plan that half-opened on invented dates would be "
-            "worse than one that did not open.",
+            "The .mpp reader covers Project 2010 and everything after "
+            "(the MPP14 format, which is still what today's Project "
+            "writes). A file older than that, a password-protected one, "
+            "or a damaged one cannot be read, and choosing one says so "
+            "and names the step that still fixes it - open it in "
+            "Project, File > Save As, pick XML Format, and import that. "
+            "Resources, assignments and baselines are not mapped yet, "
+            "the same as on the XML path.",
         ],
     ),
     (

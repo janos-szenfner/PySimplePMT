@@ -18,14 +18,20 @@ Feature: Microsoft Project import format detection
     And it should import successfully
 
   @mpp_importer
-  Scenario: Binary MPP file is recognized and declined
+  Scenario: Binary MPP file imports successfully
     When importing a binary MPP file
     Then it should be detected as binary
-    And it should return None
+    And the binary project should import with its tasks and links
 
   @mpp_importer
   Scenario: Binary file with .xml extension is still detected as binary
     When importing a binary file named with .xml extension
+    Then it should be detected as binary
+    And it should import successfully
+
+  @mpp_importer
+  Scenario: Binary bytes that are not a project are declined
+    When importing binary bytes that are not a project
     Then it should be detected as binary
     And it should return None
 

@@ -59,7 +59,7 @@ This is a complete implementation of a project management tool with:
 - **The list keeps its place**: Formatting, indenting or outdenting a row leaves it selected and leaves folded branches folded, so a run of changes takes one click rather than one click each
 - **Milestone Support**: Special single-date markers with diamond icons
 - **JSON Storage**: Save and load projects in JSON format
-- **File Import**: Import from GanttProject (.gan), MS Project (MSPDI .xml), Mermaid (.mmd), and Excel (.xlsx) files. Every reader is standard library or an already-bundled package, so no import needs anything installed
+- **File Import**: Import from GanttProject (.gan), MS Project (.mpp binary and MSPDI .xml), Mermaid (.mmd), and Excel (.xlsx) files. Every reader is standard library or an already-bundled package, so no import needs anything installed
 - **Hierarchy on Import**: Source-file grouping (Mermaid sections, spreadsheet phases, nested GanttProject tasks) is preserved as parent tasks with sub-tasks
 - **File Export**: Export the plan to a three page PDF — work item list beside the chart, the chart alone, then the list as a full table — to PNG, projects to Mermaid format, and the plan to Excel XLSX as a live project-plan sheet - editable durations, WORKDAY dates and a week-by-week bar chart
 - **Planning Tool Export**: Hand the plan to GanttProject as a .gan file, or to Microsoft Project as MSPDI .xml. Both carry the hierarchy, the links with their types and lags, the progress, the notes and the working calendar; both are written so the dates the other tool shows are the dates shown here
@@ -191,6 +191,7 @@ gantt_app/
 │   ├── gan_importer.py     # GAN (GanttProject) file import
 │   ├── gan_exporter.py     # GAN (GanttProject) file export
 │   ├── mpp_importer.py     # Which of the two MS Project formats a file is
+│   ├── mpp14_reader.py     # Binary .mpp import (Project 2010+), via pymppwriter
 │   ├── msproject_importer.py # MS Project (MSPDI .xml) import
 │   ├── msproject_exporter.py # MS Project (MSPDI .xml) export
 │   ├── plan_export.py      # What both interchange exporters ask of a plan
@@ -1890,19 +1891,19 @@ work produces stays readable beside it.
 - **Optional Dependency**: Gracefully handles missing openpyxl library
 - **Directory Creation**: Automatically creates parent directories
 
-### MS Project Importer (`utils/mpp_importer.py`, `utils/msproject_importer.py`)
+### MS Project Importer (`utils/mpp_importer.py`, `utils/msproject_importer.py`, `utils/mpp14_reader.py`)
 
 **"Import MS Project" is offered two entirely different files.** One is
 `.mpp`, Project's own binary save. The other is MSPDI, the XML Microsoft
-publishes a schema for, which Project writes from File > Save As > XML. Only
-the second can be read by anything that is not Project, so `mpp_importer`
-sniffs the file it is given — the extension is not trusted, because MSPDI
-arrives named `.mpp` more often than not — and sends the XML to
-`msproject_importer`.
+publishes a schema for, which Project writes from File > Save As > XML. Both
+are read now, so `mpp_importer` sniffs the file it is given — the extension
+is not trusted, because MSPDI arrives named `.mpp` more often than not —
+and sends the XML to `msproject_importer`, the binary to `mpp14_reader`.
 
-**Nothing is optional.** MSPDI is read with the standard library, so the
-feature works in a source checkout and in the packaged build alike, with
-nothing installed and nothing bundled.
+**Nothing is optional.** MSPDI is read with the standard library and the
+binary with `pymppwriter`, a small pure-Python package that is bundled —
+so the feature works in a source checkout and in the packaged build alike,
+with nothing installed.
 
 This module used to call `tasklib.ProjectFile(filepath)` behind a check for
 whether `tasklib` was installed, and reported "install tasklib" whenever the
@@ -1932,20 +1933,27 @@ What comes back from an MSPDI file:
 - **Not imported**: a task at outline level 0, which is the project summary
   row rather than work, and a row marked `IsNull`
 
-**Binary `.mpp` is identified, not guessed at.** It is an OLE2 compound
-document holding undocumented, partly compressed streams whose layout changes
-with every release of Project; the one complete reader is MPXJ, a large Java
-library, and the JPype bridge to it was removed from this application for
-exactly the reason it could not be brought back — a JVM and a jar cannot go
-inside a self-contained package. A plan is acted on, so a file that
-half-parses into tasks with plausible names and wrong dates is more expensive
-than one that refuses to open and says why. Choosing a `.mpp` gets the step
-that fixes it — Save As, XML Format — in an information dialog rather than an
-error, and it is not recorded as an error in the log either: the file is
-intact and the user did nothing wrong
-- **Date Conversion**: Java Date to Python datetime
-- **Task Properties**: Full task import with dependencies and progress
-- **Error Handling**: Graceful degradation when libraries not available
+**Binary `.mpp` is read through its own field maps.** An `.mpp` is an OLE2
+compound document whose streams record where every field lives rather than
+relying on fixed record layouts. `pymppwriter` reads it the way MPXJ does —
+every offset comes from the field map the file itself carries — and
+`mpp14_reader.py` turns that generic read into the same plan the MSPDI path
+produces, so an `.mpp` and the XML saved from it land as the same tasks
+either way. The coverage is MPP14 — Project 2010 through today's files.
+
+The Java route stays out. MPXJ remains a large Java library, and the JPype
+bridge to it was removed because a JVM and a jar cannot go inside a
+self-contained package; `pymppwriter` is ~3,000 lines of pure Python on top
+of `olefile`, which bundles. A file the reader cannot take — older than
+2010, password-protected, or damaged — still gets the step that fixes it,
+Save As, XML Format, in an information dialog rather than an error, and it
+is not recorded as an error in the log either: the file is intact and the
+user did nothing wrong
+- **Scope**: tasks, hierarchy, dates, durations, links with types and lags,
+  progress, milestones, priorities, notes and SNET constraints — the same
+  set MSPDI maps; resources, assignments and baselines are not mapped yet
+- **Error Handling**: unreadable files degrade to the Save-As-XML guidance
+  rather than an error, in the dialog and in the log alike
 
 ### Logging (`utils/log.py`)
 - **Three Destinations**: A rotating log file on disk, an in-memory buffer for the Log window, and stderr when started from a terminal
@@ -2491,8 +2499,10 @@ Reads MSPDI `.xml` with nothing installed:
 - Dates and durations, and the working calendar they were counted against
 - Per-task calendars, which land in the calendar registry
 
-A binary `.mpp` is identified and answered with the one step that fixes it,
-rather than being guessed at.
+A binary `.mpp` is read through the field maps the file itself carries —
+the same plan MSPDI would have produced. One it cannot take — older than
+Project 2010, protected, or damaged — is answered with the step that fixes
+it, rather than being guessed at.
 
 ### Mermaid Import/Export
 Supports Mermaid Gantt chart format:
@@ -2566,7 +2576,7 @@ expected; anything else is now a warning.
 
 ### 3. Import That Does Not Trust the File Name
 - MS Project's two formats are told apart by sniffing the file, not the extension
-- MSPDI named `.mpp` still imports; a binary save named `.xml` still does not
+- MSPDI named `.mpp` still imports; so does a binary save named `.xml`
 - The unreadable case is answered with the action that fixes it, not an error
 
 ### 4. Critical Path Analysis
@@ -2753,7 +2763,7 @@ Unit tests cover:
 - ✅ **XLSX Export**: The plan sheet's shape, which tasks get rows, the live formulas, that a formula is never written where it would disagree with the plan, and that an ongoing task carries its percentage
 - ✅ **GAN Export**: Nesting, the reversed dependency edge, milestones written both ways, durations counted over a holiday, both kinds of holiday in the calendar block, and a round trip through the importer that compares every date against the plan that went in
 - ✅ **MS Project Import**: A round trip against the exporter comparing every field that decides a date, the newer `<Exceptions>` calendar block Project itself writes, a project summary row at outline level 0, an outline that skips a level, a finish stated at midnight, and that a pin on a task's own start is not read back as a floor it never had
-- ✅ **MS Project Format Sniffing**: That the extension is not trusted in either direction - MSPDI named `.mpp` imports, a binary save named `.xml` does not - that a byte order mark does not hide the XML, and that the unreadable case names the step that fixes it without recording an error
+- ✅ **MS Project Format Sniffing**: That the extension is not trusted in either direction - MSPDI named `.mpp` imports, and a binary save named `.xml` imports too - that a byte order mark does not hide the XML, and that the unreadable case names the step that fixes it without recording an error
 - ✅ **MS Project Export**: The pinned dates and the unpinned summaries, the outline levels and WBS, lag in tenths of a minute, the weekday numbering that starts at Sunday, the per-task calendars, a worked Saturday written as an exception, and the schema's element order at the two places it looks wrong
 - ✅ **PDF Pages**: That there are three, that they are all one physical size, what the work item table holds, and that the written page is the size it claims to be
 - ✅ **Window Sizing**: That the window fills the usable area rather than the whole display, that a small screen gets a smaller minimum so it stays resizable, and that a scaled desktop does not get a window asked for at the scaling factor twice over
@@ -2768,7 +2778,7 @@ importer pass its whole suite while reading zero tasks from real `.gan` files.
 
 ## Known Limitations
 
-1. **MPP Import**: Binary `.mpp` is not read — it is an undocumented OLE2 container with no Python reader to bundle. Save it as XML from Project and import that; MSPDI import needs nothing installed
+1. **MPP Import is MPP14-era**: binary `.mpp` files from Project 2010 through today import directly, mapped to the same plan MSPDI produces — resources, assignments and baselines are not mapped yet. An older, password-protected or damaged file still needs Save As XML from Project; MSPDI import needs nothing installed
 2. **Public holidays from source**: the `holidays` package is in `requirements.txt` and is bundled into every packaged build, so a released build always has it. Only a source checkout installed without its requirements lacks it — and there the picker still saves a selection and says on its face that the choice takes effect once the package is installed, rather than silently dropping it
 3. **Performance**: large plans are slow to draw, though far less so than they were. Measured on synthetic plans with hierarchy and dependencies: ~140ms at 100 tasks, ~350ms at 500, ~580ms at 1000 — down from 180ms / 575ms / 1165ms. Past ~500 tasks the row heights are still compressed to stay inside a 24-megapixel budget, so the chart is squeezed as well as slow.
 

@@ -6,8 +6,8 @@ WHY THIS MODULE EXISTS:
 "Import MS Project" means two different files. One is .mpp, Project's own
 binary save format. The other is MSPDI, the XML Microsoft publishes a schema
 for, which Project writes from File > Save As > XML and every other planning
-tool reads. Only the second can be read by anything that is not Project, so
-this sniffs the file it is given and sends the XML to msproject_importer.
+tool reads. Both are read now - the XML goes to msproject_importer, the
+binary to mpp14_reader - so this module only decides which file arrived.
 
 WHAT HAPPENED TO THE OPTIONAL READER:
 =====================================
@@ -21,25 +21,18 @@ the package it recommended would not have changed that. MS Project import has
 therefore never worked, and the "optional dependency" was a dependency on the
 wrong library for a call that could not succeed.
 
-Nothing is optional now. MSPDI is read with the standard library, so the
-feature works in a source checkout and in the packaged build alike, with
-nothing installed and nothing bundled.
+Nothing is optional now. MSPDI is read with the standard library and the
+binary with pymppwriter, a bundled dependency - so the feature works in a
+source checkout and in the packaged build alike, with nothing to install.
 
-WHY .mpp IS STILL NOT READ:
-===========================
-It is an OLE2 compound document holding undocumented, partly compressed
-streams whose layout changes with every release of Project. The one complete
-reader is MPXJ, which is a large Java library and decades of reverse
-engineering; the JPype bridge to it was removed from this application
-precisely because it needed a JVM and a jar that cannot go inside a
-self-contained package. There is no Python reader to bundle instead.
-
-Guessing at the format would be worse than not reading it. A plan is acted
-on: a file that half-parses into tasks with plausible names and wrong dates
-is more expensive than one that refuses to open and says why. So a binary
-.mpp is identified as one, and the message names the one action that turns it
-into a file this application can read completely - which takes about ten
-seconds in Project.
+WHY SOME .mpp STILL END UP AT SAVE AS XML:
+==========================================
+The binary reader covers MPP14, the format of Project 2010 through today.
+Files older than that, files saved with a password, and damaged files all
+fail the read honestly - and for every one of them, the ten seconds it
+takes to Save As XML inside Project still produces a file this application
+reads completely. That is what BINARY_MPP_MESSAGE says, and it is only
+shown when the binary read did not succeed.
 """
 
 from pathlib import Path
@@ -47,6 +40,7 @@ from typing import Optional
 
 from gantt_app.core.models import Project
 from gantt_app.utils.log import get_logger
+from gantt_app.utils.mpp14_reader import import_mpp14_file
 from gantt_app.utils.msproject_importer import import_msproject_file
 
 logger = get_logger(__name__)
@@ -60,11 +54,12 @@ OLE2_SIGNATURE = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
 #: How many bytes are read to tell one format from another.
 SNIFF_BYTES = 512
 
-#: What to tell somebody holding a .mpp. Kept here rather than in the dialog
-#: so the log and the message box say the same thing.
+#: What to tell somebody holding a .mpp that could not be read - older
+#: than Project 2010, password-protected, or damaged. Kept here rather than
+#: in the dialog so the log and the message box say the same thing.
 BINARY_MPP_MESSAGE = (
-    "This is a binary .mpp file, which only Microsoft Project itself can "
-    "read.\n\n"
+    "This .mpp file could not be read - it was written by a Microsoft "
+    "Project older than 2010, is password-protected, or is damaged.\n\n"
     "Open it in MS Project and choose File > Save As, then pick "
     "\"XML Format (*.xml)\". Importing that file brings in the whole plan - "
     "tasks, hierarchy, dependencies, calendars and progress."
@@ -127,12 +122,16 @@ def import_mpp_file(filepath: str) -> Optional[Project]:
         return None
 
     if head.startswith(OLE2_SIGNATURE):
-        # Not an error: the file is intact and the user did nothing wrong,
-        # so this must not count towards the Log window's error total
-        logger.warning("%s is a binary Microsoft Project file, which cannot "
-                       "be read outside Project. Save it as XML from Project "
-                       "and import that instead.", filepath)
-        return None
+        project = import_mpp14_file(filepath)
+        if project is None:
+            # Not an error: the user did nothing wrong and Save As XML is
+            # still their way in, so this must stay a warning and must
+            # name the way forward - the Log window mirrors the message
+            # box the caller is about to show.
+            logger.warning("%s is a Microsoft Project file that could "
+                           "not be read. Saving it as XML from Project "
+                           "would still make it importable.", filepath)
+        return project
 
     if not looks_like_xml(head):
         logger.warning("%s is neither MSPDI XML nor a Microsoft Project "

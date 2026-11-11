@@ -2,6 +2,21 @@
 
 ## 1.72.3 - 2026-10-26
 
+- **Binary .mpp files import directly.** File > Import > MS Project used
+  to meet a binary .mpp with an information box telling you to open it in
+  Project and Save As XML - the only complete reader was a large Java
+  library that cannot go inside a self-contained package. The reader now
+  bundled is pymppwriter, a small pure-Python package that reads the
+  MPP14 format every Project since 2010 writes, taking each field's
+  offset from the field maps the file itself carries rather than a
+  guessed record layout. The plan that comes back is the same one the
+  XML path produces - the outline, dates, durations, links with types
+  and lags, progress, milestones, priorities, notes and SNET
+  constraints. An .mpp it cannot take - older than Project 2010,
+  password-protected, or damaged - still gets the Save-As-XML guidance,
+  and still as an information box rather than an error, because the file
+  is intact and its owner did nothing wrong. Resources, assignments and
+  baselines are not mapped yet, the same as on the XML path.
 - **Right-click "Create &gt; Task" now inserts a blank row like every other
   new-task gesture.** The context menu still opened the old create task
   dialog - a pop-up you had to close - while the Edit menu and the
