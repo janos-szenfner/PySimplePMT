@@ -4,7 +4,7 @@
 # so an end user installing the .deb needs none of it - not even Python.
 # See packaging/README.md for what the built package does still rely on.
 #
-# Lower bounds are the latest release of each package as of 2026-08-13, taken
+# Lower bounds are the latest release of each package as of 2026-11-11, taken
 # from PyPI rather than from memory. Upper bounds stop at the next major
 # version: a packaged desktop app should be rebuilt and retested against a new
 # major release rather than silently picking one up.
@@ -16,13 +16,13 @@
 # --- Direct dependencies -------------------------------------------------
 
 customtkinter>=6.0.0,<7.0.0     # UI toolkit
-plotly>=6.9.0,<7.0.0            # Every Gantt chart: on screen and exported
-tkinterweb>=4.25.3,<5.0.0       # Embeds the Plotly chart inside Tkinter
-pillow>=12.3.0,<13.0.0          # Draws the PNG and PDF exports
+plotly>=7.1.0,<8.0.0            # Every Gantt chart: on screen and exported
+tkinterweb>=4.25.5,<5.0.0       # Embeds the Plotly chart inside Tkinter
+pillow>=13.0.0,<14.0.0          # Draws the PNG and PDF exports
 openpyxl>=3.1.5,<4.0.0          # XLSX import and export
-holidays>=0.83,<1.0.0           # Public holidays behind the EU holiday calendar
+holidays>=0.108,<1.0.0          # Public holidays behind the EU holiday calendar
 pymppwriter>=0.4.3,<0.5.0       # Binary .mpp import (MPP14, Project 2010+); pure Python, MIT
-certifi>=2026.7.22             # CA bundle the update check verifies TLS with - the packaged build has no system store
+certifi>=2026.10.23            # CA bundle the update check verifies TLS with - the packaged build has no system store
 
 # --- Transitive dependencies ---------------------------------------------
 # Listed explicitly so the packaged set is auditable and reproducible rather
@@ -30,8 +30,8 @@ certifi>=2026.7.22             # CA bundle the update check verifies TLS with - 
 
 darkdetect>=0.8.0,<1.0.0        # customtkinter: system theme detection
 packaging>=26.3                 # customtkinter, plotly
-narwhals>=2.24.0,<3.0.0         # plotly: dataframe abstraction layer
-tkinterweb-tkhtml>=2.1.1,<3.0.0 # tkinterweb: the Tkhtml rendering engine
+narwhals>=2.28.0,<3.0.0         # plotly: dataframe abstraction layer
+tkinterweb-tkhtml>=2.3.0,<3.0.0 # tkinterweb: the Tkhtml rendering engine
 et-xmlfile>=2.0.0,<3.0.0        # openpyxl
 olefile>=0.47,<1.0.0            # pymppwriter: OLE2 container parsing
 

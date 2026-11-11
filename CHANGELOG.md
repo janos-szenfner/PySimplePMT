@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.72.5 - 2026-11-11
+
+- **Dependency refresh.** The bundled libraries move to their current
+  releases: Plotly 7.1 for the charts, Pillow 13 for the PNG and PDF
+  exports, tkinterweb 4.25.5 with Tkhtml 2.3, holidays 0.108, narwhals
+  2.28, certifi 2026-10-23 and PyInstaller 6.22.3 for the builds. The
+  test stack moves with them - pytest 9.2 paired with pytest-bdd 9, the
+  combination pytest-bdd is written for, after pytest-bdd 8 on pytest 9
+  broke a release run mid-build. Nothing in the application itself
+  changed; this is maintenance that keeps the packaged build on
+  supported library lines.
+
 ## 1.72.4 - 2026-11-11
 
 - **Binary .mpp files import directly.** File > Import > MS Project used
