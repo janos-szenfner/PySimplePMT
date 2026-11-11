@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.72.3 - 2026-10-26
+## 1.72.4 - 2026-11-11
 
 - **Binary .mpp files import directly.** File > Import > MS Project used
   to meet a binary .mpp with an information box telling you to open it in
@@ -17,6 +17,9 @@
   and still as an information box rather than an error, because the file
   is intact and its owner did nothing wrong. Resources, assignments and
   baselines are not mapped yet, the same as on the XML path.
+
+## 1.72.3 - 2026-10-26
+
 - **Right-click "Create &gt; Task" now inserts a blank row like every other
   new-task gesture.** The context menu still opened the old create task
   dialog - a pop-up you had to close - while the Edit menu and the
