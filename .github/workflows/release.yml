@@ -178,7 +178,12 @@ jobs:
     # the machine it runs on, so the runner's architecture *is* the build's -
     # macos-14 and later are arm64, and an Intel build would need an Intel
     # runner rather than a flag.
-    runs-on: macos-14
+    #
+    # macos-15, not macos-14: in November 2026 the macos-14 label started
+    # resolving to an 'arm64-us-default' pool this account cannot run on -
+    # the job is cancelled in under a second with "configuration is not
+    # supported". macos-15 resolves to a pool that runs.
+    runs-on: macos-15
 
     steps:
       - name: Check out the repository
