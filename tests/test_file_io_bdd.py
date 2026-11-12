@@ -50,6 +50,15 @@ def a_two_task_project(tmp_path):
                            dir=str(tmp_path))
 
 
+@given(parsers.parse('an empty project dated "{start}" to "{end}"'),
+       target_fixture="ctx")
+def an_empty_project_dated(tmp_path, start, end):
+    project = Project(name="Dated Plan",
+                      start_date=datetime.fromisoformat(start),
+                      end_date=datetime.fromisoformat(end))
+    return SimpleNamespace(project=project, dir=str(tmp_path))
+
+
 @given(parsers.parse('a two-task project saved to "{name}"'),
        target_fixture="ctx")
 def a_two_task_project_saved(tmp_path, name):
@@ -290,6 +299,12 @@ def every_task_field_survived(ctx):
         assert loaded.dependencies == original.dependencies
         assert loaded.color == original.color
         assert loaded.is_milestone == original.is_milestone
+
+
+@then(parsers.parse('the loaded plan runs "{start}" to "{end}"'))
+def the_loaded_plan_runs(ctx, start, end):
+    assert ctx.loaded.start_date == datetime.fromisoformat(start)
+    assert ctx.loaded.end_date == datetime.fromisoformat(end)
 
 
 @then(parsers.parse('the JSON holds "{resource}" and "{team}" and no '

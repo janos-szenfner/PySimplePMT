@@ -122,7 +122,9 @@ def _to_iso(value: Optional[datetime]) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def _from_iso(value: Optional[str]) -> Optional[datetime]:
+def _from_iso(value) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
     return datetime.fromisoformat(value) if value else None
 
 

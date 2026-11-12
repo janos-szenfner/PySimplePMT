@@ -4296,23 +4296,32 @@ class Project:
         start_date = None
         end_date = None
         
+        # The file reader's object hook has already turned a well-formed
+        # string into a datetime by the time this runs, so a datetime is
+        # taken as it stands and only a string still needs parsing.
         if data.get('start_date'):
-            try:
-                start_date = datetime.fromisoformat(data['start_date'])
-            except (ValueError, TypeError):
-                logger.warning("Project %r has an unreadable start date %r; "
-                               "dropping it",
-                               data.get('name', 'unknown'), data['start_date'])
-                start_date = None
+            if isinstance(data['start_date'], datetime):
+                start_date = data['start_date']
+            else:
+                try:
+                    start_date = datetime.fromisoformat(data['start_date'])
+                except (ValueError, TypeError):
+                    logger.warning("Project %r has an unreadable start date %r; "
+                                   "dropping it",
+                                   data.get('name', 'unknown'), data['start_date'])
+                    start_date = None
         
         if data.get('end_date'):
-            try:
-                end_date = datetime.fromisoformat(data['end_date'])
-            except (ValueError, TypeError):
-                logger.warning("Project %r has an unreadable end date %r; "
-                               "dropping it",
-                               data.get('name', 'unknown'), data['end_date'])
-                end_date = None
+            if isinstance(data['end_date'], datetime):
+                end_date = data['end_date']
+            else:
+                try:
+                    end_date = datetime.fromisoformat(data['end_date'])
+                except (ValueError, TypeError):
+                    logger.warning("Project %r has an unreadable end date %r; "
+                                   "dropping it",
+                                   data.get('name', 'unknown'), data['end_date'])
+                    end_date = None
         
         # Create empty project first. A file saved before projects carried a
         # calendar has no calendar block, and WorkingCalendar.from_dict answers

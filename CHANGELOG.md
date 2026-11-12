@@ -2,6 +2,44 @@
 
 ## 1.72.5 - 2026-11-11
 
+- **Binary .mpp imports keep the file's own hierarchy.** A generated .mpp
+  can store its rows out of outline order and jump outline levels - a
+  level-7 task parked under a level-5 it does not belong to, or children
+  rows away from their summary. The outline-level stack read those as
+  parent-child edges the file never made, and one imported a task under a
+  same-named row in another phase, so its ordinary link became one
+  against its own parent - a knot the rescheduler pulled on forever,
+  drifting dates years into the future and never settling. The import
+  now wires each row to the parent the file itself names, walking up to
+  the nearest ancestor that made it into the plan, and lays the tasks
+  out in the order that outline describes.
+
+- **A saved plan's own start and end dates are read back.** The file
+  reader had already turned them into datetimes by the time the project
+  was rebuilt, so every load warned they were unreadable and dropped
+  them - harmless noise on a plan with tasks, whose dates are recomputed
+  anyway, but a blank plan quietly lost the window it was saved with.
+  They are now taken as they stand.
+
+- **An enlarged Duration-per-Item panel scrolls instead of smearing.**
+  Double-clicking the dashboard's Duration per Item panel on a long plan
+  used to stretch the same unreadable chart over the whole board -
+  hundreds of bars a pixel wide each, labels lying on each other. The
+  maximized panel is now drawn at a width worth reading - a minimum band
+  per task - and a horizontal scrollbar appears to take the board to the
+  parts the viewport cannot show, with the wheel panning sideways too.
+  The names under the bars alternate between two steps, so the labels of
+  neighbouring tasks stop lying on top of each other. The grid view is
+  untouched: compact is still what an overview is for.
+
+- **The Gantt chart keeps up with a scrolled task list.** The list ends
+  in a tail of empty placeholder rows, and the tree counts them into its
+  scroll fraction - but the chart matched the fraction against task rows
+  alone, so it trailed the list by the tail's share: level at the top,
+  about two rows behind by the middle of a large plan. The chart now
+  counts the same rows the tree does, down to a part-row, so bars stay
+  on their lines however far down the plan goes.
+
 - **Dependency refresh.** The bundled libraries move to their current
   releases: Plotly 7.1 for the charts, Pillow 13 for the PNG and PDF
   exports, tkinterweb 4.25.5 with Tkhtml 2.3, holidays 0.108, narwhals

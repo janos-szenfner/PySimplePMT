@@ -23,6 +23,17 @@ Feature: Saving and loading a project as JSON
     And the file is loaded
     Then every task field survived the round trip
 
+  Scenario: The plan's own dates survive a round trip
+    # The reader's object hook has already turned the strings into
+    # datetimes when from_dict runs - a plan saved with a start and an
+    # end used to drop both, warning they were unreadable. A plan with
+    # tasks recomputes its dates from them, so the surviving proof is
+    # the empty plan's own window.
+    Given an empty project dated "2026-01-09" to "2028-11-01"
+    When the project is saved to "dated_project.json"
+    And the file is loaded
+    Then the loaded plan runs "2026-01-09" to "2028-11-01"
+
   Scenario: Resources are saved inside the project JSON
     Given a two-task project with a named resource in a team
     When the project is saved to "project_with_resources.json"
