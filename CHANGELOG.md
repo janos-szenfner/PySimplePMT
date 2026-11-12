@@ -2,6 +2,13 @@
 
 ## 1.72.7 - 2026-11-12
 
+- **Restoring from an overgrown panel brings the panels back.** The
+  canvas does not re-clamp where it is scrolled to when the scroll
+  region shrinks, so a reader who had panned deep into a maximized
+  panel and clicked restore got back an empty board - the grid was
+  drawn, just off the edge of where the view still pointed. The view
+  now goes home when the scroll region goes.
+
 - **An overgrown dashboard panel can always be closed.** The restore
   glyph rode the panel out to the far end of the scrollable drawing -
   an enlarged chart nobody could reach a handle on - and a double-click

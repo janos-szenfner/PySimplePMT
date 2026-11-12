@@ -569,11 +569,17 @@ class TestAMaximizedWorkloadScrolls(unittest.TestCase):
 
     def test_restoring_clears_the_scroll_state(self):
         """Back to the grid means back to a canvas that fits."""
+        moves = []
+        self.frame.canvas.xview_moveto = moves.append
         self.frame.set_maximized('workload')
         self.frame.restore()
 
         self.assertIsNone(self._scroll_width())
         self.assertNotEqual(self.frame._hscroll.winfo_manager(), 'pack')
+        # And the view goes home: a canvas does not re-clamp its offset
+        # when the scroll region shrinks, so without this the grid came
+        # back to empty space past the end of everything.
+        self.assertIn(0.0, moves)
 
     def test_a_plan_that_fits_maximizes_without_scrolling(self):
         """The scrollbar is for overflow, not for being enlarged."""

@@ -442,7 +442,13 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
                 self._hscroll.pack(side='bottom', fill='x')
             canvas.xview_moveto(keep)
         else:
+            # Back to a drawing the size of the canvas - the view goes
+            # home with it. Tk does not re-clamp the offset when the
+            # scroll region shrinks, so a reader who had panned deep into
+            # a maximized panel would otherwise restore to empty space
+            # past the end of everything.
             canvas.configure(scrollregion='')
+            canvas.xview_moveto(0.0)
             self._hscroll.pack_forget()
 
         self._panel_rects = {p['id']: p['rect'] for p in landed}
