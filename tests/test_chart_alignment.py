@@ -284,6 +284,77 @@ class TestWhatTheListReports(unittest.TestCase):
 
         self.assertEqual(self.task_list.visible_rows()[0], "004")
 
+    def test_scrolled_row_counts_every_row_the_tree_scrolls_over(self):
+        """
+        The blank tail is in the scroll fraction's denominator too.
+
+        The tree's scroll fraction is measured over all the rows it draws,
+        blanks included, so turning it back into a row against task rows
+        alone comes back short - and the chart trailed the list by that
+        much further the deeper the plan was scrolled.
+        """
+        drawn = len(self.task_list._visible_row_items())
+        blanks = len(self.task_list._blank_set)
+
+        self.assertGreater(blanks, 0,
+                           "the grid always ends in uncommitted rows")
+        self.assertGreater(drawn, len(self.task_list.visible_rows()))
+
+        # The tree's own fraction is stubbed: a withdrawn window reports no
+        # scroll position, so the multiplication is what is on trial here
+        self.task_list.rows_scrolled_to = lambda: 0.5
+
+        self.assertAlmostEqual(self.task_list.scrolled_row(),
+                               0.5 * drawn)
+
+    def test_scrolled_row_is_zero_at_the_top(self):
+        """Both ends of the answer still mean what they did."""
+        self.task_list.rows_scrolled_to = lambda: 0.0
+
+        self.assertEqual(self.task_list.scrolled_row(), 0.0)
+
+
+class TestTheScrollMatchUsesTheSameRow(unittest.TestCase):
+    """_scroll_to_match puts the chart on the row the list reports."""
+
+    def _chart(self, scrolled_row):
+        """A chart with only what _scroll_to_match touches in place."""
+        from unittest import mock
+
+        chart = mock.Mock()
+        chart._drawn_rows = ["001", "002"]
+        chart._drawn_row_height = 26
+        chart._drawn_height = 2000
+        chart.task_list.scrolled_row.return_value = scrolled_row
+        return chart
+
+    def _scroll(self, chart):
+        """Run the real _scroll_to_match against the stand-in chart."""
+        from gantt_app.views.gantt_chart import GanttChart
+
+        GanttChart._scroll_to_match(chart)
+
+    def test_the_canvas_is_moved_to_the_reported_row(self):
+        """
+        The row the list reports is the one scrolled to - counting the
+        fraction over the chart's own rows is what left it behind.
+        """
+        chart = self._chart(scrolled_row=10.5)
+
+        self._scroll(chart)
+
+        chart._chart_canvas.yview_moveto.assert_called_once_with(
+            10.5 * 26 / 2000)
+
+    def test_no_canvas_means_no_scroll(self):
+        """A chart that has not drawn yet has nothing to move."""
+        chart = self._chart(scrolled_row=3)
+        chart._chart_canvas = None
+
+        self._scroll(chart)
+
+        chart.task_list.scrolled_row.assert_not_called()
+
 
 class TestTheHeaderFitsTheMarginItIsGiven(unittest.TestCase):
     """

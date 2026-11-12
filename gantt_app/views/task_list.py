@@ -2119,6 +2119,19 @@ class DragDropTaskList(ctk.CTkFrame):
         except (tk.TclError, ValueError, IndexError):
             return 0.0
 
+    def scrolled_row(self) -> float:
+        """
+        The row sitting at the top of the grid, counting part-rows.
+
+        The tree's scroll fraction is measured over every row it draws,
+        blank tail included, so the fraction is turned back into a row
+        against that same count. Read against visible task rows alone it
+        comes back low - the empty tail the tree still scrolls over is not
+        in it - and the shortfall grows the further down the plan the
+        reader goes, which is the chart beside the list falling behind.
+        """
+        return self.rows_scrolled_to() * len(self._visible_row_items())
+
     def visible_rows(self) -> List[str]:
         """
         The task IDs the grid is showing, top to bottom.

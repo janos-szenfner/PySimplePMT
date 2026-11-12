@@ -524,13 +524,18 @@ class GanttChart(ctk.CTkFrame):
         top of its pane as the row beside it. Taking the margin into the
         scroll as well put every row out by that much the moment the list
         moved - the misalignment issue #70 was raised over.
+
+        The row comes from scrolled_row, which counts against every row the
+        grid draws, blank tail included - the same population the tree's
+        scroll fraction is measured over. Counting the drawn rows alone
+        came back short by the tail's share, and the chart trailed the list
+        by that much further the deeper the plan was scrolled.
         """
         if self._chart_canvas is None or not self._drawn_rows:
             return
 
         try:
-            fraction = self.task_list.rows_scrolled_to()
-            first_row = round(fraction * len(self._drawn_rows))
+            first_row = self.task_list.scrolled_row()
             top = first_row * self._drawn_row_height
             height = max(self._drawn_height, 1)
             self._chart_canvas.yview_moveto(max(0.0, top / height))
