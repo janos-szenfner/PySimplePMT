@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.72.5 - 2026-11-11
+## 1.72.6 - 2026-11-12
 
 - **Binary .mpp imports keep the file's own hierarchy.** A generated .mpp
   can store its rows out of outline order and jump outline levels - a
@@ -39,6 +39,8 @@
   about two rows behind by the middle of a large plan. The chart now
   counts the same rows the tree does, down to a part-row, so bars stay
   on their lines however far down the plan goes.
+
+## 1.72.5 - 2026-11-11
 
 - **Dependency refresh.** The bundled libraries move to their current
   releases: Plotly 7.1 for the charts, Pillow 13 for the PNG and PDF
