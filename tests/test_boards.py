@@ -179,6 +179,41 @@ class TestRenderingTheDashboard(unittest.TestCase):
         self.assertEqual(landed, [])
 
 
+class TestPanelContentWidth(unittest.TestCase):
+    """
+    How wide a maximized panel asks to be drawn.
+
+    Only the workload answers more than the viewport: it pays one band of
+    width per row, and a band a pixel wide is the chart the reader
+    enlarged the panel to get away from.
+    """
+
+    def test_the_workload_wants_a_band_per_row_on_a_long_plan(self):
+        rows = [{'Name': f'Task {i}', 'Duration': 5} for i in range(50)]
+
+        wanted = boardrender.panel_content_width('workload', rows, 800)
+
+        self.assertGreater(wanted, 800)
+        self.assertGreaterEqual(
+            (wanted - boardrender.WORKLOAD_CHROME_W) / len(rows),
+            boardrender.WORKLOAD_MIN_BAND)
+
+    def test_the_workload_never_shrinks_below_the_viewport(self):
+        """A short plan still fills the board - scrolling is not shrinking."""
+        rows = [{'Name': 'Only', 'Duration': 5}]
+
+        self.assertEqual(
+            boardrender.panel_content_width('workload', rows, 800), 800)
+
+    def test_every_other_panel_answers_the_viewport(self):
+        """They divide the space given into shares; more space smears them."""
+        rows = [{'Name': f'Task {i}', 'Duration': 5} for i in range(50)]
+
+        for pid in ('progress', 'donut', 'summary', 'deliverables'):
+            self.assertEqual(
+                boardrender.panel_content_width(pid, rows, 800), 800, pid)
+
+
 class _RecordingPen:
     """
     A pen that only remembers - for what the drawing asked to be painted.

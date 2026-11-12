@@ -502,6 +502,91 @@ class TestWhatReachesTheCanvas(unittest.TestCase):
         self.assertEqual(str(dark), theme.DASH_BOARD_BG[1])
 
 
+class TestAMaximizedWorkloadScrolls(unittest.TestCase):
+    """
+    Enlarging Duration per Item on a long plan scrolls, not smears.
+
+    WHY THESE EXIST:
+    ================
+    Maximizing the panel used to stretch the same unreadable chart over
+    the whole board - hundreds of bars in the same pixels. A panel that
+    wants more width than the board has is now drawn at the width it
+    wants and scrolled to, which is what enlarging it is for.
+    """
+
+    def setUp(self):
+        """A fifty-task plan on the same canvas-size stand-in."""
+        import customtkinter as ctk
+
+        from gantt_app.views.project_dashboard import ProjectDashboardFrame
+
+        self.ctk = ctk
+        self.opening_mode = str(ctk.get_appearance_mode())
+        ctk.set_appearance_mode('light')
+
+        self.root = ctk.CTk()
+        self.root.withdraw()
+        self.project = Project(name="Long Plan")
+        for i in range(50):
+            self.project.add_task(Task(
+                id=f"{i:03d}", name=f"Task {i}", task_type="Task",
+                start_date=BASE, end_date=BASE, duration=5))
+        self.frame = ProjectDashboardFrame(self.root, self.project)
+        self.frame.canvas.configure(width=1200, height=800)
+
+    def tearDown(self):
+        """Close the window and put the appearance back."""
+        try:
+            _shut_down(self.root)
+        except Exception:
+            pass
+        try:
+            self.ctk.set_appearance_mode(self.opening_mode)
+        except Exception:
+            pass
+
+    def _scroll_width(self, frame=None):
+        """The width the canvas scrolls over, or None when it does not."""
+        frame = frame or self.frame
+        region = frame.canvas.cget('scrollregion')
+        if not region:
+            return None
+        return float(str(region).split()[2])
+
+    def test_the_maximized_panel_draws_wider_than_the_board(self):
+        """Its scrollregion is the width it wants, not the canvas's."""
+        self.frame.set_maximized('workload')
+
+        self.assertGreater(self._scroll_width(), 1200)
+
+    def test_the_scrollbar_is_out_only_for_the_overgrown_panel(self):
+        """It is the one state the board scrolls in; nothing else has one."""
+        self.frame.set_maximized('workload')
+        self.assertEqual(self.frame._hscroll.winfo_manager(), 'pack')
+
+        self.frame.set_maximized('summary')
+        self.assertNotEqual(self.frame._hscroll.winfo_manager(), 'pack')
+
+    def test_restoring_clears_the_scroll_state(self):
+        """Back to the grid means back to a canvas that fits."""
+        self.frame.set_maximized('workload')
+        self.frame.restore()
+
+        self.assertIsNone(self._scroll_width())
+        self.assertNotEqual(self.frame._hscroll.winfo_manager(), 'pack')
+
+    def test_a_plan_that_fits_maximizes_without_scrolling(self):
+        """The scrollbar is for overflow, not for being enlarged."""
+        from gantt_app.views.project_dashboard import ProjectDashboardFrame
+
+        frame = ProjectDashboardFrame(self.root, sample_project())
+        frame.canvas.configure(width=1200, height=800)
+        frame.set_maximized('workload')
+
+        self.assertIsNone(self._scroll_width(frame))
+        self.assertNotEqual(frame._hscroll.winfo_manager(), 'pack')
+
+
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):
     """

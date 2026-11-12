@@ -29,6 +29,7 @@ the draw reported.
 """
 
 import tkinter as tk
+import tkinter.ttk as ttk
 from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
@@ -119,6 +120,17 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         self.canvas.bind('<Button-1>', self._on_click)
         self.canvas.bind('<Double-Button-1>', self._on_double_click)
         self.canvas.bind('<Motion>', self._on_motion)
+
+        # Shown only while a maximized panel wants more width than the
+        # board has - the one place the drawing is wider than the canvas.
+        self._hscroll = ttk.Scrollbar(self, orient=tk.HORIZONTAL,
+                                      command=self.canvas.xview)
+        theme.style_scrollbar(self._hscroll)
+        self.canvas.configure(xscrollcommand=self._hscroll.set)
+        for seq in ('<MouseWheel>', '<Shift-MouseWheel>',
+                    '<Button-4>', '<Button-5>',
+                    '<Shift-Button-4>', '<Shift-Button-5>'):
+            self.canvas.bind(seq, self._on_wheel, add='+')
 
     # -- the header ----------------------------------------------------------
 
@@ -277,10 +289,30 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
 
     # -- clicks -----------------------------------------------------------------
 
+    def _on_wheel(self, event):
+        """
+        The wheel pans a maximized panel that outgrew the board.
+
+        Bound only so the scrollbar is not the sole way sideways; it does
+        nothing while the drawing fits the canvas, which is all of the
+        grid mode and every panel but an overgrown one.
+        """
+        if not self._hscroll.winfo_ismapped():
+            return
+        delta = getattr(event, 'delta', 0)
+        if delta:
+            steps = -1 if delta > 0 else 1
+            if abs(delta) >= 120:
+                steps = int(-delta / 120)
+        else:
+            steps = -1 if event.num == 4 else 1
+        self.canvas.xview_scroll(steps * 3, 'units')
+
     def _on_motion(self, event):
         """The pointer over a maximize glyph says so by becoming a hand."""
+        x = self.canvas.canvasx(event.x)
         for rect in self._glyph_rects.values():
-            if rect[0] <= event.x <= rect[2] and rect[1] <= event.y <= rect[3]:
+            if rect[0] <= x <= rect[2] and rect[1] <= event.y <= rect[3]:
                 self.canvas.configure(cursor='hand2')
                 return
         self.canvas.configure(cursor='')
@@ -301,13 +333,15 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
 
     def _on_click(self, event):
         """A click on a title glyph grows or restores its panel."""
-        pid = self._glyph_at(event.x, event.y)
+        pid = self._glyph_at(self.canvas.canvasx(event.x),
+                             self.canvas.canvasy(event.y))
         if pid is not None:
             self.set_maximized(None if pid == self.maximized else pid)
 
     def _on_double_click(self, event):
         """A double-click on a panel toggles its maximized state (#66)."""
-        pid = self._panel_at(event.x, event.y)
+        pid = self._panel_at(self.canvas.canvasx(event.x),
+                             self.canvas.canvasy(event.y))
         if pid is not None:
             self.set_maximized(None if pid == self.maximized else pid)
             return 'break'
@@ -326,14 +360,23 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         canvas.configure(background=theme.now(theme.DASH_BOARD_BG))
         palette = theme.view_palette()
         pen = CanvasPen(canvas)
-        pen.rect(0, 0, width, height, fill=palette['bg'])
 
         try:
             project = self._get_project()
             rows = dashboard_rows(project)
+            # A maximized panel may want more room than the board has -
+            # the workload's band-per-row on a long plan. Drawing it at
+            # the width it wants and scrolling is what enlarging it is
+            # for; squeezing it back into the viewport would draw the
+            # same unreadable smear bigger.
+            content_w = width
+            if self.maximized:
+                content_w = boardrender.panel_content_width(
+                    self.maximized, rows, width)
+            pen.rect(0, 0, content_w, height, fill=palette['bg'])
             landed = boardrender.render_dashboard(
                 pen, rows, palette, self.enabled, self.maximized,
-                width=width, height=height,
+                width=content_w, height=height,
                 deliverables=boardrender.deliverable_rows(project))
         except Exception:
             # A failed draw must not leave the hit-test rects pointing at
@@ -341,6 +384,19 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
             self._panel_rects = {}
             self._glyph_rects = {}
             raise
+
+        # The scrollbar appears only while the drawing is wider than the
+        # canvas, and the reader's place survives a redraw that rebuilds
+        # the items underneath it.
+        keep = canvas.xview()[0] if content_w > width else 0.0
+        if content_w > width:
+            canvas.configure(scrollregion=(0, 0, content_w, height))
+            if not self._hscroll.winfo_ismapped():
+                self._hscroll.pack(side='bottom', fill='x')
+            canvas.xview_moveto(keep)
+        else:
+            canvas.configure(scrollregion='')
+            self._hscroll.pack_forget()
 
         self._panel_rects = {p['id']: p['rect'] for p in landed}
         self._glyph_rects = {}

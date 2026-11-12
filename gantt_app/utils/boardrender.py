@@ -245,6 +245,16 @@ PANEL_TITLE_H = 26
 LEFT_LABEL_W = 130
 BOTTOM_LABEL_H = 62
 
+#: The least width the Duration-per-Item panel gives one bar when it owns
+#: the board - the bar, its day count and a readable share of its name.
+#: Under it the labels of a large plan smear into each other, which is the
+#: chart the reader enlarged it to escape.
+WORKLOAD_MIN_BAND = 34
+
+#: What the workload panel spends on everything but the bars - the frame
+#: edges, the day axis and the value ticks down its left.
+WORKLOAD_CHROME_W = 84
+
 #: How thick the donut's ring is drawn, as a share of its radius.
 RING_SHARE = 0.42
 
@@ -404,7 +414,11 @@ def draw_workload(pen, rows, palette, x, y, width, height):
                      fill=palette['duration_bar'])
             pen.text(middle, bar_top - 7, f"{row['Duration']}d",
                      fill=palette['tick'], size=8)
-        pen.text(middle, plot_bottom + 6, _clip(row['Name'], 18),
+        # Two tiers for the names: an angled label reaches back over the
+        # bands to its left, and at the width a bar is worth they would
+        # lie on top of each other; every other row takes the lower step
+        pen.text(middle, plot_bottom + 6 + (index % 2) * 15,
+                 _clip(row['Name'], 16),
                  anchor='ne', angle=35, fill=palette['tick'], size=9)
 
 
@@ -537,6 +551,23 @@ DASHBOARD_PANELS: List[Tuple[str, str, Callable]] = [
 #: the board stops reading at a glance (issues #66, #120).
 MAX_PANELS = 6
 PANELS_PER_ROW = 2
+
+
+def panel_content_width(panel_id, rows, viewport_width) -> float:
+    """
+    How wide a maximized panel wants to be drawn, at least the viewport.
+
+    Most panels divide the space they are given into shares - progress
+    bars, the ring, the figures - so the viewport itself is the answer.
+    The workload chart splits the width into a band per row instead, and
+    past a few hundred rows a band is a pixel: enlarging it only made the
+    smear bigger. Its answer is a band worth reading times the row count,
+    and the shell scrolls to the part the viewport cannot show.
+    """
+    if panel_id == 'workload':
+        needed = WORKLOAD_CHROME_W + len(rows) * WORKLOAD_MIN_BAND
+        return max(viewport_width, needed)
+    return viewport_width
 
 
 def all_panel_ids() -> List[str]:
