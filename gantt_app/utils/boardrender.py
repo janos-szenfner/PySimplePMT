@@ -406,7 +406,18 @@ def draw_workload(pen, rows, palette, x, y, width, height):
     thickness = max(3, min(34, band * 0.6))
     for index, row in enumerate(rows):
         middle = plot_left + band * (index + 0.5)
-        if row['Duration'] > 0:
+        if row['Milestone']:
+            # A milestone holds no duration to draw a bar over - it stands
+            # on the axis as the same diamond the Gantt gives it, so the
+            # row shows the mark rather than a name over nothing
+            radius = 6
+            pen.polygon([middle, plot_bottom - 1 - radius,
+                         middle + radius, plot_bottom - 1,
+                         middle, plot_bottom - 1 + radius,
+                         middle - radius, plot_bottom - 1],
+                        fill=palette['progress_bar'],
+                        outline=palette['axis'])
+        elif row['Duration'] > 0:
             bar_top = plot_bottom - ((plot_bottom - top)
                                      * row['Duration'] / longest)
             pen.rect(middle - thickness / 2, bar_top,

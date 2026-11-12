@@ -586,6 +586,60 @@ class TestAMaximizedWorkloadScrolls(unittest.TestCase):
         self.assertIsNone(self._scroll_width(frame))
         self.assertNotEqual(frame._hscroll.winfo_manager(), 'pack')
 
+    def test_the_restore_glyph_stays_where_the_screen_is(self):
+        """
+        Drawn with the panel, the glyph sat at the content's far right -
+        past the end of everything the scroll could reach, an enlarged
+        chart nobody could close. It is pinned to the viewport instead.
+        """
+        self.frame.set_maximized('workload')
+
+        self.assertIsNotNone(self.frame._pinned)
+        # The hit box ends where the viewport ends - canvasx(0) is 0 on
+        # an unmapped canvas, so 1200 minus the glyph's inset - nowhere
+        # near the content's far end.
+        self.assertAlmostEqual(
+            self.frame._glyph_rects['workload'][2], 1200 - 3)
+        self.assertLess(self.frame._glyph_rects['workload'][2],
+                        self._scroll_width())
+
+    def test_restoring_unpins_the_glyph(self):
+        """Nothing floats once the grid is back."""
+        self.frame.set_maximized('workload')
+        self.frame.restore()
+
+        self.assertIsNone(self.frame._pinned)
+
+    def test_clicking_the_pinned_glyph_restores(self):
+        """The pin moves the hit box too - the glyph still answers."""
+        self.frame.set_maximized('workload')
+        rect = self.frame._glyph_rects['workload']
+        x = (rect[0] + rect[2]) / 2
+        y = (rect[1] + rect[3]) / 2
+
+        found = self.frame._glyph_at(
+            self.frame.canvas.canvasx(x), self.frame.canvas.canvasy(y))
+
+        self.assertEqual(found, 'workload')
+
+    def test_a_double_click_on_the_glyph_does_not_reopen(self):
+        """
+        A click arrives ahead of its double, so a double-click on the
+        glyph has already restored by the time the double lands -
+        answering the panel under it would re-maximize what just closed.
+        """
+        from types import SimpleNamespace
+
+        self.frame.set_maximized('workload')
+        rect = self.frame._glyph_rects['workload']
+        event = SimpleNamespace(
+            x=(rect[0] + rect[2]) / 2 - self.frame.canvas.canvasx(0),
+            y=(rect[1] + rect[3]) / 2)
+
+        self.frame._on_double_click(event)
+
+        self.assertEqual(self.frame.maximized, 'workload')
+
 
 @unittest.skipUnless(HAVE_DISPLAY, "needs a display")
 class TestSwitchingBetweenTheTwoCharts(unittest.TestCase):

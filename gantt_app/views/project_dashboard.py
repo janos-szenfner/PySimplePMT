@@ -105,6 +105,12 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         # a click can be answered by hit-testing rather than re-laying.
         self._panel_rects: Dict[str, tuple] = {}
         self._glyph_rects: Dict[str, tuple] = {}
+        # A maximized panel wider than the board draws its restore glyph
+        # with the rest of the content - which scrolls it off the screen
+        # and out of reach. While that is so the glyph is pinned to the
+        # viewport's edge instead; _pinned remembers what to move.
+        self._pinned = None
+        self._viewport_w = 0
         self._escape_bound = False
         self._redraw_pending = False
         #: The size the last Configure reported - see _size for why a
@@ -126,7 +132,7 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         self._hscroll = ttk.Scrollbar(self, orient=tk.HORIZONTAL,
                                       command=self.canvas.xview)
         theme.style_scrollbar(self._hscroll)
-        self.canvas.configure(xscrollcommand=self._hscroll.set)
+        self.canvas.configure(xscrollcommand=self._on_xscroll)
         for seq in ('<MouseWheel>', '<Shift-MouseWheel>',
                     '<Button-4>', '<Button-5>',
                     '<Shift-Button-4>', '<Shift-Button-5>'):
@@ -308,6 +314,36 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
             steps = -1 if event.num == 4 else 1
         self.canvas.xview_scroll(steps * 3, 'units')
 
+    def _on_xscroll(self, first, last):
+        """
+        The canvas's view report: to the scrollbar, and to the pinned
+        glyph that has to follow the viewport the scroll just moved.
+        """
+        self._hscroll.set(first, last)
+        self._repin_glyph()
+
+    def _repin_glyph(self):
+        """
+        Hold the maximized panel's restore glyph on the screen's edge.
+
+        The glyph is drawn with the panel, and a panel wider than the
+        board carries it right off the end of the scroll region - an
+        enlarged chart the reader then had no handle to close. While the
+        board scrolls the glyph is put back where the viewport's right
+        edge is, and its hit box moves with it.
+        """
+        if self._pinned is None:
+            return
+        pid, items, gy = self._pinned
+        try:
+            gx = self.canvas.canvasx(0) + self._viewport_w - 20
+            rect_item, title_item = items
+            self.canvas.coords(rect_item, gx, gy, gx + 13, gy + 12)
+            self.canvas.coords(title_item, gx, gy, gx + 13, gy + 3.5)
+            self._glyph_rects[pid] = (gx - 4, gy - 4, gx + 17, gy + 16)
+        except tk.TclError:
+            pass
+
     def _on_motion(self, event):
         """The pointer over a maximize glyph says so by becoming a hand."""
         x = self.canvas.canvasx(event.x)
@@ -339,9 +375,19 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
             self.set_maximized(None if pid == self.maximized else pid)
 
     def _on_double_click(self, event):
-        """A double-click on a panel toggles its maximized state (#66)."""
-        pid = self._panel_at(self.canvas.canvasx(event.x),
-                             self.canvas.canvasy(event.y))
+        """
+        A double-click on a panel toggles its maximized state (#66).
+
+        A click arrives before its double does, so a double-click meant
+        for the restore glyph has already restored by the time this runs -
+        answering the panel under it as well would re-maximize what the
+        first click just closed, an enlarged chart that could not be left.
+        """
+        x = self.canvas.canvasx(event.x)
+        y = self.canvas.canvasy(event.y)
+        if self._glyph_at(x, y) is not None:
+            return 'break'
+        pid = self._panel_at(x, y)
         if pid is not None:
             self.set_maximized(None if pid == self.maximized else pid)
             return 'break'
@@ -383,6 +429,7 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
             # a picture that is not there.
             self._panel_rects = {}
             self._glyph_rects = {}
+            self._pinned = None
             raise
 
         # The scrollbar appears only while the drawing is wider than the
@@ -400,8 +447,13 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
 
         self._panel_rects = {p['id']: p['rect'] for p in landed}
         self._glyph_rects = {}
+        self._viewport_w = width
+        self._pinned = None
         for panel in landed:
-            self._draw_glyph(panel)
+            items, gy = self._draw_glyph(panel)
+            if content_w > width and panel['id'] == self.maximized:
+                self._pinned = (panel['id'], items, gy)
+        self._repin_glyph()
 
     def set_project(self, project):
         """Point the dashboard at a different plan - the old API, kept."""
@@ -440,18 +492,22 @@ class ProjectDashboardFrame(BoardRedrawMixin, ctk.CTkFrame):
         maximize it (double-click is the other, and invisible). Drawn as
         a window outline with a filled title bar; while the panel owns
         the board the same glyph reads as restore.
+
+        Answers the two items it made and where their top sits, so a
+        pinned glyph can be slid sideways without being redrawn.
         """
         x0, y0, x1, y1 = panel['rect']
         gx, gy = x1 - 20, y0 + 6
         colour = theme.now(theme.DASH_TITLE_TEXT)
         # A window: outline with its title bar filled in.
-        self.canvas.create_rectangle(gx, gy, gx + 13, gy + 12,
-                                     outline=colour, width=1)
-        self.canvas.create_rectangle(gx, gy, gx + 13, gy + 3.5,
-                                     fill=colour, outline='')
+        rect_item = self.canvas.create_rectangle(
+            gx, gy, gx + 13, gy + 12, outline=colour, width=1)
+        title_item = self.canvas.create_rectangle(
+            gx, gy, gx + 13, gy + 3.5, fill=colour, outline='')
         # A padded hit box - the drawn 13px is small to aim at.
         self._glyph_rects[panel['id']] = (gx - 4, gy - 4,
                                           gx + 17, gy + 16)
+        return (rect_item, title_item), gy
 
     # -- theme -------------------------------------------------------------------
 

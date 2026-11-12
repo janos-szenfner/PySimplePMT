@@ -214,6 +214,41 @@ class TestPanelContentWidth(unittest.TestCase):
                 boardrender.panel_content_width(pid, rows, 800), 800, pid)
 
 
+class TestMilestonesOnTheWorkloadPanel(unittest.TestCase):
+    """
+    A milestone holds no duration for the bar chart to draw, and for a
+    while that was all it got on the panel - a name over nothing. It
+    stands on the axis as the diamond the Gantt gives it.
+    """
+
+    def test_a_milestone_row_earns_a_diamond(self):
+        pen = _RecordingPen()
+        rows = [
+            {'Name': 'Work', 'Duration': 5, 'Milestone': False},
+            {'Name': 'Sign-off', 'Duration': 0, 'Milestone': True},
+        ]
+
+        boardrender.draw_workload(pen, rows, PALETTE, 0, 0, 800, 400)
+
+        diamonds = [coords for coords, fill, _o in pen.polygons
+                    if fill == PALETTE['progress_bar']]
+        self.assertEqual(len(diamonds), 1)
+        # The mark stands on the axis: a four-point diamond 12px across,
+        # its widest point where a zero-length bar would begin and end.
+        xs = diamonds[0][::2]
+        ys = diamonds[0][1::2]
+        self.assertEqual(max(ys) - min(ys), 12)
+        self.assertEqual(max(xs) - min(xs), 12)
+
+    def test_an_ordinary_row_earns_no_diamond(self):
+        pen = _RecordingPen()
+        rows = [{'Name': 'Work', 'Duration': 5, 'Milestone': False}]
+
+        boardrender.draw_workload(pen, rows, PALETTE, 0, 0, 800, 400)
+
+        self.assertEqual(pen.polygons, [])
+
+
 class _RecordingPen:
     """
     A pen that only remembers - for what the drawing asked to be painted.
@@ -224,10 +259,14 @@ class _RecordingPen:
 
     def __init__(self):
         self.rects = []      # (x0, y0, x1, y1, fill, outline)
+        self.polygons = []
         self.texts = []
 
     def rect(self, x0, y0, x1, y1, fill=None, outline=None, width=1):
         self.rects.append((x0, y0, x1, y1, fill, outline))
+
+    def polygon(self, coords, fill=None, outline=None, width=1):
+        self.polygons.append((coords, fill, outline))
 
     def line(self, *args, **kwargs):
         pass
