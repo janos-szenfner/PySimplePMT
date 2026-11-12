@@ -97,8 +97,15 @@ def write_temp_mpp(suffix: str) -> str:
             dict(uid=3, name='Done', outline_level=1, parent_uid=0,
                  start=datetime(2026, 7, 8, 8),
                  finish=datetime(2026, 7, 8, 8), duration_days=0.0),
+            # A level-3 row straight after a level-1: generated files jump
+            # levels, and the outline stack alone would parent it under
+            # 'Done' - the file's own link says 'Work' instead
+            dict(uid=4, name='Jumped', outline_level=3, parent_uid=2,
+                 start=datetime(2026, 7, 9, 8),
+                 finish=datetime(2026, 7, 9, 17), duration_days=1.0),
         ],
-        relations=[dict(pred=2, succ=3, type='FS', lag_days=0.0)],
+        relations=[dict(pred=2, succ=3, type='FS', lag_days=0.0),
+                   dict(pred=3, succ=4, type='FS', lag_days=0.0)],
         title='Binary Plan',
         project_start=datetime(2026, 7, 6, 8))
     return path
@@ -115,14 +122,21 @@ def check_binary_mpp_import():
         assert project is not None
         assert project.name == 'Binary Plan'
         names = [task.name for task in project.tasks]
-        assert names == ['Phase One', 'Work', 'Done']
+        assert names == ['Phase One', 'Work', 'Jumped', 'Done']
         work = project.tasks[1]
         assert work.parent_task_id == '1'
         assert work.progress == 40
-        done = project.tasks[2]
+        done = project.tasks[3]
         assert done.is_milestone
         assert [(dep.task_id, dep.dep_type)
                 for dep in done.dependencies] == [('2', 'FS')]
+        jumped = project.tasks[2]
+        # The file's own parent link wins over the outline stack: 'Jumped'
+        # sits under 'Work', so its link to 'Done' is an ordinary one
+        # rather than one against the parent the stack would have given it
+        assert jumped.parent_task_id == '2'
+        assert [(dep.task_id, dep.dep_type)
+                for dep in jumped.dependencies] == [('3', 'FS')]
     finally:
         os.unlink(path)
 
