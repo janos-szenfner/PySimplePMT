@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.72.7 - 2026-11-12
+
+- **An overgrown dashboard panel can always be closed.** The restore
+  glyph rode the panel out to the far end of the scrollable drawing -
+  an enlarged chart nobody could reach a handle on - and a double-click
+  on it restored the grid then promptly re-maximized the panel under
+  it, because the double answers a panel the single click had already
+  dismissed. The glyph now stays pinned to the edge of the screen while
+  the content scrolls beneath it, and a double-click on a glyph is left
+  to the click that already acted on it.
+
+- **Milestones show on the Duration-per-Item panel.** A milestone holds
+  no duration, so the bar chart gave it a name over empty air where
+  every other row had a bar. It now stands on the axis as the same
+  diamond the Gantt chart gives it.
+
 ## 1.72.6 - 2026-11-12
 
 - **Binary .mpp imports keep the file's own hierarchy.** A generated .mpp
